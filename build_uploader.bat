@@ -25,7 +25,11 @@ echo [1/6] Cleaning up old installer files...
 if exist python_installer.exe del python_installer.exe
 if exist go_installer.msi del go_installer.msi
 if exist uploader.exe del uploader.exe
-if exist venv rmdir /s /q venv
+REM Only clean venv if --clean flag is passed
+if "%1"=="--clean" (
+    echo       - Removing virtual environment (--clean flag)...
+    if exist venv rmdir /s /q venv
+)
 
 REM --- Step 2: Auto-Install Python ---
 python --version >nul 2>&1
@@ -88,7 +92,16 @@ if "%ARCH%"=="64" (
 REM --- Step 4: Build Go Sidecar ---
 echo.
 echo [4/6] Compiling Go Sidecar...
-if not exist go.mod go mod init uploader_sidecar
+
+REM Verify go.mod exists (should already exist in repo)
+if not exist go.mod (
+    echo [ERROR] go.mod not found in project directory!
+    echo         This file should be committed to the repository.
+    pause
+    exit /b
+)
+
+REM Ensure dependencies are up to date
 go mod tidy
 go get github.com/PuerkitoBio/goquery
 
@@ -105,23 +118,32 @@ if not exist uploader.exe (
     pause
     exit /b
 )
+echo       - uploader.exe built successfully!
 
 REM --- Step 5: Python Environment ---
 echo.
 echo [5/6] Setting up Python dependencies...
-python -m venv venv
+
+REM Verify requirements.txt exists
+if not exist requirements.txt (
+    echo [ERROR] requirements.txt not found in project directory!
+    echo         This file should be committed to the repository.
+    pause
+    exit /b
+)
+
+REM Create venv if it doesn't exist
+if not exist venv (
+    echo       - Creating virtual environment...
+    python -m venv venv
+) else (
+    echo       - Using existing virtual environment...
+)
+
 call venv\Scripts\activate
 
-REM Create requirements.txt
-echo customtkinter > requirements.txt
-echo tkinterdnd2 >> requirements.txt
-echo Pillow >> requirements.txt
-echo requests >> requirements.txt
-echo loguru >> requirements.txt
-echo keyring >> requirements.txt
-echo pyperclip >> requirements.txt
-echo pyinstaller >> requirements.txt
-
+REM Install dependencies from the actual requirements.txt file
+echo       - Installing Python packages (this may take a moment)...
 pip install -r requirements.txt
 if %errorlevel% neq 0 (
     echo [ERROR] Python dependency install failed.
@@ -151,5 +173,8 @@ echo       SUCCESS!
 echo ========================================================
 echo.
 echo Your program is in the "dist" folder.
+echo.
+echo Build completed: %date% %time%
+echo.
 pause
 start dist
