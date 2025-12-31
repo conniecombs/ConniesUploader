@@ -11,6 +11,8 @@ jobs:
   go-build:
     name: Build Go Sidecar
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
