@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/PuerkitoBio/goquery"
+	"github.com/disintegration/imaging"
+	log "github.com/sirupsen/logrus"
 	"image"
 	"image/jpeg"
 	_ "image/png"
@@ -29,6 +31,20 @@ import (
 
 // --- Constants ---
 const UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+func init() {
+	// Configure structured logging
+	log.SetFormatter(&log.JSONFormatter{
+		TimestampFormat: "2006-01-02 15:04:05",
+		FieldMap: log.FieldMap{
+			log.FieldKeyTime:  "timestamp",
+			log.FieldKeyLevel: "level",
+			log.FieldKeyMsg:   "message",
+		},
+	})
+	log.SetOutput(os.Stderr)
+	log.SetLevel(log.InfoLevel)
+}
 
 // --- Protocol Structs ---
 type JobRequest struct {
@@ -86,6 +102,10 @@ func randomString(n int) string {
 
 func main() {
 	// Note: Using crypto/rand for random string generation (more secure)
+	log.WithFields(log.Fields{
+		"component": "uploader",
+		"version":   "1.0.0",
+	}).Info("Go sidecar starting")
 
 	jar, _ := cookiejar.New(nil)
 	client = &http.Client{
@@ -101,12 +121,15 @@ func main() {
 	// 2. Start fixed number of workers (e.g., 5-10) to process incoming requests
 	// This prevents the Go process from spawning thousands of goroutines if the UI floods it.
 	numWorkers := 8
+	log.WithField("workers", numWorkers).Info("Starting worker pool")
+
 	for i := 0; i < numWorkers; i++ {
-		go func() {
+		go func(workerID int) {
+			log.WithField("worker_id", workerID).Debug("Worker started")
 			for job := range jobQueue {
 				handleJob(job)
 			}
-		}()
+		}(i)
 	}
 
 	decoder := json.NewDecoder(os.Stdin)
@@ -190,24 +213,13 @@ func handleGenerateThumb(job JobRequest) {
 		return
 	}
 
-	bounds := img.Bounds()
-	ratio := float64(bounds.Dx()) / float64(bounds.Dy())
-	newH := int(float64(w) / ratio)
-
-	thumb := image.NewRGBA(image.Rect(0, 0, w, newH))
-	x_ratio := float64(bounds.Dx()) / float64(w)
-	y_ratio := float64(bounds.Dy()) / float64(newH)
-
-	for y := 0; y < newH; y++ {
-		for x := 0; x < w; x++ {
-			px := int(float64(x) * x_ratio)
-			py := int(float64(y) * y_ratio)
-			thumb.Set(x, y, img.At(px, py))
-		}
-	}
+	// Use Lanczos resampling for high-quality thumbnails
+	// Maintains aspect ratio automatically
+	thumb := imaging.Resize(img, w, 0, imaging.Lanczos)
 
 	var buf bytes.Buffer
-	jpeg.Encode(&buf, thumb, &jpeg.Options{Quality: 60})
+	// Use slightly higher quality (70) since Lanczos produces sharper results
+	jpeg.Encode(&buf, thumb, &jpeg.Options{Quality: 70})
 	b64 := base64.StdEncoding.EncodeToString(buf.Bytes())
 
 	sendJSON(OutputEvent{
@@ -321,29 +333,70 @@ func handleUpload(job JobRequest) {
 }
 
 func processFile(fp string, job *JobRequest) {
+	logger := log.WithFields(log.Fields{
+		"file":    filepath.Base(fp),
+		"service": job.Service,
+	})
+	logger.Info("Starting upload")
+
 	sendJSON(OutputEvent{Type: "status", FilePath: fp, Status: "Uploading"})
 	var url, thumb string
 	var err error
 
-	switch job.Service {
-	case "imx.to":
-		url, thumb, err = uploadImx(fp, job)
-	case "pixhost.to":
-		url, thumb, err = uploadPixhost(fp, job)
-	case "vipr.im":
-		url, thumb, err = uploadVipr(fp, job)
-	case "turboimagehost":
-		url, thumb, err = uploadTurbo(fp, job)
-	case "imagebam.com":
-		url, thumb, err = uploadImageBam(fp, job)
-	default:
-		err = fmt.Errorf("unknown service: %s", job.Service)
+	// Retry with exponential backoff: 2s, 4s, 8s (max 3 attempts)
+	maxRetries := 3
+	baseDelay := 2 * time.Second
+
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		if attempt > 0 {
+			delay := baseDelay * time.Duration(1<<uint(attempt-1)) // 2s, 4s, 8s
+			logger.WithFields(log.Fields{
+				"attempt": attempt,
+				"delay":   delay.String(),
+			}).Warn("Retrying upload")
+			sendJSON(OutputEvent{Type: "status", FilePath: fp, Status: fmt.Sprintf("Retry %d/%d in %v", attempt, maxRetries-1, delay)})
+			time.Sleep(delay)
+			sendJSON(OutputEvent{Type: "status", FilePath: fp, Status: "Uploading"})
+		}
+
+		switch job.Service {
+		case "imx.to":
+			url, thumb, err = uploadImx(fp, job)
+		case "pixhost.to":
+			url, thumb, err = uploadPixhost(fp, job)
+		case "vipr.im":
+			url, thumb, err = uploadVipr(fp, job)
+		case "turboimagehost":
+			url, thumb, err = uploadTurbo(fp, job)
+		case "imagebam.com":
+			url, thumb, err = uploadImageBam(fp, job)
+		default:
+			err = fmt.Errorf("unknown service: %s", job.Service)
+		}
+
+		// Success - exit retry loop
+		if err == nil {
+			break
+		}
+
+		// Log the error but continue retrying
+		if attempt < maxRetries-1 {
+			sendJSON(OutputEvent{Type: "error", FilePath: fp, Msg: fmt.Sprintf("Attempt %d failed: %v", attempt+1, err)})
+		}
 	}
 
 	if err != nil {
+		logger.WithFields(log.Fields{
+			"error":    err.Error(),
+			"attempts": maxRetries,
+		}).Error("Upload failed after all retries")
 		sendJSON(OutputEvent{Type: "status", FilePath: fp, Status: "Failed"})
-		sendJSON(OutputEvent{Type: "error", FilePath: fp, Msg: err.Error()})
+		sendJSON(OutputEvent{Type: "error", FilePath: fp, Msg: fmt.Sprintf("Failed after %d attempts: %v", maxRetries, err)})
 	} else {
+		logger.WithFields(log.Fields{
+			"url":   url,
+			"thumb": thumb,
+		}).Info("Upload successful")
 		sendJSON(OutputEvent{Type: "result", FilePath: fp, Url: url, Thumb: thumb})
 		sendJSON(OutputEvent{Type: "status", FilePath: fp, Status: "Done"})
 	}

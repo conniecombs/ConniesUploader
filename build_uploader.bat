@@ -53,14 +53,26 @@ if not exist "%~dp0python_installer.exe" (
     exit /b
 )
 
-echo       - Verifying download integrity...
-REM Note: Full SHA256 verification requires PowerShell or certutil
-REM For now, just verify file size is reasonable (>25MB)
-for %%A in ("%~dp0python_installer.exe") do set SIZE=%%~zA
-if %SIZE% LSS 25000000 (
-    echo [WARNING] Downloaded file seems too small. Proceeding anyway.
-    echo          For production use, enable SHA256 verification.
+echo       - Verifying download integrity (SHA256)...
+certutil -hashfile "%~dp0python_installer.exe" SHA256 > "%~dp0temp_hash.txt"
+findstr /v ":" "%~dp0temp_hash.txt" > "%~dp0actual_hash.txt"
+set /p ACTUAL_HASH=<"%~dp0actual_hash.txt"
+del "%~dp0temp_hash.txt" "%~dp0actual_hash.txt"
+
+REM Remove spaces from hash for comparison
+set "ACTUAL_HASH=%ACTUAL_HASH: =%"
+set "EXPECTED_HASH=%PYTHON_SHA256: =%"
+
+if /i not "%ACTUAL_HASH%"=="%EXPECTED_HASH%" (
+    echo [ERROR] SHA256 checksum mismatch!
+    echo         Expected: %EXPECTED_HASH%
+    echo         Got:      %ACTUAL_HASH%
+    echo         Download may be corrupted or tampered with.
+    del "%~dp0python_installer.exe"
+    pause
+    exit /b
 )
+echo       - Checksum verified successfully!
 
 echo       - Installing Python (this takes a moment)...
 start /wait "%~dp0python_installer.exe" /quiet InstallAllUsers=1 PrependPath=1 Include_test=0
@@ -81,8 +93,10 @@ if %errorlevel% equ 0 goto BUILD_GO
 echo [3/6] Downloading Go (%ARCH%-bit)...
 if "%ARCH%"=="64" (
     set "GO_URL=https://go.dev/dl/go1.21.6.windows-amd64.msi"
+    set "GO_SHA256=cfb6fb2f9f504806e5aa3a9b8ea23e28e1e94f114f2fe63e0da52b6d59c573f6"
 ) else (
     set "GO_URL=https://go.dev/dl/go1.21.6.windows-386.msi"
+    set "GO_SHA256=e8b5f14f84f28dbb34f35e83a6ec10adc7c4c3c4a43e5ae4f1b6b27e34a8bd1f"
 )
 
 curl -L -o "%~dp0go_installer.msi" "%GO_URL%"
@@ -93,12 +107,26 @@ if not exist "%~dp0go_installer.msi" (
     exit /b
 )
 
-echo       - Verifying download integrity...
-for %%A in ("%~dp0go_installer.msi") do set SIZE=%%~zA
-if %SIZE% LSS 50000000 (
-    echo [WARNING] Downloaded file seems too small. Proceeding anyway.
-    echo          For production use, enable SHA256 verification.
+echo       - Verifying download integrity (SHA256)...
+certutil -hashfile "%~dp0go_installer.msi" SHA256 > "%~dp0temp_hash.txt"
+findstr /v ":" "%~dp0temp_hash.txt" > "%~dp0actual_hash.txt"
+set /p ACTUAL_HASH=<"%~dp0actual_hash.txt"
+del "%~dp0temp_hash.txt" "%~dp0actual_hash.txt"
+
+REM Remove spaces from hash for comparison
+set "ACTUAL_HASH=%ACTUAL_HASH: =%"
+set "EXPECTED_HASH=%GO_SHA256: =%"
+
+if /i not "%ACTUAL_HASH%"=="%EXPECTED_HASH%" (
+    echo [ERROR] SHA256 checksum mismatch!
+    echo         Expected: %EXPECTED_HASH%
+    echo         Got:      %ACTUAL_HASH%
+    echo         Download may be corrupted or tampered with.
+    del "%~dp0go_installer.msi"
+    pause
+    exit /b
 )
+echo       - Checksum verified successfully!
 
 echo       - Installing Go...
 start /wait msiexec /i "%~dp0go_installer.msi" /quiet /norestart
