@@ -1,10 +1,9 @@
 # modules/plugins/pixhost.py
 """
-Pixhost.to plugin - Schema-based implementation.
+Pixhost.to plugin - Schema-based implementation with Go sidecar uploads.
 
-Refactored to use the new schema-based UI system (Phase 1).
-Reduced from 104 lines to 172 lines (with extensive documentation).
-UI code reduced by ~80%, all boilerplate eliminated.
+Go-based upload plugin (upload handled by Go sidecar).
+Python side manages UI, configuration validation, and gallery coordination.
 """
 
 import os
@@ -34,7 +33,7 @@ class PixhostPlugin(ImageHostPlugin):
             "author": "Connie's Uploader Team",
             "description": "Upload images to Pixhost.to with gallery support and cover image handling",
             "website": "https://pixhost.to",
-            "implementation": "python",
+            "implementation": "go",
             "features": {
                 "galleries": True,
                 "covers": True,
@@ -130,15 +129,11 @@ class PixhostPlugin(ImageHostPlugin):
 
         return errors
 
-    # --- Upload Implementation (Unchanged from original) ---
+    # --- Upload Implementation (Go Sidecar Handles Uploads) ---
 
     def initialize_session(self, config: Dict[str, Any], creds: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Initialize upload session for Pixhost.
-
-        Creates HTTP client for batch uploads.
-        """
-        return helpers.create_upload_context(api, created_galleries=[])
+        """Stub - Go sidecar handles session initialization."""
+        return {}
 
     def prepare_group(
         self, group, config: Dict[str, Any], context: Dict[str, Any], creds: Dict[str, Any]
@@ -162,60 +157,9 @@ class PixhostPlugin(ImageHostPlugin):
     def upload_file(
         self, file_path: str, group, config: Dict[str, Any], context: Dict[str, Any], progress_callback
     ):
-        """
-        Upload a single file to Pixhost.
-
-        Args:
-            file_path: Path to image file
-            group: Group object containing files
-            config: Plugin configuration from UI
-            context: Session context from initialize_session
-            progress_callback: Function to report upload progress
-
-        Returns:
-            Tuple of (viewer_url, thumb_url)
-        """
-        # Determine if this is a cover image (using helper)
-        is_cover = helpers.is_cover_image(file_path, group, config)
-
-        # Get gallery data if available
-        pix_data = getattr(group, "pix_data", {})
-
-        # Create uploader (using helper for progress callback)
-        uploader = api.PixhostUploader(
-            file_path,
-            os.path.basename(file_path),
-            helpers.create_progress_callback(progress_callback),
-            config["content_type"],
-            config["thumbnail_size"],
-            pix_data.get("gallery_hash", config.get("gallery_hash", "")),
-            pix_data.get("gallery_upload_hash"),
-            is_cover,
-        )
-
-        try:
-            # Perform upload (using helpers)
-            url, data, headers = uploader.get_request_params()
-            headers = helpers.prepare_upload_headers(headers, data)
-
-            client = helpers.get_client_from_context(context)
-            response = helpers.execute_upload(client, url, headers, data, timeout=300)
-            return uploader.parse_response(response)
-
-        finally:
-            uploader.close()
+        """Stub - Go sidecar handles file uploads."""
+        pass
 
     def finalize_batch(self, context: Dict[str, Any]) -> None:
-        """
-        Finalize batch upload.
-
-        Finalizes all galleries created during this batch.
-        """
-        for gal in context.get("created_galleries", []):
-            try:
-                api.finalize_pixhost_gallery(
-                    gal.get("gallery_upload_hash"), gal.get("gallery_hash"), client=context["client"]
-                )
-                logger.info(f"Finalized Pixhost gallery: {gal.get('gallery_hash')}")
-            except Exception as e:
-                logger.warning(f"Failed to finalize Pixhost gallery: {e}")
+        """Stub - Go sidecar handles batch finalization."""
+        pass
