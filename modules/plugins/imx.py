@@ -81,7 +81,7 @@ class ImxPlugin(ImageHostPlugin):
             },
             {
                 "type": "dropdown",
-                "key": "imx_thumb_id",
+                "key": "thumbnail_size",
                 "label": "Thumbnail Size",
                 "values": ["100", "180", "250", "300", "600"],
                 "default": "180",
@@ -89,8 +89,8 @@ class ImxPlugin(ImageHostPlugin):
             },
             {
                 "type": "dropdown",
-                "key": "imx_format_id",
-                "label": "Image Format",
+                "key": "thumbnail_format",
+                "label": "Thumbnail Format",
                 "values": ["Fixed Width", "Fixed Height", "Proportional", "Square"],
                 "default": "Fixed Width",
                 "required": True,
@@ -101,7 +101,7 @@ class ImxPlugin(ImageHostPlugin):
                     {"type": "label", "text": "Cover Images:", "width": 100},
                     {
                         "type": "dropdown",
-                        "key": "imx_cover_count",
+                        "key": "cover_count",
                         "values": [str(i) for i in range(11)],
                         "default": "0",
                         "width": 80,
@@ -110,7 +110,7 @@ class ImxPlugin(ImageHostPlugin):
             },
             {
                 "type": "checkbox",
-                "key": "imx_links",
+                "key": "save_links",
                 "label": "Save Links.txt",
                 "default": False,
             },
@@ -132,7 +132,7 @@ class ImxPlugin(ImageHostPlugin):
 
         # Convert cover_count to int
         try:
-            config["imx_cover_count"] = int(config.get("imx_cover_count", 0))
+            config["cover_count"] = int(config.get("cover_count", 0))
         except (ValueError, TypeError):
             errors.append("Cover count must be a valid number")
 

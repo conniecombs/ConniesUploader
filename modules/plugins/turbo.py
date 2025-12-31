@@ -75,7 +75,7 @@ class TurboPlugin(ImageHostPlugin):
             },
             {
                 "type": "dropdown",
-                "key": "thumb_size",
+                "key": "thumbnail_size",
                 "label": "Thumbnail Size",
                 "values": ["150", "200", "250", "300", "350", "400", "500", "600"],
                 "default": "180",
@@ -124,7 +124,7 @@ class TurboPlugin(ImageHostPlugin):
 
         # Content type - turbo uses "adult" or "all"
         # For now, default to "all" (safe)
-        config["content"] = "all"
+        config["content_type"] = "all"
 
         return errors
 
@@ -194,7 +194,7 @@ class TurboPlugin(ImageHostPlugin):
                 logger.debug(f"File {file_path} not found in group files: {e}")
 
         # Use max thumbnail size for covers
-        thumb = "600" if is_cover else config["thumb_size"]
+        thumb = "600" if is_cover else config["thumbnail_size"]
 
         uploader = api.TurboUploader(
             file_path,
@@ -202,7 +202,7 @@ class TurboPlugin(ImageHostPlugin):
             lambda m: progress_callback(m.bytes_read / m.len) if m.len > 0 else None,
             context["endpoint"],
             api.generate_turbo_upload_id(),
-            config["content"],
+            config["content_type"],
             thumb,
             config.get("gallery_id"),
             client=client,

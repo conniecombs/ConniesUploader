@@ -69,7 +69,7 @@ class ImageBamPlugin(ImageHostPlugin):
         return [
             {
                 "type": "dropdown",
-                "key": "content",
+                "key": "content_type",
                 "label": "Content Type",
                 "values": ["Safe", "Adult"],
                 "default": "Safe",
@@ -77,7 +77,7 @@ class ImageBamPlugin(ImageHostPlugin):
             },
             {
                 "type": "dropdown",
-                "key": "thumb_size",
+                "key": "thumbnail_size",
                 "label": "Thumbnail Size",
                 "values": ["100", "180", "250", "300"],
                 "default": "180",
@@ -131,8 +131,8 @@ class ImageBamPlugin(ImageHostPlugin):
                 upload_token = api.get_imagebam_upload_token(
                     token_client,
                     context["csrf"],
-                    config.get("content", "Safe"),
-                    config.get("thumb_size", "180"),
+                    config.get("content_type", "Safe"),
+                    config.get("thumbnail_size", "180"),
                     gal_id,
                     gal_title,
                 )
@@ -166,8 +166,8 @@ class ImageBamPlugin(ImageHostPlugin):
             file_path,
             os.path.basename(file_path),
             lambda m: progress_callback(m.bytes_read / m.len) if m.len > 0 else None,
-            config["content"],
-            config["thumb_size"],
+            config["content_type"],
+            config["thumbnail_size"],
             upload_token=token,
             csrf_token=context["csrf"],
             session_cookies=context["cookies"],

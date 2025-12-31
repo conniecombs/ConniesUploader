@@ -62,7 +62,7 @@ class PixhostPlugin(ImageHostPlugin):
         return [
             {
                 "type": "dropdown",
-                "key": "content",
+                "key": "content_type",
                 "label": "Content Type",
                 "values": ["Safe", "Adult"],
                 "default": "Safe",
@@ -71,7 +71,7 @@ class PixhostPlugin(ImageHostPlugin):
             },
             {
                 "type": "dropdown",
-                "key": "thumb_size",
+                "key": "thumbnail_size",
                 "label": "Thumbnail Size",
                 "values": ["150", "200", "250", "300", "350", "400", "450", "500"],
                 "default": "200",
@@ -196,8 +196,8 @@ class PixhostPlugin(ImageHostPlugin):
             file_path,
             os.path.basename(file_path),
             lambda m: progress_callback(m.bytes_read / m.len) if m.len > 0 else None,
-            config["content"],
-            config["thumb_size"],
+            config["content_type"],
+            config["thumbnail_size"],
             pix_data.get("gallery_hash", config.get("gallery_hash", "")),
             pix_data.get("gallery_upload_hash"),
             is_cover,

@@ -83,7 +83,7 @@ class ViprPlugin(ImageHostPlugin):
             },
             {
                 "type": "dropdown",
-                "key": "vipr_thumb",
+                "key": "thumbnail_size",
                 "label": "Thumbnail Size",
                 "values": ["100x100", "170x170", "250x250", "300x300", "350x350", "500x500", "800x800"],
                 "default": "170x170",
@@ -95,7 +95,7 @@ class ViprPlugin(ImageHostPlugin):
                     {"type": "label", "text": "Cover Images:", "width": 100},
                     {
                         "type": "dropdown",
-                        "key": "vipr_cover_count",
+                        "key": "cover_count",
                         "values": [str(i) for i in range(11)],
                         "default": "0",
                         "width": 80,
@@ -104,7 +104,7 @@ class ViprPlugin(ImageHostPlugin):
             },
             {
                 "type": "checkbox",
-                "key": "vipr_links",
+                "key": "save_links",
                 "label": "Save Links.txt",
                 "default": False,
             },
@@ -116,7 +116,7 @@ class ViprPlugin(ImageHostPlugin):
 
         # Convert cover_count to int
         try:
-            config["vipr_cover_count"] = int(config.get("vipr_cover_count", 0))
+            config["cover_count"] = int(config.get("cover_count", 0))
         except (ValueError, TypeError):
             errors.append("Cover count must be a valid number")
 
