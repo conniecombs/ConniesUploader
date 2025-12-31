@@ -42,6 +42,8 @@ This release marks the first production-ready version with comprehensive stabili
   - Go build validation with caching
   - Python syntax and dependency checks
   - Build size verification (ensures sidecar bundling)
+  - Automated go.sum checksum maintenance (auto-correction on every build)
+  - Write permissions for workflow commits
 
 - **Automated Release Pipeline**
   - Tag-based release automation (v*.*.*)
@@ -130,10 +132,33 @@ This release marks the first production-ready version with comprehensive stabili
 
 ### 🔒 Security
 
-#### **Dependency Updates**
-- golang.org/x/net: v0.47.0 → v0.48.0 (CVE-2023-44487 fix)
+#### **Critical Security Updates**
+- **Go Runtime**: 1.24.7 → 1.24.11
+  - Fixed 9 vulnerabilities in Go standard library
+  - archive/zip, crypto/x509, net/http security patches
+
+- **golang.org/x/image**: Updated to v0.23.0
+  - Fixed 4 TIFF-related vulnerabilities
+  - CVE fixes for image processing libraries
+
+- **golang.org/x/net**: v0.47.0 → v0.48.0
+  - CVE-2023-44487 HTTP/2 rapid reset attack fix
+
+#### **Code Security Improvements**
+- Added comprehensive error checking for all multipart form field operations
+  - 16 WriteField calls now properly handle errors
+  - Prevents silent failures and data corruption
+  - Services fixed: Pixhost, Vipr, TurboImageHost, ImageBam
+
+- Fixed golangci-lint security warnings
+  - All errcheck violations resolved
+  - Proper error propagation throughout codebase
+
+#### **Dependency Management**
+- Automated go.sum checksum validation via CI
 - All Python dependencies pinned to exact versions
 - requests==2.32.3 (security fixes)
+- SHA256 verification for build-time dependencies
 
 ---
 
