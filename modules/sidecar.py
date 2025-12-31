@@ -1,0 +1,145 @@
+import subprocess
+import json
+import threading
+import queue
+import os
+import sys
+from loguru import logger
+
+class SidecarBridge:
+    _instance = None
+    
+    @classmethod
+    def get(cls):
+        if not cls._instance:
+            cls._instance = SidecarBridge()
+        return cls._instance
+
+    def __init__(self):
+        self.proc = None
+        self.cmd_lock = threading.Lock()
+        
+        # Event distribution
+        self.listeners = []
+        self.listeners_lock = threading.Lock()
+        
+        self._start_process()
+
+    def _start_process(self):
+        if getattr(sys, 'frozen', False):
+            base_dir = os.path.dirname(sys.executable)
+        else:
+            base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+            
+        # Cross-platform binary check
+        binary_name = "uploader.exe" if os.name == 'nt' else "uploader"
+        exe = os.path.join(base_dir, binary_name)
+        
+        if not os.path.exists(exe):
+            exe = os.path.join(os.getcwd(), binary_name)
+
+        if not os.path.exists(exe):
+            logger.error(f"Sidecar executable not found at: {exe}")
+            return
+
+        try:
+            startupinfo = None
+            if os.name == 'nt':
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                
+            self.proc = subprocess.Popen(
+                [exe],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1,
+                startupinfo=startupinfo
+            )
+            
+            t = threading.Thread(target=self._listen, daemon=True)
+            t.start()
+            logger.info(f"Sidecar started: {exe}")
+            
+        except Exception as e:
+            logger.error(f"Failed to start sidecar: {e}")
+
+    def add_listener(self, q):
+        """Registers a queue to receive all events from the sidecar."""
+        with self.listeners_lock:
+            if q not in self.listeners:
+                self.listeners.append(q)
+
+    def remove_listener(self, q):
+        """Unregisters a queue."""
+        with self.listeners_lock:
+            if q in self.listeners:
+                self.listeners.remove(q)
+
+    def _listen(self):
+        while self.proc:
+            try:
+                line = self.proc.stdout.readline()
+                if not line: break
+                line = line.strip()
+                if not line: continue
+                
+                try:
+                    data = json.loads(line)
+                    self._dispatch_event(data)
+                except json.JSONDecodeError:
+                    pass
+            except Exception as e:
+                logger.error(f"Sidecar read error: {e}")
+                break
+
+    def _dispatch_event(self, data):
+        # 1. Log internal messages
+        if data.get("type") == "log":
+            logger.debug(f"Go: {data.get('msg')}")
+
+        # 2. Broadcast to all listeners
+        with self.listeners_lock:
+            for q in self.listeners:
+                try:
+                    q.put(data)
+                except Exception:
+                    pass
+
+    def send_cmd(self, payload):
+        if not self.proc: self._start_process()
+        if not self.proc: return
+
+        with self.cmd_lock:
+            try:
+                json.dump(payload, self.proc.stdin)
+                self.proc.stdin.write("\n")
+                self.proc.stdin.flush()
+            except Exception as e:
+                logger.error(f"Send error: {e}")
+
+    def request_sync(self, payload, timeout=5):
+        """
+        Sends a command and waits for a specific response.
+        Used for login/verification/scraping.
+        """
+        temp_q = queue.Queue()
+        self.add_listener(temp_q)
+        self.send_cmd(payload)
+        
+        response = {"status": "error", "msg": "Timeout"}
+        
+        try:
+            # Simple heuristic: wait for 'result', 'data', or 'error'
+            while True:
+                item = temp_q.get(timeout=timeout)
+                if item.get("type") in ["result", "data", "error", "success"]:
+                    response = item
+                    break
+        except queue.Empty:
+            pass
+        finally:
+            self.remove_listener(temp_q)
+            
+        return response
