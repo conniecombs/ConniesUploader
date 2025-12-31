@@ -177,6 +177,17 @@ if %errorlevel% neq 0 (
 REM --- Step 6: Build Final EXE ---
 echo.
 echo [6/6] Building Final Executable...
+
+REM Verify uploader.exe exists before packaging
+if not exist "%~dp0uploader.exe" (
+    echo [ERROR] uploader.exe not found! Cannot build without Go sidecar.
+    echo         Run this script again or build uploader.exe manually.
+    pause
+    exit /b
+)
+
+echo       - Packaging with PyInstaller...
+echo       - Including: uploader.exe, logo.ico, tkinterdnd2
 pyinstaller --noconsole --onefile --clean --name "ConniesUploader" ^
     --icon "logo.ico" ^
     --add-data "uploader.exe;." ^
@@ -192,10 +203,35 @@ if not exist "%~dp0dist\ConniesUploader.exe" (
 
 echo.
 echo ========================================================
+echo       BUILD VERIFICATION
+echo ========================================================
+echo.
+
+REM Check file size to verify uploader.exe was included
+for %%A in ("%~dp0dist\ConniesUploader.exe") do set DIST_SIZE=%%~zA
+echo Final EXE size: %DIST_SIZE% bytes
+
+REM Expected size should be >40MB if uploader.exe is included
+REM (Python ~20MB + uploader.exe ~12MB + dependencies ~15MB = ~47MB)
+if %DIST_SIZE% LSS 40000000 (
+    echo.
+    echo [WARNING] EXE seems too small (^<%DIST_SIZE:~0,-6% MB^)
+    echo           Expected ^>40MB when uploader.exe is included.
+    echo           The Go sidecar may not be bundled correctly!
+    echo.
+    echo Recommendation: Delete dist\ folder and rebuild.
+    echo.
+) else (
+    echo Status: OK - Size indicates uploader.exe is included
+)
+
+echo.
+echo ========================================================
 echo       SUCCESS!
 echo ========================================================
 echo.
 echo Your program is in the "dist" folder.
+echo File: dist\ConniesUploader.exe
 echo.
 echo Build completed: %date% %time%
 echo.

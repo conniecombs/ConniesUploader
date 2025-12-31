@@ -31,20 +31,40 @@ class SidecarBridge:
         self._start_process()
 
     def _start_process(self):
+        # Determine base directory for finding uploader.exe
         if getattr(sys, "frozen", False):
-            base_dir = os.path.dirname(sys.executable)
+            # PyInstaller mode - use _MEIPASS for temp extraction folder
+            if hasattr(sys, '_MEIPASS'):
+                # Running from PyInstaller bundle
+                base_dir = sys._MEIPASS
+            else:
+                # Frozen but not PyInstaller (shouldn't happen)
+                base_dir = os.path.dirname(sys.executable)
         else:
+            # Development mode - go up from modules/ to project root
             base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
         # Cross-platform binary check
         binary_name = "uploader.exe" if os.name == "nt" else "uploader"
         exe = os.path.join(base_dir, binary_name)
 
+        # Fallback: try current working directory
         if not os.path.exists(exe):
             exe = os.path.join(os.getcwd(), binary_name)
 
+        # Fallback: try same directory as executable
+        if not os.path.exists(exe) and getattr(sys, "frozen", False):
+            exe = os.path.join(os.path.dirname(sys.executable), binary_name)
+
         if not os.path.exists(exe):
-            logger.error(f"Sidecar executable not found at: {exe}")
+            logger.error(f"Sidecar executable not found. Tried:")
+            logger.error(f"  1. {os.path.join(base_dir, binary_name)}")
+            logger.error(f"  2. {os.path.join(os.getcwd(), binary_name)}")
+            if getattr(sys, "frozen", False):
+                logger.error(f"  3. {os.path.join(os.path.dirname(sys.executable), binary_name)}")
+            logger.error(f"PyInstaller mode: {getattr(sys, 'frozen', False)}")
+            if hasattr(sys, '_MEIPASS'):
+                logger.error(f"_MEIPASS: {sys._MEIPASS}")
             return
 
         try:
