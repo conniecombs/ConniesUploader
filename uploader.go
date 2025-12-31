@@ -506,10 +506,19 @@ func uploadPixhost(fp string, job *JobRequest) (string, string, error) {
 			pw.CloseWithError(fmt.Errorf("failed to copy file: %w", err))
 			return
 		}
-		writer.WriteField("content_type", job.Config["pix_content"])
-		writer.WriteField("max_th_size", job.Config["pix_thumb"])
+		if err := writer.WriteField("content_type", job.Config["pix_content"]); err != nil {
+			pw.CloseWithError(fmt.Errorf("failed to write content_type field: %w", err))
+			return
+		}
+		if err := writer.WriteField("max_th_size", job.Config["pix_thumb"]); err != nil {
+			pw.CloseWithError(fmt.Errorf("failed to write max_th_size field: %w", err))
+			return
+		}
 		if h := job.Config["pix_gallery_hash"]; h != "" {
-			writer.WriteField("gallery_hash", h)
+			if err := writer.WriteField("gallery_hash", h); err != nil {
+				pw.CloseWithError(fmt.Errorf("failed to write gallery_hash field: %w", err))
+				return
+			}
 		}
 	}()
 
@@ -584,12 +593,30 @@ func uploadVipr(fp string, job *JobRequest) (string, string, error) {
 			pw.CloseWithError(fmt.Errorf("failed to copy file: %w", err))
 			return
 		}
-		writer.WriteField("upload_type", "file")
-		writer.WriteField("sess_id", sessId)
-		writer.WriteField("thumb_size", job.Config["vipr_thumb"])
-		writer.WriteField("fld_id", job.Config["vipr_gal_id"])
-		writer.WriteField("tos", "1")
-		writer.WriteField("submit_btn", "Upload")
+		if err := writer.WriteField("upload_type", "file"); err != nil {
+			pw.CloseWithError(fmt.Errorf("failed to write upload_type field: %w", err))
+			return
+		}
+		if err := writer.WriteField("sess_id", sessId); err != nil {
+			pw.CloseWithError(fmt.Errorf("failed to write sess_id field: %w", err))
+			return
+		}
+		if err := writer.WriteField("thumb_size", job.Config["vipr_thumb"]); err != nil {
+			pw.CloseWithError(fmt.Errorf("failed to write thumb_size field: %w", err))
+			return
+		}
+		if err := writer.WriteField("fld_id", job.Config["vipr_gal_id"]); err != nil {
+			pw.CloseWithError(fmt.Errorf("failed to write fld_id field: %w", err))
+			return
+		}
+		if err := writer.WriteField("tos", "1"); err != nil {
+			pw.CloseWithError(fmt.Errorf("failed to write tos field: %w", err))
+			return
+		}
+		if err := writer.WriteField("submit_btn", "Upload"); err != nil {
+			pw.CloseWithError(fmt.Errorf("failed to write submit_btn field: %w", err))
+			return
+		}
 	}()
 
 	u := upUrl + "?upload_id=" + randomString(12) + "&js_on=1&utype=reg&upload_type=file"
@@ -682,11 +709,26 @@ func uploadTurbo(fp string, job *JobRequest) (string, string, error) {
 			pw.CloseWithError(fmt.Errorf("failed to copy file: %w", err))
 			return
 		}
-		writer.WriteField("qquuid", randomString(32))
-		writer.WriteField("qqfilename", filepath.Base(fp))
-		writer.WriteField("qqtotalfilesize", fmt.Sprintf("%d", fi.Size()))
-		writer.WriteField("imcontent", job.Config["turbo_content"])
-		writer.WriteField("thumb_size", job.Config["turbo_thumb"])
+		if err := writer.WriteField("qquuid", randomString(32)); err != nil {
+			pw.CloseWithError(fmt.Errorf("failed to write qquuid field: %w", err))
+			return
+		}
+		if err := writer.WriteField("qqfilename", filepath.Base(fp)); err != nil {
+			pw.CloseWithError(fmt.Errorf("failed to write qqfilename field: %w", err))
+			return
+		}
+		if err := writer.WriteField("qqtotalfilesize", fmt.Sprintf("%d", fi.Size())); err != nil {
+			pw.CloseWithError(fmt.Errorf("failed to write qqtotalfilesize field: %w", err))
+			return
+		}
+		if err := writer.WriteField("imcontent", job.Config["turbo_content"]); err != nil {
+			pw.CloseWithError(fmt.Errorf("failed to write imcontent field: %w", err))
+			return
+		}
+		if err := writer.WriteField("thumb_size", job.Config["turbo_thumb"]); err != nil {
+			pw.CloseWithError(fmt.Errorf("failed to write thumb_size field: %w", err))
+			return
+		}
 	}()
 
 	resp, err := doRequest("POST", endp, pr, writer.FormDataContentType())
@@ -754,8 +796,14 @@ func uploadImageBam(fp string, job *JobRequest) (string, string, error) {
 			pw.CloseWithError(fmt.Errorf("failed to copy file: %w", err))
 			return
 		}
-		writer.WriteField("_token", csrf)
-		writer.WriteField("data", token)
+		if err := writer.WriteField("_token", csrf); err != nil {
+			pw.CloseWithError(fmt.Errorf("failed to write _token field: %w", err))
+			return
+		}
+		if err := writer.WriteField("data", token); err != nil {
+			pw.CloseWithError(fmt.Errorf("failed to write data field: %w", err))
+			return
+		}
 	}()
 
 	req, err := http.NewRequest("POST", "https://www.imagebam.com/upload", pr)
