@@ -29,6 +29,8 @@ from modules import viper_api
 from modules.controller import RenameWorker
 from modules import file_handler
 from modules.dnd import DragDropMixin
+from modules.credentials_manager import CredentialsManager
+from modules.auto_poster import AutoPoster
 from loguru import logger
 
 ctk.set_appearance_mode("System")
@@ -120,11 +122,6 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         # Batch/Group tracking
         self.group_counter = 0
 
-        # Auto-posting state
-        self.next_post_index = 0
-        self.post_holding_pen = {}
-        self.post_processing_lock = threading.Lock()
-
         # Drag & Drop state
         self.drag_data = {"item": None, "type": None, "y_start": 0, "widget_start": None}
         self.highlighted_row = None
@@ -151,6 +148,9 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
 
         self.saved_threads_data = viper_api.load_saved_threads()
 
+        # Initialize AutoPoster
+        self.auto_poster = AutoPoster(self.creds, self.saved_threads_data)
+
     def _init_ui(self):
         """Initialize user interface (menu, layout, drag-and-drop)."""
         self._create_menu()
@@ -170,19 +170,8 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         self.after(100, self.update_ui_loop)
 
     def _load_credentials(self):
-        self.creds = {
-            "imx_api": keyring.get_password(config.KEYRING_SERVICE_API, "api") or "",
-            "imx_user": keyring.get_password(config.KEYRING_SERVICE_USER, "user") or "",
-            "imx_pass": keyring.get_password(config.KEYRING_SERVICE_PASS, "pass") or "",
-            "turbo_user": keyring.get_password("ImageUploader:turbo_user", "user") or "",
-            "turbo_pass": keyring.get_password("ImageUploader:turbo_pass", "pass") or "",
-            "vipr_user": keyring.get_password(config.KEYRING_SERVICE_VIPR_USER, "user") or "",
-            "vipr_pass": keyring.get_password(config.KEYRING_SERVICE_VIPR_PASS, "pass") or "",
-            "imagebam_user": keyring.get_password(config.KEYRING_SERVICE_IB_USER, "user") or "",
-            "imagebam_pass": keyring.get_password(config.KEYRING_SERVICE_IB_PASS, "pass") or "",
-            "vg_user": keyring.get_password(config.KEYRING_SERVICE_VG_USER, "user") or "",
-            "vg_pass": keyring.get_password(config.KEYRING_SERVICE_VG_PASS, "pass") or "",
-        }
+        """Load credentials from system keyring using CredentialsManager."""
+        self.creds = CredentialsManager.load_all_credentials()
 
     def _create_menu(self):
         menubar = tk.Menu(self)
@@ -248,7 +237,9 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         viper_api.ViperToolsWindow(self, creds=self.creds, callback=self.refresh_thread_data)
 
     def refresh_thread_data(self):
+        """Refresh saved thread data from disk and update AutoPoster."""
         self.saved_threads_data = viper_api.load_saved_threads()
+        self.auto_poster.saved_threads_data = self.saved_threads_data
 
     def set_global_threads(self, n):
         self.menu_thread_var.set(n)
@@ -317,83 +308,10 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         GalleryManager(self, self.creds, callback=self.on_gallery_created)
 
     def open_creds_dialog(self):
-        dlg = ctk.CTkToplevel(self)
-        dlg.title("Service Credentials")
-        dlg.geometry("450x450")
-        dlg.transient(self)
-        nb = ctk.CTkTabview(dlg)
-        nb.pack(fill="both", expand=True, padx=10, pady=10)
-
-        nb.add("imx.to")
-        t = nb.tab("imx.to")
-        ctk.CTkLabel(t, text="IMX API Key:", font=("", 12, "bold")).pack(anchor="w")
-        v_api = ctk.StringVar(value=self.creds["imx_api"])
-        ctk.CTkEntry(t, textvariable=v_api, show="*").pack(fill="x", pady=5)
-        ctk.CTkLabel(t, text="IMX Gallery Manager:", font=("", 12, "bold")).pack(anchor="w", pady=(10, 0))
-        ctk.CTkLabel(t, text="Username:").pack(anchor="w")
-        v_user = ctk.StringVar(value=self.creds["imx_user"])
-        ctk.CTkEntry(t, textvariable=v_user).pack(fill="x")
-        ctk.CTkLabel(t, text="Password:").pack(anchor="w")
-        v_pass = ctk.StringVar(value=self.creds["imx_pass"])
-        ctk.CTkEntry(t, textvariable=v_pass, show="*").pack(fill="x")
-
-        nb.add("ViperGirls")
-        t_vg = nb.tab("ViperGirls")
-        ctk.CTkLabel(t_vg, text="Forum Credentials", font=("", 12, "bold")).pack(anchor="w")
-        ctk.CTkLabel(t_vg, text="Username:").pack(anchor="w")
-        vg_u = ctk.StringVar(value=self.creds["vg_user"])
-        ctk.CTkEntry(t_vg, textvariable=vg_u).pack(fill="x")
-        ctk.CTkLabel(t_vg, text="Password:").pack(anchor="w")
-        vg_p = ctk.StringVar(value=self.creds["vg_pass"])
-        ctk.CTkEntry(t_vg, textvariable=vg_p, show="*").pack(fill="x")
-
-        nb.add("Turbo")
-        t_tb = nb.tab("Turbo")
-        ctk.CTkLabel(t_tb, text="Username:").pack(anchor="w")
-        tb_u = ctk.StringVar(value=self.creds["turbo_user"])
-        ctk.CTkEntry(t_tb, textvariable=tb_u).pack(fill="x")
-        ctk.CTkLabel(t_tb, text="Password:").pack(anchor="w")
-        tb_p = ctk.StringVar(value=self.creds["turbo_pass"])
-        ctk.CTkEntry(t_tb, textvariable=tb_p, show="*").pack(fill="x")
-
-        nb.add("Vipr")
-        t_vp = nb.tab("Vipr")
-        ctk.CTkLabel(t_vp, text="Username:").pack(anchor="w")
-        vp_u = ctk.StringVar(value=self.creds["vipr_user"])
-        ctk.CTkEntry(t_vp, textvariable=vp_u).pack(fill="x")
-        ctk.CTkLabel(t_vp, text="Password:").pack(anchor="w")
-        vp_p = ctk.StringVar(value=self.creds["vipr_pass"])
-        ctk.CTkEntry(t_vp, textvariable=vp_p, show="*").pack(fill="x")
-
-        nb.add("ImageBam")
-        t_ib = nb.tab("ImageBam")
-        ctk.CTkLabel(t_ib, text="Email/User:").pack(anchor="w")
-        ib_u = ctk.StringVar(value=self.creds["imagebam_user"])
-        ctk.CTkEntry(t_ib, textvariable=ib_u).pack(fill="x")
-        ctk.CTkLabel(t_ib, text="Password:").pack(anchor="w")
-        ib_p = ctk.StringVar(value=self.creds["imagebam_pass"])
-        ctk.CTkEntry(t_ib, textvariable=ib_p, show="*").pack(fill="x")
-
-        def save_all():
-            keyring.set_password(config.KEYRING_SERVICE_API, "api", v_api.get().strip())
-            keyring.set_password(config.KEYRING_SERVICE_USER, "user", v_user.get().strip())
-            keyring.set_password(config.KEYRING_SERVICE_PASS, "pass", v_pass.get().strip())
-            keyring.set_password("ImageUploader:turbo_user", "user", tb_u.get().strip())
-            keyring.set_password("ImageUploader:turbo_pass", "pass", tb_p.get().strip())
-            keyring.set_password(config.KEYRING_SERVICE_VIPR_USER, "user", vp_u.get().strip())
-            keyring.set_password(config.KEYRING_SERVICE_VIPR_PASS, "pass", vp_p.get().strip())
-            keyring.set_password(config.KEYRING_SERVICE_IB_USER, "user", ib_u.get().strip())
-            keyring.set_password(config.KEYRING_SERVICE_IB_PASS, "pass", ib_p.get().strip())
-            keyring.set_password(config.KEYRING_SERVICE_VG_USER, "user", vg_u.get().strip())
-            keyring.set_password(config.KEYRING_SERVICE_VG_PASS, "pass", vg_p.get().strip())
-            self._load_credentials()
-            messagebox.showinfo("Success", "All credentials updated!")
-            dlg.destroy()
-
-        btn_frame = ctk.CTkFrame(dlg, fg_color="transparent")
-        btn_frame.pack(fill="x", padx=10, pady=10)
-        ctk.CTkButton(btn_frame, text="Save All", command=save_all).pack(side="right", padx=5)
-        ctk.CTkButton(btn_frame, text="Cancel", command=dlg.destroy, fg_color="gray").pack(side="right")
+        """Open credentials dialog using CredentialsManager."""
+        CredentialsManager.create_credentials_dialog(
+            parent=self, on_save_callback=self._load_credentials
+        )
 
     def refresh_vipr_galleries(self, select_id=None):
         if not self.creds["vipr_user"]:
@@ -774,8 +692,10 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
                 for fp in files:
                     self.file_widgets[fp]["state"] = "queued"
 
-            self.next_post_index = 0
-            self.post_holding_pen = {}
+            # Reset and prepare AutoPoster
+            self.auto_poster.reset()
+            self.saved_threads_data = viper_api.load_saved_threads()
+            self.auto_poster.saved_threads_data = self.saved_threads_data
 
             sorted_groups = sorted(
                 self.groups,
@@ -786,15 +706,19 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             for i, grp in enumerate(sorted_groups):
                 grp.batch_index = i
 
+            # Check if any groups have auto-posting enabled
             active_post_jobs = False
             for grp in pending_by_group.keys():
                 if grp.selected_thread and grp.selected_thread != "Do Not Post":
                     active_post_jobs = True
                     break
 
+            # Start AutoPoster if needed
             if active_post_jobs:
-                self.saved_threads_data = viper_api.load_saved_threads()
-                threading.Thread(target=self._process_post_queue, daemon=True).start()
+                self.auto_poster.start_processing(
+                    is_uploading_callback=lambda: self.is_uploading,
+                    cancel_event=self.cancel_event
+                )
 
             self.upload_manager.start_batch(pending_by_group, cfg, self.creds)
 
@@ -802,40 +726,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             messagebox.showerror("Error starting upload", str(e))
             self.btn_start.configure(state="normal")
 
-    def _process_post_queue(self):
-        logger.info("Auto-Post Queue: Started.")
-        user = self.creds.get("vg_user")
-        pwd = self.creds.get("vg_pass")
-        vg = viper_api.ViperGirlsAPI()
-        if not vg.login(user, pwd):
-            logger.error("Auto-Post Queue: Login Failed.")
-            return
-
-        while self.is_uploading or len(self.post_holding_pen) > 0:
-            if self.cancel_event.is_set():
-                break
-            if self.next_post_index in self.post_holding_pen:
-                item = self.post_holding_pen.pop(self.next_post_index)
-                text = item.get("content")
-                t_name = item.get("thread")
-                tid = None
-                if t_name and t_name != "Do Not Post" and t_name in self.saved_threads_data:
-                    url = self.saved_threads_data[t_name].get("url", "")
-                    match = re.search(r"threads/(\d+)", url) or re.search(r"t=(\d+)", url)
-                    if match:
-                        tid = match.group(1)
-
-                if tid:
-                    logger.info(f"Auto-Post Queue: Posting Batch #{self.next_post_index} to '{t_name}'")
-                    if vg.post_reply(tid, text):
-                        logger.info(f"Auto-Post Queue: Batch #{self.next_post_index} SUCCESS.")
-                    else:
-                        logger.error(f"Auto-Post Queue: Batch #{self.next_post_index} FAILED.")
-                self.next_post_index += 1
-                time.sleep(config.POST_COOLDOWN_SECONDS)
-            else:
-                time.sleep(0.5)
-        logger.info("Auto-Post Queue: Finished.")
+    # _process_post_queue removed - now handled by AutoPoster class
 
     def update_ui_loop(self):
         """Main UI update loop - processes all queues and checks upload completion."""
@@ -1038,11 +929,10 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             self.current_output_files.append(out_name)
             self.log(f"Saved: {out_name}")
 
+            # Queue for auto-posting if needed
             tgt_thread = group.selected_thread
             if tgt_thread and tgt_thread != "Do Not Post":
-                logger.info(f"Queueing Batch #{group.batch_index} for Auto-Post to '{tgt_thread}'")
-                with self.post_processing_lock:
-                    self.post_holding_pen[group.batch_index] = {"content": text, "thread": tgt_thread}
+                self.auto_poster.queue_post(group.batch_index, text, tgt_thread)
 
             central_name = os.path.join(self.central_history_path, f"{safe_title}_{ts}.txt")
             with open(central_name, "w", encoding="utf-8") as f:
