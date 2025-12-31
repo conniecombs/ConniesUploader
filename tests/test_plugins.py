@@ -187,8 +187,17 @@ class TestPluginSchemas(unittest.TestCase):
 
         standard_keys = {"thumbnail_size", "content_type", "cover_count", "save_links", "gallery_id"}
 
+        # Map module names to class names (handle special cases like ImageBam)
+        class_name_map = {
+            "pixhost": "PixhostPlugin",
+            "imgur": "ImgurPlugin",
+            "turbo": "TurboPlugin",
+            "imagebam": "ImageBamPlugin"
+        }
+
         for plugin_module in [pixhost, imgur, turbo, imagebam]:
-            plugin_class = getattr(plugin_module, f"{plugin_module.__name__.split('.')[-1].capitalize()}Plugin")
+            module_name = plugin_module.__name__.split('.')[-1]
+            plugin_class = getattr(plugin_module, class_name_map[module_name])
             instance = plugin_class()
             schema = instance.settings_schema
 
@@ -220,8 +229,19 @@ class TestPluginMetadata(unittest.TestCase):
 
         required_fields = {"version", "author", "description", "implementation"}
 
+        # Map module names to class names (handle special cases)
+        class_name_map = {
+            "pixhost": "PixhostPlugin",
+            "imgur": "ImgurPlugin",
+            "turbo": "TurboPlugin",
+            "imagebam": "ImageBamPlugin",
+            "imx": "ImxPlugin",
+            "vipr": "ViprPlugin"
+        }
+
         for plugin_module in [pixhost, imgur, turbo, imagebam, imx, vipr]:
-            plugin_class = getattr(plugin_module, f"{plugin_module.__name__.split('.')[-1].capitalize()}Plugin")
+            module_name = plugin_module.__name__.split('.')[-1]
+            plugin_class = getattr(plugin_module, class_name_map[module_name])
             instance = plugin_class()
             metadata = instance.metadata
 
@@ -282,11 +302,14 @@ class TestPluginDiscovery(unittest.TestCase):
         manager = PluginManager()
         manager.load_plugins()
 
-        plugins = manager.get_all()
-        for plugin_id, plugin in plugins.items():
-            self.assertIsNotNone(plugin_id)
-            self.assertNotEqual(plugin_id, "")
-            self.assertEqual(plugin.id, plugin_id)
+        plugins = manager.get_all_plugins()
+        service_names = manager.get_service_names()
+
+        # Check that all plugins have valid IDs
+        for plugin in plugins:
+            self.assertIsNotNone(plugin.id)
+            self.assertNotEqual(plugin.id, "")
+            self.assertIn(plugin.id, service_names)
 
     def test_plugin_manager_error_tracking(self):
         """Test that PluginManager tracks loading errors."""
@@ -303,21 +326,40 @@ class TestPluginDiscovery(unittest.TestCase):
 class TestPluginBaseClass(unittest.TestCase):
     """Test plugin base class functionality."""
 
+    def _create_test_plugin(self):
+        """Create a minimal test plugin implementation."""
+        class TestPlugin(ImageHostPlugin):
+            @property
+            def id(self):
+                return "test.plugin"
+
+            @property
+            def name(self):
+                return "Test Plugin"
+
+            def initialize_session(self, config, creds):
+                return {}
+
+            def upload_file(self, file_path, group, config, context, progress_callback):
+                pass
+
+        return TestPlugin()
+
     def test_base_plugin_has_schema_property(self):
         """Test that base plugin class has settings_schema property."""
-        plugin = ImageHostPlugin()
+        plugin = self._create_test_plugin()
         schema = plugin.settings_schema
         self.assertIsInstance(schema, list)
 
     def test_base_plugin_has_metadata_property(self):
         """Test that base plugin class has metadata property."""
-        plugin = ImageHostPlugin()
+        plugin = self._create_test_plugin()
         metadata = plugin.metadata
         self.assertIsInstance(metadata, dict)
 
     def test_base_plugin_validate_configuration(self):
         """Test that base plugin validation returns empty errors."""
-        plugin = ImageHostPlugin()
+        plugin = self._create_test_plugin()
         errors = plugin.validate_configuration({})
         self.assertIsInstance(errors, list)
         self.assertEqual(len(errors), 0)
