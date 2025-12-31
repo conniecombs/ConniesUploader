@@ -52,9 +52,10 @@ type OutputEvent struct {
 
 // --- Globals ---
 var outputMutex sync.Mutex
+var stateMutex sync.Mutex // Protects service state globals
 var client *http.Client
 
-// Service State
+// Service State (protected by stateMutex)
 var viprEndpoint string
 var viprSessId string
 var turboEndpoint string
@@ -249,12 +250,18 @@ func handleListGalleries(job JobRequest) {
 	var galleries []map[string]string
 	switch job.Service {
 	case "vipr.im":
-		if viprSessId == "" {
+		stateMutex.Lock()
+		needsLogin := viprSessId == ""
+		stateMutex.Unlock()
+		if needsLogin {
 			doViprLogin(job.Creds)
 		}
 		galleries = scrapeViprGalleries()
 	case "imagebam.com":
-		if ibCsrf == "" {
+		stateMutex.Lock()
+		needsLogin := ibCsrf == ""
+		stateMutex.Unlock()
+		if needsLogin {
 			doImageBamLogin(job.Creds)
 		}
 	case "imx.to":
@@ -470,10 +477,20 @@ func uploadPixhost(fp string, job *JobRequest) (string, string, error) {
 }
 
 func uploadVipr(fp string, job *JobRequest) (string, string, error) {
-	if viprSessId == "" {
-		doViprLogin(job.Creds)
-	}
+	stateMutex.Lock()
+	needsLogin := viprSessId == ""
 	upUrl := viprEndpoint
+	sessId := viprSessId
+	stateMutex.Unlock()
+
+	if needsLogin {
+		doViprLogin(job.Creds)
+		stateMutex.Lock()
+		upUrl = viprEndpoint
+		sessId = viprSessId
+		stateMutex.Unlock()
+	}
+
 	if upUrl == "" {
 		upUrl = "https://vipr.im/cgi-bin/upload.cgi"
 	}
@@ -500,7 +517,7 @@ func uploadVipr(fp string, job *JobRequest) (string, string, error) {
 			return
 		}
 		writer.WriteField("upload_type", "file")
-		writer.WriteField("sess_id", viprSessId)
+		writer.WriteField("sess_id", sessId)
 		writer.WriteField("thumb_size", job.Config["vipr_thumb"])
 		writer.WriteField("fld_id", job.Config["vipr_gal_id"])
 		writer.WriteField("tos", "1")
@@ -553,10 +570,18 @@ func uploadVipr(fp string, job *JobRequest) (string, string, error) {
 }
 
 func uploadTurbo(fp string, job *JobRequest) (string, string, error) {
-	if turboEndpoint == "" {
-		doTurboLogin(job.Creds)
-	}
+	stateMutex.Lock()
+	needsLogin := turboEndpoint == ""
 	endp := turboEndpoint
+	stateMutex.Unlock()
+
+	if needsLogin {
+		doTurboLogin(job.Creds)
+		stateMutex.Lock()
+		endp = turboEndpoint
+		stateMutex.Unlock()
+	}
+
 	if endp == "" {
 		endp = "https://www.turboimagehost.com/upload_html5.tu"
 	}
@@ -627,8 +652,18 @@ func uploadTurbo(fp string, job *JobRequest) (string, string, error) {
 }
 
 func uploadImageBam(fp string, job *JobRequest) (string, string, error) {
-	if ibUploadToken == "" {
+	stateMutex.Lock()
+	needsLogin := ibUploadToken == ""
+	csrf := ibCsrf
+	token := ibUploadToken
+	stateMutex.Unlock()
+
+	if needsLogin {
 		doImageBamLogin(job.Creds)
+		stateMutex.Lock()
+		csrf = ibCsrf
+		token = ibUploadToken
+		stateMutex.Unlock()
 	}
 
 	pr, pw := io.Pipe()
@@ -651,8 +686,8 @@ func uploadImageBam(fp string, job *JobRequest) (string, string, error) {
 			pw.CloseWithError(fmt.Errorf("failed to copy file: %w", err))
 			return
 		}
-		writer.WriteField("_token", ibCsrf)
-		writer.WriteField("data", ibUploadToken)
+		writer.WriteField("_token", csrf)
+		writer.WriteField("data", token)
 	}()
 
 	req, err := http.NewRequest("POST", "https://www.imagebam.com/upload", pr)
@@ -661,7 +696,7 @@ func uploadImageBam(fp string, job *JobRequest) (string, string, error) {
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
-	req.Header.Set("X-CSRF-TOKEN", ibCsrf)
+	req.Header.Set("X-CSRF-TOKEN", csrf)
 	req.Header.Set("User-Agent", UserAgent)
 	req.Header.Set("Origin", "https://www.imagebam.com")
 
@@ -698,7 +733,9 @@ func scrapeImxGalleries(creds map[string]string) []map[string]string {
 	}
 
 	v := url.Values{"op": {"login"}, "login": {user}, "password": {pass}, "redirect": {"https://imx.to/user/galleries"}}
-	doRequest("POST", "https://imx.to/login.html", strings.NewReader(v.Encode()), "application/x-www-form-urlencoded")
+	if r, err := doRequest("POST", "https://imx.to/login.html", strings.NewReader(v.Encode()), "application/x-www-form-urlencoded"); err == nil {
+		r.Body.Close()
+	}
 
 	resp, err := doRequest("GET", "https://imx.to/user/galleries", nil, "")
 	if err != nil {
@@ -757,7 +794,9 @@ func createImxGallery(creds map[string]string, name string) (string, error) {
 
 func doViprLogin(creds map[string]string) bool {
 	v := url.Values{"op": {"login"}, "login": {creds["vipr_user"]}, "password": {creds["vipr_pass"]}}
-	doRequest("POST", "https://vipr.im/login.html", strings.NewReader(v.Encode()), "application/x-www-form-urlencoded")
+	if r, err := doRequest("POST", "https://vipr.im/login.html", strings.NewReader(v.Encode()), "application/x-www-form-urlencoded"); err == nil {
+		r.Body.Close()
+	}
 	resp, err := doRequest("GET", "https://vipr.im/", nil, "")
 	if err != nil {
 		return false
@@ -765,6 +804,10 @@ func doViprLogin(creds map[string]string) bool {
 	defer resp.Body.Close()
 	bodyBytes, _ := io.ReadAll(resp.Body)
 	doc, _ := goquery.NewDocumentFromReader(bytes.NewReader(bodyBytes))
+
+	stateMutex.Lock()
+	defer stateMutex.Unlock()
+
 	if action, exists := doc.Find("form[action*='upload.cgi']").Attr("action"); exists {
 		viprEndpoint = action
 	}
@@ -825,7 +868,9 @@ func scrapeViprGalleries() []map[string]string {
 
 func createViprGallery(name string) (string, error) {
 	v := url.Values{"op": {"my_files"}, "add_folder": {name}}
-	doRequest("GET", "https://vipr.im/?"+v.Encode(), nil, "")
+	if r, err := doRequest("GET", "https://vipr.im/?"+v.Encode(), nil, ""); err == nil {
+		r.Body.Close()
+	}
 	return "0", nil
 }
 
@@ -838,10 +883,16 @@ func doImageBamLogin(creds map[string]string) bool {
 	doc1, _ := goquery.NewDocumentFromReader(resp1.Body)
 	token := doc1.Find("input[name='_token']").AttrOr("value", "")
 	v := url.Values{"_token": {token}, "email": {creds["imagebam_user"]}, "password": {creds["imagebam_pass"]}, "remember": {"on"}}
-	doRequest("POST", "https://www.imagebam.com/auth/login", strings.NewReader(v.Encode()), "application/x-www-form-urlencoded")
+	if r, err := doRequest("POST", "https://www.imagebam.com/auth/login", strings.NewReader(v.Encode()), "application/x-www-form-urlencoded"); err == nil {
+		r.Body.Close()
+	}
 	resp2, _ := doRequest("GET", "https://www.imagebam.com/", nil, "")
 	defer resp2.Body.Close()
 	doc2, _ := goquery.NewDocumentFromReader(resp2.Body)
+
+	stateMutex.Lock()
+	defer stateMutex.Unlock()
+
 	ibCsrf = doc2.Find("meta[name='csrf-token']").AttrOr("content", "")
 	if ibCsrf == "" {
 		doc2.Find("meta").Each(func(i int, s *goquery.Selection) {
@@ -871,7 +922,9 @@ func doImageBamLogin(creds map[string]string) bool {
 func doTurboLogin(creds map[string]string) bool {
 	if creds["turbo_user"] != "" {
 		v := url.Values{"username": {creds["turbo_user"]}, "password": {creds["turbo_pass"]}, "login": {"Login"}}
-		doRequest("POST", "https://www.turboimagehost.com/login", strings.NewReader(v.Encode()), "application/x-www-form-urlencoded")
+		if r, err := doRequest("POST", "https://www.turboimagehost.com/login", strings.NewReader(v.Encode()), "application/x-www-form-urlencoded"); err == nil {
+			r.Body.Close()
+		}
 	}
 	resp, err := doRequest("GET", "https://www.turboimagehost.com/", nil, "")
 	if err != nil {
@@ -880,6 +933,10 @@ func doTurboLogin(creds map[string]string) bool {
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(resp.Body)
 	html := string(b)
+
+	stateMutex.Lock()
+	defer stateMutex.Unlock()
+
 	if m := regexp.MustCompile(`endpoint:\s*'([^']+)'`).FindStringSubmatch(html); len(m) > 1 {
 		turboEndpoint = m[1]
 	}
@@ -903,7 +960,9 @@ func scrapeBBCode(urlStr string) (string, string, error) {
 
 func handleViperLogin(job JobRequest) {
 	user, pass := job.Creds["vg_user"], job.Creds["vg_pass"]
-	doRequest("GET", "https://vipergirls.to/login.php?do=login", nil, "")
+	if r, err := doRequest("GET", "https://vipergirls.to/login.php?do=login", nil, ""); err == nil {
+		r.Body.Close()
+	}
 
 	// SECURITY NOTE: ViperGirls uses MD5 for authentication (legacy vBulletin system).
 	// This is required by their API and not our choice. Users should use unique passwords.
@@ -917,7 +976,9 @@ func handleViperLogin(job JobRequest) {
 	body := string(b)
 	if strings.Contains(body, "Thank you for logging in") {
 		if m := regexp.MustCompile(`SECURITYTOKEN\s*=\s*"([^"]+)"`).FindStringSubmatch(body); len(m) > 1 {
+			stateMutex.Lock()
 			vgSecurityToken = m[1]
+			stateMutex.Unlock()
 		}
 		sendJSON(OutputEvent{Type: "result", Status: "success", Msg: "Login OK"})
 	} else {
@@ -926,17 +987,25 @@ func handleViperLogin(job JobRequest) {
 }
 
 func handleViperPost(job JobRequest) {
-	if vgSecurityToken == "" || vgSecurityToken == "guest" {
+	stateMutex.Lock()
+	token := vgSecurityToken
+	needsRefresh := token == "" || token == "guest"
+	stateMutex.Unlock()
+
+	if needsRefresh {
 		if resp, err := doRequest("GET", "https://vipergirls.to/forum.php", nil, ""); err == nil {
 			b, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
 			if m := regexp.MustCompile(`SECURITYTOKEN\s*=\s*"([^"]+)"`).FindStringSubmatch(string(b)); len(m) > 1 {
+				stateMutex.Lock()
 				vgSecurityToken = m[1]
+				token = m[1]
+				stateMutex.Unlock()
 			}
 		}
 	}
 	v := url.Values{
-		"message": {job.Config["message"]}, "securitytoken": {vgSecurityToken},
+		"message": {job.Config["message"]}, "securitytoken": {token},
 		"do": {"postreply"}, "t": {job.Config["thread_id"]}, "parseurl": {"1"}, "emailupdate": {"9999"},
 	}
 	urlStr := fmt.Sprintf("https://vipergirls.to/newreply.php?do=postreply&t=%s", job.Config["thread_id"])
