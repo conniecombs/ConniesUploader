@@ -1,80 +1,179 @@
 # modules/plugins/vipr.py
-import customtkinter as ctk
+"""
+Vipr.im plugin - Schema-based implementation with custom UI elements.
+
+Go-based upload plugin (upload handled by Go sidecar).
+Includes custom gallery refresh button functionality.
+"""
+
 import threading
+from typing import Dict, Any, List
+import customtkinter as ctk
 from .base import ImageHostPlugin
 from .. import api
 from ..widgets import MouseWheelComboBox
 from loguru import logger
 import keyring
 
+
 class ViprPlugin(ImageHostPlugin):
-    @property
-    def id(self): return "vipr.im"
-    @property
-    def name(self): return "Vipr.im"
+    """Vipr.im image hosting plugin using schema-based UI with custom elements."""
 
     def __init__(self):
         self.vipr_galleries_map = {}
         self.cb_gallery = None
 
-    def render_settings(self, parent, settings):
-        vars = {
-            'thumb': ctk.StringVar(value=settings.get('vipr_thumb', "170x170")),
-            'cover_count': ctk.StringVar(value=str(settings.get('vipr_cover_count', "0"))),
-            'links': ctk.BooleanVar(value=settings.get('vipr_links', False)),
-            'gallery': ctk.StringVar()
-        }
-        
-        ctk.CTkLabel(parent, text="Requires Credentials", text_color="red").pack(pady=5)
-        
-        ctk.CTkLabel(parent, text="Thumb Size:").pack(anchor="w")
-        MouseWheelComboBox(parent, variable=vars['thumb'], values=["100x100", "170x170", "250x250", "300x300", "350x350", "500x500", "800x800"]).pack(fill="x")
-        
-        f = ctk.CTkFrame(parent, fg_color="transparent")
-        f.pack(fill="x", pady=5)
-        ctk.CTkLabel(f, text="Covers:", width=60).pack(side="left")
-        MouseWheelComboBox(f, variable=vars['cover_count'], values=[str(i) for i in range(11)], width=80).pack(side="left", padx=5)
-        
-        ctk.CTkCheckBox(parent, text="Links.txt", variable=vars['links']).pack(anchor="w", pady=5)
-        
-        # Gallery Refresh Logic
-        ctk.CTkButton(parent, text="Refresh Galleries / Login", command=lambda: self._refresh_galleries(parent)).pack(fill="x", pady=10)
-        
-        self.cb_gallery = MouseWheelComboBox(parent, variable=vars['gallery'], values=["None"])
-        self.cb_gallery.pack(fill="x")
-        
-        return vars
+    @property
+    def id(self) -> str:
+        return "vipr.im"
 
-    def _refresh_galleries(self, parent_widget):
+    @property
+    def name(self) -> str:
+        return "Vipr.im"
+
+    @property
+    def settings_schema(self) -> List[Dict[str, Any]]:
+        """Declarative UI schema for Vipr settings."""
+        return [
+            {
+                "type": "label",
+                "text": "⚠️ Requires Credentials (set in Tools)",
+                "color": "red",
+            },
+            {
+                "type": "dropdown",
+                "key": "vipr_thumb",
+                "label": "Thumbnail Size",
+                "values": ["100x100", "170x170", "250x250", "300x300", "350x350", "500x500", "800x800"],
+                "default": "170x170",
+                "required": True,
+            },
+            {
+                "type": "inline_group",
+                "fields": [
+                    {"type": "label", "text": "Cover Images:", "width": 100},
+                    {
+                        "type": "dropdown",
+                        "key": "vipr_cover_count",
+                        "values": [str(i) for i in range(11)],
+                        "default": "0",
+                        "width": 80,
+                    },
+                ],
+            },
+            {
+                "type": "checkbox",
+                "key": "vipr_links",
+                "label": "Save Links.txt",
+                "default": False,
+            },
+        ]
+
+    def validate_configuration(self, config: Dict[str, Any]) -> List[str]:
+        """Custom validation for Vipr configuration."""
+        errors = []
+
+        # Convert cover_count to int
+        try:
+            config["vipr_cover_count"] = int(config.get("vipr_cover_count", 0))
+        except (ValueError, TypeError):
+            errors.append("Cover count must be a valid number")
+
+        # Get gallery ID from map
+        gal_name = config.get("vipr_gallery_name", "")
+        gal_id = self.vipr_galleries_map.get(gal_name, "0")
+        config["vipr_gal_id"] = gal_id
+
+        return errors
+
+    def render_settings(self, parent: ctk.CTkFrame, current_settings: Dict[str, Any]):
+        """
+        Custom render to include gallery refresh button.
+
+        This overrides the auto-generated render to add custom UI elements
+        that can't be expressed in schema (interactive button + dynamic dropdown).
+        """
+        # First, render the schema-based fields
+        from .schema_renderer import SchemaRenderer
+
+        renderer = SchemaRenderer()
+        ui_vars = renderer.render(parent, self.settings_schema, current_settings)
+
+        # Add custom gallery selection UI
+        ctk.CTkLabel(parent, text="─" * 40, text_color="gray").pack(pady=5)
+
+        ctk.CTkButton(
+            parent, text="🔄 Refresh Galleries / Login", command=lambda: self._refresh_galleries(parent)
+        ).pack(fill="x", pady=10)
+
+        # Gallery dropdown (dynamically populated)
+        gal_name = current_settings.get("vipr_gallery_name", "None")
+        ui_vars["vipr_gallery_name"] = ctk.StringVar(value=gal_name)
+
+        self.cb_gallery = MouseWheelComboBox(parent, variable=ui_vars["vipr_gallery_name"], values=["None"])
+        self.cb_gallery.pack(fill="x")
+
+        return ui_vars
+
+    def get_configuration(self, ui_handle: Any) -> Dict[str, Any]:
+        """
+        Custom extraction to handle gallery name → ID mapping.
+        """
+        # Use schema renderer for standard fields
+        from .schema_renderer import SchemaRenderer, ValidationError
+
+        renderer = SchemaRenderer()
+        config, errors = renderer.extract_config(ui_handle, self.settings_schema)
+
+        # Add gallery name (custom field)
+        if "vipr_gallery_name" in ui_handle:
+            gal_name = ui_handle["vipr_gallery_name"].get()
+            config["vipr_gallery_name"] = gal_name
+
+            # Map gallery name to ID
+            gal_id = self.vipr_galleries_map.get(gal_name, "0")
+            config["vipr_gal_id"] = gal_id
+
+        # Add custom validation
+        custom_errors = self.validate_configuration(config)
+        if custom_errors:
+            errors.extend(custom_errors)
+
+        # Raise if validation failed
+        if errors:
+            raise ValidationError(errors)
+
+        return config
+
+    def _refresh_galleries(self, parent_widget) -> None:
+        """
+        Fetch galleries from Vipr API and update dropdown.
+
+        This is the custom functionality that can't be expressed in schema.
+        """
         u = keyring.get_password("ImageUploader:vipr_user", "user")
         p = keyring.get_password("ImageUploader:vipr_pass", "pass")
-        
-        if not u: 
+
+        if not u:
+            logger.warning("Vipr credentials not found in keyring")
             return
-        
+
         def _task():
             try:
                 # Use the API wrapper which now calls the Go Sidecar
-                creds = {'vipr_user': u, 'vipr_pass': p}
+                creds = {"vipr_user": u, "vipr_pass": p}
                 meta = api.get_vipr_metadata(creds)
-                
-                if meta and meta.get('galleries'):
-                    self.vipr_galleries_map = {g['name']: g['id'] for g in meta['galleries']}
+
+                if meta and meta.get("galleries"):
+                    self.vipr_galleries_map = {g["name"]: g["id"] for g in meta["galleries"]}
                     names = ["None"] + list(self.vipr_galleries_map.keys())
                     self.cb_gallery.configure(values=names)
+                    logger.info(f"Loaded {len(self.vipr_galleries_map)} Vipr galleries")
+                else:
+                    logger.warning("No galleries found or login failed")
             except Exception as e:
                 logger.error(f"Vipr Refresh Error: {e}")
-        
+
         threading.Thread(target=_task, daemon=True).start()
 
-    def get_configuration(self, ui_handle):
-        gal_name = ui_handle['gallery'].get()
-        gal_id = self.vipr_galleries_map.get(gal_name, "0")
-        return {
-            'vipr_thumb': ui_handle['thumb'].get(),
-            'vipr_cover_count': int(ui_handle['cover_count'].get() or 0),
-            'vipr_links': ui_handle['links'].get(),
-            'vipr_gal_id': gal_id
-        }
-    
     # REMOVED: initialize_session, upload_file (Go handles this now)

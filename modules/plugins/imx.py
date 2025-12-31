@@ -1,70 +1,116 @@
 # modules/plugins/imx.py
-import customtkinter as ctk
+"""
+IMX.to plugin - Schema-based implementation.
+
+Go-based upload plugin (upload handled by Go sidecar).
+Python side only manages UI and gallery creation.
+"""
+
+from typing import Dict, Any, List
 from .base import ImageHostPlugin
 from .. import api
-from ..widgets import MouseWheelComboBox
+from loguru import logger
+
 
 class ImxPlugin(ImageHostPlugin):
+    """IMX.to image hosting plugin using schema-based UI."""
+
     @property
-    def id(self): return "imx.to"
+    def id(self) -> str:
+        return "imx.to"
+
     @property
-    def name(self): return "IMX.to"
+    def name(self) -> str:
+        return "IMX.to"
 
-    def render_settings(self, parent, settings):
-        vars = {
-            'thumb': ctk.StringVar(value=settings.get('imx_thumb', "180")),
-            'format': ctk.StringVar(value=settings.get('imx_format', "Fixed Width")),
-            'gallery': ctk.StringVar(value=settings.get('gallery_id', "")),
-            'links': ctk.BooleanVar(value=settings.get('imx_links', False)),
-            'cover_count': ctk.StringVar(value=str(settings.get('imx_cover_count', "0")))
-        }
+    @property
+    def settings_schema(self) -> List[Dict[str, Any]]:
+        """Declarative UI schema for IMX settings."""
+        return [
+            {
+                "type": "label",
+                "text": "⚠️ Requires Credentials (set in Tools)",
+                "color": "red",
+            },
+            {
+                "type": "dropdown",
+                "key": "imx_thumb_id",
+                "label": "Thumbnail Size",
+                "values": ["100", "180", "250", "300", "600"],
+                "default": "180",
+                "required": True,
+            },
+            {
+                "type": "dropdown",
+                "key": "imx_format_id",
+                "label": "Image Format",
+                "values": ["Fixed Width", "Fixed Height", "Proportional", "Square"],
+                "default": "Fixed Width",
+                "required": True,
+            },
+            {
+                "type": "inline_group",
+                "fields": [
+                    {"type": "label", "text": "Cover Images:", "width": 100},
+                    {
+                        "type": "dropdown",
+                        "key": "imx_cover_count",
+                        "values": [str(i) for i in range(11)],
+                        "default": "0",
+                        "width": 80,
+                    },
+                ],
+            },
+            {
+                "type": "checkbox",
+                "key": "imx_links",
+                "label": "Save Links.txt",
+                "default": False,
+            },
+            {
+                "type": "separator",
+            },
+            {
+                "type": "text",
+                "key": "gallery_id",
+                "label": "Gallery ID (Optional)",
+                "default": "",
+                "placeholder": "Leave blank for auto-gallery",
+            },
+        ]
 
-        ctk.CTkLabel(parent, text="Requires Credentials (set in Tools)", text_color="red").pack(pady=5)
-        
-        ctk.CTkLabel(parent, text="Thumb Size:").pack(anchor="w")
-        MouseWheelComboBox(parent, variable=vars['thumb'], values=["100","180","250","300","600"]).pack(fill="x")
-        
-        ctk.CTkLabel(parent, text="Format:").pack(anchor="w")
-        MouseWheelComboBox(parent, variable=vars['format'], values=["Fixed Width", "Fixed Height", "Proportional", "Square"]).pack(fill="x")
-        
-        f = ctk.CTkFrame(parent, fg_color="transparent")
-        f.pack(fill="x", pady=5)
-        ctk.CTkLabel(f, text="Covers:", width=60).pack(side="left")
-        MouseWheelComboBox(f, variable=vars['cover_count'], values=[str(i) for i in range(11)], width=80).pack(side="left", padx=5)
+    def validate_configuration(self, config: Dict[str, Any]) -> List[str]:
+        """Custom validation for IMX configuration."""
+        errors = []
 
-        ctk.CTkCheckBox(parent, text="Links.txt", variable=vars['links']).pack(anchor="w", pady=5)
-        
-        ctk.CTkLabel(parent, text="Gallery ID:").pack(anchor="w", pady=(10,0))
-        ctk.CTkEntry(parent, textvariable=vars['gallery']).pack(fill="x")
-        
-        return vars
+        # Convert cover_count to int
+        try:
+            config["imx_cover_count"] = int(config.get("imx_cover_count", 0))
+        except (ValueError, TypeError):
+            errors.append("Cover count must be a valid number")
 
-    def get_configuration(self, ui_handle):
-        return {
-            'imx_thumb_id': ui_handle['thumb'].get(), # Mapped to Go config key
-            'imx_format_id': ui_handle['format'].get(),
-            'gallery_id': ui_handle['gallery'].get(),
-            'imx_links': ui_handle['links'].get(),
-            'imx_cover_count': int(ui_handle['cover_count'].get() or 0)
-        }
+        return errors
 
-    def prepare_group(self, group, config, context, creds):
+    def prepare_group(
+        self, group, config: Dict[str, Any], context: Dict[str, Any], creds: Dict[str, Any]
+    ) -> None:
         """
         Called before the batch upload starts.
         Checks if 'auto_gallery' is on, and if so, calls Go Sidecar to create one.
         """
-        if config.get('auto_gallery'):
-            user = creds.get('imx_user')
-            pwd = creds.get('imx_pass')
-            
+        if config.get("auto_gallery"):
+            user = creds.get("imx_user")
+            pwd = creds.get("imx_pass")
+
             if user and pwd:
                 # Use the API wrapper which calls Sidecar action="create_gallery"
                 gid = api.create_imx_gallery(user, pwd, group.title)
-                
+
                 if gid:
                     # Store the new Gallery ID in the group object
                     group.gallery_id = gid
                     # Also update the config for this specific run so the uploader sees it
-                    config['gallery_id'] = gid
+                    config["gallery_id"] = gid
+                    logger.info(f"Created IMX gallery: {group.title}")
 
     # REMOVED: initialize_session, upload_file (Go handles this now)
