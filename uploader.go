@@ -219,7 +219,10 @@ func handleGenerateThumb(job JobRequest) {
 
 	var buf bytes.Buffer
 	// Use slightly higher quality (70) since Lanczos produces sharper results
-	jpeg.Encode(&buf, thumb, &jpeg.Options{Quality: 70})
+	if err := jpeg.Encode(&buf, thumb, &jpeg.Options{Quality: 70}); err != nil {
+		sendJSON(OutputEvent{Type: "error", Msg: "Encode thumbnail failed"})
+		return
+	}
 	b64 := base64.StdEncoding.EncodeToString(buf.Bytes())
 
 	sendJSON(OutputEvent{
@@ -426,11 +429,23 @@ func uploadImx(fp string, job *JobRequest) (string, string, error) {
 			pw.CloseWithError(fmt.Errorf("failed to copy file: %w", err))
 			return
 		}
-		writer.WriteField("format", "json")
-		writer.WriteField("thumbnail_size", job.Config["imx_thumb_id"])
-		writer.WriteField("thumbnail_format", job.Config["imx_format_id"])
+		if err := writer.WriteField("format", "json"); err != nil {
+			pw.CloseWithError(fmt.Errorf("failed to write format field: %w", err))
+			return
+		}
+		if err := writer.WriteField("thumbnail_size", job.Config["imx_thumb_id"]); err != nil {
+			pw.CloseWithError(fmt.Errorf("failed to write thumbnail_size field: %w", err))
+			return
+		}
+		if err := writer.WriteField("thumbnail_format", job.Config["imx_format_id"]); err != nil {
+			pw.CloseWithError(fmt.Errorf("failed to write thumbnail_format field: %w", err))
+			return
+		}
 		if gid := job.Config["gallery_id"]; gid != "" {
-			writer.WriteField("gallery_id", gid)
+			if err := writer.WriteField("gallery_id", gid); err != nil {
+				pw.CloseWithError(fmt.Errorf("failed to write gallery_id field: %w", err))
+				return
+			}
 		}
 	}()
 
@@ -766,7 +781,9 @@ func uploadImageBam(fp string, job *JobRequest) (string, string, error) {
 			Thumb string `json:"thumb"`
 		} `json:"data"`
 	}
-	json.NewDecoder(resp.Body).Decode(&res)
+	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+		return "", "", fmt.Errorf("failed to decode response: %w", err)
+	}
 	if res.Status == "success" && len(res.Data) > 0 {
 		return res.Data[0].Url, res.Data[0].Thumb, nil
 	}
@@ -963,9 +980,10 @@ func doImageBamLogin(creds map[string]string) bool {
 		if r3, e3 := client.Do(req); e3 == nil {
 			defer r3.Body.Close()
 			var j struct{ Status, Data string }
-			json.NewDecoder(r3.Body).Decode(&j)
-			if j.Status == "success" {
-				ibUploadToken = j.Data
+			if err := json.NewDecoder(r3.Body).Decode(&j); err == nil {
+				if j.Status == "success" {
+					ibUploadToken = j.Data
+				}
 			}
 		}
 	}
