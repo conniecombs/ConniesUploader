@@ -91,6 +91,7 @@ go version >nul 2>&1
 if %errorlevel% equ 0 goto BUILD_GO
 
 echo [3/6] Downloading Go (%ARCH%-bit)...
+REM Note: Installing Go 1.21.6 as base - Go toolchain will auto-download 1.24.11+ if needed
 if "%ARCH%"=="64" (
     set "GO_URL=https://go.dev/dl/go1.21.6.windows-amd64.msi"
     set "GO_SHA256=cfb6fb2f9f504806e5aa3a9b8ea23e28e1e94f114f2fe63e0da52b6d59c573f6"
