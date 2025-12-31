@@ -40,5 +40,5 @@ class ContextUtils:
             winreg.DeleteKey(winreg.HKEY_CLASSES_ROOT, r"Directory\shell\ConniesUploader\command")
             winreg.DeleteKey(winreg.HKEY_CLASSES_ROOT, r"Directory\shell\ConniesUploader")
             messagebox.showinfo("Success", "Context menu removed.")
-        except:
-            pass
+        except OSError as e:
+            logger.warning(f"Could not remove context menu (may not be installed): {e}")

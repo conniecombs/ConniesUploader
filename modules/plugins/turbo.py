@@ -72,7 +72,8 @@ class TurboPlugin(ImageHostPlugin):
             try:
                 idx = group.files.index(file_path)
                 if idx < config.get('cover_limit', 0): is_cover = True
-            except: pass
+            except ValueError as e:
+                logger.debug(f"File {file_path} not found in group files: {e}")
             
         thumb = "600" if is_cover else config['thumb_size']
         
@@ -93,8 +94,11 @@ class TurboPlugin(ImageHostPlugin):
             if 'Content-Length' not in headers and hasattr(data, 'len'):
                 headers['Content-Length'] = str(data.len)
             r = client.post(url, headers=headers, data=data, timeout=300)
-            try: resp = r.json()
-            except: resp = r.text
+            try:
+                resp = r.json()
+            except (ValueError, TypeError) as e:
+                logger.debug(f"Response was not JSON, using text: {e}")
+                resp = r.text
             return uploader.parse_response(resp)
         finally:
             uploader.close()

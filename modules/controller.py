@@ -130,8 +130,8 @@ class UploadController:
         if self.settings.get("auto_copy") and self.clipboard_buffer:
             try:
                 pyperclip.copy("\n\n".join(self.clipboard_buffer))
-            except:
-                pass
+            except (OSError, pyperclip.PyperclipException) as e:
+                logger.warning(f"Could not copy to clipboard: {e}")
 
     def generate_group_output(self, group_title, group_files, gallery_id, batch_index):
         # Map file paths to results

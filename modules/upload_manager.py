@@ -51,8 +51,8 @@ class UploadManager:
                     cover_cnt = int(cfg.get("turbo_cover_count", 0))
                 elif "vipr" in svc:
                     cover_cnt = int(cfg.get("vipr_cover_count", 0))
-            except:
-                pass
+            except (ValueError, TypeError) as e:
+                logger.debug(f"Could not get cover count for {svc}: {e}")
 
             covers = []
             standards = []

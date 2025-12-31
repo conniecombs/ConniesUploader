@@ -269,8 +269,8 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
                 size = val.split("x")[0] if "x" in val else val
             elif current_service == "imagebam.com":
                 size = self.var_ib_thumb.get()
-        except:
-            pass
+        except (AttributeError, tk.TclError) as e:
+            logger.debug(f"Could not get thumbnail size for {current_service}: {e}")
         return grp.files, grp.title, size
 
     def on_gallery_created(self, service, gid):
@@ -530,7 +530,8 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
     def _safe_int(self, value, default=2):
         try:
             return int(value)
-        except:
+        except (ValueError, TypeError) as e:
+            logger.debug(f"Could not convert '{value}' to int, using default {default}: {e}")
             return default
 
     def _gather_settings(self):
@@ -540,7 +541,8 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         def get_c(var):
             try:
                 return int(var.get())
-            except:
+            except (ValueError, TypeError, AttributeError) as e:
+                logger.debug(f"Could not convert variable to int: {e}")
                 return 0
 
         return {
@@ -589,8 +591,8 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         has_subdirs = False
         try:
             has_subdirs = any(os.path.isdir(os.path.join(folder, d)) for d in os.listdir(folder))
-        except:
-            pass
+        except OSError as e:
+            logger.warning(f"Could not scan folder '{folder}' for subdirectories: {e}")
 
         if has_subdirs:
             if messagebox.askyesno(
@@ -734,7 +736,8 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             self.overall_progress.set(0)
             try:
                 self.overall_progress.configure(progress_color=["#3B8ED0", "#1F6AA5"])
-            except:
+            except (tk.TclError, TypeError) as e:
+                logger.debug(f"Could not set gradient progress color, using solid: {e}")
                 self.overall_progress.configure(progress_color="blue")
 
             self.upload_total = sum(len(v) for v in pending_by_group.values())
@@ -939,8 +942,8 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         if self.var_auto_copy.get() and self.clipboard_buffer:
             try:
                 pyperclip.copy("\n\n".join(self.clipboard_buffer))
-            except:
-                pass
+            except (OSError, pyperclip.PyperclipException) as e:
+                logger.warning(f"Could not copy to clipboard: {e}")
         if self.current_output_files:
             self.btn_open.configure(state="normal")
             msg = "Output files created."
@@ -1014,8 +1017,8 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
                 self.clipboard_buffer.append(text)
                 try:
                     pyperclip.copy("\n\n".join(self.clipboard_buffer))
-                except:
-                    pass
+                except (OSError, pyperclip.PyperclipException) as e:
+                    logger.warning(f"Could not copy to clipboard: {e}")
 
             need_links_txt = False
             if svc == "imx.to" and self.var_imx_links.get():

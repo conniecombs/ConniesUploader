@@ -4,6 +4,7 @@ import os
 from .base import ImageHostPlugin
 from .. import api
 from ..widgets import MouseWheelComboBox
+from loguru import logger
 
 class PixhostPlugin(ImageHostPlugin):
     @property
@@ -65,7 +66,8 @@ class PixhostPlugin(ImageHostPlugin):
             try:
                 idx = group.files.index(file_path)
                 if idx < config.get('cover_limit', 0): is_cover = True
-            except: pass
+            except ValueError as e:
+                logger.debug(f"File {file_path} not found in group files: {e}")
 
         pix_data = getattr(group, 'pix_data', {})
         
@@ -94,8 +96,9 @@ class PixhostPlugin(ImageHostPlugin):
         for gal in context.get('created_galleries', []):
             try:
                 api.finalize_pixhost_gallery(
-                    gal.get('gallery_upload_hash'), 
-                    gal.get('gallery_hash'), 
+                    gal.get('gallery_upload_hash'),
+                    gal.get('gallery_hash'),
                     client=context['client']
                 )
-            except: pass
+            except Exception as e:
+                logger.warning(f"Failed to finalize Pixhost gallery: {e}")

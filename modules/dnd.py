@@ -31,16 +31,16 @@ class DragDropMixin:
                 if target_group:
                     break
                 widget = widget.master
-        except:
-            pass
+        except AttributeError as e:
+            logger.debug(f"Could not find target group for drop: {e}")
         self._process_files(files, target_group)
 
     def _clear_highlights(self, event=None):
         if self.highlighted_row:
             try:
                 self.highlighted_row.configure(fg_color="transparent")
-            except:
-                pass
+            except (tk.TclError, AttributeError) as e:
+                logger.debug(f"Could not clear highlight: {e}")
             self.highlighted_row = None
 
     def _on_group_drag_start(self, event, group):
@@ -175,8 +175,8 @@ class DragDropMixin:
         if before_widget:
             try:
                 new_row.pack(before=before_widget)
-            except:
-                pass
+            except (tk.TclError, AttributeError) as e:
+                logger.debug(f"Could not pack row before widget: {e}")
 
         if self.var_show_previews.get():
             self.thumb_executor.submit(self._thumb_worker, [fp], new_group, True)

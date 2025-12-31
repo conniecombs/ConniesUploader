@@ -237,8 +237,8 @@ class GalleryManager(ctk.CTkToplevel):
                 client.close()
                 if res:
                     return res.get("gallery_hash")
-            except:
-                pass
+            except (requests.RequestException, AttributeError) as e:
+                logger.error(f"Failed to create Pixhost gallery: {e}")
         return None
 
     # --- IMX IMPLEMENTATION ---
@@ -265,7 +265,8 @@ class GalleryManager(ctk.CTkToplevel):
             payload = {"usr_email": user, "pwd": pwd, "doLogin": "Login", "remember": "1"}
             session.post(login_url, data=payload, timeout=10)
             return session
-        except:
+        except requests.RequestException as e:
+            logger.error(f"IMX login failed: {e}")
             return None
 
     def _fetch_imx_galleries(self, page=1):
@@ -286,7 +287,8 @@ class GalleryManager(ctk.CTkToplevel):
                     galleries.append({"id": gid, "name": gname.strip()})
                     seen.add(gid)
             return galleries
-        except:
+        except (requests.RequestException, AttributeError) as e:
+            logger.error(f"Failed to fetch IMX galleries: {e}")
             return []
 
     def _create_imx_gallery(self, name):
@@ -308,7 +310,8 @@ class GalleryManager(ctk.CTkToplevel):
                     return q["id"][0]
 
             return self._find_gid_in_list(session, name)
-        except:
+        except (requests.RequestException, KeyError, IndexError) as e:
+            logger.error(f"Failed to create IMX gallery: {e}")
             return None
 
     def _find_gid_in_list(self, session, name):
@@ -318,6 +321,6 @@ class GalleryManager(ctk.CTkToplevel):
             for gid, gname in re.findall(pattern, r.text, re.IGNORECASE):
                 if gname.strip() == name:
                     return gid
-        except:
-            pass
+        except (requests.RequestException, AttributeError) as e:
+            logger.debug(f"Could not find gallery '{name}' in list: {e}")
         return None
