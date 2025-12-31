@@ -102,6 +102,7 @@ jobs:
 
     - name: Check Python syntax
       run: python -m py_compile main.py modules/*.py
+      shell: bash
 
     - name: Build with PyInstaller (Windows only)
       if: runner.os == 'Windows'
