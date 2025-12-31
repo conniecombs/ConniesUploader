@@ -31,6 +31,7 @@ from modules import file_handler
 from modules.dnd import DragDropMixin
 from modules.credentials_manager import CredentialsManager
 from modules.auto_poster import AutoPoster
+from modules.plugin_manager import PluginManager
 from loguru import logger
 
 ctk.set_appearance_mode("System")
@@ -363,11 +364,16 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         ctk.CTkLabel(self.settings_frame_container, text="Select Image Host", font=("Segoe UI", 13, "bold")).pack(
             pady=(15, 2), padx=10, anchor="w"
         )
-        self.var_service = ctk.StringVar(value="imx.to")
+        # Dynamically get available plugins from PluginManager
+        plugin_manager = PluginManager()
+        available_services = plugin_manager.get_service_names()
+        default_service = available_services[0] if available_services else "imx.to"
+
+        self.var_service = ctk.StringVar(value=default_service)
         self.cb_service_select = ctk.CTkOptionMenu(
             self.settings_frame_container,
             variable=self.var_service,
-            values=["imx.to", "pixhost.to", "turboimagehost", "vipr.im", "imagebam.com"],
+            values=available_services,
             command=self._swap_service_frame,
         )
         self.cb_service_select.pack(fill="x", padx=10, pady=(0, 10))
