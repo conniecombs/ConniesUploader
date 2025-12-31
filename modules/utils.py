@@ -4,6 +4,7 @@ import os
 import platform
 import winreg
 from tkinter import messagebox
+from loguru import logger
 
 
 class ContextUtils:

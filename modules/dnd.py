@@ -201,6 +201,10 @@ class DragDropMixin:
         if messagebox.askyesno("Confirm", f"Delete batch '{group.title}'?"):
             for fp in list(group.files):
                 if fp in self.file_widgets:
+                    # Clean up image reference to prevent memory leak
+                    img_ref = self.file_widgets[fp].get("image_ref")
+                    if img_ref and img_ref in self.image_refs:
+                        self.image_refs.remove(img_ref)
                     del self.file_widgets[fp]
             if group in self.groups:
                 self.groups.remove(group)
@@ -210,6 +214,10 @@ class DragDropMixin:
         if filepath in self.file_widgets:
             group = self.file_widgets[filepath]["group"]
             row = self.file_widgets[filepath]["row"]
+            # Clean up image reference to prevent memory leak
+            img_ref = self.file_widgets[filepath].get("image_ref")
+            if img_ref and img_ref in self.image_refs:
+                self.image_refs.remove(img_ref)
             if group.winfo_exists():
                 group.remove_file(filepath)
             row.destroy()
