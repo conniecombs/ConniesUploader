@@ -83,6 +83,7 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    # FIX: Install Go environment
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
@@ -95,6 +96,7 @@ jobs:
         python-version: '3.11'
         cache: 'pip'
 
+    # FIX: Compile the sidecar binary before PyInstaller runs
     - name: Build Go sidecar
       run: |
         go mod download
@@ -136,20 +138,10 @@ jobs:
         $sizeMB = [math]::Round($size / 1MB, 2)
         Write-Output "Build size: $sizeMB MB ($size bytes)"
 
-        # Check if sidecar was bundled (minimum expected size)
+        # Check if sidecar was bundled (minimum expected size ~40MB)
         if ($size -lt 40000000) {
           Write-Error "❌ Build size is only ${sizeMB} MB (expected 40-50 MB)"
           Write-Error "The Go sidecar appears to NOT be bundled!"
-          Write-Error "PyInstaller may have failed to include uploader.exe"
-
-          # Debug information
-          Write-Output "`nDebug info:"
-          Write-Output "PyInstaller spec file:"
-          Get-Content "ConniesUploader.spec" -ErrorAction SilentlyContinue
-
-          Write-Output "`nBuild directory contents:"
-          Get-ChildItem -Recurse "build" -ErrorAction SilentlyContinue | Select-Object FullName
-
           exit 1
         } else {
           Write-Output "✅ Build size OK ($sizeMB MB) - Sidecar appears to be bundled"
@@ -190,6 +182,7 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    # FIX: Install Go environment
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
@@ -202,6 +195,7 @@ jobs:
         python-version: '3.11'
         cache: 'pip'
 
+    # FIX: Compile the sidecar binary (no .exe extension for Linux)
     - name: Build Go sidecar
       run: |
         go mod download
@@ -240,11 +234,8 @@ jobs:
         sizeMB=$((size / 1024 / 1024))
         echo "Build size: $sizeMB MB ($size bytes)"
 
-        # Check if sidecar was bundled (minimum expected size: 40MB)
         if [ $size -lt 40000000 ]; then
           echo "❌ Build size is only ${sizeMB} MB (expected 40-50 MB)"
-          echo "The Go sidecar appears to NOT be bundled!"
-          echo "PyInstaller may have failed to include uploader binary"
           exit 1
         else
           echo "✅ Build size OK (${sizeMB} MB) - Sidecar appears to be bundled"
@@ -280,6 +271,7 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    # FIX: Install Go environment
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
@@ -292,6 +284,7 @@ jobs:
         python-version: '3.11'
         cache: 'pip'
 
+    # FIX: Compile the sidecar binary
     - name: Build Go sidecar
       run: |
         go mod download
@@ -330,11 +323,8 @@ jobs:
         sizeMB=$((size / 1024 / 1024))
         echo "Build size: $sizeMB MB ($size bytes)"
 
-        # Check if sidecar was bundled (minimum expected size: 40MB)
         if [ $size -lt 40000000 ]; then
           echo "❌ Build size is only ${sizeMB} MB (expected 40-50 MB)"
-          echo "The Go sidecar appears to NOT be bundled!"
-          echo "PyInstaller may have failed to include uploader binary"
           exit 1
         else
           echo "✅ Build size OK (${sizeMB} MB) - Sidecar appears to be bundled"
