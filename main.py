@@ -931,6 +931,17 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         gal_id = getattr(group, "gallery_id", "")
         cover_url = group_results[0][1] if group_results else ""
 
+        # Get thumbnail size for BBCode formatting
+        thumb_size = "250"  # Default
+        if svc == "imx.to":
+            thumb_size = self.settings.get("imx_thumb", "180")
+        elif svc == "pixhost.to":
+            thumb_size = self.settings.get("pix_thumb", "200")
+        elif svc == "turboimagehost":
+            thumb_size = self.settings.get("turbo_thumb", "180")
+        elif svc == "imagebam.com":
+            thumb_size = self.settings.get("imagebam_thumb", "180")
+
         gal_link = ""
         if gal_id:
             if svc == "pixhost.to":
@@ -940,7 +951,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             elif svc == "vipr.im":
                 gal_link = f"https://vipr.im/f/{gal_id}"
 
-        ctx = {"gallery_link": gal_link, "gallery_name": group.title, "gallery_id": gal_id, "cover_url": cover_url}
+        ctx = {"gallery_link": gal_link, "gallery_name": group.title, "gallery_id": gal_id, "cover_url": cover_url, "thumb_size": thumb_size}
         text = self.template_mgr.apply(group.selected_template, ctx, group_results)
 
         try:

@@ -34,11 +34,12 @@ class TemplateManager:
         self.defaults.update(self.presets)
 
         # Standard format: Clickable Images (Links to Viewer Page)
-        # Using #direct_url# instead of #thumb_url# for IMX.to compatibility
+        # Using #direct_url# with size parameters for thumbnail display
+        # (IMX.to thumbnail URLs are broken, so we resize full images)
         self.image_formats = {
-            "BBCode": "[url=#image_url#][img]#direct_url#[/img][/url]",
+            "BBCode": "[url=#image_url#][img=#thumb_size#x#thumb_size#]#direct_url#[/img][/url]",
             "Markdown": "[![Image](#direct_url#)](#image_url#)",
-            "HTML": '<a href="#image_url#"><img src="#direct_url#"></a>',
+            "HTML": '<a href="#image_url#"><img src="#direct_url#" width="#thumb_size#" height="#thumb_size#"></a>',
         }
 
         # NEW: Full Size Image Formats (Links/Displays Direct Image)
