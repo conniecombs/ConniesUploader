@@ -51,6 +51,7 @@ jobs:
           git commit -m "Auto-update go.sum checksums"
           git push
         fi
+      shell: bash
 
     - name: Verify dependencies
       run: go mod verify
