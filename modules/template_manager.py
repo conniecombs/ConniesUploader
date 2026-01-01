@@ -149,6 +149,9 @@ class TemplateManager:
             item_str = item_str.replace("#image_url#", str(v_url))
             item_str = item_str.replace("#thumb_url#", str(t_url))
             item_str = item_str.replace("#direct_url#", str(d_url))
+            # Replace context placeholders (like #thumb_size#) in each image's BBCode
+            for k, v in data.items():
+                item_str = item_str.replace(f"#{k}#", str(v))
             processed_images.append(item_str)
         data["all_images"] = " ".join(processed_images)
 
@@ -160,6 +163,9 @@ class TemplateManager:
             # In full image list, #image_url# implies the source image (Direct JPG)
             item_str = item_str.replace("#image_url#", str(d_url))
             item_str = item_str.replace("#thumb_url#", str(t_url))
+            # Replace context placeholders in full images too
+            for k, v in data.items():
+                item_str = item_str.replace(f"#{k}#", str(v))
             processed_full.append(item_str)
         data["all_full_images"] = " ".join(processed_full)
 
