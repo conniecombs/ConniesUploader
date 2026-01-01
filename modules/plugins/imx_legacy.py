@@ -51,20 +51,25 @@ class ImxPlugin(ImageHostPlugin):
     def prepare_group(self, group, config, context, creds):
         """
         Called before the batch upload starts.
-        Checks if 'auto_gallery' is on, and if so, calls Go Sidecar to create one.
+        Always creates a gallery with the folder name if no manual gallery_id is specified.
         """
-        if config.get('auto_gallery'):
-            user = creds.get('imx_user')
-            pwd = creds.get('imx_pass')
-            
-            if user and pwd:
-                # Use the API wrapper which calls Sidecar action="create_gallery"
-                gid = api.create_imx_gallery(user, pwd, group.title)
-                
-                if gid:
-                    # Store the new Gallery ID in the group object
-                    group.gallery_id = gid
-                    # Also update the config for this specific run so the uploader sees it
-                    config['gallery_id'] = gid
+        # If user manually specified a gallery_id, use it
+        manual_gid = config.get('gallery_id', '').strip()
+        if manual_gid:
+            return
+
+        # Otherwise, always create a gallery with the folder name
+        user = creds.get('imx_user')
+        pwd = creds.get('imx_pass')
+
+        if user and pwd:
+            # Use the API wrapper which calls Sidecar action="create_gallery"
+            gid = api.create_imx_gallery(user, pwd, group.title)
+
+            if gid:
+                # Store the new Gallery ID in the group object
+                group.gallery_id = gid
+                # Also update the config for this specific run so the uploader sees it
+                config['gallery_id'] = gid
 
     # REMOVED: initialize_session, upload_file (Go handles this now)

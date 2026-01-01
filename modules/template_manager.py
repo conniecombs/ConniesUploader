@@ -137,14 +137,18 @@ class TemplateManager:
 
             filtered_images.append((viewer_url, thumb_url, direct_url))
 
-        # 2. Generate #all_images# (Thumbnails -> Links to Viewer)
+        # 2. Generate #all_images# (Direct Images -> Links to Viewer)
         img_fmt = self.image_formats.get(format_mode, self.image_formats["BBCode"])
         processed_images = []
         for v_url, t_url, d_url in filtered_images:
             item_str = img_fmt
-            # In standard list, #image_url# usually implies the link target (Viewer Page)
+            # Available placeholders:
+            # #image_url# - Link target (Viewer Page URL)
+            # #thumb_url# - Thumbnail image URL (may be broken on some hosts)
+            # #direct_url# - Direct image URL (full-size image)
             item_str = item_str.replace("#image_url#", str(v_url))
             item_str = item_str.replace("#thumb_url#", str(t_url))
+            item_str = item_str.replace("#direct_url#", str(d_url))
             processed_images.append(item_str)
         data["all_images"] = " ".join(processed_images)
 
