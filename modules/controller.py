@@ -165,7 +165,18 @@ class UploadController:
             elif svc == "vipr.im":
                 gal_link = f"https://vipr.im/f/{gallery_id}"
 
-        ctx = {"gallery_link": gal_link, "gallery_name": group_title, "gallery_id": gallery_id, "cover_url": cover_url}
+        # Get thumbnail size for BBCode formatting
+        thumb_size = "250"  # Default
+        if svc == "imx.to":
+            thumb_size = self.settings.get("imx_thumb", "180")
+        elif svc == "pixhost.to":
+            thumb_size = self.settings.get("pix_thumb", "200")
+        elif svc == "turboimagehost":
+            thumb_size = self.settings.get("turbo_thumb", "180")
+        elif svc == "imagebam.com":
+            thumb_size = self.settings.get("imagebam_thumb", "180")
+
+        ctx = {"gallery_link": gal_link, "gallery_name": group_title, "gallery_id": gallery_id, "cover_url": cover_url, "thumb_size": thumb_size}
 
         # Generate Text
         text = self.template_mgr.apply(self.settings.get("output_format", "BBCode"), ctx, group_results)
