@@ -97,18 +97,23 @@ class UploadManager:
             },
             "config": {
                 "threads": str(cfg.get(f"{cfg['service'].split('.')[0]}_threads", 2)),
+                # IMX - support both new (thumbnail_size/thumbnail_format) and legacy (imx_thumb/imx_format) keys
                 "imx_thumb_id": self._map_imx_size(cfg.get("thumbnail_size") or cfg.get("imx_thumb")),
                 "imx_format_id": self._map_imx_format(cfg.get("thumbnail_format") or cfg.get("imx_format")),
                 "gallery_id": cfg.get("gallery_id", ""),
-                "pix_content": "1" if cfg.get("pix_content") == "Adult" else "0",
-                "pix_thumb": cfg.get("pix_thumb", "200"),
-                "pix_gallery_hash": cfg.get("pix_gallery_hash", ""),
-                "vipr_thumb": cfg.get("vipr_thumb", "170x170"),
+                # Pixhost - support both new (content_type/thumbnail_size/gallery_hash) and legacy (pix_content/pix_thumb/pix_gallery_hash) keys
+                "pix_content": "1" if (cfg.get("content_type") or cfg.get("pix_content")) == "Adult" else "0",
+                "pix_thumb": cfg.get("thumbnail_size") or cfg.get("pix_thumb", "200"),
+                "pix_gallery_hash": cfg.get("gallery_hash") or cfg.get("pix_gallery_hash", ""),
+                # Vipr - support both new (thumbnail_size) and legacy (vipr_thumb) keys
+                "vipr_thumb": cfg.get("thumbnail_size") or cfg.get("vipr_thumb", "170x170"),
                 "vipr_gal_id": str(cfg.get("vipr_gal_id", "0")),
-                "turbo_content": "adult" if cfg.get("turbo_content") == "Adult" else "all",
-                "turbo_thumb": cfg.get("turbo_thumb", "180"),
-                "ib_content": "nsfw" if cfg.get("imagebam_content") == "Adult" else "sfw",
-                "ib_thumb": self._map_ib_size(cfg.get("imagebam_thumb")),
+                # Turbo - support both new (content_type/thumbnail_size) and legacy (turbo_content/turbo_thumb) keys
+                "turbo_content": "adult" if (cfg.get("content_type") or cfg.get("turbo_content")) == "Adult" else "all",
+                "turbo_thumb": cfg.get("thumbnail_size") or cfg.get("turbo_thumb", "180"),
+                # ImageBam - support both new (content_type/thumbnail_size) and legacy (imagebam_content/imagebam_thumb) keys
+                "ib_content": "nsfw" if (cfg.get("content_type") or cfg.get("imagebam_content")) == "Adult" else "sfw",
+                "ib_thumb": self._map_ib_size(cfg.get("thumbnail_size") or cfg.get("imagebam_thumb")),
             },
             "context_data": {},
         }
