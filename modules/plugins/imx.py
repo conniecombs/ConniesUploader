@@ -141,22 +141,32 @@ class ImxPlugin(ImageHostPlugin):
     ) -> None:
         """
         Called before the batch upload starts.
-        Checks if 'auto_gallery' is on, and if so, calls Go Sidecar to create one.
+        Always creates a gallery with the folder name if no manual gallery_id is specified.
         """
-        if config.get("auto_gallery"):
-            user = creds.get("imx_user")
-            pwd = creds.get("imx_pass")
+        # If user manually specified a gallery_id, use it
+        manual_gid = config.get("gallery_id", "").strip()
+        if manual_gid:
+            logger.info(f"Using manual gallery ID: {manual_gid}")
+            return
 
-            if user and pwd:
-                # Use the API wrapper which calls Sidecar action="create_gallery"
-                gid = api.create_imx_gallery(user, pwd, group.title)
+        # Otherwise, always create a gallery with the folder name
+        user = creds.get("imx_user")
+        pwd = creds.get("imx_pass")
 
-                if gid:
-                    # Store the new Gallery ID in the group object
-                    group.gallery_id = gid
-                    # Also update the config for this specific run so the uploader sees it
-                    config["gallery_id"] = gid
-                    logger.info(f"Created IMX gallery: {group.title}")
+        if user and pwd:
+            # Use the API wrapper which calls Sidecar action="create_gallery"
+            gid = api.create_imx_gallery(user, pwd, group.title)
+
+            if gid:
+                # Store the new Gallery ID in the group object
+                group.gallery_id = gid
+                # Also update the config for this specific run so the uploader sees it
+                config["gallery_id"] = gid
+                logger.info(f"Created IMX gallery: {group.title}")
+            else:
+                logger.warning(f"Failed to create gallery for: {group.title}")
+        else:
+            logger.warning("IMX credentials not set - cannot create gallery, IMX will auto-create 'untitled' gallery")
 
     # Go-based upload - stubs for abstract methods (uploads handled by Go sidecar)
     def initialize_session(self, config: Dict[str, Any], creds: Dict[str, Any]) -> Dict[str, Any]:
