@@ -201,6 +201,64 @@ ok  	github.com/conniecombs/GolangVersion	18.034s
 
 ---
 
+## Final Go Version Fix: 1.24 🎯 (Commit f0d1237)
+
+**Objective**: Correct the Go version to match actual dependency requirements
+
+### The Issue:
+After commit 25705c5 set Go to 1.21, CI revealed a critical dependency incompatibility:
+```
+go: github.com/PuerkitoBio/goquery@v1.11.0 requires go >= 1.24.0 (running go 1.21.13)
+govulncheck: loading packages: err: exit status 1
+```
+
+### Root Cause - Timeline of Confusion:
+The Go version issue had three stages of misunderstanding:
+
+1. **Original code** (before analysis):
+   - `go 1.24.11` - Invalid format (Go doesn't use patch in go.mod)
+
+2. **Phase 1 fix** (commit 7a1db43):
+   - Changed to `go 1.24` - Correct format, but assumed version existed
+   - Problem: Didn't verify if Go 1.24 had been released yet
+
+3. **First CI fix** (commit 25705c5):
+   - Changed to `go 1.21` - Based on assumption that "Go 1.24 doesn't exist"
+   - Problem: This was based on outdated knowledge; Go 1.24 **does** exist!
+   - Go 1.24.0 released: **February 2025** (11 months before today)
+
+4. **Final fix** (this commit):
+   - Changed to `go 1.24` - Correct version that matches dependencies
+   - **Today is January 2026**: Go 1.24.12 and Go 1.25.6 are both stable
+
+### Changes Made:
+1. ✅ **go.mod**: `go 1.21` → `go 1.24`
+   - Added by go mod tidy: `toolchain go1.24.7`
+   - Now compatible with goquery v1.11.0 requirement (>= 1.24.0)
+
+2. ✅ **CI Workflows**: Updated all 9 instances
+   - `.github/workflows/ci.yml` (3 instances): '1.21' → '1.24'
+   - `.github/workflows/security.yml` (2 instances): '1.21' → '1.24'
+   - `.github/workflows/release.yml` (4 instances): '1.21' → '1.24'
+
+### Verification:
+```bash
+$ go test -v ./...
+PASS
+coverage: 12.5% of statements
+ok  	github.com/conniecombs/GolangVersion	18.032s
+
+$ go mod tidy
+# No errors - all dependencies resolve correctly
+```
+
+### Current Go Landscape (January 2026):
+- **Latest stable**: Go 1.25.6 (released August 2025)
+- **Previous stable**: Go 1.24.12 (released February 2025)
+- **Project choice**: Go 1.24 (conservative, matches dependency requirements)
+
+---
+
 ## Test Plan
 
 ### Pre-Merge Verification
@@ -208,7 +266,7 @@ ok  	github.com/conniecombs/GolangVersion	18.034s
 - [x] All Python tests pass (42/42)
 - [x] Go mod tidy executed successfully
 - [x] YAML workflows validated with parser
-- [x] Git history clean (8 atomic commits)
+- [x] Git history clean (10 atomic commits)
 - [ ] CI workflow runs successfully on PR
 - [ ] Security workflow completes without errors
 - [ ] Manual build test on Windows (recommended)
@@ -281,7 +339,7 @@ See `REMAINING_ISSUES.md` for details. Priority items:
 - `archive/README.md` - Archive documentation
 
 ### Modified (12 files):
-- `go.mod` - Fixed version (1.21), removed invalid toolchain, added testify
+- `go.mod` - Fixed version (1.24 + toolchain 1.24.7), added testify
 - `uploader_test.go` - Fixed errcheck warnings (2 instances)
 - `requirements.txt` - Added pytest, flake8
 - `build_uploader.bat` - Fixed SHA256, removed 32-bit
@@ -290,9 +348,9 @@ See `REMAINING_ISSUES.md` for details. Priority items:
 - `modules/sidecar.py` - Added restart_lock
 - `modules/file_handler.py` - Added sanitize_filename
 - `main.py` - Reduced to 23-line entry point
-- `.github/workflows/ci.yml` - Fixed Go version, added tests
-- `.github/workflows/security.yml` - Fixed Go version
-- `.github/workflows/release.yml` - Fixed Go version, added test gate
+- `.github/workflows/ci.yml` - Fixed Go version (1.24), added tests
+- `.github/workflows/security.yml` - Fixed Go version (1.24)
+- `.github/workflows/release.yml` - Fixed Go version (1.24), added test gate
 
 ### Archived (5 files):
 - `archive/legacy_plugins/imagebam_legacy.py`
@@ -312,7 +370,9 @@ See `REMAINING_ISSUES.md` for details. Priority items:
 5. `b5b6aa1` - Phase 3: Refactoring (main.py 1,078 → 23 lines)
 6. `cd48333` - CI/CD fixes (Go version in workflows, test execution, release gates)
 7. `50494a5` - Documentation: Comprehensive PR description
-8. `25705c5` - Post-CI fixes (go.mod corrected to 1.21, errcheck warnings)
+8. `25705c5` - Post-CI fixes (go.mod temporarily to 1.21, errcheck warnings)
+9. `5dc4f23` - Update PR description with post-CI fixes
+10. `f0d1237` - **Final fix**: Go version 1.24 (matches dependency requirements)
 
 ---
 
