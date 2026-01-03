@@ -1,8 +1,6 @@
 module github.com/conniecombs/GolangVersion
 
-go 1.24.0
-
-toolchain go1.24.7
+go 1.21
 
 require (
 	github.com/PuerkitoBio/goquery v1.11.0

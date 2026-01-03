@@ -210,7 +210,7 @@ func TestDoRequest(t *testing.T) {
 		}
 
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("success"))
+		_, _ = w.Write([]byte("success"))
 	}))
 	defer server.Close()
 
@@ -329,7 +329,7 @@ func MockUploadServer(t *testing.T, responseCode int, responseBody string) *http
 		}
 
 		w.WriteHeader(responseCode)
-		w.Write([]byte(responseBody))
+		_, _ = w.Write([]byte(responseBody))
 	}))
 }
 
