@@ -96,7 +96,7 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
 
-    # FIX: Removed --clean as it is not supported by pyi-makespec
+    # FIX: Removed --clean from pyi-makespec as it is unsupported
     - name: Create PyInstaller Spec
       run: |
         pyi-makespec --noconsole --onefile --name "ConniesUploader" `
@@ -296,6 +296,7 @@ jobs:
         cp artifacts/macos-build/ConniesUploader release-assets/ConniesUploader-macos
         cp artifacts/macos-build/ConniesUploader.sha256 release-assets/ConniesUploader-macos.sha256
         cp artifacts/macos-build/ConniesUploader-*-macos-x64.zip release-assets/
+
     - name: Create Release
       uses: softprops/action-gh-release@v2
       with:
