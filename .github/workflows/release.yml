@@ -133,7 +133,7 @@ jobs:
     # FIX: Generate a .spec file to avoid PowerShell argument parsing issues with semicolons
     - name: Create PyInstaller Spec
       run: |
-        pyi-makespec --noconsole --onefile --clean --name "ConniesUploader" `
+        pyi-makespec --noconsole --onefile --name "ConniesUploader" `
           --icon "logo.ico" `
           --add-binary "uploader.exe;." `
           --add-data "logo.ico;." `
@@ -143,7 +143,7 @@ jobs:
 
     - name: Build from Spec
       run: |
-        pyinstaller ConniesUploader.spec
+        pyinstaller --clean ConniesUploader.spec
 
     - name: Verify build and bundling
       run: |
