@@ -105,8 +105,14 @@ func main() {
 	// Note: Using crypto/rand for random string generation (more secure)
 	log.WithFields(log.Fields{
 		"component": "uploader",
-		"version":   "1.0.0",
+		"version":   "2.0.0-diagnostic",
 	}).Info("Go sidecar starting")
+
+	// DIAGNOSTIC: Send visible startup message as JSON event (goes to Python console)
+	sendJSON(OutputEvent{
+		Type: "log",
+		Msg:  "=== GO SIDECAR STARTED - DIAGNOSTIC VERSION 2.0.0 - 10 SECOND TIMEOUT ===",
+	})
 
 	jar, _ := cookiejar.New(nil)
 	client = &http.Client{
@@ -369,7 +375,8 @@ func processFile(fp string, job *JobRequest) {
 		"service": job.Service,
 	})
 
-	// DIAGNOSTIC: Send immediate status to confirm function is called
+	// DIAGNOSTIC: Send visible messages as JSON events
+	sendJSON(OutputEvent{Type: "log", Msg: fmt.Sprintf(">>> PROCESSFILE CALLED for %s (service: %s)", filepath.Base(fp), job.Service)})
 	sendJSON(OutputEvent{Type: "status", FilePath: fp, Status: "Processing"})
 	logger.Info("=== PROCESSFILE CALLED ===")
 
@@ -378,6 +385,7 @@ func processFile(fp string, job *JobRequest) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
+	sendJSON(OutputEvent{Type: "log", Msg: fmt.Sprintf(">>> 10-second timeout started for %s", filepath.Base(fp))})
 	logger.WithField("timeout", "10s").Debug("Context created with timeout")
 
 	type result struct {
@@ -467,9 +475,11 @@ func processFile(fp string, job *JobRequest) {
 	case <-ctx.Done():
 		// TIMEOUT - context cancelled, goroutine should exit
 		logger.Error("=== TIMEOUT TRIGGERED - 10 SECONDS ELAPSED ===")
+		sendJSON(OutputEvent{Type: "log", Msg: fmt.Sprintf("!!! TIMEOUT TRIGGERED for %s after 10 seconds !!!", filepath.Base(fp))})
 		sendJSON(OutputEvent{Type: "status", FilePath: fp, Status: "Timeout"})
 		sendJSON(OutputEvent{Type: "error", FilePath: fp, Msg: "Upload timed out after 10 seconds - worker released"})
 	}
+	sendJSON(OutputEvent{Type: "log", Msg: fmt.Sprintf(">>> PROCESSFILE EXITING for %s", filepath.Base(fp))})
 	logger.Debug("=== PROCESSFILE EXITING ===")
 }
 

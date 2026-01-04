@@ -158,7 +158,8 @@ class SidecarBridge:
     def _dispatch_event(self, data):
         # 1. Log internal messages
         if data.get("type") == "log":
-            logger.debug(f"Go: {data.get('msg')}")
+            # DIAGNOSTIC: Show Go logs as INFO so they're visible in console
+            logger.info(f"[GO] {data.get('msg')}")
 
         # 2. Broadcast to all listeners
         with self.listeners_lock:
