@@ -368,12 +368,17 @@ func processFile(fp string, job *JobRequest) {
 		"file":    filepath.Base(fp),
 		"service": job.Service,
 	})
-	logger.Info("Starting upload")
 
-	// CRITICAL FIX #2: Aggressive 30-second timeout with context cancellation
-	// Previous 3-minute timeout was too long and goroutines weren't being cancelled
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	// DIAGNOSTIC: Send immediate status to confirm function is called
+	sendJSON(OutputEvent{Type: "status", FilePath: fp, Status: "Processing"})
+	logger.Info("=== PROCESSFILE CALLED ===")
+
+	// CRITICAL FIX #2: ULTRA-AGGRESSIVE 10-second timeout
+	// If upload doesn't complete in 10 seconds, something is seriously wrong
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+
+	logger.WithField("timeout", "10s").Debug("Context created with timeout")
 
 	type result struct {
 		url   string
@@ -382,13 +387,33 @@ func processFile(fp string, job *JobRequest) {
 	}
 	resultChan := make(chan result, 1)
 
+	// Heartbeat goroutine to prove timeout is working
+	go func() {
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		count := 0
+		for {
+			select {
+			case <-ticker.C:
+				count++
+				logger.WithField("heartbeat", count).Debug("Still processing...")
+			case <-ctx.Done():
+				logger.Debug("Heartbeat stopped - context done")
+				return
+			}
+		}
+	}()
+
 	go func() {
 		sendJSON(OutputEvent{Type: "status", FilePath: fp, Status: "Uploading"})
+		logger.Debug("Status 'Uploading' sent")
 
 		var url, thumb string
 		var err error
 
-		// Single attempt with 30-second timeout (no retries - let timeout handle it)
+		logger.WithField("service", job.Service).Debug("About to call upload function")
+
+		// Single attempt with 10-second timeout (no retries - let timeout handle it)
 		switch job.Service {
 		case "imx.to":
 			url, thumb, err = uploadImx(fp, job)
@@ -402,18 +427,29 @@ func processFile(fp string, job *JobRequest) {
 			url, thumb, err = uploadImageBam(fp, job)
 		default:
 			err = fmt.Errorf("unknown service: %s", job.Service)
+			logger.WithField("service", job.Service).Error("UNKNOWN SERVICE - this will fail immediately")
 		}
+
+		logger.WithFields(log.Fields{
+			"url":   url,
+			"thumb": thumb,
+			"error": err,
+		}).Debug("Upload function returned")
 
 		select {
 		case resultChan <- result{url: url, thumb: thumb, err: err}:
+			logger.Debug("Result sent to channel")
 		case <-ctx.Done():
+			logger.Warn("Context cancelled before result could be sent")
 			// Context cancelled, don't send result
 		}
 	}()
 
 	// Wait for upload to complete or timeout
+	logger.Debug("Entering select statement - waiting for result or timeout")
 	select {
 	case res := <-resultChan:
+		logger.WithField("has_error", res.err != nil).Debug("=== RESULT RECEIVED ===")
 		if res.err != nil {
 			logger.WithFields(log.Fields{
 				"error": res.err.Error(),
@@ -430,10 +466,11 @@ func processFile(fp string, job *JobRequest) {
 		}
 	case <-ctx.Done():
 		// TIMEOUT - context cancelled, goroutine should exit
-		logger.Error("Upload timed out after 30 seconds")
+		logger.Error("=== TIMEOUT TRIGGERED - 10 SECONDS ELAPSED ===")
 		sendJSON(OutputEvent{Type: "status", FilePath: fp, Status: "Timeout"})
-		sendJSON(OutputEvent{Type: "error", FilePath: fp, Msg: "Upload timed out after 30 seconds - worker released"})
+		sendJSON(OutputEvent{Type: "error", FilePath: fp, Msg: "Upload timed out after 10 seconds - worker released"})
 	}
+	logger.Debug("=== PROCESSFILE EXITING ===")
 }
 
 // --- Upload Implementations ---
