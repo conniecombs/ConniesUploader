@@ -127,8 +127,23 @@ func main() {
 		go func(workerID int) {
 			log.WithField("worker_id", workerID).Debug("Worker started")
 			for job := range jobQueue {
+				startTime := time.Now()
+				log.WithFields(log.Fields{
+					"worker_id": workerID,
+					"action":    job.Action,
+					"service":   job.Service,
+					"files":     len(job.Files),
+				}).Debug("Worker processing job")
+
 				handleJob(job)
+
+				duration := time.Since(startTime)
+				log.WithFields(log.Fields{
+					"worker_id": workerID,
+					"duration":  duration.String(),
+				}).Debug("Worker completed job")
 			}
+			log.WithField("worker_id", workerID).Info("Worker shutting down")
 		}(i)
 	}
 
@@ -145,8 +160,20 @@ func main() {
 			continue
 		}
 
+		// Diagnostic: log queue depth if getting full
+		queueDepth := len(jobQueue)
+		if queueDepth > 50 {
+			log.WithField("queue_depth", queueDepth).Warn("Job queue filling up - workers may be slow")
+		}
+
 		// Blocking push if queue is full, effectively throttling the UI
 		jobQueue <- job
+		log.WithFields(log.Fields{
+			"action":      job.Action,
+			"service":     job.Service,
+			"files":       len(job.Files),
+			"queue_depth": len(jobQueue),
+		}).Debug("Job queued")
 	}
 }
 
@@ -342,66 +369,86 @@ func processFile(fp string, job *JobRequest) {
 	})
 	logger.Info("Starting upload")
 
-	sendJSON(OutputEvent{Type: "status", FilePath: fp, Status: "Uploading"})
+	// CRITICAL FIX: Add per-file timeout to prevent worker pool deadlock
+	// Maximum time for a single file upload (including all retries): 3 minutes
+	// This prevents hung uploads from blocking workers indefinitely
+	fileTimeout := 3 * time.Minute
+	done := make(chan struct{})
 	var url, thumb string
 	var err error
 
-	// Retry with exponential backoff: 2s, 4s, 8s (max 3 attempts)
-	maxRetries := 3
-	baseDelay := 2 * time.Second
+	go func() {
+		defer close(done)
 
-	for attempt := 0; attempt < maxRetries; attempt++ {
-		if attempt > 0 {
-			delay := baseDelay * time.Duration(1<<uint(attempt-1)) // 2s, 4s, 8s
+		sendJSON(OutputEvent{Type: "status", FilePath: fp, Status: "Uploading"})
+
+		// Retry with exponential backoff: 2s, 4s, 8s (max 3 attempts)
+		maxRetries := 3
+		baseDelay := 2 * time.Second
+
+		for attempt := 0; attempt < maxRetries; attempt++ {
+			if attempt > 0 {
+				delay := baseDelay * time.Duration(1<<uint(attempt-1)) // 2s, 4s, 8s
+				logger.WithFields(log.Fields{
+					"attempt": attempt,
+					"delay":   delay.String(),
+				}).Warn("Retrying upload")
+				sendJSON(OutputEvent{Type: "status", FilePath: fp, Status: fmt.Sprintf("Retry %d/%d in %v", attempt, maxRetries-1, delay)})
+				time.Sleep(delay)
+				sendJSON(OutputEvent{Type: "status", FilePath: fp, Status: "Uploading"})
+			}
+
+			switch job.Service {
+			case "imx.to":
+				url, thumb, err = uploadImx(fp, job)
+			case "pixhost.to":
+				url, thumb, err = uploadPixhost(fp, job)
+			case "vipr.im":
+				url, thumb, err = uploadVipr(fp, job)
+			case "turboimagehost":
+				url, thumb, err = uploadTurbo(fp, job)
+			case "imagebam.com":
+				url, thumb, err = uploadImageBam(fp, job)
+			default:
+				err = fmt.Errorf("unknown service: %s", job.Service)
+			}
+
+			// Success - exit retry loop
+			if err == nil {
+				break
+			}
+
+			// Log the error but continue retrying
+			if attempt < maxRetries-1 {
+				sendJSON(OutputEvent{Type: "error", FilePath: fp, Msg: fmt.Sprintf("Attempt %d failed: %v", attempt+1, err)})
+			}
+		}
+	}()
+
+	// Wait for upload to complete or timeout
+	select {
+	case <-done:
+		// Upload completed (success or failure)
+		if err != nil {
 			logger.WithFields(log.Fields{
-				"attempt": attempt,
-				"delay":   delay.String(),
-			}).Warn("Retrying upload")
-			sendJSON(OutputEvent{Type: "status", FilePath: fp, Status: fmt.Sprintf("Retry %d/%d in %v", attempt, maxRetries-1, delay)})
-			time.Sleep(delay)
-			sendJSON(OutputEvent{Type: "status", FilePath: fp, Status: "Uploading"})
+				"error":    err.Error(),
+				"attempts": 3,
+			}).Error("Upload failed after all retries")
+			sendJSON(OutputEvent{Type: "status", FilePath: fp, Status: "Failed"})
+			sendJSON(OutputEvent{Type: "error", FilePath: fp, Msg: fmt.Sprintf("Failed after 3 attempts: %v", err)})
+		} else {
+			logger.WithFields(log.Fields{
+				"url":   url,
+				"thumb": thumb,
+			}).Info("Upload successful")
+			sendJSON(OutputEvent{Type: "result", FilePath: fp, Url: url, Thumb: thumb})
+			sendJSON(OutputEvent{Type: "status", FilePath: fp, Status: "Done"})
 		}
-
-		switch job.Service {
-		case "imx.to":
-			url, thumb, err = uploadImx(fp, job)
-		case "pixhost.to":
-			url, thumb, err = uploadPixhost(fp, job)
-		case "vipr.im":
-			url, thumb, err = uploadVipr(fp, job)
-		case "turboimagehost":
-			url, thumb, err = uploadTurbo(fp, job)
-		case "imagebam.com":
-			url, thumb, err = uploadImageBam(fp, job)
-		default:
-			err = fmt.Errorf("unknown service: %s", job.Service)
-		}
-
-		// Success - exit retry loop
-		if err == nil {
-			break
-		}
-
-		// Log the error but continue retrying
-		if attempt < maxRetries-1 {
-			sendJSON(OutputEvent{Type: "error", FilePath: fp, Msg: fmt.Sprintf("Attempt %d failed: %v", attempt+1, err)})
-		}
-	}
-
-	if err != nil {
-		logger.WithFields(log.Fields{
-			"error":    err.Error(),
-			"attempts": maxRetries,
-		}).Error("Upload failed after all retries")
-		sendJSON(OutputEvent{Type: "status", FilePath: fp, Status: "Failed"})
-		sendJSON(OutputEvent{Type: "error", FilePath: fp, Msg: fmt.Sprintf("Failed after %d attempts: %v", maxRetries, err)})
-	} else {
-		logger.WithFields(log.Fields{
-			"url":   url,
-			"thumb": thumb,
-		}).Info("Upload successful")
-		sendJSON(OutputEvent{Type: "result", FilePath: fp, Url: url, Thumb: thumb})
-		sendJSON(OutputEvent{Type: "status", FilePath: fp, Status: "Done"})
+	case <-time.After(fileTimeout):
+		// TIMEOUT - prevents worker from being stuck forever
+		logger.WithField("timeout", fileTimeout.String()).Error("Upload timed out")
+		sendJSON(OutputEvent{Type: "status", FilePath: fp, Status: "Timeout"})
+		sendJSON(OutputEvent{Type: "error", FilePath: fp, Msg: fmt.Sprintf("Upload timed out after %v", fileTimeout)})
 	}
 }
 
