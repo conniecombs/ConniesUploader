@@ -427,18 +427,18 @@ func processFile(fp string, job *JobRequest) {
 
 		logger.WithField("service", job.Service).Debug("About to call upload function")
 
-		// Single attempt with 10-second timeout (no retries - let timeout handle it)
+		// Pass context to upload functions for proper cancellation
 		switch job.Service {
 		case "imx.to":
-			url, thumb, err = uploadImx(fp, job)
+			url, thumb, err = uploadImx(ctx, fp, job)
 		case "pixhost.to":
-			url, thumb, err = uploadPixhost(fp, job)
+			url, thumb, err = uploadPixhost(ctx, fp, job)
 		case "vipr.im":
-			url, thumb, err = uploadVipr(fp, job)
+			url, thumb, err = uploadVipr(ctx, fp, job)
 		case "turboimagehost":
-			url, thumb, err = uploadTurbo(fp, job)
+			url, thumb, err = uploadTurbo(ctx, fp, job)
 		case "imagebam.com":
-			url, thumb, err = uploadImageBam(fp, job)
+			url, thumb, err = uploadImageBam(ctx, fp, job)
 		default:
 			err = fmt.Errorf("unknown service: %s", job.Service)
 			logger.WithField("service", job.Service).Error("UNKNOWN SERVICE - this will fail immediately")
@@ -513,7 +513,7 @@ func getImxFormatId(s string) string {
 	}
 }
 
-func uploadImx(fp string, job *JobRequest) (string, string, error) {
+func uploadImx(ctx context.Context, fp string, job *JobRequest) (string, string, error) {
 	pr, pw := io.Pipe()
 	writer := multipart.NewWriter(pw)
 
@@ -580,7 +580,8 @@ func uploadImx(fp string, job *JobRequest) (string, string, error) {
 		}
 	}()
 
-	req, err := http.NewRequest("POST", "https://api.imx.to/v1/upload.php", pr)
+	// CRITICAL: Use context for proper cancellation
+	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.imx.to/v1/upload.php", pr)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to create request: %w", err)
 	}
@@ -645,7 +646,7 @@ func uploadImx(fp string, job *JobRequest) (string, string, error) {
 
 // scrapeImxBBCode fetches the IMX viewer page and intelligently extracts the correct BBCode
 func scrapeImxBBCode(viewerURL string) (string, string, error) {
-	resp, err := doRequest("GET", viewerURL, nil, "")
+	resp, err := doRequest(context.Background(), "GET", viewerURL, nil, "")
 	if err != nil {
 		return "", "", fmt.Errorf("failed to fetch viewer page: %w", err)
 	}
@@ -719,7 +720,7 @@ func scrapeImxBBCode(viewerURL string) (string, string, error) {
 	return matches[1], matches[2], nil
 }
 
-func uploadPixhost(fp string, job *JobRequest) (string, string, error) {
+func uploadPixhost(ctx context.Context, fp string, job *JobRequest) (string, string, error) {
 	pr, pw := io.Pipe()
 	writer := multipart.NewWriter(pw)
 
@@ -757,7 +758,8 @@ func uploadPixhost(fp string, job *JobRequest) (string, string, error) {
 		}
 	}()
 
-	req, err := http.NewRequest("POST", "https://api.pixhost.to/images", pr)
+	// CRITICAL: Use context for proper cancellation
+	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.pixhost.to/images", pr)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to create request: %w", err)
 	}
@@ -788,7 +790,7 @@ func uploadPixhost(fp string, job *JobRequest) (string, string, error) {
 	return res.Show, res.Th, nil
 }
 
-func uploadVipr(fp string, job *JobRequest) (string, string, error) {
+func uploadVipr(ctx context.Context, fp string, job *JobRequest) (string, string, error) {
 	stateMutex.Lock()
 	needsLogin := viprSessId == ""
 	upUrl := viprEndpoint
@@ -855,7 +857,7 @@ func uploadVipr(fp string, job *JobRequest) (string, string, error) {
 	}()
 
 	u := upUrl + "?upload_id=" + randomString(12) + "&js_on=1&utype=reg&upload_type=file"
-	resp, err := doRequest("POST", u, pr, writer.FormDataContentType())
+	resp, err := doRequest(ctx, "POST", u, pr, writer.FormDataContentType())
 	if err != nil {
 		return "", "", fmt.Errorf("request failed: %w", err)
 	}
@@ -870,7 +872,7 @@ func uploadVipr(fp string, job *JobRequest) (string, string, error) {
 	if textArea := doc.Find("textarea[name='fn']"); textArea.Length() > 0 {
 		fnVal := textArea.Text()
 		v := url.Values{"op": {"upload_result"}, "fn": {fnVal}, "st": {"OK"}}
-		if r2, e2 := doRequest("POST", "https://vipr.im/", strings.NewReader(v.Encode()), "application/x-www-form-urlencoded"); e2 == nil {
+		if r2, e2 := doRequest(ctx, "POST", "https://vipr.im/", strings.NewReader(v.Encode()), "application/x-www-form-urlencoded"); e2 == nil {
 			defer r2.Body.Close()
 			doc, _ = goquery.NewDocumentFromReader(r2.Body)
 		}
@@ -899,7 +901,7 @@ func uploadVipr(fp string, job *JobRequest) (string, string, error) {
 	return "", "", fmt.Errorf("vipr parse failed")
 }
 
-func uploadTurbo(fp string, job *JobRequest) (string, string, error) {
+func uploadTurbo(ctx context.Context, fp string, job *JobRequest) (string, string, error) {
 	stateMutex.Lock()
 	needsLogin := turboEndpoint == ""
 	endp := turboEndpoint
@@ -966,7 +968,7 @@ func uploadTurbo(fp string, job *JobRequest) (string, string, error) {
 		}
 	}()
 
-	resp, err := doRequest("POST", endp, pr, writer.FormDataContentType())
+	resp, err := doRequest(ctx, "POST", endp, pr, writer.FormDataContentType())
 	if err != nil {
 		return "", "", fmt.Errorf("request failed: %w", err)
 	}
@@ -996,7 +998,7 @@ func uploadTurbo(fp string, job *JobRequest) (string, string, error) {
 	return "", "", fmt.Errorf("turbo upload failed")
 }
 
-func uploadImageBam(fp string, job *JobRequest) (string, string, error) {
+func uploadImageBam(ctx context.Context, fp string, job *JobRequest) (string, string, error) {
 	stateMutex.Lock()
 	needsLogin := ibUploadToken == ""
 	csrf := ibCsrf
@@ -1041,7 +1043,8 @@ func uploadImageBam(fp string, job *JobRequest) (string, string, error) {
 		}
 	}()
 
-	req, err := http.NewRequest("POST", "https://www.imagebam.com/upload", pr)
+	// CRITICAL: Use context for proper cancellation
+	req, err := http.NewRequestWithContext(ctx, "POST", "https://www.imagebam.com/upload", pr)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to create request: %w", err)
 	}
@@ -1086,11 +1089,11 @@ func scrapeImxGalleries(creds map[string]string) []map[string]string {
 	}
 
 	v := url.Values{"op": {"login"}, "login": {user}, "password": {pass}, "redirect": {"https://imx.to/user/galleries"}}
-	if r, err := doRequest("POST", "https://imx.to/login.html", strings.NewReader(v.Encode()), "application/x-www-form-urlencoded"); err == nil {
+	if r, err := doRequest(context.Background(), "POST", "https://imx.to/login.html", strings.NewReader(v.Encode()), "application/x-www-form-urlencoded"); err == nil {
 		_ = r.Body.Close()
 	}
 
-	resp, err := doRequest("GET", "https://imx.to/user/galleries", nil, "")
+	resp, err := doRequest(context.Background(), "GET", "https://imx.to/user/galleries", nil, "")
 	if err != nil {
 		return nil
 	}
@@ -1131,7 +1134,7 @@ func scrapeImxGalleries(creds map[string]string) []map[string]string {
 
 func createImxGallery(creds map[string]string, name string) (string, error) {
 	v := url.Values{"name": {name}, "public": {"1"}, "submit": {"Save"}}
-	resp, err := doRequest("POST", "https://imx.to/user/gallery/add", strings.NewReader(v.Encode()), "application/x-www-form-urlencoded")
+	resp, err := doRequest(context.Background(), "POST", "https://imx.to/user/gallery/add", strings.NewReader(v.Encode()), "application/x-www-form-urlencoded")
 	if err != nil {
 		return "", err
 	}
@@ -1147,10 +1150,10 @@ func createImxGallery(creds map[string]string, name string) (string, error) {
 
 func doViprLogin(creds map[string]string) bool {
 	v := url.Values{"op": {"login"}, "login": {creds["vipr_user"]}, "password": {creds["vipr_pass"]}}
-	if r, err := doRequest("POST", "https://vipr.im/login.html", strings.NewReader(v.Encode()), "application/x-www-form-urlencoded"); err == nil {
+	if r, err := doRequest(context.Background(), "POST", "https://vipr.im/login.html", strings.NewReader(v.Encode()), "application/x-www-form-urlencoded"); err == nil {
 		_ = r.Body.Close()
 	}
-	resp, err := doRequest("GET", "https://vipr.im/", nil, "")
+	resp, err := doRequest(context.Background(), "GET", "https://vipr.im/", nil, "")
 	if err != nil {
 		return false
 	}
@@ -1182,7 +1185,7 @@ func doViprLogin(creds map[string]string) bool {
 }
 
 func scrapeViprGalleries() []map[string]string {
-	resp, err := doRequest("GET", "https://vipr.im/?op=my_files", nil, "")
+	resp, err := doRequest(context.Background(), "GET", "https://vipr.im/?op=my_files", nil, "")
 	if err != nil {
 		return nil
 	}
@@ -1221,14 +1224,14 @@ func scrapeViprGalleries() []map[string]string {
 
 func createViprGallery(name string) (string, error) {
 	v := url.Values{"op": {"my_files"}, "add_folder": {name}}
-	if r, err := doRequest("GET", "https://vipr.im/?"+v.Encode(), nil, ""); err == nil {
+	if r, err := doRequest(context.Background(), "GET", "https://vipr.im/?"+v.Encode(), nil, ""); err == nil {
 		_ = r.Body.Close()
 	}
 	return "0", nil
 }
 
 func doImageBamLogin(creds map[string]string) bool {
-	resp1, err := doRequest("GET", "https://www.imagebam.com/auth/login", nil, "")
+	resp1, err := doRequest(context.Background(), "GET", "https://www.imagebam.com/auth/login", nil, "")
 	if err != nil {
 		return false
 	}
@@ -1236,10 +1239,10 @@ func doImageBamLogin(creds map[string]string) bool {
 	doc1, _ := goquery.NewDocumentFromReader(resp1.Body)
 	token := doc1.Find("input[name='_token']").AttrOr("value", "")
 	v := url.Values{"_token": {token}, "email": {creds["imagebam_user"]}, "password": {creds["imagebam_pass"]}, "remember": {"on"}}
-	if r, err := doRequest("POST", "https://www.imagebam.com/auth/login", strings.NewReader(v.Encode()), "application/x-www-form-urlencoded"); err == nil {
+	if r, err := doRequest(context.Background(), "POST", "https://www.imagebam.com/auth/login", strings.NewReader(v.Encode()), "application/x-www-form-urlencoded"); err == nil {
 		_ = r.Body.Close()
 	}
-	resp2, _ := doRequest("GET", "https://www.imagebam.com/", nil, "")
+	resp2, _ := doRequest(context.Background(), "GET", "https://www.imagebam.com/", nil, "")
 	defer resp2.Body.Close()
 	doc2, _ := goquery.NewDocumentFromReader(resp2.Body)
 
@@ -1276,11 +1279,11 @@ func doImageBamLogin(creds map[string]string) bool {
 func doTurboLogin(creds map[string]string) bool {
 	if creds["turbo_user"] != "" {
 		v := url.Values{"username": {creds["turbo_user"]}, "password": {creds["turbo_pass"]}, "login": {"Login"}}
-		if r, err := doRequest("POST", "https://www.turboimagehost.com/login", strings.NewReader(v.Encode()), "application/x-www-form-urlencoded"); err == nil {
+		if r, err := doRequest(context.Background(), "POST", "https://www.turboimagehost.com/login", strings.NewReader(v.Encode()), "application/x-www-form-urlencoded"); err == nil {
 			_ = r.Body.Close()
 		}
 	}
-	resp, err := doRequest("GET", "https://www.turboimagehost.com/", nil, "")
+	resp, err := doRequest(context.Background(), "GET", "https://www.turboimagehost.com/", nil, "")
 	if err != nil {
 		return false
 	}
@@ -1298,7 +1301,7 @@ func doTurboLogin(creds map[string]string) bool {
 }
 
 func scrapeBBCode(urlStr string) (string, string, error) {
-	resp, err := doRequest("GET", urlStr, nil, "")
+	resp, err := doRequest(context.Background(), "GET", urlStr, nil, "")
 	if err != nil {
 		return urlStr, urlStr, nil
 	}
@@ -1314,7 +1317,7 @@ func scrapeBBCode(urlStr string) (string, string, error) {
 
 func handleViperLogin(job JobRequest) {
 	user, pass := job.Creds["vg_user"], job.Creds["vg_pass"]
-	if r, err := doRequest("GET", "https://vipergirls.to/login.php?do=login", nil, ""); err == nil {
+	if r, err := doRequest(context.Background(), "GET", "https://vipergirls.to/login.php?do=login", nil, ""); err == nil {
 		_ = r.Body.Close()
 	}
 
@@ -1324,7 +1327,7 @@ func handleViperLogin(job JobRequest) {
 	_, _ = hasher.Write([]byte(pass)) // hash.Hash.Write never returns an error
 	md5Pass := hex.EncodeToString(hasher.Sum(nil))
 	v := url.Values{"vb_login_username": {user}, "vb_login_md5password": {md5Pass}, "vb_login_md5password_utf": {md5Pass}, "cookieuser": {"1"}, "do": {"login"}, "securitytoken": {"guest"}}
-	resp, _ := doRequest("POST", "https://vipergirls.to/login.php?do=login", strings.NewReader(v.Encode()), "application/x-www-form-urlencoded")
+	resp, _ := doRequest(context.Background(), "POST", "https://vipergirls.to/login.php?do=login", strings.NewReader(v.Encode()), "application/x-www-form-urlencoded")
 	b, _ := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
 	body := string(b)
@@ -1347,7 +1350,7 @@ func handleViperPost(job JobRequest) {
 	stateMutex.Unlock()
 
 	if needsRefresh {
-		if resp, err := doRequest("GET", "https://vipergirls.to/forum.php", nil, ""); err == nil {
+		if resp, err := doRequest(context.Background(), "GET", "https://vipergirls.to/forum.php", nil, ""); err == nil {
 			b, _ := io.ReadAll(resp.Body)
 			_ = resp.Body.Close()
 			if m := regexp.MustCompile(`SECURITYTOKEN\s*=\s*"([^"]+)"`).FindStringSubmatch(string(b)); len(m) > 1 {
@@ -1363,7 +1366,7 @@ func handleViperPost(job JobRequest) {
 		"do": {"postreply"}, "t": {job.Config["thread_id"]}, "parseurl": {"1"}, "emailupdate": {"9999"},
 	}
 	urlStr := fmt.Sprintf("https://vipergirls.to/newreply.php?do=postreply&t=%s", job.Config["thread_id"])
-	resp, err := doRequest("POST", urlStr, strings.NewReader(v.Encode()), "application/x-www-form-urlencoded")
+	resp, err := doRequest(context.Background(), "POST", urlStr, strings.NewReader(v.Encode()), "application/x-www-form-urlencoded")
 	if err != nil {
 		sendJSON(OutputEvent{Type: "result", Status: "failed", Msg: err.Error()})
 		return
@@ -1387,8 +1390,9 @@ func handleViperPost(job JobRequest) {
 	sendJSON(OutputEvent{Type: "result", Status: "failed", Msg: "Post not confirmed"})
 }
 
-func doRequest(method, urlStr string, body io.Reader, contentType string) (*http.Response, error) {
-	req, err := http.NewRequest(method, urlStr, body)
+func doRequest(ctx context.Context, method, urlStr string, body io.Reader, contentType string) (*http.Response, error) {
+	// CRITICAL: Use context for proper cancellation
+	req, err := http.NewRequestWithContext(ctx, method, urlStr, body)
 	if err != nil {
 		return nil, err
 	}

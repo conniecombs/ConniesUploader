@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"image/color"
 	"io"
@@ -217,7 +218,7 @@ func TestDoRequest(t *testing.T) {
 	// Initialize HTTP client
 	initHTTPClient()
 
-	resp, err := doRequest("GET", server.URL, nil, "")
+	resp, err := doRequest(context.Background(), "GET", server.URL, nil, "")
 	if err != nil {
 		t.Fatalf("doRequest failed: %v", err)
 	}
@@ -243,7 +244,7 @@ func TestDoRequestWithTimeout(t *testing.T) {
 
 	initHTTPClient()
 
-	resp, err := doRequest("GET", server.URL, nil, "")
+	resp, err := doRequest(context.Background(), "GET", server.URL, nil, "")
 	if err != nil {
 		t.Fatalf("doRequest unexpectedly failed: %v", err)
 	}
