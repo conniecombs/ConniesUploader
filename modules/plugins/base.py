@@ -242,7 +242,41 @@ class ImageHostPlugin(abc.ABC):
         Returns: (viewer_url, thumb_url)
         """
         pass
-    
+
+    def build_http_request(self, file_path: str, config: Dict[str, Any], creds: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        NEW: Build a generic HTTP request specification for Go sidecar execution.
+
+        This allows plugins to define uploads declaratively without hardcoding service
+        logic in Go. The Go sidecar becomes a "dumb HTTP runner" that executes
+        requests based on this spec.
+
+        Returns a dictionary with the HTTP request specification:
+        {
+            "url": "https://api.example.com/upload",
+            "method": "POST",
+            "headers": {
+                "X-API-KEY": "...",
+                "User-Agent": "..."
+            },
+            "multipart_fields": {
+                "image": {"type": "file", "value": "/path/to/file.jpg"},
+                "format": {"type": "text", "value": "json"},
+                "thumbnail_size": {"type": "text", "value": "180"}
+            },
+            "response_parser": {
+                "type": "json",  # or "html"
+                "url_path": "data.image_url",  # JSONPath for image URL
+                "thumb_path": "data.thumbnail_url",  # JSONPath for thumbnail URL
+                "status_path": "status",  # JSONPath for status field
+                "success_value": "success"  # Expected value for success
+            }
+        }
+
+        If this method returns None, the upload falls back to legacy upload_file() method.
+        """
+        return None
+
     def finalize_batch(self, context: Dict[str, Any]) -> None:
         """Optional: Runs after all uploads are finished."""
         pass

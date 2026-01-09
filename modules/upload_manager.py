@@ -7,6 +7,7 @@ import queue
 from . import config
 from loguru import logger
 from .sidecar import SidecarBridge
+from .plugin_manager import PluginManager
 
 
 class UploadManager:
@@ -15,6 +16,7 @@ class UploadManager:
         self.result_queue = result_queue
         self.cancel_event = cancel_event
         self.bridge = SidecarBridge.get()
+        self.plugin_manager = PluginManager()  # For plugin-driven HTTP requests
 
         self.event_queue = queue.Queue(maxsize=1000)
         self.listener_thread = None
@@ -82,9 +84,43 @@ class UploadManager:
                 self._send_job(standards, cfg, creds)
 
     def _send_job(self, file_list, cfg, creds):
+        service_id = cfg["service"]
+
+        # NEW: Check if plugin supports generic HTTP runner
+        plugin = self.plugin_manager.get_plugin(service_id)
+        if plugin and hasattr(plugin, 'build_http_request'):
+            # Try to build HTTP request spec for first file (as template)
+            # Note: For file-specific fields, Go will substitute the actual file path
+            try:
+                http_spec = plugin.build_http_request(
+                    file_path=file_list[0] if file_list else "",
+                    config=cfg,
+                    creds=creds
+                )
+
+                if http_spec:
+                    # Use new generic HTTP runner protocol
+                    job_data = {
+                        "action": "http_upload",
+                        "service": service_id,
+                        "files": [os.path.normpath(f) for f in file_list],
+                        "creds": creds,  # Pass all creds for backward compat
+                        "config": {"threads": str(cfg.get(f"{service_id.split('.')[0]}_threads", 2))},
+                        "http_spec": http_spec,
+                        "context_data": {},
+                    }
+
+                    logger.info(f"Using generic HTTP runner for {service_id} ({len(file_list)} files)")
+                    self.bridge.send_cmd(job_data)
+                    return
+
+            except Exception as e:
+                logger.warning(f"Failed to build HTTP request spec for {service_id}, falling back to legacy: {e}")
+
+        # LEGACY: Fallback to hardcoded service mappings (for backward compatibility)
         job_data = {
             "action": "upload",
-            "service": cfg["service"],
+            "service": service_id,
             "files": [os.path.normpath(f) for f in file_list],
             "creds": {
                 "api_key": creds.get("imx_api", ""),
@@ -96,7 +132,7 @@ class UploadManager:
                 "imagebam_pass": creds.get("imagebam_pass", ""),
             },
             "config": {
-                "threads": str(cfg.get(f"{cfg['service'].split('.')[0]}_threads", 2)),
+                "threads": str(cfg.get(f"{service_id.split('.')[0]}_threads", 2)),
                 # IMX - support both new (thumbnail_size/thumbnail_format) and legacy (imx_thumb/imx_format) keys
                 "imx_thumb_id": self._map_imx_size(cfg.get("thumbnail_size") or cfg.get("imx_thumb")),
                 "imx_format_id": self._map_imx_format(cfg.get("thumbnail_format") or cfg.get("imx_format")),
@@ -117,6 +153,8 @@ class UploadManager:
             },
             "context_data": {},
         }
+
+        logger.info(f"Using legacy upload protocol for {service_id} ({len(file_list)} files)")
         self.bridge.send_cmd(job_data)
 
     def _process_events(self):

@@ -168,11 +168,63 @@ class ImxPlugin(ImageHostPlugin):
         else:
             logger.warning("IMX credentials not set - cannot create gallery, IMX will auto-create 'untitled' gallery")
 
+    # NEW: Generic HTTP request builder (replaces hardcoded Go service logic)
+    def build_http_request(self, file_path: str, config: Dict[str, Any], creds: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Build HTTP request specification for IMX.to upload.
+        This replaces the hardcoded uploadImx() function in Go.
+        """
+        # Map thumbnail size to IMX API ID
+        size_map = {"100": "1", "150": "6", "180": "2", "250": "3", "300": "4"}
+        thumb_size = size_map.get(config.get("thumbnail_size", "180"), "2")
+
+        # Map thumbnail format to IMX API ID
+        format_map = {
+            "Fixed Width": "1",
+            "Fixed Height": "4",
+            "Proportional": "2",
+            "Square": "3"
+        }
+        thumb_format = format_map.get(config.get("thumbnail_format", "Fixed Width"), "1")
+
+        # Build multipart fields
+        multipart_fields = {
+            "image": {"type": "file", "value": file_path},
+            "format": {"type": "text", "value": "json"},
+            "adult": {"type": "text", "value": "1"},
+            "upload_type": {"type": "text", "value": "file"},
+            "simple_upload": {"type": "text", "value": "Upload"},
+            "thumbnail_size": {"type": "text", "value": thumb_size},
+            "thumb_size_contaner": {"type": "text", "value": thumb_size},  # Legacy name
+            "thumbnail_format": {"type": "text", "value": thumb_format},
+        }
+
+        # Add gallery ID if specified
+        gallery_id = config.get("gallery_id", "").strip()
+        if gallery_id:
+            multipart_fields["gallery_id"] = {"type": "text", "value": gallery_id}
+
+        return {
+            "url": "https://api.imx.to/v1/upload.php",
+            "method": "POST",
+            "headers": {
+                "X-API-KEY": creds.get("imx_api", ""),
+            },
+            "multipart_fields": multipart_fields,
+            "response_parser": {
+                "type": "json",
+                "url_path": "data.image_url",
+                "thumb_path": "data.thumbnail_url",
+                "status_path": "status",
+                "success_value": "success"
+            }
+        }
+
     # Go-based upload - stubs for abstract methods (uploads handled by Go sidecar)
     def initialize_session(self, config: Dict[str, Any], creds: Dict[str, Any]) -> Dict[str, Any]:
         """Stub - Go sidecar handles session initialization."""
         return {}
 
     def upload_file(self, file_path: str, group, config: Dict[str, Any], context: Dict[str, Any], progress_callback):
-        """Stub - Go sidecar handles file uploads."""
+        """Stub - Go sidecar handles file uploads via build_http_request()."""
         pass

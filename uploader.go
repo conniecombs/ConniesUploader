@@ -56,6 +56,32 @@ type JobRequest struct {
 	Creds       map[string]string `json:"creds"`
 	Config      map[string]string `json:"config"`
 	ContextData map[string]string `json:"context_data"`
+	HttpSpec    *HttpRequestSpec  `json:"http_spec,omitempty"` // New generic HTTP runner
+}
+
+// HttpRequestSpec defines a generic HTTP request for plugin-driven uploads
+type HttpRequestSpec struct {
+	URL            string                       `json:"url"`
+	Method         string                       `json:"method"`
+	Headers        map[string]string            `json:"headers"`
+	MultipartFields map[string]MultipartField   `json:"multipart_fields"`
+	FormFields     map[string]string            `json:"form_fields,omitempty"`
+	ResponseParser ResponseParserSpec           `json:"response_parser"`
+}
+
+// MultipartField represents a field in multipart/form-data
+type MultipartField struct {
+	Type  string `json:"type"`  // "file" or "text"
+	Value string `json:"value"` // For text fields: the value; For file fields: the file path
+}
+
+// ResponseParserSpec defines how to parse the upload response
+type ResponseParserSpec struct {
+	Type         string `json:"type"`          // "json" or "html"
+	URLPath      string `json:"url_path"`      // JSONPath or CSS selector for image URL
+	ThumbPath    string `json:"thumb_path"`    // JSONPath or CSS selector for thumbnail URL
+	StatusPath   string `json:"status_path"`   // JSONPath for status field
+	SuccessValue string `json:"success_value"` // Expected value for success
 }
 
 type OutputEvent struct {
@@ -265,6 +291,9 @@ func handleJob(job JobRequest) {
 	switch job.Action {
 	case "upload":
 		handleUpload(job)
+	case "http_upload":
+		// NEW: Generic HTTP runner for plugin-driven uploads
+		handleHttpUpload(job)
 	case "login", "verify":
 		handleLoginVerify(job)
 	case "list_galleries":
@@ -413,6 +442,40 @@ func handleCreateGallery(job JobRequest) {
 	}
 }
 
+func handleHttpUpload(job JobRequest) {
+	// NEW: Generic HTTP runner for plugin-driven uploads
+	// Python plugins send fully-formed HTTP request specs; Go just executes them
+	if job.HttpSpec == nil {
+		sendJSON(OutputEvent{Type: "error", Msg: "http_upload requires http_spec field"})
+		return
+	}
+
+	var wg sync.WaitGroup
+	filesChan := make(chan string, len(job.Files))
+
+	maxWorkers := 2
+	if w, err := strconv.Atoi(job.Config["threads"]); err == nil && w > 0 {
+		maxWorkers = w
+	}
+
+	for i := 0; i < maxWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for fp := range filesChan {
+				processFileGeneric(fp, &job)
+			}
+		}()
+	}
+
+	for _, f := range job.Files {
+		filesChan <- f
+	}
+	close(filesChan)
+	wg.Wait()
+	sendJSON(OutputEvent{Type: "batch_complete", Status: "done"})
+}
+
 func handleUpload(job JobRequest) {
 	var wg sync.WaitGroup
 	filesChan := make(chan string, len(job.Files))
@@ -553,6 +616,258 @@ func processFile(fp string, job *JobRequest) {
 	}
 	sendJSON(OutputEvent{Type: "log", Msg: fmt.Sprintf(">>> PROCESSFILE EXITING for %s", filepath.Base(fp))})
 	logger.Debug("=== PROCESSFILE EXITING ===")
+}
+
+// processFileGeneric handles file uploads using the generic HTTP runner
+// This allows Python plugins to define the entire HTTP request
+func processFileGeneric(fp string, job *JobRequest) {
+	logger := log.WithFields(log.Fields{
+		"file":    filepath.Base(fp),
+		"service": job.Service,
+	})
+
+	sendJSON(OutputEvent{Type: "log", Msg: fmt.Sprintf(">>> GENERIC UPLOAD for %s (service: %s)", filepath.Base(fp), job.Service)})
+	sendJSON(OutputEvent{Type: "status", FilePath: fp, Status: "Processing"})
+	logger.Info("=== GENERIC PROCESSFILE CALLED ===")
+
+	// Same timeout as legacy processFile
+	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+	defer cancel()
+
+	sendJSON(OutputEvent{Type: "log", Msg: fmt.Sprintf(">>> 3-minute timeout started for %s", filepath.Base(fp))})
+	logger.WithField("timeout", "180s").Debug("Context created with timeout")
+
+	type result struct {
+		url   string
+		thumb string
+		err   error
+	}
+	resultChan := make(chan result, 1)
+
+	go func() {
+		sendJSON(OutputEvent{Type: "status", FilePath: fp, Status: "Uploading"})
+		logger.Debug("Status 'Uploading' sent")
+
+		// Execute the generic HTTP request
+		url, thumb, err := executeHttpUpload(ctx, fp, job)
+
+		logger.WithFields(log.Fields{
+			"url":   url,
+			"thumb": thumb,
+			"error": err,
+		}).Debug("Generic upload returned")
+
+		select {
+		case resultChan <- result{url: url, thumb: thumb, err: err}:
+			logger.Debug("Result sent to channel")
+		case <-ctx.Done():
+			logger.Warn("Context cancelled before result could be sent")
+		}
+	}()
+
+	// Wait for upload to complete or timeout
+	logger.Debug("Waiting for result or timeout")
+	select {
+	case res := <-resultChan:
+		logger.WithField("has_error", res.err != nil).Debug("=== RESULT RECEIVED ===")
+		if res.err != nil {
+			logger.WithFields(log.Fields{
+				"error": res.err.Error(),
+			}).Error("Upload failed")
+			sendJSON(OutputEvent{Type: "status", FilePath: fp, Status: "Failed"})
+			sendJSON(OutputEvent{Type: "error", FilePath: fp, Msg: fmt.Sprintf("Upload failed: %v", res.err)})
+		} else {
+			logger.WithFields(log.Fields{
+				"url":   res.url,
+				"thumb": res.thumb,
+			}).Info("Upload successful")
+			sendJSON(OutputEvent{Type: "result", FilePath: fp, Url: res.url, Thumb: res.thumb})
+			sendJSON(OutputEvent{Type: "status", FilePath: fp, Status: "Done"})
+		}
+	case <-ctx.Done():
+		logger.Error("=== TIMEOUT TRIGGERED - 3 MINUTES ELAPSED ===")
+		sendJSON(OutputEvent{Type: "log", Msg: fmt.Sprintf("!!! TIMEOUT TRIGGERED for %s after 3 minutes !!!", filepath.Base(fp))})
+		sendJSON(OutputEvent{Type: "status", FilePath: fp, Status: "Timeout"})
+		sendJSON(OutputEvent{Type: "error", FilePath: fp, Msg: "Upload timed out after 3 minutes - worker released"})
+	}
+	sendJSON(OutputEvent{Type: "log", Msg: fmt.Sprintf(">>> GENERIC PROCESSFILE EXITING for %s", filepath.Base(fp))})
+	logger.Debug("=== GENERIC PROCESSFILE EXITING ===")
+}
+
+// executeHttpUpload performs a generic HTTP upload based on Python-provided spec
+func executeHttpUpload(ctx context.Context, fp string, job *JobRequest) (string, string, error) {
+	spec := job.HttpSpec
+	if spec == nil {
+		return "", "", fmt.Errorf("no http_spec provided")
+	}
+
+	// Apply rate limiting if service is specified
+	if job.Service != "" {
+		if err := waitForRateLimit(ctx, job.Service); err != nil {
+			return "", "", fmt.Errorf("rate limit: %w", err)
+		}
+	}
+
+	// Build multipart request
+	pr, pw := io.Pipe()
+	writer := multipart.NewWriter(pw)
+
+	go func() {
+		defer func() { _ = pw.Close() }()
+		defer func() { _ = writer.Close() }()
+
+		// Process all multipart fields from the spec
+		for fieldName, field := range spec.MultipartFields {
+			if field.Type == "file" {
+				// File field - use the file from the job
+				filePath := fp // Use the file being processed, not field.Value
+				part, err := writer.CreateFormFile(fieldName, filepath.Base(filePath))
+				if err != nil {
+					pw.CloseWithError(fmt.Errorf("failed to create form file %s: %w", fieldName, err))
+					return
+				}
+				f, err := os.Open(filePath)
+				if err != nil {
+					pw.CloseWithError(fmt.Errorf("failed to open file %s: %w", filePath, err))
+					return
+				}
+				defer func() { _ = f.Close() }()
+				if _, err := io.Copy(part, f); err != nil {
+					pw.CloseWithError(fmt.Errorf("failed to copy file %s: %w", filePath, err))
+					return
+				}
+			} else if field.Type == "text" {
+				// Text field
+				if err := writer.WriteField(fieldName, field.Value); err != nil {
+					pw.CloseWithError(fmt.Errorf("failed to write field %s: %w", fieldName, err))
+					return
+				}
+			}
+		}
+	}()
+
+	// Create HTTP request
+	req, err := http.NewRequestWithContext(ctx, spec.Method, spec.URL, pr)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// Set headers from spec
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("User-Agent", UserAgent) // Default user agent
+	for key, value := range spec.Headers {
+		req.Header.Set(key, value)
+	}
+
+	// Execute request
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", "", fmt.Errorf("request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	// Parse response based on parser spec
+	return parseHttpResponse(resp, &spec.ResponseParser)
+}
+
+// parseHttpResponse parses the upload response based on the parser spec
+func parseHttpResponse(resp *http.Response, parser *ResponseParserSpec) (string, string, error) {
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if parser.Type == "json" {
+		// Parse JSON response
+		var data map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &data); err != nil {
+			return "", "", fmt.Errorf("failed to parse JSON response: %w", err)
+		}
+
+		// Check status if specified
+		if parser.StatusPath != "" {
+			status := getJSONValue(data, parser.StatusPath)
+			if status != parser.SuccessValue {
+				msg := getJSONValue(data, "message")
+				if msg == "" {
+					msg = getJSONValue(data, "error")
+				}
+				if msg == "" {
+					msg = fmt.Sprintf("upload failed with status: %s", status)
+				}
+				return "", "", fmt.Errorf("%s", msg)
+			}
+		}
+
+		// Extract URLs
+		url := getJSONValue(data, parser.URLPath)
+		thumb := getJSONValue(data, parser.ThumbPath)
+
+		if url == "" {
+			return "", "", fmt.Errorf("no URL found in response at path: %s", parser.URLPath)
+		}
+
+		return url, thumb, nil
+	} else if parser.Type == "html" {
+		// Parse HTML response using goquery
+		doc, err := goquery.NewDocumentFromReader(bytes.NewReader(bodyBytes))
+		if err != nil {
+			return "", "", fmt.Errorf("failed to parse HTML: %w", err)
+		}
+
+		// Use CSS selectors from parser spec
+		url := doc.Find(parser.URLPath).AttrOr("value", "")
+		if url == "" {
+			url = doc.Find(parser.URLPath).Text()
+		}
+
+		thumb := doc.Find(parser.ThumbPath).AttrOr("value", "")
+		if thumb == "" {
+			thumb = doc.Find(parser.ThumbPath).AttrOr("src", "")
+		}
+		if thumb == "" {
+			thumb = doc.Find(parser.ThumbPath).Text()
+		}
+
+		if url == "" {
+			return "", "", fmt.Errorf("no URL found with selector: %s", parser.URLPath)
+		}
+
+		return url, thumb, nil
+	}
+
+	return "", "", fmt.Errorf("unsupported parser type: %s", parser.Type)
+}
+
+// getJSONValue extracts a value from nested JSON using dot notation (e.g., "data.image_url")
+func getJSONValue(data map[string]interface{}, path string) string {
+	if path == "" {
+		return ""
+	}
+
+	parts := strings.Split(path, ".")
+	current := interface{}(data)
+
+	for _, part := range parts {
+		switch v := current.(type) {
+		case map[string]interface{}:
+			current = v[part]
+		default:
+			return ""
+		}
+	}
+
+	// Convert final value to string
+	switch v := current.(type) {
+	case string:
+		return v
+	case float64:
+		return fmt.Sprintf("%.0f", v)
+	case bool:
+		return fmt.Sprintf("%t", v)
+	default:
+		return ""
+	}
 }
 
 // --- Upload Implementations ---
