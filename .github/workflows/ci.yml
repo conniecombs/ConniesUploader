@@ -165,8 +165,9 @@ jobs:
         $size = (Get-Item "dist\ConniesUploader.exe").length
         $sizeMB = [math]::Round($size / 1MB, 2)
         Write-Output "Build size: $sizeMB MB ($size bytes)"
-        if ($size -lt 40000000) {
-          Write-Warning "⚠️ Build size is ${sizeMB} MB (expected 40-50 MB)"
+        # Lowered threshold to 15MB because Go binary is stripped (-s -w) and much smaller
+        if ($size -lt 15000000) {
+          Write-Warning "⚠️ Build size is ${sizeMB} MB (expected 15-20 MB)"
           Write-Warning "This suggests the Go sidecar may not be properly bundled"
           Write-Warning "Checking if uploader.exe exists in current directory..."
           if (Test-Path "uploader.exe") {

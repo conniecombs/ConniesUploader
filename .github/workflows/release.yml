@@ -152,8 +152,8 @@ jobs:
         $sizeMB = [math]::Round($size / 1MB, 2)
         Write-Output "Build size: $sizeMB MB"
 
-        # Expected size >40MB when uploader.exe is included (matches CI threshold)
-        if ($size -lt 40000000) {
+        # Lowered threshold to 15MB because Go binary is stripped (-s -w) and much smaller
+        if ($size -lt 15000000) {
           Write-Error "❌ Build size is only ${sizeMB} MB. Sidecar likely missing!"
           exit 1
         }
