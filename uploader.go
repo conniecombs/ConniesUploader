@@ -386,13 +386,13 @@ func processFile(fp string, job *JobRequest) {
 	sendJSON(OutputEvent{Type: "status", FilePath: fp, Status: "Processing"})
 	logger.Info("=== PROCESSFILE CALLED ===")
 
-	// CRITICAL FIX #2: ULTRA-AGGRESSIVE 10-second timeout
-	// If upload doesn't complete in 10 seconds, something is seriously wrong
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// CRITICAL FIX #2: 2-minute timeout per file
+	// Allows time for large uploads on slower connections
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	sendJSON(OutputEvent{Type: "log", Msg: fmt.Sprintf(">>> 10-second timeout started for %s", filepath.Base(fp))})
-	logger.WithField("timeout", "10s").Debug("Context created with timeout")
+	sendJSON(OutputEvent{Type: "log", Msg: fmt.Sprintf(">>> 2-minute timeout started for %s", filepath.Base(fp))})
+	logger.WithField("timeout", "120s").Debug("Context created with timeout")
 
 	type result struct {
 		url   string

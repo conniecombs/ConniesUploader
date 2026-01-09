@@ -78,7 +78,7 @@ class SidecarBridge:
                 [exe],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stderr=subprocess.STDOUT,  # CRITICAL: Merge stderr into stdout to prevent pipe deadlock
                 text=True,
                 bufsize=1,
                 startupinfo=startupinfo,

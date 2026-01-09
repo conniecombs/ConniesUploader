@@ -142,7 +142,7 @@ func TestWorkerPoolConcurrency(t *testing.T) {
 	}
 }
 
-// TestTimeoutBehavior verifies 10-second timeout is enforced
+// TestTimeoutBehavior verifies HTTP ResponseHeaderTimeout (10s) is enforced
 func TestTimeoutBehavior(t *testing.T) {
 	// Setup client
 	setupTestClient()
@@ -171,8 +171,8 @@ func TestTimeoutBehavior(t *testing.T) {
 		},
 	}
 
-	// Create context with 10-second timeout (as in processFile)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// Create context with 120-second timeout (as in processFile)
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
 	start := time.Now()
