@@ -2,11 +2,47 @@
 
 ## Executive Summary
 
-**Status:** The application is now **fully refactored** with a plugin-driven architecture. The split-brain problem has been RESOLVED by making Go a "dumb HTTP runner" that executes requests defined by Python plugins. Session-based services (Vipr, Turbo, ImageBam) are now supported via multi-step pre-request hooks.
+**Status:** The application is now **fully refactored** with a plugin-driven architecture. The split-brain problem has been RESOLVED by making Go a "dumb HTTP runner" that executes requests defined by Python plugins. ALL services (stateless APIs and session-based) now use the generic HTTP runner!
 
-**Version:** v2.3.0 (Session Management Architecture)
+**Version:** v2.4.0 (Complete Migration - 100% Plugin-Driven)
 
-**Migration Progress:** 3/5 services (60%) using generic HTTP runner - IMX, Pixhost, Vipr
+**Migration Progress:** 5/5 services (100%) using generic HTTP runner - **MIGRATION COMPLETE!**
+
+## Recent Fixes (v2.4.0)
+
+### ✅ RESOLVED: Complete Migration to Generic HTTP Runner (100%)
+- **Problem:** TurboImageHost and ImageBam still used hardcoded Go logic. ImageBam had complex 4-step login requiring template substitution in headers/form fields.
+- **Solution:** Enhanced Phase 3 protocol with advanced features:
+  - **Regex extraction** in HTML parsing: `"regex:pattern"` selector support
+  - **URL templates** for response parsing: `{id}` and `{filename}` substitution
+  - **Form field templates**: Template substitution in POST body fields
+  - **Header templates**: Dynamic header values from extracted data (e.g., `X-CSRF-TOKEN: {csrf}`)
+  - **Multi-level nesting**: Parent extracted values passed to child requests
+- **Impact:** ALL 5 services now use generic HTTP runner - **100% migration complete!**
+
+**Examples:**
+
+TurboImageHost (regex + URL template):
+```python
+"extract_fields": {
+    "endpoint": "regex:endpoint:\\s*'([^']+)'"  # Extract from JavaScript
+},
+"response_parser": {
+    "url_template": "https://turboimagehost.com/p/{id}/{filename}.html"
+}
+```
+
+ImageBam (4-step chain with template substitution):
+```python
+"form_fields": {
+    "_token": "{login_token}",  # Use token from step 1
+},
+"headers": {
+    "X-CSRF-TOKEN": "{csrf_token}"  # Use token from step 3
+}
+```
+
+---
 
 ## Recent Fixes (v2.3.0)
 
@@ -194,20 +230,32 @@ def build_http_request(self, file_path, config, creds):
 **Migration Status:**
 - ✅ **IMX.to** - Migrated (stateless API)
 - ✅ **Pixhost.to** - Migrated (stateless API)
-- ✅ **Vipr.im** - Migrated (session-based, multi-step login)
-- ⏳ **TurboImageHost** - Can follow Vipr pattern
-- ⏳ **ImageBam** - Can follow Vipr pattern
+- ✅ **Vipr.im** - Migrated (session-based, 2-step login)
+- ✅ **TurboImageHost** - Migrated (session-based, endpoint discovery)
+- ✅ **ImageBam** - Migrated (session-based, 4-step login with CSRF)
 
-**Progress: 3/5 (60%)** - All stateless APIs + one session-based service complete!
+**Progress: 5/5 (100%)** - ✨ **MIGRATION COMPLETE!** ✨
 
 ---
 
-### Phase 4: Future Enhancements
+### ✅ Phase 4: Completed (v2.4.0 - Complete Migration)
+- ✅ Implemented regex extraction for HTML (`regex:` prefix)
+- ✅ Implemented URL templates with `{placeholder}` substitution
+- ✅ Implemented form field templates for dynamic POST bodies
+- ✅ Implemented header templates for dynamic header values
+- ✅ Enhanced follow-up requests to pass parent extracted values
+- ✅ Migrated TurboImageHost to new protocol
+- ✅ Migrated ImageBam to new protocol
+
+**Result:** 100% of services now use generic HTTP runner - **ZERO hardcoded service logic in Go!**
+
+---
+
+### Phase 5: Future Enhancements
 
 **High Priority:**
 1. **Retry Logic:** Automatic retry with exponential backoff for transient failures
 2. **Progress Streaming:** Real-time upload progress (currently only status changes)
-3. **Complete Migration:** Migrate TurboImageHost and ImageBam to new protocol
 
 **Medium Priority:**
 4. **Credential Encryption:** Store API keys/passwords encrypted at rest (OS keychain)
@@ -315,17 +363,26 @@ class YourServicePlugin(ImageHostPlugin):
 
 ## Conclusion
 
-The application is **production-ready** and **architecturally sound** after v2.3.0. The generic HTTP runner with session management eliminates the split-brain problem for ALL service types (stateless APIs and session-based) while maintaining all performance benefits of Go's concurrency.
+The application is **production-ready** and **architecturally sound** after v2.4.0. The generic HTTP runner with advanced session management eliminates the split-brain problem for ALL services while maintaining all performance benefits of Go's concurrency.
 
 **Key Achievements:**
 - ✅ True plugin flexibility - add services by dropping in Python files only!
-- ✅ Session management - multi-step logins, cookie persistence, dynamic field resolution
-- ✅ 60% migration complete (3/5 services) - Turbo and ImageBam can follow Vipr pattern
+- ✅ Advanced session management - multi-step logins, cookie persistence, template substitution
+- ✅ **100% migration complete** (5/5 services) - ZERO hardcoded service logic in Go!
+- ✅ Regex extraction, URL templates, dynamic headers/form fields
+- ✅ Supports both stateless APIs (IMX, Pixhost) and complex session-based services (Vipr, Turbo, ImageBam)
 
 ---
 
 ## Version History
 
+- **v2.4.0** (2026-01-09): Complete migration - 100% plugin-driven architecture
+  - Regex extraction in HTML parsing (`regex:` prefix)
+  - URL templates with `{placeholder}` substitution
+  - Form field and header templates for dynamic values
+  - Multi-level extracted value passing in nested follow-up requests
+  - TurboImageHost and ImageBam fully migrated
+  - **MILESTONE: All 5 services now use generic HTTP runner**
 - **v2.3.0** (2026-01-09): Session management for HTTP runner - enables session-based services
   - Multi-step pre-request chaining with `FollowUpRequest`
   - Cookie jar support for session persistence

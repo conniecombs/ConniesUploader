@@ -127,7 +127,98 @@ class TurboPlugin(ImageHostPlugin):
 
         return errors
 
-    # --- Upload Implementation (Unchanged from original) ---
+    # NEW: Generic HTTP request builder with session management (Phase 3)
+    def build_http_request(self, file_path: str, config: Dict[str, Any], creds: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Build HTTP request specification for TurboImageHost upload with session management.
+        Uses Phase 3 multi-step pre-request hooks:
+        1. Optional POST to /login (if credentials provided)
+        2. GET / to extract upload endpoint from JavaScript
+        """
+        import os
+        import random
+        import string
+
+        # Get file size for query parameters
+        try:
+            file_size = os.path.getsize(file_path)
+        except:
+            file_size = 0
+
+        # Generate random upload ID
+        upload_id = ''.join(random.choices(string.ascii_letters + string.digits, k=12))
+
+        # Base endpoint (will be overridden by extracted endpoint)
+        base_endpoint = "https://www.turboimagehost.com/upload_html5.tu"
+
+        # Build upload URL with query parameters
+        upload_url = f"{base_endpoint}?upload_id={upload_id}&js_on=1&utype=reg&upload_type=file"
+
+        # Check if credentials are provided
+        has_credentials = bool(creds.get("turbo_user") and creds.get("turbo_pass"))
+
+        # Build pre-request spec
+        pre_request_spec = {
+            "action": "get_endpoint",
+            "url": "https://www.turboimagehost.com/",
+            "method": "GET",
+            "headers": {},
+            "form_fields": {},
+            "use_cookies": True,
+            "extract_fields": {
+                "endpoint": "regex:endpoint:\\s*'([^']+)'"  # Regex pattern to extract endpoint from JavaScript
+            },
+            "response_type": "html"
+        }
+
+        # If credentials provided, add login step before endpoint extraction
+        if has_credentials:
+            pre_request_spec = {
+                "action": "login",
+                "url": "https://www.turboimagehost.com/login",
+                "method": "POST",
+                "headers": {},
+                "form_fields": {
+                    "username": creds.get("turbo_user", ""),
+                    "password": creds.get("turbo_pass", ""),
+                    "login": "Login"
+                },
+                "use_cookies": True,
+                "extract_fields": {},  # No extraction from login POST
+                "response_type": "html",
+                # Step 2: GET homepage to extract upload endpoint
+                "follow_up_request": {
+                    "action": "get_endpoint",
+                    "url": "https://www.turboimagehost.com/",
+                    "method": "GET",
+                    "headers": {},
+                    "form_fields": {},
+                    "use_cookies": True,
+                    "extract_fields": {
+                        "endpoint": "regex:endpoint:\\s*'([^']+)'"  # Regex to extract endpoint
+                    },
+                    "response_type": "html"
+                }
+            }
+
+        return {
+            "url": upload_url,
+            "method": "POST",
+            "headers": {},
+            "pre_request": pre_request_spec,
+            "multipart_fields": {
+                "qqfile": {"type": "file", "value": file_path},
+            },
+            "response_parser": {
+                "type": "json",
+                "status_path": "success",
+                "success_value": "true",
+                "url_template": "https://www.turboimagehost.com/p/{id}/{filename}.html",
+                # Turbo returns {"success":true,"id":"xyz"}, construct URL from ID + filename
+            }
+        }
+
+    # --- Upload Implementation (Go sidecar handles uploads) ---
 
     def initialize_session(
         self, config: Dict[str, Any], creds: Dict[str, Any]
@@ -138,5 +229,5 @@ class TurboPlugin(ImageHostPlugin):
     def upload_file(
         self, file_path: str, group, config: Dict[str, Any], context: Dict[str, Any], progress_callback
     ):
-        """Stub - Go sidecar handles file uploads."""
+        """Stub - Go sidecar handles file uploads via build_http_request()."""
         pass

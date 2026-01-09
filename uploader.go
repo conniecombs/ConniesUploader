@@ -96,6 +96,8 @@ type ResponseParserSpec struct {
 	ThumbPath    string `json:"thumb_path"`    // JSONPath or CSS selector for thumbnail URL
 	StatusPath   string `json:"status_path"`   // JSONPath for status field
 	SuccessValue string `json:"success_value"` // Expected value for success
+	URLTemplate  string `json:"url_template,omitempty"`   // Template for constructing URL from extracted values (e.g., "https://example.com/p/{id}/image.html")
+	ThumbTemplate string `json:"thumb_template,omitempty"` // Template for constructing thumbnail URL
 }
 
 type OutputEvent struct {
@@ -814,7 +816,7 @@ func executeHttpUpload(ctx context.Context, fp string, job *JobRequest) (string,
 	defer func() { _ = resp.Body.Close() }()
 
 	// Parse response based on parser spec
-	return parseHttpResponse(resp, &spec.ResponseParser)
+	return parseHttpResponse(resp, &spec.ResponseParser, fp)
 }
 
 // executePreRequest executes a pre-request hook (login, endpoint discovery, etc.)
@@ -842,13 +844,17 @@ func executePreRequest(ctx context.Context, spec *PreRequestSpec, service string
 		preClient = client // Use default client
 	}
 
-	// Build request body
+	// Build request body (support template substitution in form fields)
 	var reqBody io.Reader
 	contentType := ""
 
 	if len(spec.FormFields) > 0 {
 		formData := url.Values{}
 		for key, value := range spec.FormFields {
+			// Support template substitution: {field_name} -> extracted value
+			// This is needed for multi-step flows like ImageBam where later steps need earlier extracted values
+			// Note: extractedValues would need to be passed in, but we don't have them yet on first call
+			// For now, this is handled in follow-up requests which have access to parent extracted values
 			formData.Set(key, value)
 		}
 		reqBody = strings.NewReader(formData.Encode())
@@ -861,7 +867,7 @@ func executePreRequest(ctx context.Context, spec *PreRequestSpec, service string
 		return nil, nil, fmt.Errorf("failed to create pre-request: %w", err)
 	}
 
-	// Set headers
+	// Set headers (no template substitution needed on first request)
 	req.Header.Set("User-Agent", UserAgent)
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
@@ -907,21 +913,38 @@ func executePreRequest(ctx context.Context, spec *PreRequestSpec, service string
 		}
 
 		for fieldName, selector := range spec.ExtractFields {
-			// Try multiple extraction methods
-			value := doc.Find(selector).AttrOr("value", "")
-			if value == "" {
-				value = doc.Find(selector).AttrOr("action", "")
-			}
-			if value == "" {
-				value = doc.Find(selector).Text()
+			var value string
+
+			// Support regex extraction if selector starts with "regex:"
+			if strings.HasPrefix(selector, "regex:") {
+				pattern := strings.TrimPrefix(selector, "regex:")
+				re := regexp.MustCompile(pattern)
+				matches := re.FindStringSubmatch(string(bodyBytes))
+				if len(matches) > 1 {
+					value = matches[1] // First capture group
+				}
+				log.WithFields(log.Fields{
+					"field":   fieldName,
+					"value":   value,
+					"pattern": pattern,
+				}).Debug("Extracted value from HTML using regex")
+			} else {
+				// CSS selector extraction
+				value = doc.Find(selector).AttrOr("value", "")
+				if value == "" {
+					value = doc.Find(selector).AttrOr("action", "")
+				}
+				if value == "" {
+					value = doc.Find(selector).Text()
+				}
+				log.WithFields(log.Fields{
+					"field":    fieldName,
+					"value":    value,
+					"selector": selector,
+				}).Debug("Extracted value from HTML using CSS selector")
 			}
 
 			extractedValues[fieldName] = strings.TrimSpace(value)
-			log.WithFields(log.Fields{
-				"field":    fieldName,
-				"value":    value,
-				"selector": selector,
-			}).Debug("Extracted value from HTML")
 		}
 	}
 
@@ -934,8 +957,8 @@ func executePreRequest(ctx context.Context, spec *PreRequestSpec, service string
 	if spec.FollowUpRequest != nil {
 		log.Debug("Executing follow-up pre-request")
 
-		// Execute follow-up using same client (preserves cookies)
-		followUpValues, followUpClient, err := executeFollowUpRequest(ctx, spec.FollowUpRequest, service, preClient)
+		// Execute follow-up using same client (preserves cookies) and parent extracted values
+		followUpValues, followUpClient, err := executeFollowUpRequest(ctx, spec.FollowUpRequest, service, preClient, extractedValues)
 		if err != nil {
 			return nil, nil, fmt.Errorf("follow-up request failed: %w", err)
 		}
@@ -954,8 +977,8 @@ func executePreRequest(ctx context.Context, spec *PreRequestSpec, service string
 	return extractedValues, preClient, nil
 }
 
-// executeFollowUpRequest handles follow-up pre-requests using an existing client
-func executeFollowUpRequest(ctx context.Context, spec *PreRequestSpec, service string, existingClient *http.Client) (map[string]string, *http.Client, error) {
+// executeFollowUpRequest handles follow-up pre-requests using an existing client and parent extracted values
+func executeFollowUpRequest(ctx context.Context, spec *PreRequestSpec, service string, existingClient *http.Client, parentExtractedValues map[string]string) (map[string]string, *http.Client, error) {
 	log.WithFields(log.Fields{
 		"action":  spec.Action,
 		"url":     spec.URL,
@@ -980,14 +1003,16 @@ func executeFollowUpRequest(ctx context.Context, spec *PreRequestSpec, service s
 		}
 	}
 
-	// Build request body
+	// Build request body with template substitution from parent extracted values
 	var reqBody io.Reader
 	contentType := ""
 
 	if len(spec.FormFields) > 0 {
 		formData := url.Values{}
 		for key, value := range spec.FormFields {
-			formData.Set(key, value)
+			// Support template substitution: {field_name} -> extracted value from parent
+			substitutedValue := substituteTemplateFromMap(value, parentExtractedValues)
+			formData.Set(key, substitutedValue)
 		}
 		reqBody = strings.NewReader(formData.Encode())
 		contentType = "application/x-www-form-urlencoded"
@@ -999,13 +1024,15 @@ func executeFollowUpRequest(ctx context.Context, spec *PreRequestSpec, service s
 		return nil, nil, fmt.Errorf("failed to create follow-up request: %w", err)
 	}
 
-	// Set headers
+	// Set headers with template substitution from parent extracted values
 	req.Header.Set("User-Agent", UserAgent)
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
 	for key, value := range spec.Headers {
-		req.Header.Set(key, value)
+		// Support template substitution in headers (e.g., "X-CSRF-TOKEN": "{csrf_token}")
+		substitutedValue := substituteTemplateFromMap(value, parentExtractedValues)
+		req.Header.Set(key, substitutedValue)
 	}
 
 	// Execute request
@@ -1045,27 +1072,53 @@ func executeFollowUpRequest(ctx context.Context, spec *PreRequestSpec, service s
 		}
 
 		for fieldName, selector := range spec.ExtractFields {
-			// Try multiple extraction methods
-			value := doc.Find(selector).AttrOr("value", "")
-			if value == "" {
-				value = doc.Find(selector).AttrOr("action", "")
-			}
-			if value == "" {
-				value = doc.Find(selector).Text()
+			var value string
+
+			// Support regex extraction if selector starts with "regex:"
+			if strings.HasPrefix(selector, "regex:") {
+				pattern := strings.TrimPrefix(selector, "regex:")
+				re := regexp.MustCompile(pattern)
+				matches := re.FindStringSubmatch(string(bodyBytes))
+				if len(matches) > 1 {
+					value = matches[1] // First capture group
+				}
+				log.WithFields(log.Fields{
+					"field":   fieldName,
+					"value":   value,
+					"pattern": pattern,
+				}).Debug("Extracted value from HTML using regex (follow-up)")
+			} else {
+				// CSS selector extraction
+				value = doc.Find(selector).AttrOr("value", "")
+				if value == "" {
+					value = doc.Find(selector).AttrOr("action", "")
+				}
+				if value == "" {
+					value = doc.Find(selector).Text()
+				}
+				log.WithFields(log.Fields{
+					"field":    fieldName,
+					"value":    value,
+					"selector": selector,
+				}).Debug("Extracted value from HTML using CSS selector (follow-up)")
 			}
 
 			extractedValues[fieldName] = strings.TrimSpace(value)
-			log.WithFields(log.Fields{
-				"field":    fieldName,
-				"value":    value,
-				"selector": selector,
-			}).Debug("Extracted value from HTML (follow-up)")
 		}
 	}
 
 	// Recursively handle nested follow-ups (though typically not needed)
 	if spec.FollowUpRequest != nil {
-		nestedValues, nestedClient, err := executeFollowUpRequest(ctx, spec.FollowUpRequest, service, reqClient)
+		// Merge parent and current extracted values for the next follow-up
+		mergedValues := make(map[string]string)
+		for k, v := range parentExtractedValues {
+			mergedValues[k] = v
+		}
+		for k, v := range extractedValues {
+			mergedValues[k] = v
+		}
+
+		nestedValues, nestedClient, err := executeFollowUpRequest(ctx, spec.FollowUpRequest, service, reqClient, mergedValues)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1085,7 +1138,7 @@ func executeFollowUpRequest(ctx context.Context, spec *PreRequestSpec, service s
 }
 
 // parseHttpResponse parses the upload response based on the parser spec
-func parseHttpResponse(resp *http.Response, parser *ResponseParserSpec) (string, string, error) {
+func parseHttpResponse(resp *http.Response, parser *ResponseParserSpec, filePath string) (string, string, error) {
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to read response: %w", err)
@@ -1113,9 +1166,31 @@ func parseHttpResponse(resp *http.Response, parser *ResponseParserSpec) (string,
 			}
 		}
 
-		// Extract URLs
+		// Extract URLs or values for template substitution
 		url := getJSONValue(data, parser.URLPath)
 		thumb := getJSONValue(data, parser.ThumbPath)
+
+		// NEW: Support URL templates for constructing URLs from extracted values
+		if parser.URLTemplate != "" {
+			// Add filename to data for template substitution
+			dataWithFile := make(map[string]interface{})
+			for k, v := range data {
+				dataWithFile[k] = v
+			}
+			dataWithFile["filename"] = filepath.Base(filePath)
+			url = substituteTemplate(parser.URLTemplate, dataWithFile)
+		}
+		if parser.ThumbTemplate != "" {
+			dataWithFile := make(map[string]interface{})
+			for k, v := range data {
+				dataWithFile[k] = v
+			}
+			dataWithFile["filename"] = filepath.Base(filePath)
+			thumb = substituteTemplate(parser.ThumbTemplate, dataWithFile)
+		} else if parser.URLTemplate != "" && thumb == "" {
+			// If URL template is used but no thumb template, use URL as thumb
+			thumb = url
+		}
 
 		if url == "" {
 			return "", "", fmt.Errorf("no URL found in response at path: %s", parser.URLPath)
@@ -1151,6 +1226,55 @@ func parseHttpResponse(resp *http.Response, parser *ResponseParserSpec) (string,
 	}
 
 	return "", "", fmt.Errorf("unsupported parser type: %s", parser.Type)
+}
+
+// substituteTemplateFromMap replaces {key} placeholders in a template with values from a string map
+func substituteTemplateFromMap(template string, values map[string]string) string {
+	result := template
+
+	// Find all {key} placeholders and replace them
+	re := regexp.MustCompile(`\{([^}]+)\}`)
+	matches := re.FindAllStringSubmatch(template, -1)
+
+	for _, match := range matches {
+		if len(match) < 2 {
+			continue
+		}
+		placeholder := match[0] // e.g., "{csrf_token}"
+		key := match[1]          // e.g., "csrf_token"
+
+		// Look up value in map
+		if value, exists := values[key]; exists {
+			result = strings.Replace(result, placeholder, value, -1)
+		}
+	}
+
+	return result
+}
+
+// substituteTemplate replaces {key} placeholders in a template with values from JSON data
+func substituteTemplate(template string, data map[string]interface{}) string {
+	result := template
+
+	// Find all {key} placeholders and replace them
+	re := regexp.MustCompile(`\{([^}]+)\}`)
+	matches := re.FindAllStringSubmatch(template, -1)
+
+	for _, match := range matches {
+		if len(match) < 2 {
+			continue
+		}
+		placeholder := match[0] // e.g., "{id}"
+		key := match[1]          // e.g., "id"
+
+		// Extract value from JSON using dot notation
+		value := getJSONValue(data, key)
+		if value != "" {
+			result = strings.Replace(result, placeholder, value, -1)
+		}
+	}
+
+	return result
 }
 
 // getJSONValue extracts a value from nested JSON using dot notation (e.g., "data.image_url")
