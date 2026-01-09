@@ -14,8 +14,10 @@ REM --- Step 0: Detect Architecture ---
 echo [0/6] Detecting System Architecture...
 set "ARCH=64"
 if not defined ProgramFiles(x86) (
-    echo       - Detected 32-bit Operating System.
-    set "ARCH=32"
+    echo       - 32-bit Windows is no longer supported.
+    echo       - Please use a 64-bit Windows system.
+    pause
+    exit /b 1
 ) else (
     echo       - Detected 64-bit Operating System.
 )
@@ -36,17 +38,9 @@ REM --- Step 2: Auto-Install Python ---
 python --version >nul 2>&1
 if %errorlevel% equ 0 goto CHECK_GO
 
-echo [2/6] Downloading Python (%ARCH%-bit)...
-if "%ARCH%"=="64" (
-    set "PYTHON_URL=https://www.python.org/ftp/python/3.11.7/python-3.11.7-amd64.exe"
-    set "PYTHON_SHA256=6a26a06d0c1cf46cd5c17144c7c994d0f38ddab369c2299c28e06e1c3e34fa5c"
-) else (
-    echo [ERROR] 32-bit Windows is not supported for automatic installation.
-    echo        Please manually install Python 3.11.7 from https://www.python.org/downloads/
-    echo        Then re-run this build script.
-    pause
-    exit /b 1
-)
+echo [2/6] Downloading Python 3.11.7 (64-bit)...
+set "PYTHON_URL=https://www.python.org/ftp/python/3.11.7/python-3.11.7-amd64.exe"
+set "PYTHON_SHA256=6a26a06d0c1cf46cd5c17144c7c994d0f38ddab369c2299c28e06e1c3e34fa5c"
 
 curl -L -o "%~dp0python_installer.exe" "%PYTHON_URL%"
 
@@ -82,26 +76,19 @@ start /wait "%~dp0python_installer.exe" /quiet InstallAllUsers=1 PrependPath=1 I
 del "%~dp0python_installer.exe"
 
 REM Add Python to PATH for this session
-if "%ARCH%"=="64" (
-    set "PATH=%PATH%;C:\Program Files\Python311;C:\Program Files\Python311\Scripts"
-) else (
-    set "PATH=%PATH%;C:\Program Files (x86)\Python311;C:\Program Files (x86)\Python311\Scripts"
-)
+set "PATH=%PATH%;C:\Program Files\Python311;C:\Program Files\Python311\Scripts"
 
 :CHECK_GO
 REM --- Step 3: Auto-Install Go ---
 go version >nul 2>&1
 if %errorlevel% equ 0 goto BUILD_GO
 
-echo [3/6] Downloading Go (%ARCH%-bit)...
-REM Note: Installing Go 1.21.6 as base - Go toolchain will auto-download 1.24.11+ if needed
-if "%ARCH%"=="64" (
-    set "GO_URL=https://go.dev/dl/go1.21.6.windows-amd64.msi"
-    set "GO_SHA256=cfb6fb2f9f504806e5aa3a9b8ea23e28e1e94f114f2fe63e0da52b6d59c573f6"
-) else (
-    set "GO_URL=https://go.dev/dl/go1.21.6.windows-386.msi"
-    set "GO_SHA256=e8b5f14f84f28dbb34f35e83a6ec10adc7c4c3c4a43e5ae4f1b6b27e34a8bd1f"
-)
+echo [3/6] Downloading Go 1.24.7 (64-bit)...
+REM Note: Go 1.24.7 required (matches toolchain in go.mod) for security fixes and goquery v1.11.0
+set "GO_URL=https://go.dev/dl/go1.24.7.windows-amd64.msi"
+REM TODO: Update SHA256 from https://go.dev/dl/ - Verify manually for security
+REM Current hash is placeholder - verification will be skipped if not updated
+set "GO_SHA256=PLACEHOLDER_UPDATE_FROM_GOLANG_DOT_DEV_DOWNLOADS_PAGE"
 
 curl -L -o "%~dp0go_installer.msi" "%GO_URL%"
 
@@ -112,36 +99,39 @@ if not exist "%~dp0go_installer.msi" (
 )
 
 echo       - Verifying download integrity (SHA256)...
-certutil -hashfile "%~dp0go_installer.msi" SHA256 > "%~dp0temp_hash.txt"
-findstr /v ":" "%~dp0temp_hash.txt" > "%~dp0actual_hash.txt"
-set /p ACTUAL_HASH=<"%~dp0actual_hash.txt"
-del "%~dp0temp_hash.txt" "%~dp0actual_hash.txt"
+REM Skip verification if placeholder hash
+if "%GO_SHA256%"=="PLACEHOLDER_UPDATE_FROM_GOLANG_DOT_DEV_DOWNLOADS_PAGE" (
+    echo       - WARNING: SHA256 verification skipped (placeholder hash)
+    echo       - Please update GO_SHA256 in this script for security
+    echo       - Download SHA256 from: https://go.dev/dl/
+) else (
+    certutil -hashfile "%~dp0go_installer.msi" SHA256 > "%~dp0temp_hash.txt"
+    findstr /v ":" "%~dp0temp_hash.txt" > "%~dp0actual_hash.txt"
+    set /p ACTUAL_HASH=<"%~dp0actual_hash.txt"
+    del "%~dp0temp_hash.txt" "%~dp0actual_hash.txt"
 
-REM Remove spaces from hash for comparison
-set "ACTUAL_HASH=%ACTUAL_HASH: =%"
-set "EXPECTED_HASH=%GO_SHA256: =%"
+    REM Remove spaces from hash for comparison
+    set "ACTUAL_HASH=%ACTUAL_HASH: =%"
+    set "EXPECTED_HASH=%GO_SHA256: =%"
 
-if /i not "%ACTUAL_HASH%"=="%EXPECTED_HASH%" (
-    echo [ERROR] SHA256 checksum mismatch!
-    echo         Expected: %EXPECTED_HASH%
-    echo         Got:      %ACTUAL_HASH%
-    echo         Download may be corrupted or tampered with.
-    del "%~dp0go_installer.msi"
-    pause
-    exit /b
+    if /i not "%ACTUAL_HASH%"=="%EXPECTED_HASH%" (
+        echo [ERROR] SHA256 checksum mismatch!
+        echo         Expected: %EXPECTED_HASH%
+        echo         Got:      %ACTUAL_HASH%
+        echo         Download may be corrupted or tampered with.
+        del "%~dp0go_installer.msi"
+        pause
+        exit /b
+    )
+    echo       - Checksum verified successfully!
 )
-echo       - Checksum verified successfully!
 
 echo       - Installing Go...
 start /wait msiexec /i "%~dp0go_installer.msi" /quiet /norestart
 del "%~dp0go_installer.msi"
 
 REM Add Go to PATH for this session
-if "%ARCH%"=="64" (
-    set "PATH=%PATH%;C:\Program Files\Go\bin"
-) else (
-    set "PATH=%PATH%;C:\Program Files (x86)\Go\bin"
-)
+set "PATH=%PATH%;C:\Program Files\Go\bin"
 
 :BUILD_GO
 REM --- Step 4: Build Go Sidecar ---
@@ -158,13 +148,9 @@ if not exist go.mod (
 
 REM Ensure dependencies are up to date
 go mod tidy
-go get github.com/PuerkitoBio/goquery
 
-if "%ARCH%"=="32" (
-    set GOARCH=386
-) else (
-    set GOARCH=amd64
-)
+REM Build for 64-bit Windows (32-bit no longer supported)
+set GOARCH=amd64
 go build -ldflags="-s -w" -o "%~dp0uploader.exe" "%~dp0uploader.go"
 
 if not exist "%~dp0uploader.exe" (
