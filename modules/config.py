@@ -5,7 +5,7 @@ from loguru import logger
 import os
 
 # --- Version ---
-APP_VERSION = "3.5.0"
+APP_VERSION = "1.0.0"
 USER_AGENT = f"ConniesUploader/{APP_VERSION}"
 
 # --- Constants ---
