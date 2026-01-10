@@ -78,7 +78,7 @@ class SidecarBridge:
                 [exe],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,  # CRITICAL: Merge stderr into stdout to prevent pipe deadlock
+                stderr=subprocess.STDOUT,  # FIX: Merge stderr into stdout to prevent deadlock
                 text=True,
                 bufsize=1,
                 startupinfo=startupinfo,
@@ -124,6 +124,7 @@ class SidecarBridge:
                     data = json.loads(line)
                     self._dispatch_event(data)
                 except json.JSONDecodeError:
+                    # Logic to handle non-JSON lines (like pure Go logs) if they slip through
                     pass
             except Exception as e:
                 logger.error(f"Sidecar read error: {e}")
