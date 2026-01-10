@@ -10,6 +10,7 @@ class SettingsManager:
         # UPDATED: Changed booleans (*_cover) to integers (*_cover_count)
         self.defaults = {
             "service": "imx.to",
+            "global_worker_count": 8,  # Main job queue dispatcher workers
             "imx_thumb": "180",
             "imx_format": "Fixed Width",
             "imx_cover_count": 0,  # Was imx_cover
@@ -32,11 +33,13 @@ class SettingsManager:
             # Viper/ImageBam Defaults
             "vipr_thumb": "170x170",
             "vipr_cover_count": 0,  # Was vipr_cover
+            "vipr_threads": 1,
             "imagebam_content": "Safe",
             "imagebam_thumb": "180",
             # ImageBam doesn't typically have a specific "Cover" setting in API,
             # but we'll add the key for consistency if needed later.
             "imagebam_cover_count": 0,
+            "imagebam_threads": 2,
         }
 
     def load(self):

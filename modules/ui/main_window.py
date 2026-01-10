@@ -140,6 +140,12 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         """Initialize manager objects and background workers."""
         self.settings_mgr = SettingsManager()
         self.settings = self.settings_mgr.load()
+
+        # Configure sidecar worker count before it's started
+        from modules.sidecar import SidecarBridge
+        worker_count = self.settings.get("global_worker_count", 8)
+        SidecarBridge.set_worker_count(worker_count)
+
         self.template_mgr = TemplateManager()
         self.upload_manager = UploadManager(self.progress_queue, self.result_queue, self.cancel_event)
 
@@ -364,6 +370,16 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         ctk.CTkCheckBox(out_frame, text="One Gallery Per Folder", variable=self.var_auto_gallery).pack(
             anchor="w", padx=5, pady=2
         )
+
+        # Global worker count setting
+        worker_frame = ctk.CTkFrame(out_frame, fg_color="transparent")
+        worker_frame.pack(fill="x", padx=5, pady=5)
+        ctk.CTkLabel(worker_frame, text="Worker Count:", width=100).pack(side="left")
+        self.var_global_worker_count = ctk.IntVar(value=8)
+        worker_spinbox = ctk.CTkEntry(worker_frame, textvariable=self.var_global_worker_count, width=60)
+        worker_spinbox.pack(side="left", padx=5)
+        ctk.CTkLabel(worker_frame, text="(1-16)", font=("Segoe UI", 10)).pack(side="left")
+
         self.btn_open = ctk.CTkButton(
             out_frame, text="Open Output Folder", command=self.open_output_folder, state="disabled"
         )
@@ -440,6 +456,8 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
                 return str(val)
             return "1" if s.get(old_bool_key, False) else "0"
 
+        self.var_global_worker_count.set(s.get("global_worker_count", 8))
+
         self.var_imx_thumb.set(s.get("imx_thumb", "180"))
         self.var_imx_format.set(s.get("imx_format", "Fixed Width"))
         self.var_imx_cover_count.set(get_count("imx_cover_count", "imx_cover"))
@@ -505,6 +523,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
 
         return {
             "service": self.var_service.get(),
+            "global_worker_count": self._safe_int(self.var_global_worker_count.get(), 8),
             "imx_thumb": self.var_imx_thumb.get(),
             "imx_format": self.var_imx_format.get(),
             "imx_cover_count": get_c(self.var_imx_cover_count),

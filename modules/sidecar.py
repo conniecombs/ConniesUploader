@@ -10,6 +10,12 @@ from loguru import logger
 
 class SidecarBridge:
     _instance = None
+    _worker_count = 8  # Default worker count
+
+    @classmethod
+    def set_worker_count(cls, count):
+        """Set the worker count before the sidecar is started."""
+        cls._worker_count = max(1, min(count, 16))  # Clamp between 1 and 16
 
     @classmethod
     def get(cls):
@@ -75,7 +81,7 @@ class SidecarBridge:
                 startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
 
             self.proc = subprocess.Popen(
-                [exe],
+                [exe, "--workers", str(self._worker_count)],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,  # FIX: Merge stderr into stdout to prevent deadlock
@@ -86,7 +92,7 @@ class SidecarBridge:
 
             t = threading.Thread(target=self._listen, daemon=True)
             t.start()
-            logger.info(f"Sidecar started: {exe}")
+            logger.info(f"Sidecar started: {exe} (workers: {self._worker_count})")
 
         except Exception as e:
             logger.error(f"Failed to start sidecar: {e}")
