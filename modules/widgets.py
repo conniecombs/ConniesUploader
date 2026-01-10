@@ -106,6 +106,10 @@ class ServiceSettingsView:
         self._build_frames()
 
     def _init_variables(self):
+        # Global settings
+        if not hasattr(self.app, "var_global_worker_count"):
+            self.app.var_global_worker_count = ctk.IntVar(value=8)
+
         # IMX
         if not hasattr(self.app, "var_imx_thumb"):
             self.app.var_imx_thumb = ctk.StringVar(value="180")

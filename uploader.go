@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"github.com/PuerkitoBio/goquery"
 	"github.com/disintegration/imaging"
@@ -207,16 +208,21 @@ func randomString(n int) string {
 }
 
 func main() {
+	// Parse command-line flags
+	workerCount := flag.Int("workers", 8, "Number of worker goroutines for job processing")
+	flag.Parse()
+
 	// Note: Using crypto/rand for random string generation (more secure)
 	log.WithFields(log.Fields{
 		"component": "uploader",
 		"version":   "2.0.0-diagnostic",
+		"workers":   *workerCount,
 	}).Info("Go sidecar starting")
 
 	// DIAGNOSTIC: Send visible startup message as JSON event (goes to Python console)
 	sendJSON(OutputEvent{
 		Type: "log",
-		Msg:  "=== GO SIDECAR STARTED - VERSION 2.1.0 - FIXED TIMEOUTS (180s/60s) ===",
+		Msg:  fmt.Sprintf("=== GO SIDECAR STARTED - VERSION 2.1.0 - WORKERS: %d ===", *workerCount),
 	})
 
 	jar, _ := cookiejar.New(nil)
@@ -238,9 +244,10 @@ func main() {
 	// 1. Create a job queue channel
 	jobQueue := make(chan JobRequest, 100)
 
-	// 2. Start fixed number of workers (e.g., 5-10) to process incoming requests
+	// 2. Start configured number of workers to process incoming requests
 	// This prevents the Go process from spawning thousands of goroutines if the UI floods it.
-	numWorkers := 8
+	// Worker count is configurable via --workers flag (default: 8, range: 1-16)
+	numWorkers := *workerCount
 	log.WithField("workers", numWorkers).Info("Starting worker pool")
 
 	for i := 0; i < numWorkers; i++ {
