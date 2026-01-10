@@ -86,6 +86,9 @@ class UploadManager:
     def _send_job(self, file_list, cfg, creds):
         service_id = cfg["service"]
 
+        # DIAGNOSTIC: Log config being sent to plugin
+        logger.info(f"_send_job for {service_id}: thumbnail_size={repr(cfg.get('thumbnail_size'))}, imx_thumb={repr(cfg.get('imx_thumb'))}")
+
         # NEW: Check if plugin supports generic HTTP runner
         plugin = self.plugin_manager.get_plugin(service_id)
         if plugin and hasattr(plugin, 'build_http_request'):

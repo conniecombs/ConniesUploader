@@ -165,7 +165,9 @@ class SidecarBridge:
         # DIAGNOSTIC: Log ALL events to see what's being sent
         event_type = data.get("type")
         if event_type in ["status", "result", "error"]:
-            logger.info(f"[GO-EVENT] type={event_type}, file={data.get('file', 'N/A')}, status={data.get('status', 'N/A')}, url={data.get('url', 'N/A')[:50] if data.get('url') else 'N/A'}")
+            msg = data.get('msg', '')
+            msg_str = f", msg={msg}" if msg and event_type == "error" else ""
+            logger.info(f"[GO-EVENT] type={event_type}, file={data.get('file', 'N/A')}, status={data.get('status', 'N/A')}, url={data.get('url', 'N/A')[:50] if data.get('url') else 'N/A'}{msg_str}")
 
         # 2. Broadcast to all listeners
         with self.listeners_lock:
