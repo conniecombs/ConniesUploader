@@ -102,7 +102,9 @@ class ImageBamPlugin(ImageHostPlugin):
         thumb_size_map = {"100": "1", "180": "2", "250": "3", "300": "4"}
 
         content_type_id = content_type_map.get(config.get("content_type", "Safe"), "1")
-        thumb_size_id = thumb_size_map.get(config.get("thumbnail_size", "180"), "2")
+        # Convert thumbnail_size to string (UI may pass int or str)
+        thumb_size_value = str(config.get("thumbnail_size", "180"))
+        thumb_size_id = thumb_size_map.get(thumb_size_value, "2")
 
         # Check if credentials are provided
         has_credentials = bool(creds.get("imagebam_user") and creds.get("imagebam_pass"))

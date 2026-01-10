@@ -127,6 +127,10 @@ var rateLimiters = map[string]*rate.Limiter{
 }
 var rateLimiterMutex sync.RWMutex
 
+// Global rate limiter across all services (10 req/s, burst 20)
+// Prevents IP bans when uploading to multiple services simultaneously
+var globalRateLimiter = rate.NewLimiter(rate.Limit(10.0), 20)
+
 // Per-Service State Structs (reduces lock contention vs single global mutex)
 type viprState struct {
 	mu       sync.RWMutex
@@ -179,12 +183,17 @@ func getRateLimiter(service string) *rate.Limiter {
 
 // waitForRateLimit waits for rate limiter approval before proceeding
 // Returns error if context is cancelled while waiting
+// Checks both global rate limiter (10 req/s across all services) and service-specific limiter
 func waitForRateLimit(ctx context.Context, service string) error {
-	limiter := getRateLimiter(service)
+	// Wait for global limiter first (prevents overload when using multiple services)
+	if err := globalRateLimiter.Wait(ctx); err != nil {
+		return fmt.Errorf("global rate limit wait cancelled: %w", err)
+	}
 
-	// Wait for permission to proceed (respects context cancellation)
+	// Then wait for service-specific limiter
+	limiter := getRateLimiter(service)
 	if err := limiter.Wait(ctx); err != nil {
-		return fmt.Errorf("rate limit wait cancelled: %w", err)
+		return fmt.Errorf("service rate limit wait cancelled: %w", err)
 	}
 
 	return nil

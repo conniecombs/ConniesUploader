@@ -5,39 +5,40 @@ import queue
 import os
 import sys
 import time
+from typing import Dict, Any, Optional, List
 from loguru import logger
 
 
 class SidecarBridge:
-    _instance = None
-    _worker_count = 8  # Default worker count
+    _instance: Optional["SidecarBridge"] = None
+    _worker_count: int = 8  # Default worker count
 
     @classmethod
-    def set_worker_count(cls, count):
+    def set_worker_count(cls, count: int) -> None:
         """Set the worker count before the sidecar is started."""
         cls._worker_count = max(1, min(count, 16))  # Clamp between 1 and 16
 
     @classmethod
-    def get(cls):
+    def get(cls) -> "SidecarBridge":
         if not cls._instance:
             cls._instance = SidecarBridge()
         return cls._instance
 
-    def __init__(self):
-        self.proc = None
-        self.cmd_lock = threading.Lock()
-        self.restart_lock = threading.Lock()
-        self.restart_count = 0
-        self.max_restarts = 5  # Maximum restart attempts
-        self.restart_delay = 2  # Initial restart delay (seconds)
+    def __init__(self) -> None:
+        self.proc: Optional[subprocess.Popen] = None
+        self.cmd_lock: threading.Lock = threading.Lock()
+        self.restart_lock: threading.Lock = threading.Lock()
+        self.restart_count: int = 0
+        self.max_restarts: int = 5  # Maximum restart attempts
+        self.restart_delay: int = 2  # Initial restart delay (seconds)
 
         # Event distribution
-        self.listeners = []
-        self.listeners_lock = threading.Lock()
+        self.listeners: List[queue.Queue] = []
+        self.listeners_lock: threading.Lock = threading.Lock()
 
         self._start_process()
 
-    def _start_process(self):
+    def _start_process(self) -> None:
         # Determine base directory for finding uploader.exe
         if getattr(sys, "frozen", False):
             # PyInstaller mode - use _MEIPASS for temp extraction folder
@@ -97,23 +98,23 @@ class SidecarBridge:
         except Exception as e:
             logger.error(f"Failed to start sidecar: {e}")
 
-    def add_listener(self, q):
+    def add_listener(self, q: queue.Queue) -> None:
         """Registers a queue to receive all events from the sidecar."""
         with self.listeners_lock:
             if q not in self.listeners:
                 self.listeners.append(q)
 
-    def remove_listener(self, q):
+    def remove_listener(self, q: queue.Queue) -> None:
         """Unregisters a queue."""
         with self.listeners_lock:
             if q in self.listeners:
                 self.listeners.remove(q)
 
-    def _is_process_alive(self):
+    def _is_process_alive(self) -> bool:
         """Check if the sidecar process is still running."""
         return self.proc and self.proc.poll() is None
 
-    def _listen(self):
+    def _listen(self) -> None:
         while self.proc:
             try:
                 line = self.proc.stdout.readline()
@@ -137,7 +138,7 @@ class SidecarBridge:
                 self._handle_crash()
                 break
 
-    def _handle_crash(self):
+    def _handle_crash(self) -> None:
         """Handle sidecar process crash with automatic restart."""
         if not self._is_process_alive():
             exit_code = self.proc.poll() if self.proc else None
@@ -162,7 +163,7 @@ class SidecarBridge:
                     logger.critical(f"Sidecar failed to restart after {self.max_restarts} attempts - giving up")
                     self.proc = None
 
-    def _dispatch_event(self, data):
+    def _dispatch_event(self, data: Dict[str, Any]) -> None:
         # 1. Log internal messages
         if data.get("type") == "log":
             # DIAGNOSTIC: Show Go logs as INFO so they're visible in console
@@ -183,7 +184,7 @@ class SidecarBridge:
                 except Exception:
                     pass
 
-    def send_cmd(self, payload):
+    def send_cmd(self, payload: Dict[str, Any]) -> None:
         # Check if process is alive, restart if needed
         if not self._is_process_alive():
             logger.warning("Sidecar not running, attempting restart...")
@@ -203,7 +204,7 @@ class SidecarBridge:
                 # If send fails, process might be dead - trigger recovery
                 self._handle_crash()
 
-    def request_sync(self, payload, timeout=5):
+    def request_sync(self, payload: Dict[str, Any], timeout: int = 5) -> Dict[str, Any]:
         """
         Sends a command and waits for a specific response.
         Used for login/verification/scraping.

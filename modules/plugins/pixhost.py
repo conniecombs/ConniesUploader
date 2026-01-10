@@ -139,11 +139,14 @@ class PixhostPlugin(ImageHostPlugin):
         # Map content type to Pixhost API value
         content_type = "1" if config.get("content_type") == "Adult" else "0"
 
+        # Get thumbnail size with type coercion (UI may pass int or str)
+        thumb_size = str(config.get("thumbnail_size", "200"))
+
         # Build multipart fields
         multipart_fields = {
             "img": {"type": "file", "value": file_path},
             "content_type": {"type": "text", "value": content_type},
-            "max_th_size": {"type": "text", "value": config.get("thumbnail_size", "200")},
+            "max_th_size": {"type": "text", "value": thumb_size},
         }
 
         # Add gallery hash if specified

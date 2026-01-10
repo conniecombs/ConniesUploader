@@ -4,6 +4,7 @@ import json
 import os
 import sys
 import queue
+from typing import Dict, List, Any, Tuple
 from . import config
 from loguru import logger
 from .sidecar import SidecarBridge
@@ -11,17 +12,27 @@ from .plugin_manager import PluginManager
 
 
 class UploadManager:
-    def __init__(self, progress_queue, result_queue, cancel_event):
+    def __init__(
+        self,
+        progress_queue: "queue.Queue[Tuple[str, str, str]]",
+        result_queue: "queue.Queue[Tuple[str, str, str]]",
+        cancel_event: threading.Event
+    ) -> None:
         self.progress_queue = progress_queue
         self.result_queue = result_queue
         self.cancel_event = cancel_event
         self.bridge = SidecarBridge.get()
         self.plugin_manager = PluginManager()  # For plugin-driven HTTP requests
 
-        self.event_queue = queue.Queue(maxsize=1000)
-        self.listener_thread = None
+        self.event_queue: queue.Queue = queue.Queue(maxsize=1000)
+        self.listener_thread: threading.Thread = None
 
-    def start_batch(self, pending_by_group, cfg, creds):
+    def start_batch(
+        self,
+        pending_by_group: Dict[Any, List[str]],
+        cfg: Dict[str, Any],
+        creds: Dict[str, str]
+    ) -> None:
         """
         Submits a batch of groups to the persistent Go sidecar.
         """
@@ -35,7 +46,12 @@ class UploadManager:
         # 3. Dispatch jobs asynchronously
         threading.Thread(target=self._dispatch_jobs, args=(pending_by_group, cfg, creds), daemon=True).start()
 
-    def _dispatch_jobs(self, pending_by_group, cfg, creds):
+    def _dispatch_jobs(
+        self,
+        pending_by_group: Dict[Any, List[str]],
+        cfg: Dict[str, Any],
+        creds: Dict[str, str]
+    ) -> None:
         """Sends job JSONs to the Go process via the Bridge."""
         for group_obj, files in pending_by_group.items():
             if self.cancel_event.is_set():
@@ -83,7 +99,12 @@ class UploadManager:
             if standards:
                 self._send_job(standards, cfg, creds)
 
-    def _send_job(self, file_list, cfg, creds):
+    def _send_job(
+        self,
+        file_list: List[str],
+        cfg: Dict[str, Any],
+        creds: Dict[str, str]
+    ) -> None:
         service_id = cfg["service"]
 
         # DIAGNOSTIC: Log config being sent to plugin
@@ -118,49 +139,14 @@ class UploadManager:
                     return
 
             except Exception as e:
-                logger.warning(f"Failed to build HTTP request spec for {service_id}, falling back to legacy: {e}")
+                logger.error(f"Failed to build HTTP request spec for {service_id}: {e}")
+                # Send error events for all files in this batch
+                for file_path in file_list:
+                    self.result_queue.put((file_path, "", ""))
+                    self.progress_queue.put(("status", file_path, "error: plugin configuration failed"))
+                return
 
-        # LEGACY: Fallback to hardcoded service mappings (for backward compatibility)
-        job_data = {
-            "action": "upload",
-            "service": service_id,
-            "files": [os.path.normpath(f) for f in file_list],
-            "creds": {
-                "api_key": creds.get("imx_api", ""),
-                "vipr_user": creds.get("vipr_user", ""),
-                "vipr_pass": creds.get("vipr_pass", ""),
-                "turbo_user": creds.get("turbo_user", ""),
-                "turbo_pass": creds.get("turbo_pass", ""),
-                "imagebam_user": creds.get("imagebam_user", ""),
-                "imagebam_pass": creds.get("imagebam_pass", ""),
-            },
-            "config": {
-                "threads": str(cfg.get(f"{service_id.split('.')[0]}_threads", 2)),
-                # IMX - support both new (thumbnail_size/thumbnail_format) and legacy (imx_thumb/imx_format) keys
-                "imx_thumb_id": self._map_imx_size(cfg.get("thumbnail_size") or cfg.get("imx_thumb")),
-                "imx_format_id": self._map_imx_format(cfg.get("thumbnail_format") or cfg.get("imx_format")),
-                "gallery_id": cfg.get("gallery_id", ""),
-                # Pixhost - support both new (content_type/thumbnail_size/gallery_hash) and legacy (pix_content/pix_thumb/pix_gallery_hash) keys
-                "pix_content": "1" if (cfg.get("content_type") or cfg.get("pix_content")) == "Adult" else "0",
-                "pix_thumb": cfg.get("thumbnail_size") or cfg.get("pix_thumb", "200"),
-                "pix_gallery_hash": cfg.get("gallery_hash") or cfg.get("pix_gallery_hash", ""),
-                # Vipr - support both new (thumbnail_size) and legacy (vipr_thumb) keys
-                "vipr_thumb": cfg.get("thumbnail_size") or cfg.get("vipr_thumb", "170x170"),
-                "vipr_gal_id": str(cfg.get("vipr_gal_id", "0")),
-                # Turbo - support both new (content_type/thumbnail_size) and legacy (turbo_content/turbo_thumb) keys
-                "turbo_content": "adult" if (cfg.get("content_type") or cfg.get("turbo_content")) == "Adult" else "all",
-                "turbo_thumb": cfg.get("thumbnail_size") or cfg.get("turbo_thumb", "180"),
-                # ImageBam - support both new (content_type/thumbnail_size) and legacy (imagebam_content/imagebam_thumb) keys
-                "ib_content": "nsfw" if (cfg.get("content_type") or cfg.get("imagebam_content")) == "Adult" else "sfw",
-                "ib_thumb": self._map_ib_size(cfg.get("thumbnail_size") or cfg.get("imagebam_thumb")),
-            },
-            "context_data": {},
-        }
-
-        logger.info(f"Using legacy upload protocol for {service_id} ({len(file_list)} files)")
-        self.bridge.send_cmd(job_data)
-
-    def _process_events(self):
+    def _process_events(self) -> None:
         """Reads events from the bridge and updates queues."""
         while not self.cancel_event.is_set():
             try:
@@ -195,13 +181,3 @@ class UploadManager:
                 continue
             except Exception as e:
                 logger.error(f"Event processing error: {e}")
-
-    # Helper Mappers
-    def _map_imx_size(self, val):
-        return {"100": "1", "150": "6", "180": "2", "250": "3", "300": "4"}.get(val, "2")
-
-    def _map_imx_format(self, val):
-        return {"Fixed Width": "1", "Fixed Height": "4", "Proportional": "2", "Square": "3"}.get(val, "1")
-
-    def _map_ib_size(self, val):
-        return {"100": "1", "180": "2", "250": "3", "300": "4"}.get(val, "2")

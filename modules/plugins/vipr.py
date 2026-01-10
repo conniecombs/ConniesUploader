@@ -269,8 +269,8 @@ class ViprPlugin(ImageHostPlugin):
                 "file_0": {"type": "file", "value": file_path},
                 "upload_type": {"type": "text", "value": "file"},
                 "sess_id": {"type": "dynamic", "value": "sess_id"},  # Use extracted session ID
-                "thumb_size": {"type": "text", "value": config.get("thumbnail_size", "170x170")},
-                "fld_id": {"type": "text", "value": config.get("vipr_gal_id", "0")},
+                "thumb_size": {"type": "text", "value": str(config.get("thumbnail_size", "170x170"))},
+                "fld_id": {"type": "text", "value": str(config.get("vipr_gal_id", "0"))},
                 "tos": {"type": "text", "value": "1"},
                 "submit_btn": {"type": "text", "value": "Upload"}
             },
