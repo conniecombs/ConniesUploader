@@ -1,6 +1,6 @@
 # Connie's Uploader Ultimate
 
-![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)
+![Version](https://img.shields.io/badge/version-1.0.4-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)
 ![Production Ready](https://img.shields.io/badge/production%20ready-85%25-yellow.svg)
@@ -13,7 +13,7 @@
 
 A powerful, multi-service image hosting uploader with an intuitive GUI. Upload images to multiple image hosting services with advanced features like batch processing, gallery management, and automatic forum posting.
 
-**🎉 First Official Release (v1.0.0)** - Production-ready (85%) with comprehensive CI/CD automation, zero CVEs, and cross-platform builds.
+**🎉 Latest Release (v1.0.4)** - Enhanced release automation with modern GitHub Actions workflows, improved build verification, and comprehensive documentation.
 
 ## ✨ Recent Improvements
 
@@ -75,7 +75,7 @@ A powerful, multi-service image hosting uploader with an intuitive GUI. Upload i
 
 **Download the latest release for your platform:**
 
-👉 **[Download v1.0.0](https://github.com/conniecombs/GolangVersion/releases/tag/v1.0.0)**
+👉 **[Download v1.0.4](https://github.com/conniecombs/conniesuploader/releases/tag/v1.0.4)**
 
 Available builds:
 - **Windows**: `ConniesUploader-windows.zip` (includes `.exe` + SHA256 checksum)
@@ -541,7 +541,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Version History
 
-**Latest Release: v1.0.0** - First Official Production Release (Jan 2026)
+**Latest Release: v1.0.4** - Release Automation & Build Verification Enhancements (Jan 2026)
 
 **Recent Achievements:**
 - 🎉 Comprehensive CI/CD automation (3 workflows, 6 security scanners)
