@@ -8,11 +8,12 @@ No manual registration required - just drop a plugin file and it's loaded!
 
 import importlib
 import inspect
-from pathlib import Path
+import pkgutil
 from typing import Dict, List
 from loguru import logger
 
 from .plugins.base import ImageHostPlugin
+import modules.plugins
 
 
 class PluginManager:
@@ -37,8 +38,8 @@ class PluginManager:
         Automatically discover and load all plugins from the plugins folder.
 
         Discovery process:
-            1. Find all .py files in modules/plugins/
-            2. Skip special files (__init__, base, schema_renderer, *_legacy)
+            1. Use pkgutil to discover modules in modules/plugins/ (works with PyInstaller)
+            2. Skip special files (__init__, base, schema_renderer, helpers, *_legacy)
             3. Import each module
             4. Find classes inheriting from ImageHostPlugin
             5. Instantiate and register each plugin
@@ -47,27 +48,31 @@ class PluginManager:
             - metadata.priority (if defined, lower = higher priority)
             - id (alphabetically if no priority)
         """
-        plugins_dir = Path(__file__).parent / "plugins"
+        logger.info(f"Discovering plugins in modules.plugins package")
 
-        # Find all .py files in plugins directory
-        plugin_files = sorted(plugins_dir.glob("*.py"))
+        # Use pkgutil.iter_modules which works in both dev and PyInstaller builds
+        # This is the standard way to discover modules in a package
+        plugin_modules = [
+            name for _, name, _ in pkgutil.iter_modules(modules.plugins.__path__)
+        ]
 
-        logger.info(f"Discovering plugins in {plugins_dir}")
+        logger.debug(f"Found {len(plugin_modules)} potential plugin modules: {plugin_modules}")
 
-        for plugin_file in plugin_files:
+        for module_name in sorted(plugin_modules):
             # Skip special files
-            if plugin_file.stem in ["__init__", "base", "schema_renderer"]:
+            if module_name in ["__init__", "base", "schema_renderer", "helpers"]:
+                logger.debug(f"Skipping special module: {module_name}")
                 continue
 
             # Skip legacy backup files
-            if plugin_file.stem.endswith("_legacy"):
-                logger.debug(f"Skipping legacy file: {plugin_file.stem}")
+            if module_name.endswith("_legacy"):
+                logger.debug(f"Skipping legacy file: {module_name}")
                 continue
 
             try:
                 # Import the module
-                module_name = f"modules.plugins.{plugin_file.stem}"
-                module = importlib.import_module(module_name)
+                full_module_name = f"modules.plugins.{module_name}"
+                module = importlib.import_module(full_module_name)
 
                 # Find all classes that inherit from ImageHostPlugin
                 for name, obj in inspect.getmembers(module, inspect.isclass):
@@ -93,12 +98,12 @@ class PluginManager:
                         except Exception as e:
                             error_msg = f"Failed to instantiate {name}: {e}"
                             logger.error(error_msg)
-                            self.load_errors.append((plugin_file.stem, name, str(e)))
+                            self.load_errors.append((module_name, name, str(e)))
 
             except Exception as e:
-                error_msg = f"Failed to import {plugin_file.stem}: {e}"
+                error_msg = f"Failed to import {module_name}: {e}"
                 logger.error(error_msg)
-                self.load_errors.append((plugin_file.stem, None, str(e)))
+                self.load_errors.append((module_name, None, str(e)))
 
         # Sort plugins by priority (if defined) or alphabetically by ID
         self._plugins = dict(

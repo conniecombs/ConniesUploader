@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [1.0.5] - 2026-01-11
+
+### 🔧 Fixed
+
+#### **Critical Bug Fixes**
+- **PyInstaller Plugin Discovery**
+  - Fixed image host dropdown not working in release builds
+  - Replaced filesystem-based plugin discovery (`Path.glob`) with `pkgutil.iter_modules`
+  - Plugin discovery now works correctly in both development and PyInstaller builds
+  - Issue: In v1.0.4 release builds, users could not select different image hosts from dropdown
+  - Root cause: PyInstaller bundles .py files as compiled modules, making glob-based discovery fail
+  - Solution: Use pkgutil which is the standard way to discover modules in packages
+
+---
+
+## [1.0.4] - 2026-01-11
+
 ### ✨ Added
 
 #### **Enhanced Release Automation**

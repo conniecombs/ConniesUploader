@@ -541,7 +541,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Version History
 
-**Latest Release: v1.0.4** - Release Automation & Build Verification Enhancements (Jan 2026)
+**Latest Release: v1.0.5** - Critical PyInstaller Bug Fix (Jan 2026)
 
 **Recent Achievements:**
 - 🎉 Comprehensive CI/CD automation (3 workflows, 6 security scanners)
