@@ -57,18 +57,34 @@ class UploadManager:
             if self.cancel_event.is_set():
                 break
 
+            # --- FIX START: Prepare Group (Create Gallery) ---
+            # Create a copy of config so specific gallery IDs don't leak to other groups
+            group_cfg = cfg.copy()
+
+            service_id = group_cfg.get("service", "")
+            plugin = self.plugin_manager.get_plugin(service_id)
+
+            if plugin and hasattr(plugin, 'prepare_group'):
+                try:
+                    # This call creates the gallery if 'gallery_id' is empty in config
+                    # and updates group_cfg['gallery_id'] with the new ID
+                    plugin.prepare_group(group_obj, group_cfg, {}, creds)
+                except Exception as e:
+                    logger.error(f"Failed to prepare group {group_obj.title}: {e}")
+            # --- FIX END ---
+
             # Determine configured cover count
-            svc = cfg.get("service", "")
+            svc = group_cfg.get("service", "")
             cover_cnt = 0
             try:
                 if "imx" in svc:
-                    cover_cnt = int(cfg.get("imx_cover_count", 0))
+                    cover_cnt = int(group_cfg.get("imx_cover_count", 0))
                 elif "pix" in svc:
-                    cover_cnt = int(cfg.get("pix_cover_count", 0))
+                    cover_cnt = int(group_cfg.get("pix_cover_count", 0))
                 elif "turbo" in svc:
-                    cover_cnt = int(cfg.get("turbo_cover_count", 0))
+                    cover_cnt = int(group_cfg.get("turbo_cover_count", 0))
                 elif "vipr" in svc:
-                    cover_cnt = int(cfg.get("vipr_cover_count", 0))
+                    cover_cnt = int(group_cfg.get("vipr_cover_count", 0))
             except (ValueError, TypeError) as e:
                 logger.debug(f"Could not get cover count for {svc}: {e}")
 
@@ -87,7 +103,7 @@ class UploadManager:
 
             # 1. Send Cover Job (Max Thumbnail Settings)
             if covers:
-                cover_cfg = cfg.copy()
+                cover_cfg = group_cfg.copy()
                 cover_cfg["imx_thumb"] = "600"
                 cover_cfg["pix_thumb"] = "500"
                 cover_cfg["turbo_thumb"] = "600"
@@ -97,7 +113,7 @@ class UploadManager:
 
             # 2. Send Standard Job
             if standards:
-                self._send_job(standards, cfg, creds)
+                self._send_job(standards, group_cfg, creds)
 
     def _send_job(
         self,

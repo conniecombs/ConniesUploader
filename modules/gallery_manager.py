@@ -281,7 +281,9 @@ class GalleryManager(ctk.CTkToplevel):
 
             galleries = []
             seen = set()
-            pattern = r"href=['\"](?:https?://[^/'\"]+)?/g/(\w+)['\"][^>]*>\s*<i>([^<]+)</i>"
+            # FIX: Updated pattern to make <i> tags optional
+            # Old pattern: r"href=['\"](?:https?://[^/'\"]+)?/g/(\w+)['\"][^>]*>\s*<i>([^<]+)</i>"
+            pattern = r"href=['\"](?:https?://[^/'\"]+)?/g/(\w+)['\"][^>]*>\s*(?:<i>)?([^<]+)(?:</i>)?"
             for gid, gname in re.findall(pattern, r.text, re.IGNORECASE):
                 if gid not in seen:
                     galleries.append({"id": gid, "name": gname.strip()})
@@ -317,7 +319,8 @@ class GalleryManager(ctk.CTkToplevel):
     def _find_gid_in_list(self, session, name):
         try:
             r = session.get("https://imx.to/user/galleries", timeout=10)
-            pattern = r"href=['\"].*?/g/(\w+)['\"].*?>\s*<i>(.*?)</i>"
+            # FIX: Updated pattern to make <i> tags optional
+            pattern = r"href=['\"].*?/g/(\w+)['\"].*?>\s*(?:<i>)?(.*?)(?:</i>)?"
             for gid, gname in re.findall(pattern, r.text, re.IGNORECASE):
                 if gname.strip() == name:
                     return gid
