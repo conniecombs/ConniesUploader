@@ -101,17 +101,54 @@ def create_imx_gallery(user: str, pwd: str, name: str, client: Any = None) -> Op
     return None
 
 
-def create_pixhost_gallery(name: str, client: Any = None) -> None:
+def create_pixhost_gallery(name: str, client: Any = None) -> Optional[Dict[str, str]]:
     """Create a Pixhost gallery.
-
-    Note: Pixhost doesn't support user galleries in the same way via this API yet.
-    Placeholder for future implementation.
 
     Args:
         name: Name for the gallery
-        client: Optional HTTP client (unused)
+        client: Optional HTTP client (unused, kept for compatibility)
 
     Returns:
-        None
+        Dictionary with gallery_hash and gallery_upload_hash if successful, None otherwise
     """
-    pass
+    payload = {
+        "action": "create_gallery",
+        "service": "pixhost.to",
+        "config": {"gallery_name": name},
+    }
+
+    resp = SidecarBridge.get().request_sync(payload, timeout=30)
+
+    if resp.get("status") == "success":
+        # Return gallery data containing hashes
+        return resp.get("data")
+
+    return None
+
+
+def finalize_pixhost_gallery(gallery_upload_hash: str, gallery_hash: str, client: Any = None) -> bool:
+    """Finalize a Pixhost gallery (set title and make it visible).
+
+    Args:
+        gallery_upload_hash: The upload hash returned when creating the gallery
+        gallery_hash: The gallery hash (ID) for the gallery
+        client: Optional HTTP client (unused, kept for compatibility)
+
+    Returns:
+        True if successful, False otherwise
+    """
+    if not gallery_upload_hash or not gallery_hash:
+        return False
+
+    payload = {
+        "action": "finalize_gallery",
+        "service": "pixhost.to",
+        "config": {
+            "gallery_upload_hash": gallery_upload_hash,
+            "gallery_hash": gallery_hash,
+        },
+    }
+
+    resp = SidecarBridge.get().request_sync(payload, timeout=15)
+
+    return resp.get("status") == "success"
