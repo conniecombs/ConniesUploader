@@ -378,14 +378,18 @@
   - [ ] Track performance over time
 - **Estimated Effort**: Medium (1-2 days)
 
-#### **Issue #34: No Graceful Shutdown**
-- **File**: `main.py:188`
-- **Issue**: `self.quit()` doesn't cleanly stop Go sidecar
-- **Action Items**:
-  - [ ] Add shutdown handler to SidecarBridge
-  - [ ] Send terminate signal to Go process
-  - [ ] Wait for graceful exit or force kill after timeout
-- **Estimated Effort**: Small (1 day)
+#### **Issue #34: No Graceful Shutdown** ✅ **RESOLVED**
+- **File**: `main.py`, `modules/ui/main_window.py`, `modules/sidecar.py`
+- **Issue**: `self.quit()` didn't cleanly stop Go sidecar or other components
+- **Resolution** (v1.0.6):
+  - [x] Added shutdown handler to SidecarBridge (`shutdown()` method)
+  - [x] Implemented signal handlers (SIGINT/SIGTERM) in main.py
+  - [x] Added window close protocol handler (WM_DELETE_WINDOW)
+  - [x] Send terminate signal to Go process via stdin close
+  - [x] Wait for graceful exit (5s) or force kill after timeout
+  - [x] Added component shutdown methods (AutoPoster, RenameWorker, UploadManager)
+  - [x] Comprehensive error handling and logging
+- **Documentation**: See ARCHITECTURE.md "Graceful Shutdown Architecture" section
 
 #### **Issue #35: Hardcoded User Agent**
 - **File**: `uploader.go:33`
@@ -430,7 +434,7 @@
 6. Add type hints everywhere (#10)
 7. Standardize logging (#9)
 8. Clean up documentation (#24)
-9. Add graceful shutdown (#34)
+9. ~~Add graceful shutdown (#34)~~ ✅ **RESOLVED in v1.0.6**
 10. Configuration validation (#13)
 
 ---

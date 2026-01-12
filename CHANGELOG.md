@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### ✨ Added
+
+#### **Graceful Shutdown System**
+- **Comprehensive shutdown handling** for clean application termination
+  - Intercepts window close events via `WM_DELETE_WINDOW` protocol handler
+  - File > Exit menu now performs graceful shutdown
+  - Signal handlers for `SIGINT` (Ctrl+C) and `SIGTERM` in main.py
+- **Component-level shutdown methods**:
+  - `AutoPoster.stop()` - Stops forum posting thread with 3-second timeout
+  - `RenameWorker.stop()` - Stops gallery rename worker with 2-second timeout
+  - `UploadManager.shutdown()` - Unregisters event listeners and cleans up threads
+  - `SidecarBridge.shutdown()` - Gracefully terminates Go sidecar process
+    - Closes stdin to signal exit
+    - Waits 5 seconds for graceful termination
+    - Force kills if necessary (SIGTERM → SIGKILL)
+- **Upload cancellation** - In-progress uploads are stopped cleanly via cancel_event
+- **ThreadPoolExecutor cleanup** - Thumbnail executor properly shut down
+- **Resource cleanup**:
+  - All background threads properly joined with timeouts
+  - Event queues unregistered from sidecar bridge
+  - Go subprocess terminated cleanly
+  - Log window closed if open
+- **Error resilience** - All shutdown operations wrapped in try-except to ensure exit
+- **Logging** - Detailed shutdown progress logged for debugging
+- **Benefits**:
+  - Prevents resource leaks (threads, processes, file handles)
+  - Ensures data integrity (no partial writes)
+  - Fast exit (worst case ~12 seconds with all timeouts)
+  - Cross-platform support (Windows, Linux, macOS)
+
 ---
 
 ## [1.0.5] - 2026-01-11

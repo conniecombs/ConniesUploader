@@ -56,6 +56,7 @@ A powerful, multi-service image hosting uploader with an intuitive GUI. Upload i
 - 🔁 **Retry Failed** - Automatically retry failed uploads with exponential backoff (3 attempts)
 - 🖼️ **Image Previews** - Thumbnail previews in the file list
 - 📝 **Execution Log** - Detailed structured logging for troubleshooting
+- 🛡️ **Graceful Shutdown** - Clean termination of all components with signal handling (SIGINT/SIGTERM)
 
 ### Advanced Features
 - **Plugin Architecture** - Auto-discovery system with priority-based loading
@@ -249,6 +250,35 @@ Access `Tools > Template Editor` to:
 ### Context Menu Integration (Windows)
 
 Install `Tools > Install Context Menu` to add "Upload with Connie's Uploader" to Windows Explorer right-click menu.
+
+### Graceful Shutdown
+
+The application implements comprehensive graceful shutdown to ensure all resources are properly cleaned up:
+
+**Shutdown Methods:**
+- Click `File > Exit` in the menu
+- Close the window (X button)
+- Press `Ctrl+C` in terminal (if running from command line)
+- Send `SIGTERM` signal (Unix-like systems)
+
+**Shutdown Process:**
+1. Stops any in-progress uploads (sets cancel event)
+2. Terminates AutoPoster thread (with 3-second timeout)
+3. Stops RenameWorker thread (with 2-second timeout)
+4. Shuts down thumbnail executor
+5. Cleans up upload manager and event listeners
+6. Terminates Go sidecar process gracefully:
+   - Closes stdin to signal shutdown
+   - Waits up to 5 seconds for graceful exit
+   - Forces termination if necessary
+7. Closes log window if open
+8. Exits application
+
+**Benefits:**
+- Prevents data corruption from abrupt termination
+- Ensures all background threads complete cleanly
+- Properly releases system resources (file handles, network connections)
+- Logs shutdown progress for debugging
 
 ## Configuration
 
