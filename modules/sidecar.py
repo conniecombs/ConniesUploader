@@ -228,3 +228,36 @@ class SidecarBridge:
             self.remove_listener(temp_q)
 
         return response
+
+    def shutdown(self) -> None:
+        """Gracefully shutdown the sidecar process."""
+        if not self.proc or not self._is_process_alive():
+            logger.info("Sidecar already terminated")
+            return
+
+        logger.info("Shutting down sidecar process...")
+
+        try:
+            # Close stdin to signal the Go process to finish
+            if self.proc.stdin:
+                self.proc.stdin.close()
+
+            # Wait up to 5 seconds for graceful termination
+            try:
+                self.proc.wait(timeout=5.0)
+                logger.info("Sidecar terminated gracefully")
+            except subprocess.TimeoutExpired:
+                # If it doesn't terminate, force kill it
+                logger.warning("Sidecar did not terminate gracefully, forcing termination")
+                self.proc.terminate()
+                try:
+                    self.proc.wait(timeout=2.0)
+                except subprocess.TimeoutExpired:
+                    self.proc.kill()
+                    self.proc.wait()
+                logger.info("Sidecar terminated forcefully")
+
+        except Exception as e:
+            logger.error(f"Error during sidecar shutdown: {e}")
+        finally:
+            self.proc = None
