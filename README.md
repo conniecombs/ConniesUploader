@@ -13,7 +13,7 @@
 
 A powerful, multi-service image hosting uploader with an intuitive GUI. Upload images to multiple image hosting services with advanced features like batch processing, gallery management, and automatic forum posting.
 
-**🎉 Latest Release (v1.0.4)** - Enhanced release automation with modern GitHub Actions workflows, improved build verification, and comprehensive documentation.
+**🎉 Latest Release (v1.0.5)** - Enhanced release automation with modern GitHub Actions workflows, improved build verification, and comprehensive documentation.
 
 ## ✨ Recent Improvements
 
