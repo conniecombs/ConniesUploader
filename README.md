@@ -1,6 +1,6 @@
 # Connie's Uploader Ultimate
 
-![Project version badge showing v1.0.4](https://img.shields.io/badge/version-1.0.4-blue.svg)
+![Project version badge showing v1.0.5](https://img.shields.io/badge/version-1.0.5-blue.svg)
 ![MIT License badge](https://img.shields.io/badge/license-MIT-green.svg)
 ![Supported platforms: Windows, Linux, and macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)
 ![Production readiness status at 85 percent](https://img.shields.io/badge/production%20ready-85%25-yellow.svg)
