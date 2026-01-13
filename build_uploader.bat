@@ -7,6 +7,12 @@ title Connie's Uploader - Smart Build Tool
 
 echo ========================================================
 echo       Connie's Uploader - Smart Build Utility
+echo       With Enhanced Features:
+echo       - Retry Logic with Exponential Backoff
+echo       - Real-time Progress Streaming
+echo       - Advanced Input Validation
+echo       - Configurable Rate Limits
+echo       - Plugin Versioning System
 echo ========================================================
 echo.
 
@@ -94,7 +100,7 @@ go version >nul 2>&1
 if %errorlevel% equ 0 goto BUILD_GO
 
 echo [3/6] Downloading Go (%ARCH%-bit)...
-REM Note: Installing Go 1.21.6 as base - Go toolchain will auto-download 1.24.11+ if needed
+REM Note: Go 1.21.6+ required for generics support (retry logic) and crypto/rand
 if "%ARCH%"=="64" (
     set "GO_URL=https://go.dev/dl/go1.21.6.windows-amd64.msi"
     set "GO_SHA256=cfb6fb2f9f504806e5aa3a9b8ea23e28e1e94f114f2fe63e0da52b6d59c573f6"
@@ -146,7 +152,12 @@ if "%ARCH%"=="64" (
 :BUILD_GO
 REM --- Step 4: Build Go Sidecar ---
 echo.
-echo [4/6] Compiling Go Sidecar...
+echo [4/6] Compiling Go Sidecar with Enhanced Features...
+echo       - Retry logic with exponential backoff
+echo       - Real-time progress streaming
+echo       - Input validation and security checks
+echo       - Configurable rate limits
+echo.
 
 REM Verify go.mod exists (should already exist in repo)
 if not exist go.mod (
@@ -156,6 +167,7 @@ if not exist go.mod (
     exit /b
 )
 
+echo       - Updating Go dependencies...
 REM Ensure dependencies are up to date
 go mod tidy
 go get github.com/PuerkitoBio/goquery
@@ -165,6 +177,8 @@ if "%ARCH%"=="32" (
 ) else (
     set GOARCH=amd64
 )
+
+echo       - Compiling optimized binary (stripped symbols, size optimized)...
 go build -ldflags="-s -w" -o "%~dp0uploader.exe" "%~dp0uploader.go"
 
 if not exist "%~dp0uploader.exe" (
@@ -173,7 +187,16 @@ if not exist "%~dp0uploader.exe" (
     pause
     exit /b
 )
+
 echo       - uploader.exe built successfully!
+echo.
+echo       Build Features Included:
+echo       [+] Automatic retry on transient failures (3 attempts, exponential backoff)
+echo       [+] Real-time upload progress (speed, percentage, ETA)
+echo       [+] Comprehensive input validation (path traversal prevention)
+echo       [+] Dynamic rate limiting (per-service configurable)
+echo       [+] Secure random number generation (crypto/rand)
+echo.
 
 REM --- Step 5: Python Environment ---
 echo.
@@ -267,13 +290,22 @@ if %DIST_SIZE% LSS 40000000 (
 
 echo.
 echo ========================================================
-echo       SUCCESS!
+echo       BUILD SUCCESS!
 echo ========================================================
 echo.
 echo Your program is in the "dist" folder.
 echo File: dist\ConniesUploader.exe
 echo.
+echo New Features in This Build:
+echo   [+] Smart Retry Logic - Auto-retry failed uploads
+echo   [+] Progress Streaming - Real-time upload status
+echo   [+] Enhanced Security - Input validation and path checks
+echo   [+] Flexible Rate Limits - Configurable per service
+echo   [+] Plugin Versioning - Semantic version comparison
+echo.
 echo Build completed: %date% %time%
+echo.
+echo For detailed feature documentation, see FEATURES.md
 echo.
 pause
 start dist
