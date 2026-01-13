@@ -24,11 +24,13 @@ import (
 	"net/textproto"
 	"net/url"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -272,14 +274,24 @@ func main() {
 	// 1. Create a job queue channel
 	jobQueue := make(chan JobRequest, 100)
 
-	// 2. Start configured number of workers to process incoming requests
+	// 2. Setup graceful shutdown
+	var wg sync.WaitGroup
+	shutdownChan := make(chan struct{})
+
+	// Listen for OS signals (SIGINT, SIGTERM)
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+
+	// 3. Start configured number of workers to process incoming requests
 	// This prevents the Go process from spawning thousands of goroutines if the UI floods it.
 	// Worker count is configurable via --workers flag (default: 8, range: 1-16)
 	numWorkers := *workerCount
 	log.WithField("workers", numWorkers).Info("Starting worker pool")
 
 	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
 		go func(workerID int) {
+			defer wg.Done()
 			log.WithField("worker_id", workerID).Debug("Worker started")
 			for job := range jobQueue {
 				startTime := time.Now()
@@ -302,34 +314,67 @@ func main() {
 		}(i)
 	}
 
+	// 4. Goroutine to handle shutdown signals
+	go func() {
+		select {
+		case sig := <-sigChan:
+			log.WithField("signal", sig).Info("Received shutdown signal")
+			close(shutdownChan)
+		case <-shutdownChan:
+			// Already closed by EOF handler
+		}
+	}()
+
 	decoder := json.NewDecoder(os.Stdin)
 
-	// 3. Main loop reads JSON and pushes to queue
+	// 5. Main loop reads JSON and pushes to queue
 	for {
-		var job JobRequest
-		if err := decoder.Decode(&job); err != nil {
-			if err == io.EOF {
-				break
+		select {
+		case <-shutdownChan:
+			log.Info("Shutdown initiated, stopping job intake")
+			goto shutdown
+		default:
+			var job JobRequest
+			if err := decoder.Decode(&job); err != nil {
+				if err == io.EOF {
+					log.Info("EOF received, initiating graceful shutdown")
+					close(shutdownChan)
+					goto shutdown
+				}
+				sendJSON(OutputEvent{Type: "error", Msg: fmt.Sprintf("JSON Decode Error: %v", err)})
+				continue
 			}
-			sendJSON(OutputEvent{Type: "error", Msg: fmt.Sprintf("JSON Decode Error: %v", err)})
-			continue
-		}
 
-		// Diagnostic: log queue depth if getting full
-		queueDepth := len(jobQueue)
-		if queueDepth > 50 {
-			log.WithField("queue_depth", queueDepth).Warn("Job queue filling up - workers may be slow")
-		}
+			// Diagnostic: log queue depth if getting full
+			queueDepth := len(jobQueue)
+			if queueDepth > 50 {
+				log.WithField("queue_depth", queueDepth).Warn("Job queue filling up - workers may be slow")
+			}
 
-		// Blocking push if queue is full, effectively throttling the UI
-		jobQueue <- job
-		log.WithFields(log.Fields{
-			"action":      job.Action,
-			"service":     job.Service,
-			"files":       len(job.Files),
-			"queue_depth": len(jobQueue),
-		}).Debug("Job queued")
+			// Blocking push if queue is full, effectively throttling the UI
+			jobQueue <- job
+			log.WithFields(log.Fields{
+				"action":      job.Action,
+				"service":     job.Service,
+				"files":       len(job.Files),
+				"queue_depth": len(jobQueue),
+			}).Debug("Job queued")
+		}
 	}
+
+shutdown:
+	// 6. Graceful shutdown sequence
+	log.Info("Closing job queue to signal workers")
+	close(jobQueue)
+
+	log.Info("Waiting for all workers to complete their current jobs")
+	wg.Wait()
+
+	log.Info("All workers completed, shutdown complete")
+	sendJSON(OutputEvent{
+		Type: "log",
+		Msg:  "=== GO SIDECAR SHUTDOWN COMPLETE ===",
+	})
 }
 
 func handleJob(job JobRequest) {

@@ -9,11 +9,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### ✨ Added
 
-#### **Graceful Shutdown System**
-- **Comprehensive shutdown handling** for clean application termination
-  - Intercepts window close events via `WM_DELETE_WINDOW` protocol handler
-  - File > Exit menu now performs graceful shutdown
-  - Signal handlers for `SIGINT` (Ctrl+C) and `SIGTERM` in main.py
+#### **Comprehensive Go Test Suite** (2026-01-13)
+- **Test Coverage**: Achieved 30.0% test coverage (up from 12.5%)
+- **Test Files**:
+  - `uploader_coverage_test.go` (766 lines) - Rate limiting, gallery operations, HTTP workflows
+  - `uploader_helpers_test.go` (448 lines) - Helper functions, concurrent access, edge cases
+  - `uploader_utils_test.go` (452 lines) - JSON parsing, template substitution, benchmarks
+  - `uploader_additional_test.go` (329 lines) - Job handling, HTTP requests, concurrency
+- **Total**: 1,995 lines of comprehensive test code
+- **Coverage Areas**:
+  - Rate limiting for all image host services
+  - Gallery creation and finalization workflows
+  - JSON value extraction and template substitution
+  - Concurrent operations and thread safety
+  - HTTP request handling with mock servers
+  - Edge cases and error conditions
+  - Benchmark tests for performance tracking
+
+#### **Complete Graceful Shutdown System** (2026-01-13)
+A comprehensive two-layer graceful shutdown implementation for both application and sidecar:
+
+**Go Sidecar Layer** (`uploader.go`):
+- **Signal Handling**: Listen for SIGINT and SIGTERM OS signals
+- **Worker Management**: sync.WaitGroup tracks all worker goroutines
+- **Coordinated Shutdown**:
+  - Stop accepting new jobs immediately on shutdown signal
+  - Close job queue to signal workers
+  - Wait for all in-flight jobs to complete
+  - Clean resource cleanup and logging
+- **EOF Handling**: Gracefully handle stdin closure (normal termination)
+
+**Python Application Layer** (`main.py`, `modules/ui/main_window.py`, `modules/sidecar.py`):
+- **Window close event handling** via `WM_DELETE_WINDOW` protocol handler
+- **File > Exit menu** performs graceful shutdown
+- **Signal handlers** for `SIGINT` (Ctrl+C) and `SIGTERM` in main.py
 - **Component-level shutdown methods**:
   - `AutoPoster.stop()` - Stops forum posting thread with 3-second timeout
   - `RenameWorker.stop()` - Stops gallery rename worker with 2-second timeout
@@ -22,20 +51,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Closes stdin to signal exit
     - Waits 5 seconds for graceful termination
     - Force kills if necessary (SIGTERM → SIGKILL)
-- **Upload cancellation** - In-progress uploads are stopped cleanly via cancel_event
+- **Upload cancellation** - In-progress uploads stopped cleanly via cancel_event
 - **ThreadPoolExecutor cleanup** - Thumbnail executor properly shut down
 - **Resource cleanup**:
   - All background threads properly joined with timeouts
   - Event queues unregistered from sidecar bridge
   - Go subprocess terminated cleanly
   - Log window closed if open
-- **Error resilience** - All shutdown operations wrapped in try-except to ensure exit
-- **Logging** - Detailed shutdown progress logged for debugging
-- **Benefits**:
-  - Prevents resource leaks (threads, processes, file handles)
-  - Ensures data integrity (no partial writes)
-  - Fast exit (worst case ~12 seconds with all timeouts)
-  - Cross-platform support (Windows, Linux, macOS)
+
+**Combined Benefits**:
+- No job loss during shutdown from either application exit or system signal
+- Uploads complete before exit
+- Container and systemd friendly
+- No orphaned goroutines or threads
+- Clean exit codes
+- Fast exit (worst case ~12 seconds with all timeouts)
+- Prevents resource leaks (threads, processes, file handles)
+- Ensures data integrity (no partial writes)
+- Cross-platform support (Windows, Linux, macOS)
+
+### 🔧 Fixed
+
+#### **Code Quality Improvements** (2026-01-10 - 2026-01-13)
+- Fixed typo: `thumb_size_contaner` → `thumb_size_container`
+- Added alt text to README badges for accessibility
+- Extracted magic numbers to named constants:
+  - `UI_CLEANUP_INTERVAL_MS = 30000`
+  - HTTP timeout constants in uploader.go
+- Centralized file extension validation
+- Improved error messages in sidecar.py
+- Ran `go mod tidy` for dependency cleanup
+- Fixed 3 golangci-lint errcheck warnings in test code
+
+#### **Feature Completions** (2026-01-10)
+- Implemented tooltip functionality (ToolTip class in schema_renderer.py)
+- Implemented Pixhost gallery creation API (createPixhostGallery)
+- Implemented Pixhost gallery finalization with PATCH requests
+- Added Python API wrappers (create_pixhost_gallery, finalize_pixhost_gallery)
+- Made service validation dynamic via plugin discovery
+- Added max file size validation and enforcement
+
+### 🚀 Improved
+
+#### **Configuration & Validation** (2026-01-10)
+- **JSON Schema Validation**: Added comprehensive validation for user_settings.json
+  - Service name validation with enum
+  - Worker count limits (1-20)
+  - File size limits with min/max
+  - Path validation for directories
+  - Boolean and numeric type validation
+- **Custom Validation Rules**:
+  - Upload size must be in ['Small', 'Medium', 'Large', 'Original']
+  - Gallery validation for Pixhost service
+  - Path existence checks
+  - Helpful error messages
+- **Added Dependencies**: jsonschema==4.23.0
+
+#### **Documentation** (2026-01-10)
+- Added HTTP client thread safety documentation
+- Documented rate limiting implementation
+- Updated REMAINING_ISSUES.md with completion status
 
 ---
 

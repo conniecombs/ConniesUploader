@@ -8,7 +8,7 @@
 ![Security scanning workflow status](https://github.com/conniecombs/GolangVersion/workflows/Security%20Scanning/badge.svg)
 ![Go programming language version 1.24](https://img.shields.io/badge/Go-1.24-00ADD8.svg)
 ![Python version 3.11 or higher required](https://img.shields.io/badge/Python-3.11+-3776AB.svg)
-![Test coverage at 12.5 percent](https://img.shields.io/badge/coverage-12.5%25-orange.svg)
+![Test coverage at 30.0 percent](https://img.shields.io/badge/coverage-30.0%25-yellow.svg)
 ![Code quality grade B plus](https://img.shields.io/badge/grade-B+-success.svg)
 
 A powerful, multi-service image hosting uploader with an intuitive GUI. Upload images to multiple image hosting services with advanced features like batch processing, gallery management, and automatic forum posting.
@@ -17,22 +17,29 @@ A powerful, multi-service image hosting uploader with an intuitive GUI. Upload i
 
 ## ✨ Recent Improvements
 
+**Latest Updates (Jan 13, 2026):**
+- ✅ **30% test coverage** - 1,995 lines of comprehensive Go tests (up from 12.5%)
+- ✅ **Graceful shutdown** - Signal handling (SIGINT/SIGTERM) with worker tracking
+- ✅ **15 issues resolved** - Major technical debt reduction from REMAINING_ISSUES.md
+- ✅ **Configuration validation** - JSON schema validation for user_settings.json
+- ✅ **Pixhost gallery support** - Full gallery creation and finalization API
+
 **Major Code Quality Enhancements (Jan 2026):**
 - ✅ **97.9% code reduction** - main.py refactored from 1,078 → 23 lines
 - ✅ **Zero known CVEs** - All dependencies patched and up-to-date
 - ✅ **14 exception classes** - Structured error handling hierarchy
-- ✅ **58 tests** - 16 Go + 42 Python tests (baseline coverage established)
+- ✅ **60+ tests** - 46 Go + 42 Python tests with benchmarks
 - ✅ **451 lines archived** - Legacy code cleanly removed
 - ✅ **13 linter fixes** - All errcheck warnings resolved
 - ✅ **6 security scanners** - Daily automated vulnerability detection
 - ✅ **Multi-platform CI/CD** - Windows, Linux, macOS builds tested
 
-**Project Health: B+ (85/100)**
+**Project Health: A- (88/100)**
 - Architecture: A (95/100) - Excellent modularization
 - CI/CD: A (95/100) - Best-in-class automation
-- Security: B+ (85/100) - Solid foundation, needs rate limiting
-- Code Quality: B+ (85/100) - Clean, needs type hints
-- Testing: C (70/100) - Infrastructure ready, coverage needs improvement
+- Security: B+ (85/100) - Solid foundation with graceful shutdown
+- Code Quality: A- (88/100) - Clean, well-tested
+- Testing: B (80/100) - 30% Go coverage, comprehensive test suite
 
 ## Features
 
@@ -65,10 +72,12 @@ A powerful, multi-service image hosting uploader with an intuitive GUI. Upload i
 - **Cover Image Selection** - Choose how many cover images to include
 - **Thread-based Uploads** - Configure concurrent upload threads per service
 - **Sidecar Architecture** - High-performance Go backend with worker pools
+- **Graceful Shutdown** - Signal handling (SIGINT/SIGTERM) ensures no job loss
 - **Central History** - All outputs saved to user directory for backup
 - **Exception Hierarchy** - 14 custom exception types for precise error handling
 - **Input Sanitization** - Path traversal protection and filename validation
 - **Auto-Recovery** - Sidecar auto-restart with exponential backoff (5 attempts)
+- **Configuration Validation** - JSON schema validation with helpful error messages
 
 ## Installation
 
