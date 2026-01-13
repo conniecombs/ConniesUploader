@@ -162,3 +162,11 @@ class AutoPoster:
         with self.lock:
             self.post_queue.clear()
             self.next_index = 0
+
+    def stop(self) -> None:
+        """Stop the auto-poster gracefully."""
+        self.is_running = False
+        if self._worker_thread and self._worker_thread.is_alive():
+            # Wait up to 3 seconds for the worker thread to finish
+            self._worker_thread.join(timeout=3.0)
+        logger.info("AutoPoster stopped")

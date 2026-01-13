@@ -81,6 +81,9 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         self.geometry("1250x850")
         self.minsize(1050, 720)
 
+        # Set up graceful shutdown on window close
+        self.protocol("WM_DELETE_WINDOW", self.graceful_shutdown)
+
         try:
             ico_path = config.resource_path("logo.ico")
             png_path = config.resource_path("logo.png")
@@ -196,7 +199,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         file_menu.add_command(label="Add Files", command=self.add_files)
         file_menu.add_command(label="Add Folder", command=self.add_folder)
         file_menu.add_separator()
-        file_menu.add_command(label="Exit", command=self.quit)
+        file_menu.add_command(label="Exit", command=self.graceful_shutdown)
 
         tools_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Tools", menu=tools_menu)
@@ -1095,6 +1098,71 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             self.log_window_ref.append_log(msg + "\n")
         else:
             self.log_cache.append(msg + "\n")
+
+    def graceful_shutdown(self):
+        """Perform graceful shutdown of all application components."""
+        logger.info("Initiating graceful shutdown...")
+
+        # Stop any in-progress uploads
+        if self.is_uploading:
+            logger.info("Stopping uploads...")
+            self.cancel_event.set()
+            time.sleep(0.5)  # Give uploads time to detect cancellation
+
+        # Stop AutoPoster
+        if hasattr(self, 'auto_poster') and self.auto_poster:
+            logger.info("Stopping AutoPoster...")
+            try:
+                self.auto_poster.stop()
+            except Exception as e:
+                logger.warning(f"Error stopping AutoPoster: {e}")
+
+        # Stop RenameWorker
+        if hasattr(self, 'rename_worker') and self.rename_worker:
+            logger.info("Stopping RenameWorker...")
+            try:
+                self.rename_worker.stop()
+                # Wait up to 2 seconds for rename worker to finish
+                self.rename_worker.join(timeout=2.0)
+            except Exception as e:
+                logger.warning(f"Error stopping RenameWorker: {e}")
+
+        # Shutdown thumbnail executor
+        if hasattr(self, 'thumb_executor') and self.thumb_executor:
+            logger.info("Shutting down thumbnail executor...")
+            try:
+                self.thumb_executor.shutdown(wait=False)
+            except Exception as e:
+                logger.warning(f"Error shutting down thumb_executor: {e}")
+
+        # Shutdown upload manager
+        if hasattr(self, 'upload_manager') and self.upload_manager:
+            logger.info("Shutting down upload manager...")
+            try:
+                self.upload_manager.shutdown()
+            except Exception as e:
+                logger.warning(f"Error shutting down upload_manager: {e}")
+
+        # Terminate sidecar process
+        logger.info("Terminating sidecar process...")
+        try:
+            from modules.sidecar import SidecarBridge
+            sidecar = SidecarBridge.get()
+            sidecar.shutdown()
+        except Exception as e:
+            logger.warning(f"Error shutting down sidecar: {e}")
+
+        # Close log window if open
+        if self.log_window_ref and self.log_window_ref.winfo_exists():
+            try:
+                self.log_window_ref.destroy()
+            except Exception as e:
+                logger.warning(f"Error closing log window: {e}")
+
+        logger.info("Graceful shutdown complete")
+
+        # Finally, quit the application
+        self.quit()
 
 
 if __name__ == "__main__":

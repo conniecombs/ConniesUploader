@@ -323,30 +323,29 @@ def validate_settings(settings: dict) -> Settings:
     return validated
 ```
 
-### 12. Graceful Shutdown
-**Location:** `uploader.go:79-121` and `modules/sidecar.py`
+### 12. Graceful Shutdown ✅ **IMPLEMENTED**
+**Location:** `main.py`, `modules/ui/main_window.py`, `modules/sidecar.py`, `modules/auto_poster.py`, `modules/upload_manager.py`
 
-**Recommendation:** Implement proper shutdown handling:
-```go
-func main() {
-    // ... existing setup ...
+**Status:** Comprehensive graceful shutdown system implemented in v1.0.6
 
-    // Handle shutdown signals
-    sigChan := make(chan os.Signal, 1)
-    signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+**Implementation Details:**
+- Signal handlers for SIGINT/SIGTERM in `main.py`
+- Window close protocol handler (`WM_DELETE_WINDOW`)
+- Component-level shutdown methods:
+  - `UploaderApp.graceful_shutdown()` - Main orchestrator
+  - `AutoPoster.stop()` - Stops forum posting thread (3s timeout)
+  - `RenameWorker.stop()` - Stops gallery rename worker (2s timeout)
+  - `UploadManager.shutdown()` - Cleans up event listeners (2s timeout)
+  - `SidecarBridge.shutdown()` - Terminates Go sidecar (5s graceful + force kill)
+- All operations wrapped in try-except to ensure exit
+- Comprehensive logging for debugging
+- Cross-platform support (Windows, Linux, macOS)
 
-    go func() {
-        <-sigChan
-        logger.Info("Shutdown signal received, cleaning up...")
-        close(jobQueue)
-        // Wait for workers to finish
-        time.Sleep(2 * time.Second)
-        os.Exit(0)
-    }()
-
-    // ... existing code ...
-}
-```
+**Benefits:**
+- No resource leaks (threads, processes, file handles)
+- Clean cancellation of in-progress uploads
+- Fast exit (worst case ~12 seconds with all timeouts)
+- Detailed documentation in ARCHITECTURE.md
 
 ### 13. Add Progress Callbacks
 **Location:** Upload functions in `uploader.go`

@@ -304,6 +304,126 @@ def build_http_request(self, file_path, config, creds):
 
 ---
 
+## Graceful Shutdown Architecture
+
+**Status:** ✅ IMPLEMENTED (v1.0.6)
+
+The application implements a comprehensive graceful shutdown system to ensure all components terminate cleanly and no resources are leaked.
+
+### Shutdown Flow
+
+```
+User Action (Exit/Ctrl+C/SIGTERM)
+    ↓
+main.py signal_handler / UploaderApp.graceful_shutdown()
+    ↓
+    ├─→ Set cancel_event (stops uploads)
+    │   └─→ UploadManager detects cancel and stops dispatching
+    │       └─→ Worker threads check cancel_event and exit
+    ↓
+    ├─→ AutoPoster.stop()
+    │   ├─→ Set is_running = False
+    │   └─→ Join worker thread (3s timeout)
+    ↓
+    ├─→ RenameWorker.stop()
+    │   ├─→ Set active = False
+    │   └─→ Join worker thread (2s timeout)
+    ↓
+    ├─→ ThreadPoolExecutor.shutdown(wait=False)
+    │   └─→ Cancel pending thumbnail generation tasks
+    ↓
+    ├─→ UploadManager.shutdown()
+    │   ├─→ Remove event listener from SidecarBridge
+    │   └─→ Join listener thread (2s timeout)
+    ↓
+    ├─→ SidecarBridge.shutdown()
+    │   ├─→ Close stdin (signals Go process to exit)
+    │   ├─→ Wait 5s for graceful termination
+    │   └─→ Force kill if timeout (terminate → kill)
+    ↓
+    └─→ Tkinter.quit() - Exit GUI main loop
+```
+
+### Component Shutdown Methods
+
+#### 1. Main Application (main.py)
+- **Signal Handling**: Registers handlers for `SIGINT` (Ctrl+C) and `SIGTERM`
+- **Implementation**: Calls `app.graceful_shutdown()` and exits
+
+#### 2. UploaderApp (modules/ui/main_window.py)
+- **Protocol Handler**: Registers `WM_DELETE_WINDOW` to intercept window close
+- **Menu Integration**: File > Exit calls `graceful_shutdown()` instead of `quit()`
+- **Shutdown Sequence**:
+  1. Stops uploads via `cancel_event`
+  2. Iterates through all managed components
+  3. Catches and logs exceptions to prevent shutdown blocking
+  4. Finally calls `self.quit()` to exit Tkinter
+
+#### 3. AutoPoster (modules/auto_poster.py)
+- **Method**: `stop()`
+- **Behavior**:
+  - Sets `is_running = False` flag
+  - Worker thread checks flag and exits gracefully
+  - Main thread joins with 3-second timeout
+  - Prevents orphaned posting threads
+
+#### 4. RenameWorker (modules/controller.py)
+- **Method**: `stop()`
+- **Behavior**:
+  - Sets `active = False` flag
+  - Worker thread checks flag in run loop
+  - Exits cleanly after current task completes
+  - Join with 2-second timeout
+
+#### 5. UploadManager (modules/upload_manager.py)
+- **Method**: `shutdown()`
+- **Behavior**:
+  - Unregisters event queue from SidecarBridge
+  - Listener thread checks `cancel_event` and exits
+  - Join with 2-second timeout
+  - Prevents event processing after shutdown
+
+#### 6. SidecarBridge (modules/sidecar.py)
+- **Method**: `shutdown()`
+- **Behavior**:
+  - Closes stdin pipe (Go process reads EOF and exits)
+  - Waits 5 seconds for graceful termination
+  - If timeout: sends SIGTERM (graceful)
+  - If still alive after 2s: sends SIGKILL (forceful)
+  - Sets `self.proc = None` to prevent restart attempts
+
+### Timeouts and Failsafes
+
+| Component | Timeout | Fallback |
+|-----------|---------|----------|
+| AutoPoster | 3s | Continue shutdown |
+| RenameWorker | 2s | Continue shutdown |
+| UploadManager | 2s | Continue shutdown |
+| Sidecar (graceful) | 5s | SIGTERM |
+| Sidecar (forced) | 2s | SIGKILL |
+
+### Error Handling
+
+- All shutdown operations wrapped in try-except blocks
+- Errors logged as warnings but don't block shutdown
+- Ensures application always exits even if components fail
+
+### Benefits
+
+1. **No Resource Leaks**: All threads, processes, and executors properly cleaned up
+2. **Data Integrity**: In-flight operations canceled cleanly, no partial writes
+3. **Log Visibility**: Shutdown progress logged for debugging
+4. **User Experience**: Fast exit (worst case ~12 seconds with all timeouts)
+5. **Cross-Platform**: Works on Windows (window close), Unix (SIGTERM/SIGINT)
+
+### Known Limitations
+
+- Uploads in-progress are canceled, not completed
+- Queued auto-posts are discarded (not persisted)
+- Very large thumbnail generation queue may take time to drain
+
+---
+
 ## Testing Strategy
 
 **Current Coverage:**

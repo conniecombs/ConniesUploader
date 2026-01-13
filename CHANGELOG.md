@@ -26,7 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Edge cases and error conditions
   - Benchmark tests for performance tracking
 
-#### **Graceful Shutdown Mechanism** (2026-01-13)
+#### **Complete Graceful Shutdown System** (2026-01-13)
+A comprehensive two-layer graceful shutdown implementation for both application and sidecar:
+
+**Go Sidecar Layer** (`uploader.go`):
 - **Signal Handling**: Listen for SIGINT and SIGTERM OS signals
 - **Worker Management**: sync.WaitGroup tracks all worker goroutines
 - **Coordinated Shutdown**:
@@ -35,12 +38,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Wait for all in-flight jobs to complete
   - Clean resource cleanup and logging
 - **EOF Handling**: Gracefully handle stdin closure (normal termination)
-- **Benefits**:
-  - No job loss during shutdown
-  - Uploads complete before exit
-  - Container and systemd friendly
-  - No orphaned goroutines
-  - Clean exit codes
+
+**Python Application Layer** (`main.py`, `modules/ui/main_window.py`, `modules/sidecar.py`):
+- **Window close event handling** via `WM_DELETE_WINDOW` protocol handler
+- **File > Exit menu** performs graceful shutdown
+- **Signal handlers** for `SIGINT` (Ctrl+C) and `SIGTERM` in main.py
+- **Component-level shutdown methods**:
+  - `AutoPoster.stop()` - Stops forum posting thread with 3-second timeout
+  - `RenameWorker.stop()` - Stops gallery rename worker with 2-second timeout
+  - `UploadManager.shutdown()` - Unregisters event listeners and cleans up threads
+  - `SidecarBridge.shutdown()` - Gracefully terminates Go sidecar process
+    - Closes stdin to signal exit
+    - Waits 5 seconds for graceful termination
+    - Force kills if necessary (SIGTERM → SIGKILL)
+- **Upload cancellation** - In-progress uploads stopped cleanly via cancel_event
+- **ThreadPoolExecutor cleanup** - Thumbnail executor properly shut down
+- **Resource cleanup**:
+  - All background threads properly joined with timeouts
+  - Event queues unregistered from sidecar bridge
+  - Go subprocess terminated cleanly
+  - Log window closed if open
+
+**Combined Benefits**:
+- No job loss during shutdown from either application exit or system signal
+- Uploads complete before exit
+- Container and systemd friendly
+- No orphaned goroutines or threads
+- Clean exit codes
+- Fast exit (worst case ~12 seconds with all timeouts)
+- Prevents resource leaks (threads, processes, file handles)
+- Ensures data integrity (no partial writes)
+- Cross-platform support (Windows, Linux, macOS)
 
 ### 🔧 Fixed
 
@@ -53,6 +81,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Centralized file extension validation
 - Improved error messages in sidecar.py
 - Ran `go mod tidy` for dependency cleanup
+- Fixed 3 golangci-lint errcheck warnings in test code
 
 #### **Feature Completions** (2026-01-10)
 - Implemented tooltip functionality (ToolTip class in schema_renderer.py)

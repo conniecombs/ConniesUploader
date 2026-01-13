@@ -174,7 +174,7 @@ class UploadManager:
 
                 if evt == "status":
                     self.progress_queue.put(("status", fp, data.get("status")))
-                
+
                 elif evt == "result":
                     url = data.get("url")
                     thumb = data.get("thumb")
@@ -186,7 +186,7 @@ class UploadManager:
                         # Optional debug log
                         # logger.debug(f"Patched IMX thumbnail for {fp}")
                     # --------------------------------
-                    
+
                     self.result_queue.put((fp, url, thumb))
 
                 elif evt == "batch_complete":
@@ -197,3 +197,14 @@ class UploadManager:
                 continue
             except Exception as e:
                 logger.error(f"Event processing error: {e}")
+
+    def shutdown(self) -> None:
+        """Shutdown the upload manager gracefully."""
+        # Unregister from bridge
+        self.bridge.remove_listener(self.event_queue)
+
+        # Wait for listener thread to finish (it checks cancel_event)
+        if self.listener_thread and self.listener_thread.is_alive():
+            self.listener_thread.join(timeout=2.0)
+
+        logger.info("UploadManager shut down")

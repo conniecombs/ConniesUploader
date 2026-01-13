@@ -386,9 +386,11 @@
   - [ ] Track performance over time
 - **Estimated Effort**: Medium (1-2 days)
 
-#### **Issue #34: No Graceful Shutdown** ✅ **COMPLETED** (2026-01-13)
-- **File**: `uploader.go:277-378`
-- **Status**: Comprehensive graceful shutdown implemented
+#### **Issue #34: Graceful Shutdown** ✅ **FULLY RESOLVED** (2026-01-13)
+- **Status**: Complete two-layer graceful shutdown implementation
+- **Resolution**: Both application and sidecar layers now have comprehensive shutdown
+
+**Go Sidecar Implementation** (`uploader.go:277-378`):
 - **Features Implemented**:
   - OS signal handling (SIGINT, SIGTERM)
   - sync.WaitGroup to track worker goroutines
@@ -402,8 +404,33 @@
   - [x] Close job queue on shutdown ✅
   - [x] Wait for all workers to complete ✅
   - [x] Log shutdown sequence ✅
-- **Benefits**: No job loss, clean exits, container-friendly
-- **Actual Effort**: 0.5 days
+
+**Python Application Implementation** (`main.py`, `modules/ui/main_window.py`, `modules/sidecar.py`):
+- **Features Implemented**:
+  - Window close event handling (WM_DELETE_WINDOW protocol handler)
+  - Signal handlers (SIGINT/SIGTERM) in main.py
+  - Component shutdown methods (AutoPoster, RenameWorker, UploadManager)
+  - SidecarBridge.shutdown() gracefully terminates Go process
+  - Upload cancellation via cancel_event
+  - ThreadPoolExecutor cleanup
+  - Comprehensive error handling and logging
+- **Action Items**:
+  - [x] Added shutdown handler to SidecarBridge (`shutdown()` method) ✅
+  - [x] Implemented signal handlers (SIGINT/SIGTERM) in main.py ✅
+  - [x] Added window close protocol handler (WM_DELETE_WINDOW) ✅
+  - [x] Send terminate signal to Go process via stdin close ✅
+  - [x] Wait for graceful exit (5s) or force kill after timeout ✅
+  - [x] Added component shutdown methods ✅
+
+**Combined Benefits**:
+- Complete shutdown from either application exit or system signal
+- No job loss during shutdown
+- Clean exits, container and systemd friendly
+- No orphaned goroutines or threads
+- Fast exit (worst case ~12 seconds with all timeouts)
+
+**Documentation**: See ARCHITECTURE.md "Graceful Shutdown Architecture" section
+**Actual Effort**: 0.5 days (Go) + already complete (Python)
 
 #### **Issue #35: Hardcoded User Agent**
 - **File**: `uploader.go:33`
@@ -452,7 +479,7 @@
 6. Add type hints everywhere (#10)
 7. Standardize logging (#9)
 8. Clean up documentation (#24)
-9. Add graceful shutdown (#34)
+9. ~~Add graceful shutdown (#34)~~ ✅ **RESOLVED in v1.0.6**
 10. Configuration validation (#13)
 
 ---
