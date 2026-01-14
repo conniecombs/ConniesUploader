@@ -19,11 +19,29 @@ class DragDropMixin:
     """
 
     def drop_files(self, event):
-        files = self.tk.splitlist(event.data)
+        """Handle external file/folder drops from the file system."""
+        logger.info(f"🎯 DROP EVENT RECEIVED!")
+        logger.info(f"   Raw event.data: {event.data}")
+        logger.info(f"   Event coordinates: ({event.x_root}, {event.y_root})")
+
+        try:
+            files = self.tk.splitlist(event.data)
+            logger.info(f"   Parsed {len(files)} file(s)/folder(s): {files}")
+        except Exception as e:
+            logger.error(f"   ✗ Failed to parse drop data: {e}", exc_info=True)
+            messagebox.showerror("Drop Error", f"Failed to parse dropped files: {e}")
+            return
+
+        if not files:
+            logger.warning("   ⚠ No files in drop event")
+            return
+
         x, y = event.x_root, event.y_root
         target_group = None
+
         try:
             widget = self.winfo_containing(x, y)
+            logger.debug(f"   Drop target widget: {widget}")
             while widget and widget != self:
                 for g in self.groups:
                     if widget in (g, g.header, g.content_frame) or str(g) in str(widget):
@@ -32,8 +50,16 @@ class DragDropMixin:
                 if target_group:
                     break
                 widget = widget.master
+
+            if target_group:
+                logger.info(f"   Target group: {target_group.title}")
+            else:
+                logger.info(f"   No specific group targeted, will create new group(s)")
+
         except AttributeError as e:
-            logger.debug(f"Could not find target group for drop: {e}")
+            logger.warning(f"   Could not find target group for drop: {e}")
+
+        logger.info(f"   Calling _process_files()...")
         self._process_files(files, target_group)
 
     def _clear_highlights(self, event=None):

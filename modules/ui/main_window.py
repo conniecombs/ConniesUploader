@@ -42,27 +42,6 @@ from loguru import logger
 
 
 
-class SafeScrollableFrame(ctk.CTkScrollableFrame):
-    def check_if_master_is_canvas(self, widget):
-        if widget is None:
-            return False
-        if isinstance(widget, str):
-            try:
-                widget = self.winfo_toplevel().nametowidget(widget)
-            except Exception:
-                return False
-        try:
-            if widget == self._parent_canvas:
-                return True
-            elif hasattr(widget, "master") and widget.master is not None:
-                return self.check_if_master_is_canvas(widget.master)
-            else:
-                return False
-        except Exception:
-            return False
-
-
-
 class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
     def __init__(self):
         """Initialize the uploader application."""
@@ -177,10 +156,11 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         self.dnd_bind("<<Drop>>", self.drop_files)
         self.bind("<Button-1>", self._clear_highlights, add="+")
 
-        # CRITICAL FIX: Register drag-and-drop on scrollable containers
+        # CRITICAL FIX: Register drag-and-drop on scrollable containers with delay
         # CustomTkinter's scrollable frames use internal canvases that capture drop events
-        # We need to register drop targets on these canvases to make drag-and-drop work
-        self._register_drop_targets()
+        # We need to register drop targets on these canvases after they're fully initialized
+        # Using after() ensures the widget tree is complete before registration
+        self.after(100, self._register_drop_targets)
 
     def _register_drop_targets(self):
         """
@@ -189,26 +169,46 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         CustomTkinter scrollable frames use internal canvases that capture mouse events,
         including drag-and-drop. We need to explicitly register these canvases as drop
         targets and bind the drop handler to them.
+
+        This method should be called with a delay (via after()) to ensure widgets are
+        fully initialized before registration.
         """
+        logger.info("Registering drop targets on scrollable containers...")
+
+        # Force widget tree to update before registration
+        self.update_idletasks()
+
         # Register drop target on the main file list container
         if hasattr(self.list_container, '_parent_canvas'):
             try:
                 canvas = self.list_container._parent_canvas
-                canvas.drop_target_register(DND_FILES)
-                canvas.dnd_bind("<<Drop>>", self.drop_files)
-                logger.debug("Registered drop target on list_container canvas")
+                if canvas:
+                    canvas.drop_target_register(DND_FILES)
+                    canvas.dnd_bind("<<Drop>>", self.drop_files)
+                    logger.info(f"✓ Registered drop target on list_container canvas: {canvas}")
+                else:
+                    logger.warning("list_container._parent_canvas is None")
             except Exception as e:
-                logger.warning(f"Could not register drop target on list_container: {e}")
+                logger.error(f"✗ Could not register drop target on list_container: {e}", exc_info=True)
+        else:
+            logger.warning("list_container does not have _parent_canvas attribute")
 
         # Register drop target on the settings scrollable frame
         if hasattr(self.settings_frame_container, '_parent_canvas'):
             try:
                 canvas = self.settings_frame_container._parent_canvas
-                canvas.drop_target_register(DND_FILES)
-                canvas.dnd_bind("<<Drop>>", self.drop_files)
-                logger.debug("Registered drop target on settings_frame_container canvas")
+                if canvas:
+                    canvas.drop_target_register(DND_FILES)
+                    canvas.dnd_bind("<<Drop>>", self.drop_files)
+                    logger.info(f"✓ Registered drop target on settings_frame_container canvas: {canvas}")
+                else:
+                    logger.warning("settings_frame_container._parent_canvas is None")
             except Exception as e:
-                logger.warning(f"Could not register drop target on settings_frame_container: {e}")
+                logger.error(f"✗ Could not register drop target on settings_frame_container: {e}", exc_info=True)
+        else:
+            logger.warning("settings_frame_container does not have _parent_canvas attribute")
+
+        logger.info("Drop target registration complete")
 
     def _load_startup_file(self):
         """Load file from command line argument if provided."""
@@ -641,38 +641,92 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         self._process_files([folder])
 
     def _process_files(self, inputs, target_group=None):
+        """Process dropped or selected files/folders and add them to groups."""
+        logger.info(f"📁 Processing {len(inputs)} input(s)...")
+
         misc_files = []
         show_previews = self.var_show_previews.get()
-        for path in inputs:
-            path = os.path.normpath(path)
-            if os.path.isdir(path):
-                folder_name = os.path.basename(path.rstrip(os.sep))
-                files_in_folder = file_handler.get_files_from_directory(path)
-                if files_in_folder:
-                    files_in_folder.sort(key=config.natural_sort_key)
-                    if target_group:
-                        self.thumb_executor.submit(self._thumb_worker, files_in_folder, target_group, show_previews)
-                    else:
-                        grp = self._create_group(folder_name)
-                        self.thumb_executor.submit(self._thumb_worker, files_in_folder, grp, show_previews)
-            elif os.path.isfile(path):
-                if path.lower().endswith(file_handler.VALID_EXTENSIONS):
-                    misc_files.append(path)
+        folder_count = 0
+        file_count = 0
+        rejected_count = 0
+        empty_folders = []
 
-        if misc_files:
-            misc_files.sort(key=config.natural_sort_key)
-            if target_group:
-                self.thumb_executor.submit(self._thumb_worker, misc_files, target_group, show_previews)
-            elif self.var_separate_batches.get():
-                for f in misc_files:
-                    grp_name = os.path.basename(f)
-                    grp = self._create_group(grp_name)
-                    self.thumb_executor.submit(self._thumb_worker, [f], grp, show_previews)
+        try:
+            for path in inputs:
+                path = os.path.normpath(path)
+                logger.debug(f"   Processing: {path}")
+
+                if os.path.isdir(path):
+                    folder_name = os.path.basename(path.rstrip(os.sep))
+                    logger.info(f"   📂 Scanning folder: {folder_name}")
+
+                    try:
+                        files_in_folder = file_handler.get_files_from_directory(path)
+                        if files_in_folder:
+                            logger.info(f"      ✓ Found {len(files_in_folder)} valid image(s)")
+                            files_in_folder.sort(key=config.natural_sort_key)
+                            folder_count += 1
+                            file_count += len(files_in_folder)
+
+                            if target_group:
+                                self.thumb_executor.submit(self._thumb_worker, files_in_folder, target_group, show_previews)
+                            else:
+                                grp = self._create_group(folder_name)
+                                self.thumb_executor.submit(self._thumb_worker, files_in_folder, grp, show_previews)
+                        else:
+                            logger.warning(f"      ⚠ No valid images in folder: {folder_name}")
+                            empty_folders.append(folder_name)
+                    except Exception as e:
+                        logger.error(f"      ✗ Error scanning folder {folder_name}: {e}", exc_info=True)
+                        rejected_count += 1
+
+                elif os.path.isfile(path):
+                    if path.lower().endswith(file_handler.VALID_EXTENSIONS):
+                        logger.debug(f"      ✓ Valid image file: {os.path.basename(path)}")
+                        misc_files.append(path)
+                        file_count += 1
+                    else:
+                        ext = os.path.splitext(path)[1]
+                        logger.warning(f"      ⚠ Rejected (invalid extension): {os.path.basename(path)} ({ext})")
+                        rejected_count += 1
+                else:
+                    logger.warning(f"      ⚠ Path does not exist or is not accessible: {path}")
+                    rejected_count += 1
+
+            if misc_files:
+                logger.info(f"   📄 Processing {len(misc_files)} miscellaneous file(s)")
+                misc_files.sort(key=config.natural_sort_key)
+                if target_group:
+                    self.thumb_executor.submit(self._thumb_worker, misc_files, target_group, show_previews)
+                elif self.var_separate_batches.get():
+                    for f in misc_files:
+                        grp_name = os.path.basename(f)
+                        grp = self._create_group(grp_name)
+                        self.thumb_executor.submit(self._thumb_worker, [f], grp, show_previews)
+                else:
+                    misc_group = next((g for g in self.groups if g.title == "Miscellaneous"), None)
+                    if not misc_group:
+                        misc_group = self._create_group("Miscellaneous")
+                    self.thumb_executor.submit(self._thumb_worker, misc_files, misc_group, show_previews)
+
+            # Provide user feedback
+            if file_count == 0:
+                logger.warning("⚠ No valid files were processed from the drop")
+                msg = "No valid image files found.\n\n"
+                msg += f"Supported formats: {', '.join(file_handler.VALID_EXTENSIONS)}\n"
+                if empty_folders:
+                    msg += f"\nEmpty folders: {', '.join(empty_folders)}"
+                if rejected_count > 0:
+                    msg += f"\nRejected files: {rejected_count}"
+                messagebox.showwarning("No Valid Files", msg)
             else:
-                misc_group = next((g for g in self.groups if g.title == "Miscellaneous"), None)
-                if not misc_group:
-                    misc_group = self._create_group("Miscellaneous")
-                self.thumb_executor.submit(self._thumb_worker, misc_files, misc_group, show_previews)
+                logger.info(f"✓ Successfully processed {file_count} file(s) from {folder_count} folder(s)")
+                if rejected_count > 0:
+                    logger.info(f"   ({rejected_count} file(s) rejected)")
+
+        except Exception as e:
+            logger.error(f"✗ Error in _process_files: {e}", exc_info=True)
+            messagebox.showerror("Processing Error", f"An error occurred while processing files:\n\n{str(e)}")
 
     def _create_group(self, title):
         t_names = list(self.saved_threads_data.keys()) if self.saved_threads_data else []
