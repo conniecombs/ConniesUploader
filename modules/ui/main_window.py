@@ -172,9 +172,43 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         self._create_layout()
         self._apply_settings()
 
+        # Register drag-and-drop on main window
         self.drop_target_register(DND_FILES)
         self.dnd_bind("<<Drop>>", self.drop_files)
         self.bind("<Button-1>", self._clear_highlights, add="+")
+
+        # CRITICAL FIX: Register drag-and-drop on scrollable containers
+        # CustomTkinter's scrollable frames use internal canvases that capture drop events
+        # We need to register drop targets on these canvases to make drag-and-drop work
+        self._register_drop_targets()
+
+    def _register_drop_targets(self):
+        """
+        Register drag-and-drop targets on scrollable frames.
+
+        CustomTkinter scrollable frames use internal canvases that capture mouse events,
+        including drag-and-drop. We need to explicitly register these canvases as drop
+        targets and bind the drop handler to them.
+        """
+        # Register drop target on the main file list container
+        if hasattr(self.list_container, '_parent_canvas'):
+            try:
+                canvas = self.list_container._parent_canvas
+                canvas.drop_target_register(DND_FILES)
+                canvas.dnd_bind("<<Drop>>", self.drop_files)
+                logger.debug("Registered drop target on list_container canvas")
+            except Exception as e:
+                logger.warning(f"Could not register drop target on list_container: {e}")
+
+        # Register drop target on the settings scrollable frame
+        if hasattr(self.settings_frame_container, '_parent_canvas'):
+            try:
+                canvas = self.settings_frame_container._parent_canvas
+                canvas.drop_target_register(DND_FILES)
+                canvas.dnd_bind("<<Drop>>", self.drop_files)
+                logger.debug("Registered drop target on settings_frame_container canvas")
+            except Exception as e:
+                logger.warning(f"Could not register drop target on settings_frame_container: {e}")
 
     def _load_startup_file(self):
         """Load file from command line argument if provided."""
