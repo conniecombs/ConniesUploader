@@ -5,7 +5,9 @@ from tkinter import messagebox
 from loguru import logger
 from modules.sidecar import SidecarBridge
 
-THREADS_FILE = "saved_threads.json"
+# Store threads file in user's home directory
+_USER_DATA_DIR = os.path.join(os.path.expanduser("~"), ".conniesuploader")
+THREADS_FILE = os.path.join(_USER_DATA_DIR, "saved_threads.json")
 
 
 def load_saved_threads():
@@ -149,6 +151,8 @@ class ViperToolsWindow(ctk.CTkToplevel):
 
     def save_to_file(self):
         try:
+            # Ensure user data directory exists
+            os.makedirs(_USER_DATA_DIR, exist_ok=True)
             with open(THREADS_FILE, "w") as f:
                 json.dump(self.saved_threads, f, indent=4)
         except Exception as e:

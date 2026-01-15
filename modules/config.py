@@ -54,6 +54,10 @@ GO_WORKER_POOL_SIZE = 8
 # Auto-Post Configuration
 POST_COOLDOWN_SECONDS = 1.5
 
+# Sidecar Configuration
+SIDECAR_RESTART_DELAY_SECONDS = 2  # Initial restart delay before exponential backoff
+SIDECAR_MAX_RESTARTS = 5  # Maximum restart attempts before giving up
+
 # File Size Limits (in bytes)
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 MAX_FILENAME_LENGTH = 255
@@ -63,6 +67,8 @@ UI_UPDATE_INTERVAL_MS = 10
 UI_QUEUE_BATCH_SIZE = 10
 PROGRESS_UPDATE_BATCH_SIZE = 50
 UI_CLEANUP_INTERVAL_MS = 30000  # 30 seconds - cleanup orphaned images
+UI_DROP_TARGET_DELAY_MS = 100  # Delay before registering drop targets after widget creation
+UI_GALLERY_REFRESH_DELAY_MS = 200  # Gallery manager refresh delay
 
 # Keyring Services
 KEYRING_SERVICE_API = "ImageUploader:imx_api_key"

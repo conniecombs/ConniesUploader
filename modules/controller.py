@@ -71,7 +71,6 @@ class UploadController:
         self.post_holding_pen = {}
         self.next_post_index = 0
         self.post_processing_lock = threading.Lock()
-        self.POST_COOLDOWN = 1.5
 
         self.rename_worker = None
         self.creds = {}
@@ -280,7 +279,7 @@ class UploadController:
                     logger.error(f"Auto-Post Queue: Batch #{self.next_post_index} FAILED.")
 
                 self.next_post_index += 1
-                time.sleep(self.POST_COOLDOWN)
+                time.sleep(config.POST_COOLDOWN_SECONDS)
             else:
                 time.sleep(0.5)
         logger.info("Auto-Post Queue: Finished.")

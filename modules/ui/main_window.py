@@ -160,7 +160,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         # CustomTkinter's scrollable frames use internal canvases that capture drop events
         # We need to register drop targets on these canvases after they're fully initialized
         # Using after() ensures the widget tree is complete before registration
-        self.after(100, self._register_drop_targets)
+        self.after(config.UI_DROP_TARGET_DELAY_MS, self._register_drop_targets)
 
     def _register_drop_targets(self):
         """
@@ -216,7 +216,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             self.after(500, lambda: self._process_files([sys.argv[1]]))
 
         # Start UI update loop
-        self.after(100, self.update_ui_loop)
+        self.after(config.UI_UPDATE_INTERVAL_MS, self.update_ui_loop)
 
         # Start periodic image cleanup to prevent memory leaks
         self.after(config.UI_CLEANUP_INTERVAL_MS, self._cleanup_orphaned_images)
