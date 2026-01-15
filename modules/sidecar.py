@@ -65,15 +65,23 @@ class SidecarBridge:
             exe = os.path.join(os.path.dirname(sys.executable), binary_name)
 
         if not os.path.exists(exe):
-            logger.error(f"Sidecar executable '{binary_name}' not found.")
-            logger.error(f"Expected location (primary): {os.path.join(base_dir, binary_name)}")
-            logger.error(f"Fallback locations checked:")
-            logger.error(f"  - Current working directory: {os.path.join(os.getcwd(), binary_name)}")
+            logger.error(f"❌ Sidecar executable '{binary_name}' not found!")
+            logger.error(f"")
+            logger.error(f"Searched in the following locations:")
+            logger.error(f"  1. PRIMARY: {os.path.join(base_dir, binary_name)} ❌ Not found")
+            logger.error(f"  2. FALLBACK: {os.path.join(os.getcwd(), binary_name)} ❌ Not found")
             if getattr(sys, "frozen", False):
-                logger.error(f"  - Executable directory (PyInstaller): {os.path.join(os.path.dirname(sys.executable), binary_name)}")
-            logger.error(f"Running in PyInstaller mode: {getattr(sys, 'frozen', False)}")
+                logger.error(f"  3. FALLBACK (PyInstaller): {os.path.join(os.path.dirname(sys.executable), binary_name)} ❌ Not found")
+            logger.error(f"")
+            logger.error(f"Environment Info:")
+            logger.error(f"  • Running in PyInstaller mode: {getattr(sys, 'frozen', False)}")
             if hasattr(sys, '_MEIPASS'):
-                logger.error(f"_MEIPASS: {sys._MEIPASS}")
+                logger.error(f"  • PyInstaller temp dir (_MEIPASS): {sys._MEIPASS}")
+            logger.error(f"")
+            logger.error(f"💡 Troubleshooting:")
+            logger.error(f"  1. Ensure 'uploader.exe' was built: go build uploader.go")
+            logger.error(f"  2. Place it in the project root directory")
+            logger.error(f"  3. If using PyInstaller, check --add-data includes uploader.exe")
             return
 
         try:

@@ -644,6 +644,10 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         """Process dropped or selected files/folders and add them to groups."""
         logger.info(f"📁 Processing {len(inputs)} input(s)...")
 
+        # Show processing status to user
+        self.lbl_eta.configure(text=f"Processing {len(inputs)} item(s)...")
+        self.update_idletasks()  # Force UI update
+
         misc_files = []
         show_previews = self.var_show_previews.get()
         folder_count = 0
@@ -652,13 +656,17 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         empty_folders = []
 
         try:
-            for path in inputs:
+            for idx, path in enumerate(inputs, 1):
                 path = os.path.normpath(path)
                 logger.debug(f"   Processing: {path}")
 
                 if os.path.isdir(path):
                     folder_name = os.path.basename(path.rstrip(os.sep))
                     logger.info(f"   📂 Scanning folder: {folder_name}")
+
+                    # Update status with current folder being scanned
+                    self.lbl_eta.configure(text=f"Scanning folder {idx}/{len(inputs)}: {folder_name}...")
+                    self.update_idletasks()  # Force UI update
 
                     try:
                         files_in_folder = file_handler.get_files_from_directory(path)
@@ -718,6 +726,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             # Provide user feedback
             if file_count == 0:
                 logger.warning("⚠ No valid files were processed from the drop")
+                self.lbl_eta.configure(text="No valid files found")
                 msg = "No valid image files found.\n\n"
                 msg += f"Supported formats: {', '.join(file_handler.VALID_EXTENSIONS)}\n"
                 if empty_folders:
@@ -727,11 +736,15 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
                 messagebox.showwarning("No Valid Files", msg)
             else:
                 logger.info(f"✓ Successfully processed {file_count} file(s) from {folder_count} folder(s)")
+                status_msg = f"Added {file_count} file(s) from {folder_count} folder(s)"
                 if rejected_count > 0:
                     logger.info(f"   ({rejected_count} file(s) rejected)")
+                    status_msg += f" ({rejected_count} rejected)"
+                self.lbl_eta.configure(text=status_msg)
 
         except Exception as e:
             logger.error(f"✗ Error in _process_files: {e}", exc_info=True)
+            self.lbl_eta.configure(text="Error processing files")
             messagebox.showerror("Processing Error", f"An error occurred while processing files:\n\n{str(e)}")
 
     def _create_group(self, title):

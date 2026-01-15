@@ -170,10 +170,13 @@ type ProgressEvent struct {
 // --- Globals ---
 var outputMutex sync.Mutex
 
-// client is the shared HTTP client for all requests.
-// SAFETY: Initialized once in main() before worker goroutines start,
-// making it safe for concurrent read-only access without additional locking.
-// The client itself is thread-safe for concurrent use.
+// client is the shared HTTP client with optimized connection pooling.
+// THREAD-SAFETY: Initialized once in main() before worker goroutines start.
+// The http.Client type is explicitly documented as safe for concurrent use by
+// multiple goroutines, so no additional mutex protection is needed.
+// Connection pooling is managed internally by the Transport, which maintains
+// a pool of idle connections that are reused across requests for better performance.
+// See: https://pkg.go.dev/net/http#Client
 var client *http.Client
 
 // Rate Limiters (prevent IP bans by throttling requests per service)
@@ -694,17 +697,30 @@ func main() {
 	})
 
 	jar, _ := cookiejar.New(nil)
-	// TIMEOUT FIX: Increase timeouts to support large file uploads
+	// HTTP Client Configuration with Optimized Connection Pooling
 	// - Client timeout: 180s (3 minutes) for the entire request/response cycle
-	// - ResponseHeaderTimeout: 60s to allow servers time to process large uploads before responding
+	// - ResponseHeaderTimeout: 60s to allow servers time to process large uploads
+	// - Connection pooling: MaxIdleConns allows reuse across services
+	// - KeepAlive: Maintains persistent connections for better performance
 	// This prevents premature timeouts on large files or slow connections
 	client = &http.Client{
-		Timeout:   ClientTimeout,
-		Jar:       jar,
+		Timeout: ClientTimeout,
+		Jar:     jar,
 		Transport: &http.Transport{
-			MaxIdleConnsPerHost:   10,
-			ResponseHeaderTimeout: ResponseHeaderTimeout,
-			DisableKeepAlives:     false, // Allow connection reuse for efficiency
+			// Connection Pooling Configuration
+			MaxIdleConns:          100,             // Total idle connections across all hosts
+			MaxIdleConnsPerHost:   10,              // Idle connections per host (allows connection reuse)
+			MaxConnsPerHost:       20,              // Max active + idle connections per host
+			IdleConnTimeout:       90 * time.Second, // How long idle connections are kept
+			DisableKeepAlives:     false,            // Enable HTTP keep-alive for connection reuse
+
+			// Timeout Configuration
+			ResponseHeaderTimeout: ResponseHeaderTimeout, // 60s for server response headers
+			ExpectContinueTimeout: 1 * time.Second,      // Timeout for 100-continue responses
+
+			// Performance Optimization
+			ForceAttemptHTTP2:     true,  // Try HTTP/2 for better performance
+			DisableCompression:    false, // Allow gzip compression
 		},
 	}
 
