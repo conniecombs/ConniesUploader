@@ -4,8 +4,8 @@
 ![MIT License badge](https://img.shields.io/badge/license-MIT-green.svg)
 ![Supported platforms: Windows, Linux, and macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)
 ![Production readiness status at 92 percent](https://img.shields.io/badge/production%20ready-92%25-brightgreen.svg)
-![Continuous integration build and test status](https://github.com/conniecombs/GolangVersion/workflows/CI%20-%20Build%20and%20Test/badge.svg)
-![Security scanning workflow status](https://github.com/conniecombs/GolangVersion/workflows/Security%20Scanning/badge.svg)
+![Continuous integration build and test status](https://github.com/conniecombs/conniesuploader/workflows/CI%20-%20Build%20and%20Test/badge.svg)
+![Security scanning workflow status](https://github.com/conniecombs/conniesuploader/workflows/Security%20Scanning/badge.svg)
 ![Go programming language version 1.24](https://img.shields.io/badge/Go-1.24-00ADD8.svg)
 ![Python version 3.11 or higher required](https://img.shields.io/badge/Python-3.11+-3776AB.svg)
 ![Test coverage at 30.0 percent](https://img.shields.io/badge/coverage-30.0%25-yellow.svg)
@@ -108,7 +108,7 @@ A powerful, multi-service image hosting uploader with an intuitive GUI. Upload i
 
 **Download the latest release for your platform:**
 
-👉 **[Download v1.0.5](https://github.com/conniecombs/conniesuploader/releases/tag/v1.0.5)**
+👉 **[Download v1.1.0](https://github.com/conniecombs/conniesuploader/releases/tag/v1.1.0)**
 
 Available builds:
 - **Windows**: `ConniesUploader-windows.zip` (includes `.exe` + SHA256 checksum)
@@ -164,8 +164,8 @@ The final executable will be in the `dist` folder.
 
 1. **Clone the repository:**
 ```bash
-git clone https://github.com/conniecombs/GolangVersion.git
-cd GolangVersion
+git clone https://github.com/conniecombs/conniesuploader.git
+cd conniesuploader
 ```
 
 2. **Build Go backend:**
@@ -196,8 +196,8 @@ python main.py
 
 1. **Clone and navigate:**
 ```bash
-git clone https://github.com/conniecombs/GolangVersion.git
-cd GolangVersion
+git clone https://github.com/conniecombs/conniesuploader.git
+cd conniesuploader
 ```
 
 2. **Build Go backend:**
@@ -350,7 +350,7 @@ The application uses a modern hybrid architecture:
 
 ### Module Structure
 ```
-GolangVersion/
+conniesuploader/
 ├── main.py                    # Entry point (23 lines)
 ├── uploader.go                # Go backend (2,477 lines with retry, progress, validation)
 ├── modules/
@@ -653,7 +653,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 **Project Health: A (92/100)** - Production Ready with Excellent Reliability
 
-See [CHANGELOG.md](CHANGELOG.md) for detailed version history and [Releases](https://github.com/conniecombs/GolangVersion/releases) for downloads.
+See [CHANGELOG.md](CHANGELOG.md) for detailed version history and [Releases](https://github.com/conniecombs/conniesuploader/releases) for downloads.
 
 ---
 
