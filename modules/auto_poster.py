@@ -95,16 +95,22 @@ class AutoPoster:
             return
 
         # Process queue until uploads finish and queue is empty
-        while is_uploading_callback() or len(self.post_queue) > 0:
+        with self.lock:
+            queue_has_items = len(self.post_queue) > 0
+
+        while is_uploading_callback() or queue_has_items:
             if cancel_event.is_set():
                 logger.info("Auto-Post Queue: Cancelled.")
                 break
 
-            # Check if next post is ready
-            if self.next_index in self.post_queue:
-                with self.lock:
+            # Check if next post is ready and get item atomically
+            with self.lock:
+                if self.next_index in self.post_queue:
                     item = self.post_queue.pop(self.next_index)
+                else:
+                    item = None
 
+            if item:
                 content = item.get("content", "")
                 thread_name = item.get("thread", "")
 
@@ -130,6 +136,10 @@ class AutoPoster:
             else:
                 # Wait for next post to be queued
                 time.sleep(0.5)
+
+            # Update queue status for next iteration
+            with self.lock:
+                queue_has_items = len(self.post_queue) > 0
 
         logger.info("Auto-Post Queue: Finished.")
         self.is_running = False

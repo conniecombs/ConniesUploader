@@ -126,7 +126,7 @@ def generate_thumbnail(file_path: str) -> Optional[Image.Image]:
             image_data = base64.b64decode(resp["data"])
             return Image.open(io.BytesIO(image_data))
         except Exception as e:
-            print(f"Thumbnail decode error for {file_path}: {e}")
+            logger.warning(f"Thumbnail decode error for {file_path}: {e}")
             return None
     return None
 

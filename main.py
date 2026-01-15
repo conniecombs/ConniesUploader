@@ -7,6 +7,7 @@ Previously a monolithic 1,078-line file, now properly organized.
 import customtkinter as ctk
 import signal
 import sys
+from loguru import logger
 from modules.ui import UploaderApp
 
 
@@ -22,7 +23,7 @@ def main():
     # Set up signal handlers for graceful shutdown
     def signal_handler(sig, frame):
         """Handle SIGINT (Ctrl+C) and SIGTERM signals."""
-        print("\nReceived shutdown signal, cleaning up...")
+        logger.info("Received shutdown signal, cleaning up...")
         app.graceful_shutdown()
         sys.exit(0)
 
