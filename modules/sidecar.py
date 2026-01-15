@@ -29,8 +29,8 @@ class SidecarBridge:
         self.cmd_lock: threading.Lock = threading.Lock()
         self.restart_lock: threading.Lock = threading.Lock()
         self.restart_count: int = 0
-        self.max_restarts: int = 5  # Maximum restart attempts
-        self.restart_delay: int = 2  # Initial restart delay (seconds)
+        self.max_restarts: int = config.SIDECAR_MAX_RESTARTS
+        self.restart_delay: int = config.SIDECAR_RESTART_DELAY_SECONDS
 
         # Event distribution
         self.listeners: List[queue.Queue] = []
@@ -154,12 +154,20 @@ class SidecarBridge:
 
                     self.restart_count += 1
                     self.proc = None  # Clear dead process
-                    self._start_process()
 
-                    # Reset restart count on successful start
-                    if self._is_process_alive():
-                        logger.info("Sidecar restarted successfully")
-                        self.restart_count = 0
+                    # Wrap _start_process in try-except to prevent infinite recursion on startup failures
+                    try:
+                        self._start_process()
+
+                        # Reset restart count on successful start
+                        if self._is_process_alive():
+                            logger.info("Sidecar restarted successfully")
+                            self.restart_count = 0
+                        else:
+                            logger.warning("Sidecar process failed to start (not alive after startup)")
+                    except Exception as e:
+                        logger.error(f"Exception during sidecar restart: {e}", exc_info=True)
+                        # Don't recurse - let the restart count increment naturally
                 else:
                     logger.critical(f"Sidecar failed to restart after {self.max_restarts} attempts - giving up")
                     self.proc = None

@@ -71,18 +71,30 @@ class UploadController:
         self.post_holding_pen = {}
         self.next_post_index = 0
         self.post_processing_lock = threading.Lock()
-        self.POST_COOLDOWN = 1.5
 
         self.rename_worker = None
         self.creds = {}
 
     def start_workers(self, creds):
+        """Start background workers (currently unused - RenameWorker disabled).
+
+        RenameWorker is not currently used as there are no enqueue() calls in the codebase.
+        Kept for potential future implementation of gallery renaming functionality.
+        """
         self.creds = creds
-        if not self.rename_worker or not self.rename_worker.is_alive():
-            self.rename_worker = RenameWorker(self.creds)
-            self.rename_worker.start()
+        # RenameWorker initialization disabled - no active usage found
+        # if not self.rename_worker or not self.rename_worker.is_alive():
+        #     self.rename_worker = RenameWorker(self.creds)
+        #     self.rename_worker.start()
 
     def start_upload(self, pending_files_map, settings, creds):
+        """Start the upload process for all pending files.
+
+        Args:
+            pending_files_map: Dict mapping group titles to lists of file paths
+            settings: User settings dict containing service configs
+            creds: Credentials dict for authentication
+        """
         self.creds = creds
         self.settings = settings
         self.cancel_event.clear()
@@ -106,6 +118,7 @@ class UploadController:
         self.upload_manager.start_batch(pending_files_map, settings, creds)
 
     def stop_upload(self):
+        """Signal all upload threads to stop gracefully."""
         self.cancel_event.set()
 
     def handle_upload_result(self, fp, img, thumb):
@@ -186,8 +199,7 @@ class UploadController:
             safe_title = "".join(c for c in group_title if c.isalnum() or c in (" ", "_", "-")).strip()
             ts = datetime.now().strftime("%Y%m%d_%H%M")
             out_dir = "Output"
-            if not os.path.exists(out_dir):
-                os.makedirs(out_dir)
+            os.makedirs(out_dir, exist_ok=True)
 
             out_name = os.path.join(out_dir, f"{safe_title}_{ts}.txt")
             with open(out_name, "w", encoding="utf-8") as f:
@@ -197,8 +209,7 @@ class UploadController:
 
             # Central History
             history_path = os.path.join(os.path.expanduser("~"), ".conniesuploader", "history")
-            if not os.path.exists(history_path):
-                os.makedirs(history_path)
+            os.makedirs(history_path, exist_ok=True)
             with open(os.path.join(history_path, f"{safe_title}_{ts}.txt"), "w", encoding="utf-8") as f:
                 f.write(text)
 
@@ -276,7 +287,7 @@ class UploadController:
                     logger.error(f"Auto-Post Queue: Batch #{self.next_post_index} FAILED.")
 
                 self.next_post_index += 1
-                time.sleep(self.POST_COOLDOWN)
+                time.sleep(config.POST_COOLDOWN_SECONDS)
             else:
                 time.sleep(0.5)
         logger.info("Auto-Post Queue: Finished.")

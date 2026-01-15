@@ -23,17 +23,6 @@ def verify_login(service: str, creds: Dict[str, str]) -> Tuple[bool, str]:
     return False, resp.get("msg", "Failed")
 
 
-def check_updates() -> None:
-    """Check for application updates.
-
-    Note: Placeholder for future implementation to check GitHub for updates.
-
-    Returns:
-        None
-    """
-    return None
-
-
 # --- Service Specific Wrappers (Delegating to Go) ---
 
 

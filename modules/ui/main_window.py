@@ -32,7 +32,6 @@ from modules.template_manager import TemplateManager, TemplateEditor
 from modules.upload_manager import UploadManager
 from modules.utils import ContextUtils
 from modules import viper_api
-from modules.controller import RenameWorker
 from modules import file_handler
 from modules.dnd import DragDropMixin
 from modules.credentials_manager import CredentialsManager
@@ -74,7 +73,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             elif os.path.exists(png_path):
                 self.iconphoto(True, ImageTk.PhotoImage(Image.open(png_path)))
         except Exception as e:
-            print(f"Icon load warning: {e}")
+            logger.warning(f"Icon load warning: {e}")
 
     def _init_variables(self):
         """Initialize UI variables and executors."""
@@ -96,7 +95,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         self.groups = []
         self.results = []
         self.log_cache = []
-        self.image_refs = []
+        self.image_refs = set()  # Using set for O(1) add/remove operations
         self.log_window_ref = None
         self.clipboard_buffer = []
         self.upload_total = 0
@@ -132,8 +131,9 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         self.upload_manager = UploadManager(self.progress_queue, self.result_queue, self.cancel_event)
 
         self._load_credentials()
-        self.rename_worker = RenameWorker(self.creds)
-        self.rename_worker.start()
+        # RenameWorker disabled - not currently used (no enqueue calls in codebase)
+        # Kept in controller.py for future implementation if needed
+        self.rename_worker = None
 
         # Central history directory
         self.central_history_path = os.path.join(os.path.expanduser("~"), ".conniesuploader", "history")
@@ -160,7 +160,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         # CustomTkinter's scrollable frames use internal canvases that capture drop events
         # We need to register drop targets on these canvases after they're fully initialized
         # Using after() ensures the widget tree is complete before registration
-        self.after(100, self._register_drop_targets)
+        self.after(config.UI_DROP_TARGET_DELAY_MS, self._register_drop_targets)
 
     def _register_drop_targets(self):
         """
@@ -216,7 +216,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             self.after(500, lambda: self._process_files([sys.argv[1]]))
 
         # Start UI update loop
-        self.after(100, self.update_ui_loop)
+        self.after(config.UI_UPDATE_INTERVAL_MS, self.update_ui_loop)
 
         # Start periodic image cleanup to prevent memory leaks
         self.after(config.UI_CLEANUP_INTERVAL_MS, self._cleanup_orphaned_images)
@@ -682,9 +682,15 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
 
                 elif os.path.isfile(path):
                     if path.lower().endswith(file_handler.VALID_EXTENSIONS):
-                        logger.debug(f"      ✓ Valid image file: {os.path.basename(path)}")
-                        misc_files.append(path)
-                        file_count += 1
+                        try:
+                            # Validate file size before adding to processing queue
+                            file_handler.validate_file_size(path)
+                            logger.debug(f"      ✓ Valid image file: {os.path.basename(path)}")
+                            misc_files.append(path)
+                            file_count += 1
+                        except Exception as e:
+                            logger.warning(f"      ⚠ Rejected file {os.path.basename(path)}: {e}")
+                            rejected_count += 1
                     else:
                         ext = os.path.splitext(path)[1]
                         logger.warning(f"      ⚠ Rejected (invalid extension): {os.path.basename(path)} ({ext})")
@@ -867,7 +873,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
                     if self.upload_count >= self.upload_total:
                         self.finish_upload()
         except Exception as e:
-            print(f"UI Loop Error: {e}")
+            logger.error(f"UI Loop Error: {e}", exc_info=True)
         finally:
             self.after(config.UI_UPDATE_INTERVAL_MS, self.update_ui_loop)
 
@@ -924,6 +930,13 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             pass
 
     def _create_row(self, fp, pil_image, group_widget):
+        """Create a UI row for a file with thumbnail, status, and progress bar.
+
+        Args:
+            fp: File path to the image
+            pil_image: PIL Image object for thumbnail (or None)
+            group_widget: CollapsibleGroupFrame to add the row to
+        """
         group_widget.add_file(fp)
         row = ctk.CTkFrame(group_widget.content_frame)
         row.pack(fill="x", pady=1)
@@ -932,7 +945,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             img_widget = ctk.CTkImage(light_image=pil_image, dark_image=pil_image, size=config.UI_THUMB_SIZE)
             l = ctk.CTkLabel(row, image=img_widget, text="")
             l.pack(side="left", padx=5)
-            self.image_refs.append(img_widget)
+            self.image_refs.add(img_widget)
         else:
             ctk.CTkLabel(row, text="[Img]", width=40).pack(side="left")
         st = ctk.CTkLabel(row, text="Wait", width=60)
@@ -988,7 +1001,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
                 group.mark_complete()
                 self.generate_group_output(group)
         except Exception as e:
-            print(f"Group Update Error: {e}")
+            logger.error(f"Group Update Error: {e}", exc_info=True)
 
     def finish_upload(self):
         if not self.is_uploading:
@@ -1174,8 +1187,8 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
                 if img_ref:
                     active_refs.add(img_ref)
 
-            # Remove orphaned refs
-            self.image_refs = [ref for ref in self.image_refs if ref in active_refs]
+            # Remove orphaned refs using set intersection (O(n) instead of O(n²))
+            self.image_refs &= active_refs
 
         # Schedule next cleanup in 30 seconds
         self.after(config.UI_CLEANUP_INTERVAL_MS, self._cleanup_orphaned_images)
@@ -1219,7 +1232,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         if hasattr(self, 'thumb_executor') and self.thumb_executor:
             logger.info("Shutting down thumbnail executor...")
             try:
-                self.thumb_executor.shutdown(wait=False)
+                self.thumb_executor.shutdown(wait=True)
             except Exception as e:
                 logger.warning(f"Error shutting down thumb_executor: {e}")
 

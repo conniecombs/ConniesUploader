@@ -8,6 +8,7 @@ from tkinter import messagebox, colorchooser
 import urllib.parse
 import webbrowser
 import tempfile
+from loguru import logger
 
 # Local imports
 from . import config
@@ -59,14 +60,14 @@ class TemplateManager:
                     saved = json.load(f)
                     self.templates.update(saved)
             except Exception as e:
-                print(f"Error loading templates: {e}")
+                logger.error(f"Error loading templates: {e}")
 
     def save(self):
         try:
             with open(self.filepath, "w") as f:
                 json.dump(self.templates, f, indent=4)
         except Exception as e:
-            print(f"Error saving templates: {e}")
+            logger.error(f"Error saving templates: {e}")
 
     def get_template(self, fmt):
         return self.templates.get(fmt, self.defaults.get(fmt, ""))

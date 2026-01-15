@@ -142,7 +142,8 @@ class TurboPlugin(ImageHostPlugin):
         # Get file size for query parameters
         try:
             file_size = os.path.getsize(file_path)
-        except:
+        except OSError as e:
+            logger.warning(f"Could not get file size for {file_path}: {e}")
             file_size = 0
 
         # Generate random upload ID

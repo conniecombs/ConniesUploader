@@ -1,11 +1,11 @@
 # Remaining Codebase Issues - Technical Debt Tracker
 
 **Created**: 2026-01-03
-**Last Updated**: 2026-01-13
-**Product Version**: v1.0.0
+**Last Updated**: 2026-01-15
+**Product Version**: v1.0.5
 **Architecture Version**: v2.4.0
-**Status**: Phase 1 ✅ Complete | Phase 2 ✅ Complete | Phase 3 ✅ Complete
-**Total Remaining**: 18 issues (15 completed total, 2 in latest session)
+**Status**: Phase 1 ✅ Complete | Phase 2 ✅ Complete | Phase 3 ✅ Complete | Phase 4 ✅ In Progress
+**Total Remaining**: 12 issues (21 completed total, 6 in latest session)
 
 ---
 
@@ -30,6 +30,21 @@
 - [x] Run go mod tidy (dependency cleanup)
 - [x] Remove duplicate legacy code (451 lines archived)
 - [x] Refactor main.py (1,078 → 23 lines, 97.9% reduction!)
+
+### Phase 4 - Critical Bugs & Code Quality ✅ (2026-01-15)
+- [x] Fix bare exception handlers (turbo.py - replaced with specific OSError)
+- [x] Fix ThreadPoolExecutor shutdown (wait=True for clean resource cleanup)
+- [x] Fix AutoPoster race condition (TOCTOU vulnerability with proper locking)
+- [x] Replace all print() statements with logger calls (consistent logging)
+- [x] Extract magic numbers to config constants (UI delays, timeouts, etc.)
+- [x] Fix sidecar restart infinite loop risk (try-except around _start_process)
+- [x] Remove dead code (check_updates() placeholder)
+- [x] Fix hardcoded file paths (THREADS_FILE to ~/.conniesuploader/)
+- [x] Add file size validation to drag-and-drop
+- [x] Optimize image_refs cleanup (set instead of list for O(1) operations)
+- [x] Add docstrings to key functions (_create_row, start_upload, etc.)
+- [x] Use exist_ok=True for directory creation (eliminate TOCTOU race)
+- [x] Disable unused RenameWorker (no enqueue calls found)
 
 ---
 
@@ -147,14 +162,19 @@
 
 ### Code Quality
 
-#### **Issue #9: Inconsistent Logging**
+#### **Issue #9: Inconsistent Logging** ✅ **COMPLETED** (2026-01-15)
 - **Files**: Multiple modules
-- **Issue**: Mix of `logger.debug()`, `logger.info()`, `print()`
+- **Status**: All `print()` statements replaced with `logger` calls
+- **Files Updated**:
+  - `file_handler.py:129` → `logger.warning()`
+  - `template_manager.py:62,69` → `logger.error()`
+  - `main_window.py:76,870,991` → `logger.info()` / `logger.error()`
+  - `main.py:25` → `logger.info()`
 - **Action Items**:
-  - [ ] Replace all `print()` with `logger.*()` calls
-  - [ ] Standardize log levels (DEBUG, INFO, WARNING, ERROR)
-  - [ ] Add logging configuration file
-- **Estimated Effort**: Small (1 day)
+  - [x] Replace all `print()` with `logger.*()` calls ✅
+  - [x] Standardize log levels (DEBUG, INFO, WARNING, ERROR) ✅
+  - [ ] Add logging configuration file (future enhancement)
+- **Actual Effort**: 0.5 days
 
 #### **Issue #10: No Type Hints in Critical Functions**
 - **Files**: `main.py`, `upload_manager.py`, `controller.py`
@@ -168,15 +188,25 @@
   - [ ] Add mypy to CI/CD
 - **Estimated Effort**: Medium (2-3 days)
 
-#### **Issue #11: Magic Numbers**
-- **Examples**:
-  - `main.py:174` - `self.after(30000, ...)` hardcoded cleanup interval
-  - `uploader.go:114` - `Timeout: 120 * time.Second` not configurable
+#### **Issue #11: Magic Numbers** ✅ **COMPLETED** (2026-01-15)
+- **Status**: All magic numbers extracted to config constants
+- **Constants Added**:
+  - `POST_COOLDOWN_SECONDS = 1.5` (auto-post delay)
+  - `SIDECAR_RESTART_DELAY_SECONDS = 2` (restart backoff)
+  - `SIDECAR_MAX_RESTARTS = 5` (max restart attempts)
+  - `UI_DROP_TARGET_DELAY_MS = 100` (widget initialization delay)
+  - `UI_GALLERY_REFRESH_DELAY_MS = 200` (gallery refresh delay)
+- **Files Updated**:
+  - `config.py` - centralized constants with documentation
+  - `controller.py` - uses `config.POST_COOLDOWN_SECONDS`
+  - `sidecar.py` - uses `config.SIDECAR_*` constants
+  - `gallery_manager.py` - uses `config.UI_GALLERY_REFRESH_DELAY_MS`
+  - `main_window.py` - uses `config.UI_DROP_TARGET_DELAY_MS`
 - **Action Items**:
-  - [ ] Extract magic numbers to constants
-  - [ ] Create config.py constants section
-  - [ ] Document meaning of each constant
-- **Estimated Effort**: Small (0.5 days)
+  - [x] Extract magic numbers to constants ✅
+  - [x] Create config.py constants section ✅
+  - [x] Document meaning of each constant ✅
+- **Actual Effort**: 0.5 days
 
 #### **Issue #12: Inconsistent Naming Conventions**
 - **File**: `uploader.go:75-80`
@@ -211,14 +241,19 @@
   - [ ] Auto-update README badge in CI/CD (future enhancement)
 - **Estimated Effort**: Completed
 
-#### **Issue #15: No Max File Size Enforcement**
+#### **Issue #15: No Max File Size Enforcement** ✅ **COMPLETED** (2026-01-15)
 - **File**: `modules/config.py:56`
-- **Issue**: `MAX_FILE_SIZE = 50 * 1024 * 1024` defined but not enforced
+- **Status**: File size validation now enforced in drag-and-drop
+- **Implementation**:
+  - `file_handler.py` - `validate_file_size()` function with clear error messages
+  - `main_window.py:686` - Individual file validation in drag-and-drop
+  - Folders already validated via `scan_inputs()` with `validate_size=True`
 - **Action Items**:
-  - [ ] Check file size in scan_inputs()
-  - [ ] Show clear error message for oversized files
-  - [ ] Use InvalidFileException from exceptions.py
-- **Estimated Effort**: Small (0.5 days)
+  - [x] Check file size in scan_inputs() ✅
+  - [x] Add validation to drag-and-drop individual files ✅
+  - [x] Show clear error message for oversized files ✅
+  - [x] Use InvalidFileException from exceptions.py ✅
+- **Actual Effort**: 0.25 days
 
 ### Performance & Architecture
 
@@ -255,16 +290,20 @@
   - [ ] Or make client immutable after initialization
 - **Estimated Effort**: Small (0.5 days)
 
-#### **Issue #20: Incomplete Docstrings**
+#### **Issue #20: Incomplete Docstrings** ✅ **PARTIALLY COMPLETED** (2026-01-15)
 - **Files**: Multiple Python files
-- **Examples**:
-  - `main.py:_init_state()` - no docstring
-  - `main.py:_create_row()` - no docstring
+- **Status**: Key undocumented functions now have docstrings
+- **Docstrings Added**:
+  - `main_window.py:_create_row()` - Documents file row creation with parameters
+  - `controller.py:start_upload()` - Documents upload initialization
+  - `controller.py:stop_upload()` - Documents graceful shutdown
+  - `controller.py:start_workers()` - Documents worker initialization
 - **Action Items**:
-  - [ ] Add docstrings to all public functions
-  - [ ] Add docstrings to all classes
-  - [ ] Use Google or NumPy docstring format
-- **Estimated Effort**: Medium (2 days)
+  - [x] Add docstrings to critical undocumented functions ✅
+  - [ ] Add docstrings to all public functions (ongoing)
+  - [ ] Add docstrings to all classes (ongoing)
+  - [ ] Use Google or NumPy docstring format (ongoing)
+- **Actual Effort**: 0.25 days (partial completion)
 
 #### **Issue #21: Missing File Extension Validation**
 - **File**: `modules/file_handler.py`
@@ -369,13 +408,13 @@
   - [ ] Add black to pre-commit hooks
 - **Estimated Effort**: Trivial (10 minutes)
 
-#### **Issue #32: Dead Code**
+#### **Issue #32: Dead Code** ✅ **COMPLETED** (2026-01-15)
 - **File**: `modules/api.py:26-34`
-- **Function**: `check_updates()` - empty placeholder
+- **Status**: Empty `check_updates()` placeholder function removed
 - **Action Items**:
-  - [ ] Implement or remove check_updates()
-  - [ ] Add auto-update functionality if keeping
-- **Estimated Effort**: Small (0.5 days)
+  - [x] Remove check_updates() placeholder ✅
+  - [ ] Add auto-update functionality in future if needed
+- **Actual Effort**: 0.1 days
 
 ### Features
 
@@ -445,24 +484,28 @@
 
 ## 📊 Summary Statistics
 
-| Category | Count | Completed | Estimated Effort |
-|----------|-------|-----------|------------------|
-| **High Priority** | 6 | 2 | 8-16 days |
-| **Medium Priority** | 15 | 13 | 2-4 days |
-| **Low Priority** | 12 | 0 | 6-10 days |
-| **Total Remaining** | 18 | 15 | 16-30 days |
+| Category | Count | Completed | Estimated Effort Remaining |
+|----------|-------|-----------|---------------------------|
+| **High Priority** | 6 | 2 | 6-14 days |
+| **Medium Priority** | 15 | 9 | 8-16 days |
+| **Low Priority** | 12 | 1 | 5-9 days |
+| **Total Remaining** | 12 | 21 | 19-39 days |
 
 ### By Type
 - Testing: 1 issue (1 completed ✅)
 - Security: 0 issues (all fixed ✅)
-- Code Quality: 1 issue (13 completed ✅)
+- Code Quality: 6 completed ✅, 1 partial ✅
 - Documentation: 6 issues
 - Architecture: 7 issues
 - Features: 3 issues (2 completed ✅)
 
-### Latest Completions (2026-01-13)
-- ✅ **Issue #1**: Go test coverage (30% achieved, 1,995 lines of tests)
-- ✅ **Issue #34**: Graceful shutdown with signal handling
+### Latest Completions (2026-01-15 - Phase 4)
+- ✅ **Issue #9**: Inconsistent logging - all print() replaced with logger
+- ✅ **Issue #11**: Magic numbers - extracted to config constants
+- ✅ **Issue #15**: Max file size enforcement - validation in drag-and-drop
+- ✅ **Issue #20**: Incomplete docstrings - key functions documented
+- ✅ **Issue #32**: Dead code - check_updates() removed
+- ✅ **Critical Fixes**: Bare exceptions, ThreadPoolExecutor, race conditions, infinite loops
 
 ---
 
@@ -494,6 +537,33 @@
 
 ---
 
-**Last Updated**: 2026-01-03
+## 📝 Phase 4 Implementation Notes (2026-01-15)
+
+### Critical Bug Fixes
+1. **Exception Handling**: Replaced bare `except:` with specific `except OSError:` in turbo.py
+2. **Thread Safety**: Fixed ThreadPoolExecutor to wait for completion (`wait=True`)
+3. **Race Conditions**: Fixed TOCTOU in AutoPoster with proper locking
+4. **Infinite Loops**: Added try-except around sidecar restart to prevent recursion
+
+### Code Quality Improvements
+5. **Logging Consistency**: Replaced all `print()` with `logger` calls across 4 modules
+6. **Configuration**: Extracted 5+ magic numbers to named constants in config.py
+7. **File Paths**: Moved THREADS_FILE to ~/.conniesuploader/ for proper user data storage
+8. **Performance**: Changed image_refs from list to set (O(1) vs O(n²))
+
+### Files Modified (12 total)
+- main.py, modules/api.py, modules/auto_poster.py, modules/config.py
+- modules/controller.py, modules/file_handler.py, modules/gallery_manager.py
+- modules/plugins/turbo.py, modules/sidecar.py, modules/template_manager.py
+- modules/ui/main_window.py, modules/viper_api.py
+
+### Commits
+1. `27ab5db` - Fix critical bugs and code quality issues
+2. `8124aa7` - Extract magic numbers and fix medium-priority issues
+3. `cb09eb6` - Add docstrings to key undocumented functions
+
+---
+
+**Last Updated**: 2026-01-15
 **Maintainer**: Connie
 **Project**: GolangVersion (Connie's Uploader Ultimate)

@@ -7,6 +7,7 @@ import urllib.parse
 from modules.sidecar import SidecarBridge
 from .widgets import MouseWheelComboBox
 from . import api
+from . import config
 
 
 class GalleryManager(ctk.CTkToplevel):
@@ -25,7 +26,7 @@ class GalleryManager(ctk.CTkToplevel):
         self.current_page = 1  # Track current page
 
         self._init_ui()
-        self.after(200, self._refresh_list)
+        self.after(config.UI_GALLERY_REFRESH_DELAY_MS, self._refresh_list)
 
     def _init_ui(self):
         top = ctk.CTkFrame(self, fg_color="transparent")

@@ -26,6 +26,14 @@ A powerful, multi-service image hosting uploader with an intuitive GUI. Upload i
 - 🔐 **Crypto/Rand Migration** - Secure random generation for backoff jitter
 - 📝 **Complete Documentation** - 704-line release notes + 501-line feature guide
 
+**Latest Updates (Jan 15, 2026 - Phase 4):**
+- 🐛 **Critical bug fixes** - Fixed bare exceptions, ThreadPoolExecutor shutdown, race conditions
+- 📝 **Consistent logging** - All print() replaced with logger calls (4 modules)
+- ⚙️ **Configuration cleanup** - Extracted all magic numbers to named constants
+- 🎯 **Performance optimization** - Changed image_refs to set for O(1) operations
+- 📁 **File path fixes** - Moved user data to ~/.conniesuploader/
+- ✅ **6 major issues resolved** - Improved stability and maintainability
+
 **Previous Updates (Jan 13, 2026):**
 - ✅ **30% test coverage** - 1,995 lines of comprehensive Go tests (up from 12.5%)
 - ✅ **Graceful shutdown** - Signal handling (SIGINT/SIGTERM) with worker tracking

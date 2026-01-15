@@ -7,6 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 🔧 Fixed
+
+#### **Critical Bugs & Code Quality** (2026-01-15 - Phase 4)
+
+**Critical Bug Fixes**:
+- **Exception Handling**: Fixed bare `except:` clause in `turbo.py:145` - now catches specific `OSError` with logging
+- **Thread Safety**: Fixed `ThreadPoolExecutor` shutdown to wait for completion (`wait=True`) preventing resource leaks
+- **Race Condition**: Fixed TOCTOU vulnerability in `AutoPoster` queue access with proper atomic locking
+- **Infinite Loop Prevention**: Added try-except around sidecar `_start_process()` to prevent recursion on startup failures
+
+**Code Quality Improvements**:
+- **Consistent Logging**: Replaced all `print()` statements with `logger` calls in 4 modules:
+  - `file_handler.py:129` → `logger.warning()`
+  - `template_manager.py:62,69` → `logger.error()`
+  - `main_window.py:76,870,991` → `logger.info()` / `logger.error()`
+  - `main.py:25` → `logger.info()`
+- **Configuration Centralization**: Extracted magic numbers to named constants in `config.py`:
+  - `POST_COOLDOWN_SECONDS = 1.5` (auto-post delay)
+  - `SIDECAR_RESTART_DELAY_SECONDS = 2` (restart backoff)
+  - `SIDECAR_MAX_RESTARTS = 5` (max restart attempts)
+  - `UI_DROP_TARGET_DELAY_MS = 100` (widget initialization delay)
+  - `UI_GALLERY_REFRESH_DELAY_MS = 200` (gallery refresh delay)
+- **File Path Fixes**: Moved `THREADS_FILE` from CWD to `~/.conniesuploader/` for proper user data storage
+- **Directory Creation**: Added `exist_ok=True` to eliminate TOCTOU race conditions
+- **Dead Code Removal**: Removed unused `check_updates()` placeholder function
+
+**Performance Optimizations**:
+- Changed `image_refs` from list to set for O(1) add/remove instead of O(n²)
+- Optimized orphaned image cleanup with set intersection
+
+**Validation Enhancements**:
+- Added file size validation to drag-and-drop for individual files
+- Folders already validated, now individual files checked before adding
+
+**Documentation**:
+- Added docstrings to key functions: `_create_row()`, `start_upload()`, `stop_upload()`, `start_workers()`
+
+**Resource Management**:
+- Disabled unused `RenameWorker` thread (no enqueue calls found in codebase)
+- Proper cleanup of all background workers
+
+**Impact**:
+- Fixed 3 critical bugs that could cause crashes
+- Eliminated 2 race conditions
+- Improved code maintainability across 12 files
+- Reduced memory usage for large file batches
+
+**Commits**:
+- `27ab5db` - fix: Address critical bugs and code quality issues
+- `8124aa7` - refactor: Extract magic numbers and fix medium-priority issues
+- `cb09eb6` - docs: Add docstrings to key undocumented functions
+
 ### ✨ Added
 
 #### **Comprehensive Go Test Suite** (2026-01-13)
