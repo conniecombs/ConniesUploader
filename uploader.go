@@ -36,7 +36,17 @@ import (
 )
 
 // --- Constants ---
-const UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+// DefaultUserAgent is the fallback user agent string if not specified in config
+const DefaultUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+// getUserAgent returns the user agent to use for HTTP requests.
+// Checks config for "user_agent" key, falls back to DefaultUserAgent if not specified.
+func getUserAgent(config map[string]string) string {
+	if ua, ok := config["user_agent"]; ok && ua != "" {
+		return ua
+	}
+	return DefaultUserAgent
+}
 
 // HTTP Timeout Constants
 const (
@@ -916,7 +926,7 @@ func handleFinalizeGallery(job JobRequest) {
 			return
 		}
 
-		req.Header.Set("User-Agent", UserAgent)
+		req.Header.Set("User-Agent", getUserAgent(job.Config))
 
 		resp, err := client.Do(req)
 		if err != nil {
@@ -1475,7 +1485,7 @@ func executeHttpUpload(ctx context.Context, fp string, job *JobRequest) (string,
 
 	// Set headers from spec
 	req.Header.Set("Content-Type", writer.FormDataContentType())
-	req.Header.Set("User-Agent", UserAgent) // Default user agent
+	req.Header.Set("User-Agent", DefaultUserAgent) // Default user agent
 	for key, value := range spec.Headers {
 		req.Header.Set(key, value)
 	}
@@ -1545,7 +1555,7 @@ func executePreRequest(ctx context.Context, spec *PreRequestSpec, service string
 	}
 
 	// Set headers (no template substitution needed on first request)
-	req.Header.Set("User-Agent", UserAgent)
+	req.Header.Set("User-Agent", DefaultUserAgent)
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
@@ -1702,7 +1712,7 @@ func executeFollowUpRequest(ctx context.Context, spec *PreRequestSpec, service s
 	}
 
 	// Set headers with template substitution from parent extracted values
-	req.Header.Set("User-Agent", UserAgent)
+	req.Header.Set("User-Agent", DefaultUserAgent)
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
@@ -2099,7 +2109,7 @@ func uploadImx(ctx context.Context, fp string, job *JobRequest) (string, string,
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req.Header.Set("X-API-KEY", job.Creds["api_key"])
-	req.Header.Set("User-Agent", UserAgent)
+	req.Header.Set("User-Agent", DefaultUserAgent)
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -2281,7 +2291,7 @@ func uploadPixhost(ctx context.Context, fp string, job *JobRequest) (string, str
 		return "", "", fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
-	req.Header.Set("User-Agent", UserAgent)
+	req.Header.Set("User-Agent", DefaultUserAgent)
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -2583,7 +2593,7 @@ func uploadImageBam(ctx context.Context, fp string, job *JobRequest) (string, st
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	req.Header.Set("X-CSRF-TOKEN", csrf)
-	req.Header.Set("User-Agent", UserAgent)
+	req.Header.Set("User-Agent", DefaultUserAgent)
 	req.Header.Set("Origin", "https://www.imagebam.com")
 
 	resp, err := client.Do(req)
@@ -2783,7 +2793,7 @@ func createPixhostGallery(name string) (map[string]string, error) {
 	}
 
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("User-Agent", UserAgent)
+	req.Header.Set("User-Agent", DefaultUserAgent)
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -2860,7 +2870,7 @@ func doImageBamLogin(creds map[string]string) bool {
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		req.Header.Set("X-Requested-With", "XMLHttpRequest")
 		req.Header.Set("X-CSRF-TOKEN", ibSt.csrf)
-		req.Header.Set("User-Agent", UserAgent)
+		req.Header.Set("User-Agent", DefaultUserAgent)
 		if r3, e3 := client.Do(req); e3 == nil {
 			defer func() { _ = r3.Body.Close() }()
 			var j struct{ Status, Data string }
@@ -2994,7 +3004,7 @@ func doRequest(ctx context.Context, method, urlStr string, body io.Reader, conte
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", UserAgent)
+	req.Header.Set("User-Agent", DefaultUserAgent)
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
