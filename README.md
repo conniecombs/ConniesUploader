@@ -602,6 +602,31 @@ See **[REMAINING_ISSUES.md](REMAINING_ISSUES.md)** for complete list. **Note**: 
 - **Go backend logs**: Structured JSON format in execution log
 - **Python logs**: Via loguru with configurable levels
 
+## Documentation
+
+### Core Documentation
+- **[README.md](README.md)** - This file (main project documentation)
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** - System architecture and design decisions
+- **[CONTRIBUTING.md](CONTRIBUTING.md)** - Contribution guidelines and development setup
+- **[CHANGELOG.md](CHANGELOG.md)** - Detailed version history and changes
+- **[REMAINING_ISSUES.md](REMAINING_ISSUES.md)** - Technical debt tracker and roadmap
+
+### Developer Guides
+- **[Plugin Creation Guide](docs/guides/PLUGIN_CREATION_GUIDE.md)** - How to create new upload service plugins
+- **[Schema Plugin Guide](docs/guides/SCHEMA_PLUGIN_GUIDE.md)** - Guide for schema-based plugin development
+- **[Build Troubleshooting](docs/guides/BUILD_TROUBLESHOOTING.md)** - Common build issues and solutions
+
+### Release Documentation
+- **[Release Notes](docs/releases/)** - Detailed release notes for all versions
+  - [v1.1.0 Release Notes](docs/releases/RELEASE_NOTES_v1.1.0.md) - Performance & Polish
+  - [v1.0.5 Release Notes](docs/releases/RELEASE_NOTES_v1.0.5.md) - Resilience & Intelligence
+  - [Release Process](docs/releases/RELEASE_PROCESS.md) - How to create a new release
+
+### Historical Documentation
+- **[docs/history/](docs/history/)** - Implementation notes, phase summaries, and technical analyses
+
+For a complete documentation index, see **[docs/README.md](docs/README.md)**.
+
 ## Contributing
 
 Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
