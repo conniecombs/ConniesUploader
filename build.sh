@@ -17,7 +17,7 @@ cd "$SCRIPT_DIR"
 
 # Configuration
 PYTHON_CMD="python3"
-GO_VERSION_MIN="1.21"
+GO_VERSION_MIN="1.24"
 PYTHON_VERSION_MIN="3.11"
 APP_NAME="ConniesUploader"
 VERSION="1.1.0"
@@ -72,7 +72,7 @@ check_go() {
 
     if ! check_command "go"; then
         print_error "Go not found!"
-        echo "Please install Go 1.21 or higher:"
+        echo "Please install Go 1.24 or higher:"
         echo "  - Ubuntu/Debian: sudo snap install go --classic"
         echo "  - macOS: brew install go"
         echo "  - Fedora: sudo dnf install golang"

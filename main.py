@@ -7,12 +7,20 @@ Previously a monolithic 1,078-line file, now properly organized.
 import customtkinter as ctk
 import signal
 import sys
+import os
 from loguru import logger
 from modules.ui import UploaderApp
 
 
 def main():
     """Main entry point for the application."""
+    # Fix tkinterdnd2 library path for PyInstaller frozen builds
+    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        # Point to the bundled tkdnd folder inside _MEIPASS
+        tkdnd_path = os.path.join(sys._MEIPASS, 'tkinterdnd2', 'tkdnd')
+        if os.path.exists(tkdnd_path):
+            os.environ['TKDND_LIBRARY'] = tkdnd_path
+
     # Set appearance and theme before creating app
     ctk.set_appearance_mode("System")
     ctk.set_default_color_theme("blue")

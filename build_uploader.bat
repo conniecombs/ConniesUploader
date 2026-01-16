@@ -175,15 +175,29 @@ set "PATH=%PATH%;C:\Program Files\Python311;C:\Program Files\Python311\Scripts"
 exit /b 0
 
 :install_go
+REM ==================================================================================
+REM CRITICAL: SHA256 checksums must be obtained from https://go.dev/dl/#go1.24.0
+REM The checksums below are PLACEHOLDERS and will cause the build to fail.
+REM
+REM To get the correct checksums:
+REM   1. Visit https://go.dev/dl/#go1.24.0
+REM   2. Find the SHA256 hash next to each MSI file
+REM   3. Replace the placeholder values below
+REM
+REM To skip verification temporarily (NOT RECOMMENDED for production):
+REM   Comment out the line: call :verify_hash (line ~194)
+REM ==================================================================================
 if "%ARCH%"=="64" (
-    set "GO_URL=https://go.dev/dl/go1.21.6.windows-amd64.msi"
-    set "GO_SHA256=cfb6fb2f9f504806e5aa3a9b8ea23e28e1e94f114f2fe63e0da52b6d59c573f6"
+    set "GO_URL=https://go.dev/dl/go1.24.0.windows-amd64.msi"
+    REM TODO: Replace with actual SHA256 from https://go.dev/dl/#go1.24.0
+    set "GO_SHA256=0000000000000000000000000000000000000000000000000000000000000000"
 ) else (
-    set "GO_URL=https://go.dev/dl/go1.21.6.windows-386.msi"
-    set "GO_SHA256=e8b5f14f84f28dbb34f35e83a6ec10adc7c4c3c4a43e5ae4f1b6b27e34a8bd1f"
+    set "GO_URL=https://go.dev/dl/go1.24.0.windows-386.msi"
+    REM TODO: Replace with actual SHA256 from https://go.dev/dl/#go1.24.0
+    set "GO_SHA256=0000000000000000000000000000000000000000000000000000000000000000"
 )
 
-echo       - Downloading Go 1.21.6...
+echo       - Downloading Go 1.24.0...
 curl -L -o "%~dp0go_installer.msi" "%GO_URL%"
 if not exist "%~dp0go_installer.msi" (
     echo [ERROR] Download failed!
