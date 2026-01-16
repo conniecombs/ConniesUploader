@@ -80,15 +80,15 @@ func init() {
 
 // --- Protocol Structs ---
 type JobRequest struct {
-	Action       string            `json:"action"`
-	Service      string            `json:"service"`
-	Files        []string          `json:"files"`
-	Creds        map[string]string `json:"creds"`
-	Config       map[string]string `json:"config"`
-	ContextData  map[string]string `json:"context_data"`
-	HttpSpec     *HttpRequestSpec  `json:"http_spec,omitempty"`     // New generic HTTP runner
-	RateLimits   *RateLimitConfig  `json:"rate_limits,omitempty"`   // Per-service rate limit override
-	RetryConfig  *RetryConfig      `json:"retry_config,omitempty"`  // Retry configuration
+	Action      string            `json:"action"`
+	Service     string            `json:"service"`
+	Files       []string          `json:"files"`
+	Creds       map[string]string `json:"creds"`
+	Config      map[string]string `json:"config"`
+	ContextData map[string]string `json:"context_data"`
+	HttpSpec    *HttpRequestSpec  `json:"http_spec,omitempty"`    // New generic HTTP runner
+	RateLimits  *RateLimitConfig  `json:"rate_limits,omitempty"`  // Per-service rate limit override
+	RetryConfig *RetryConfig      `json:"retry_config,omitempty"` // Retry configuration
 }
 
 // RateLimitConfig defines rate limiting parameters for a service
@@ -100,26 +100,26 @@ type RateLimitConfig struct {
 
 // HttpRequestSpec defines a generic HTTP request for plugin-driven uploads
 type HttpRequestSpec struct {
-	URL             string                       `json:"url"`
-	Method          string                       `json:"method"`
-	Headers         map[string]string            `json:"headers"`
-	MultipartFields map[string]MultipartField    `json:"multipart_fields"`
-	FormFields      map[string]string            `json:"form_fields,omitempty"`
-	ResponseParser  ResponseParserSpec           `json:"response_parser"`
-	PreRequest      *PreRequestSpec              `json:"pre_request,omitempty"` // NEW: Phase 3 session support
+	URL             string                    `json:"url"`
+	Method          string                    `json:"method"`
+	Headers         map[string]string         `json:"headers"`
+	MultipartFields map[string]MultipartField `json:"multipart_fields"`
+	FormFields      map[string]string         `json:"form_fields,omitempty"`
+	ResponseParser  ResponseParserSpec        `json:"response_parser"`
+	PreRequest      *PreRequestSpec           `json:"pre_request,omitempty"` // NEW: Phase 3 session support
 }
 
 // PreRequestSpec defines a pre-request hook for login/session setup
 type PreRequestSpec struct {
-	Action         string            `json:"action"`          // "login", "get_endpoint", etc.
-	URL            string            `json:"url"`
-	Method         string            `json:"method"`
-	Headers        map[string]string `json:"headers,omitempty"`
-	FormFields     map[string]string `json:"form_fields,omitempty"`
-	UseCookies     bool              `json:"use_cookies"`     // Store cookies for main request
-	ExtractFields  map[string]string `json:"extract_fields"`  // Extract values from response (name -> JSONPath/selector)
-	ResponseType   string            `json:"response_type"`   // "json" or "html"
-	FollowUpRequest *PreRequestSpec  `json:"follow_up_request,omitempty"` // NEW: Chain multiple pre-requests
+	Action          string            `json:"action"` // "login", "get_endpoint", etc.
+	URL             string            `json:"url"`
+	Method          string            `json:"method"`
+	Headers         map[string]string `json:"headers,omitempty"`
+	FormFields      map[string]string `json:"form_fields,omitempty"`
+	UseCookies      bool              `json:"use_cookies"`                 // Store cookies for main request
+	ExtractFields   map[string]string `json:"extract_fields"`              // Extract values from response (name -> JSONPath/selector)
+	ResponseType    string            `json:"response_type"`               // "json" or "html"
+	FollowUpRequest *PreRequestSpec   `json:"follow_up_request,omitempty"` // NEW: Chain multiple pre-requests
 }
 
 // MultipartField represents a field in multipart/form-data
@@ -130,12 +130,12 @@ type MultipartField struct {
 
 // ResponseParserSpec defines how to parse the upload response
 type ResponseParserSpec struct {
-	Type         string `json:"type"`          // "json" or "html"
-	URLPath      string `json:"url_path"`      // JSONPath or CSS selector for image URL
-	ThumbPath    string `json:"thumb_path"`    // JSONPath or CSS selector for thumbnail URL
-	StatusPath   string `json:"status_path"`   // JSONPath for status field
-	SuccessValue string `json:"success_value"` // Expected value for success
-	URLTemplate  string `json:"url_template,omitempty"`   // Template for constructing URL from extracted values (e.g., "https://example.com/p/{id}/image.html")
+	Type          string `json:"type"`                     // "json" or "html"
+	URLPath       string `json:"url_path"`                 // JSONPath or CSS selector for image URL
+	ThumbPath     string `json:"thumb_path"`               // JSONPath or CSS selector for thumbnail URL
+	StatusPath    string `json:"status_path"`              // JSONPath for status field
+	SuccessValue  string `json:"success_value"`            // Expected value for success
+	URLTemplate   string `json:"url_template,omitempty"`   // Template for constructing URL from extracted values (e.g., "https://example.com/p/{id}/image.html")
 	ThumbTemplate string `json:"thumb_template,omitempty"` // Template for constructing thumbnail URL
 }
 
@@ -162,9 +162,9 @@ type RetryConfig struct {
 type ProgressEvent struct {
 	BytesTransferred int64   `json:"bytes_transferred"`
 	TotalBytes       int64   `json:"total_bytes"`
-	Speed            float64 `json:"speed"`        // bytes per second
+	Speed            float64 `json:"speed"` // bytes per second
 	Percentage       float64 `json:"percentage"`
-	ETA              int     `json:"eta_seconds"`  // estimated time remaining in seconds
+	ETA              int     `json:"eta_seconds"` // estimated time remaining in seconds
 }
 
 // --- Globals ---
@@ -182,12 +182,12 @@ var client *http.Client
 // Rate Limiters (prevent IP bans by throttling requests per service)
 // Each service gets 2 requests/second with burst of 5 (reasonable for image hosts)
 var rateLimiters = map[string]*rate.Limiter{
-	"imx.to":          rate.NewLimiter(rate.Limit(2.0), 5),
-	"pixhost.to":      rate.NewLimiter(rate.Limit(2.0), 5),
-	"vipr.im":         rate.NewLimiter(rate.Limit(2.0), 5),
-	"turboimagehost":  rate.NewLimiter(rate.Limit(2.0), 5),
-	"imagebam.com":    rate.NewLimiter(rate.Limit(2.0), 5),
-	"vipergirls.to":   rate.NewLimiter(rate.Limit(1.0), 3), // More conservative for forums
+	"imx.to":         rate.NewLimiter(rate.Limit(2.0), 5),
+	"pixhost.to":     rate.NewLimiter(rate.Limit(2.0), 5),
+	"vipr.im":        rate.NewLimiter(rate.Limit(2.0), 5),
+	"turboimagehost": rate.NewLimiter(rate.Limit(2.0), 5),
+	"imagebam.com":   rate.NewLimiter(rate.Limit(2.0), 5),
+	"vipergirls.to":  rate.NewLimiter(rate.Limit(1.0), 3), // More conservative for forums
 }
 var rateLimiterMutex sync.RWMutex
 
@@ -262,9 +262,9 @@ func updateRateLimiter(service string, config *RateLimitConfig) {
 	rateLimiters[service] = limiter
 
 	log.WithFields(log.Fields{
-		"service":   service,
-		"rate":      config.RequestsPerSecond,
-		"burst":     config.BurstSize,
+		"service": service,
+		"rate":    config.RequestsPerSecond,
+		"burst":   config.BurstSize,
 	}).Debug("Updated rate limiter configuration")
 
 	// Update global rate limiter if specified
@@ -474,9 +474,9 @@ func retryWithBackoff[T any](
 		// Check if we have retries left
 		if attempt >= config.MaxRetries {
 			logger.WithFields(log.Fields{
-				"error":        lastErr.Error(),
-				"status_code":  lastStatusCode,
-				"max_retries":  config.MaxRetries,
+				"error":       lastErr.Error(),
+				"status_code": lastStatusCode,
+				"max_retries": config.MaxRetries,
 			}).Warn("Max retries exhausted")
 			break
 		}
@@ -708,19 +708,19 @@ func main() {
 		Jar:     jar,
 		Transport: &http.Transport{
 			// Connection Pooling Configuration
-			MaxIdleConns:          100,             // Total idle connections across all hosts
-			MaxIdleConnsPerHost:   10,              // Idle connections per host (allows connection reuse)
-			MaxConnsPerHost:       20,              // Max active + idle connections per host
-			IdleConnTimeout:       90 * time.Second, // How long idle connections are kept
-			DisableKeepAlives:     false,            // Enable HTTP keep-alive for connection reuse
+			MaxIdleConns:        100,              // Total idle connections across all hosts
+			MaxIdleConnsPerHost: 10,               // Idle connections per host (allows connection reuse)
+			MaxConnsPerHost:     20,               // Max active + idle connections per host
+			IdleConnTimeout:     90 * time.Second, // How long idle connections are kept
+			DisableKeepAlives:   false,            // Enable HTTP keep-alive for connection reuse
 
 			// Timeout Configuration
 			ResponseHeaderTimeout: ResponseHeaderTimeout, // 60s for server response headers
-			ExpectContinueTimeout: 1 * time.Second,      // Timeout for 100-continue responses
+			ExpectContinueTimeout: 1 * time.Second,       // Timeout for 100-continue responses
 
 			// Performance Optimization
-			ForceAttemptHTTP2:     true,  // Try HTTP/2 for better performance
-			DisableCompression:    false, // Allow gzip compression
+			ForceAttemptHTTP2:  true,  // Try HTTP/2 for better performance
+			DisableCompression: false, // Allow gzip compression
 		},
 	}
 
@@ -1918,7 +1918,7 @@ func substituteTemplateFromMap(template string, values map[string]string) string
 			continue
 		}
 		placeholder := match[0] // e.g., "{csrf_token}"
-		key := match[1]          // e.g., "csrf_token"
+		key := match[1]         // e.g., "csrf_token"
 
 		// Look up value in map
 		if value, exists := values[key]; exists {
@@ -1942,7 +1942,7 @@ func substituteTemplate(template string, data map[string]interface{}) string {
 			continue
 		}
 		placeholder := match[0] // e.g., "{id}"
-		key := match[1]          // e.g., "id"
+		key := match[1]         // e.g., "id"
 
 		// Extract value from JSON using dot notation
 		value := getJSONValue(data, key)
@@ -1990,22 +1990,33 @@ func getJSONValue(data map[string]interface{}, path string) string {
 // Helpers to map UI strings to IMX API IDs
 func getImxSizeId(s string) string {
 	switch s {
-	case "100": return "1"
-	case "150": return "6"
-	case "180": return "2"
-	case "250": return "3"
-	case "300": return "4"
-	default: return "2" // Default 180
+	case "100":
+		return "1"
+	case "150":
+		return "6"
+	case "180":
+		return "2"
+	case "250":
+		return "3"
+	case "300":
+		return "4"
+	default:
+		return "2" // Default 180
 	}
 }
 
 func getImxFormatId(s string) string {
 	switch s {
-	case "Fixed Width": return "1"
-	case "Fixed Height": return "4"
-	case "Proportional": return "2"
-	case "Square": return "3"
-	default: return "1" // Default Fixed Width
+	case "Fixed Width":
+		return "1"
+	case "Fixed Height":
+		return "4"
+	case "Proportional":
+		return "2"
+	case "Square":
+		return "3"
+	default:
+		return "1" // Default Fixed Width
 	}
 }
 
@@ -2040,7 +2051,7 @@ func uploadImx(ctx context.Context, fp string, job *JobRequest) (string, string,
 			pw.CloseWithError(fmt.Errorf("failed to write format field: %w", err))
 			return
 		}
-		
+
 		// Essential Hidden Fields from uploadpage.html for legacy script support
 		if err := writer.WriteField("adult", "1"); err != nil {
 			pw.CloseWithError(fmt.Errorf("failed to write adult field: %w", err))
@@ -2055,10 +2066,10 @@ func uploadImx(ctx context.Context, fp string, job *JobRequest) (string, string,
 			pw.CloseWithError(fmt.Errorf("failed to write simple_upload field: %w", err))
 			return
 		}
-		
+
 		// Map the config strings to IDs before sending to API
 		sizeId := getImxSizeId(job.Config["imx_thumb_id"])
-		
+
 		// Send both variations of the parameter name to cover all bases (API vs Form)
 		if err := writer.WriteField("thumbnail_size", sizeId); err != nil {
 			pw.CloseWithError(fmt.Errorf("failed to write thumbnail_size field: %w", err))
@@ -2127,7 +2138,7 @@ func uploadImx(ctx context.Context, fp string, job *JobRequest) (string, string,
 				"old_thumb": finalThumb,
 				"new_thumb": scrapedThumb,
 			}).Info("Replaced API thumb with Scraped thumb")
-			
+
 			// Update values with scraped results
 			viewerURL = scrapedViewer
 			finalThumb = scrapedThumb
@@ -2177,7 +2188,7 @@ func scrapeImxBBCode(viewerURL string) (string, string, error) {
 
 		// 1. Check Label (Preceding text)
 		label := strings.ToLower(s.Prev().Text())
-		parentLabel := strings.ToLower(s.Parent().Prev().Text()) 
+		parentLabel := strings.ToLower(s.Parent().Prev().Text())
 		grandParentLabel := strings.ToLower(s.Parent().Parent().Prev().Text())
 		combinedLabel := label + " " + parentLabel + " " + grandParentLabel
 
@@ -2198,7 +2209,7 @@ func scrapeImxBBCode(viewerURL string) (string, string, error) {
 		// 3. Position Preference
 		// If labels are missing, thumbnails usually appear before full hotlinks.
 		// We subtract 'i' so earlier elements get a slightly higher score if all else matches.
-		score -= i 
+		score -= i
 
 		if score > bestScore {
 			bestScore = score
@@ -2756,9 +2767,9 @@ func createPixhostGallery(name string) (map[string]string, error) {
 	// POST to https://api.pixhost.to/galleries with the gallery title
 	// Returns JSON with gallery_hash and gallery_upload_hash
 	logger := log.WithFields(log.Fields{
-		"action": "create_gallery",
+		"action":  "create_gallery",
 		"service": "pixhost.to",
-		"name": name,
+		"name":    name,
 	})
 
 	// Create form data
@@ -2785,7 +2796,7 @@ func createPixhostGallery(name string) (map[string]string, error) {
 		bodyBytes, _ := io.ReadAll(resp.Body)
 		logger.WithFields(log.Fields{
 			"status_code": resp.StatusCode,
-			"response": string(bodyBytes),
+			"response":    string(bodyBytes),
 		}).Error("Gallery creation failed with non-success status")
 		return nil, fmt.Errorf("gallery creation failed: HTTP %d", resp.StatusCode)
 	}
@@ -2807,12 +2818,12 @@ func createPixhostGallery(name string) (map[string]string, error) {
 	}
 
 	logger.WithFields(log.Fields{
-		"gallery_hash": result.GalleryHash,
+		"gallery_hash":        result.GalleryHash,
 		"gallery_upload_hash": result.GalleryUploadHash,
 	}).Info("Successfully created Pixhost gallery")
 
 	return map[string]string{
-		"gallery_hash": result.GalleryHash,
+		"gallery_hash":        result.GalleryHash,
 		"gallery_upload_hash": result.GalleryUploadHash,
 	}, nil
 }

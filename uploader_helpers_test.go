@@ -399,16 +399,16 @@ func TestGetImxSizeIdBoundaries(t *testing.T) {
 		input string
 		want  string
 	}{
-		{"0", "2"},     // Below minimum - defaults to 180
-		{"99", "2"},    // Below minimum - defaults to 180
-		{"100", "1"},   // Valid size
-		{"150", "6"},   // Valid size
-		{"180", "2"},   // Valid size
-		{"250", "3"},   // Valid size
-		{"300", "4"},   // Valid size
-		{"350", "2"},   // Not in map - defaults to 180
-		{"500", "2"},   // Above maximum - defaults to 180
-		{"1000", "2"},  // Far above maximum - defaults to 180
+		{"0", "2"},    // Below minimum - defaults to 180
+		{"99", "2"},   // Below minimum - defaults to 180
+		{"100", "1"},  // Valid size
+		{"150", "6"},  // Valid size
+		{"180", "2"},  // Valid size
+		{"250", "3"},  // Valid size
+		{"300", "4"},  // Valid size
+		{"350", "2"},  // Not in map - defaults to 180
+		{"500", "2"},  // Above maximum - defaults to 180
+		{"1000", "2"}, // Far above maximum - defaults to 180
 	}
 
 	for _, tt := range tests {
@@ -426,15 +426,15 @@ func TestGetImxFormatIdCaseSensitivity(t *testing.T) {
 		input string
 		want  string
 	}{
-		{"Fixed Width", "1"},    // Exact match
-		{"Fixed Height", "4"},   // Exact match
-		{"Proportional", "2"},   // Exact match
-		{"Square", "3"},         // Exact match
-		{"FIXED WIDTH", "1"},    // Case mismatch - defaults to "1"
-		{"fixed width", "1"},    // Case mismatch - defaults to "1"
-		{"PROPORTIONAL", "1"},   // Case mismatch - defaults to "1"
-		{"proportional", "1"},   // Case mismatch - defaults to "1"
-		{"unknown", "1"},        // Not in map - defaults to "1"
+		{"Fixed Width", "1"},  // Exact match
+		{"Fixed Height", "4"}, // Exact match
+		{"Proportional", "2"}, // Exact match
+		{"Square", "3"},       // Exact match
+		{"FIXED WIDTH", "1"},  // Case mismatch - defaults to "1"
+		{"fixed width", "1"},  // Case mismatch - defaults to "1"
+		{"PROPORTIONAL", "1"}, // Case mismatch - defaults to "1"
+		{"proportional", "1"}, // Case mismatch - defaults to "1"
+		{"unknown", "1"},      // Not in map - defaults to "1"
 	}
 
 	for _, tt := range tests {
