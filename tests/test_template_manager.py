@@ -376,7 +376,7 @@ class TestTemplateManagerIntegration:
             # Retrieve and use template
             template = tm.get_template("Workflow")
             result = template.format(viewer="http://example.com", thumb="http://example.com/thumb.jpg")
-            assert "http://example.com" in result
+            assert result == "[url=http://example.com]http://example.com/thumb.jpg[/url]"
 
             # Update template
             tm.add_template("Workflow", "[img]{thumb}[/img]")
