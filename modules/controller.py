@@ -7,6 +7,7 @@ import pyperclip
 import platform
 import subprocess
 from datetime import datetime
+from typing import Dict, List, Tuple, Optional, Any
 from loguru import logger
 
 from . import api, config, viper_api
@@ -15,16 +16,16 @@ from .template_manager import TemplateManager
 
 
 class RenameWorker(threading.Thread):
-    def __init__(self, creds):
+    def __init__(self, creds: Dict[str, Any]) -> None:
         super().__init__(daemon=True)
         self.creds = creds
-        self.queue = queue.Queue(maxsize=200)
-        self.active = True
+        self.queue: queue.Queue = queue.Queue(maxsize=200)
+        self.active: bool = True
 
-    def add_task(self, service, gallery_id, new_name):
+    def add_task(self, service: str, gallery_id: str, new_name: str) -> None:
         self.queue.put((service, gallery_id, new_name))
 
-    def run(self):
+    def run(self) -> None:
         while self.active:
             try:
                 task = self.queue.get(timeout=1)
@@ -44,12 +45,12 @@ class RenameWorker(threading.Thread):
             except Exception as e:
                 logger.error(f"Rename worker error: {e}")
 
-    def stop(self):
+    def stop(self) -> None:
         self.active = False
 
 
 class UploadController:
-    def __init__(self):
+    def __init__(self) -> None:
         self.progress_queue = queue.Queue(maxsize=1000)
         self.ui_queue = queue.Queue(maxsize=500)
         self.result_queue = queue.Queue(maxsize=1000)
@@ -75,7 +76,7 @@ class UploadController:
         self.rename_worker = None
         self.creds = {}
 
-    def start_workers(self, creds):
+    def start_workers(self, creds: Dict[str, Any]) -> None:
         """Start background workers (currently unused - RenameWorker disabled).
 
         RenameWorker is not currently used as there are no enqueue() calls in the codebase.
@@ -87,7 +88,7 @@ class UploadController:
         #     self.rename_worker = RenameWorker(self.creds)
         #     self.rename_worker.start()
 
-    def start_upload(self, pending_files_map, settings, creds):
+    def start_upload(self, pending_files_map: Dict[str, List[str]], settings: Dict[str, Any], creds: Dict[str, Any]) -> None:
         """Start the upload process for all pending files.
 
         Args:
@@ -117,16 +118,16 @@ class UploadController:
 
         self.upload_manager.start_batch(pending_files_map, settings, creds)
 
-    def stop_upload(self):
+    def stop_upload(self) -> None:
         """Signal all upload threads to stop gracefully."""
         self.cancel_event.set()
 
-    def handle_upload_result(self, fp, img, thumb):
+    def handle_upload_result(self, fp: str, img: str, thumb: str) -> bool:
         self.results.append((fp, img, thumb))
         self.upload_count += 1
         return self.upload_count >= self.upload_total
 
-    def finalize_upload(self):
+    def finalize_upload(self) -> None:
         if self.pix_galleries_to_finalize:
             logger.info("Finalizing Pixhost Galleries...")
             client = api.create_resilient_client()
@@ -146,7 +147,7 @@ class UploadController:
             except (OSError, pyperclip.PyperclipException) as e:
                 logger.warning(f"Could not copy to clipboard: {e}")
 
-    def generate_group_output(self, group_title, group_files, gallery_id, batch_index):
+    def generate_group_output(self, group_title: str, group_files: List[str], gallery_id: Optional[str], batch_index: int) -> None:
         # Map file paths to results
         res_map = {r[0]: (r[1], r[2]) for r in self.results}
         group_results = []
@@ -244,7 +245,7 @@ class UploadController:
 
         return out_name
 
-    def _process_post_queue(self):
+    def _process_post_queue(self) -> None:
         logger.info("Auto-Post Queue: Started.")
         user = self.creds.get("vg_user")
         pwd = self.creds.get("vg_pass")
@@ -292,7 +293,7 @@ class UploadController:
                 time.sleep(0.5)
         logger.info("Auto-Post Queue: Finished.")
 
-    def open_output_folder(self):
+    def open_output_folder(self) -> None:
         if self.current_output_files:
             folder = os.path.dirname(os.path.abspath(self.current_output_files[0]))
             if platform.system() == "Windows":

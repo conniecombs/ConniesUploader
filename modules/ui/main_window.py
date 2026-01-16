@@ -20,6 +20,7 @@ import platform
 import time
 import re
 from datetime import datetime
+from typing import Dict, Any
 from concurrent.futures import ThreadPoolExecutor
 
 # Local Imports
@@ -42,7 +43,7 @@ from loguru import logger
 
 
 class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the uploader application."""
         super().__init__()
         self.TkdndVersion = TkinterDnD._require(self)
@@ -547,7 +548,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             logger.debug(f"Could not convert '{value}' to int, using default {default}: {e}")
             return default
 
-    def _gather_settings(self):
+    def _gather_settings(self) -> Dict[str, Any]:
         vipr_gal_name = self.cb_vipr_gallery.get()
         vipr_id = self.vipr_galleries_map.get(vipr_gal_name, "0")
 
@@ -790,7 +791,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             self.ui_queue.put(("add", f, pil_image, group_widget))
             time.sleep(0.001)
 
-    def start_upload(self):
+    def start_upload(self) -> None:
         pending_by_group = {}
         for grp in self.groups:
             for fp in grp.files:
@@ -1016,7 +1017,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         except Exception as e:
             logger.error(f"Group Update Error: {e}", exc_info=True)
 
-    def finish_upload(self):
+    def finish_upload(self) -> None:
         if not self.is_uploading:
             return
         self.lbl_eta.configure(text="Finalizing...")
@@ -1159,7 +1160,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         else:
             self.log_window_ref = LogWindow(self, self.log_cache)
 
-    def retry_failed(self):
+    def retry_failed(self) -> None:
         cnt = 0
         with self.lock:
             for w in self.file_widgets.values():
@@ -1171,7 +1172,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         if cnt:
             self.start_upload()
 
-    def clear_list(self):
+    def clear_list(self) -> None:
         self.cancel_event.set()
         self.is_uploading = False
         self.upload_count = 0
