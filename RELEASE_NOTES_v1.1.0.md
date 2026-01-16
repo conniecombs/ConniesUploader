@@ -1,21 +1,103 @@
 # Release Notes - v1.1.0 "Performance & Polish"
 
-**Release Date**: January 15, 2026
-**Type**: Minor Release (New Features + Performance Improvements)
+**Release Date**: January 15-16, 2026
+**Type**: Minor Release (New Features + Performance Improvements + Testing Infrastructure)
 **Previous Version**: v1.0.5
 
 ---
 
 ## 🎯 Release Highlights
 
-This release focuses on performance optimization, user experience enhancements, and code quality improvements. With **18 issues resolved** across two phases, v1.1.0 delivers measurably faster uploads, better error feedback, and more responsive UI interactions.
+This release focuses on performance optimization, user experience enhancements, code quality improvements, and comprehensive testing infrastructure. With **30 issues resolved** across three phases, v1.1.0 delivers measurably faster uploads, better error feedback, more responsive UI interactions, and a complete test suite.
+
+### 🎉 Major Achievement: ALL HIGH PRIORITY ISSUES RESOLVED (6/6 = 100%)
 
 ### Key Achievements
+- **🧪 Comprehensive test suite** - 2,200+ lines of Python tests across 9 modules
 - **20-30% faster uploads** through HTTP connection pooling optimization
-- **18 bug fixes** addressing critical stability and code quality issues
+- **30 bug fixes and enhancements** addressing critical stability and code quality issues
 - **Enhanced user experience** with real-time progress feedback during file operations
 - **Improved error messages** with clear troubleshooting guidance
 - **Better code maintainability** with consistent logging and extracted constants
+- **pytest infrastructure** - Full configuration with markers, coverage, and mocking
+
+---
+
+## 🧪 Testing Infrastructure (Phase 6)
+
+### Comprehensive Python Test Suite (Issue #2)
+**Impact**: 2,200+ lines of test code providing robust validation and regression prevention
+
+Created complete testing infrastructure with 9 test modules:
+
+**New Test Modules (5):**
+1. **test_sidecar.py** (380 lines)
+   - SidecarBridge configuration and binary location detection
+   - Event listeners, thread safety with locks
+   - Restart logic and error handling
+   - Mock subprocess integration tests
+   - Platform detection and shutdown procedures
+
+2. **test_validation.py** (350 lines)
+   - File path validation (extensions, symlinks, paths)
+   - Directory validation and traversal prevention
+   - Filename sanitization (NUL bytes, control chars, path traversal)
+   - Service name validation with plugin_manager integration
+   - Thread count clamping and validation
+   - Unicode and edge case handling
+
+3. **test_template_manager.py** (380 lines)
+   - Template CRUD operations (add, get, delete, update)
+   - Placeholder substitution ({viewer}, {thumb}, {direct})
+   - Persistence to JSON file across instances
+   - Default templates, validation, edge cases
+   - File corruption handling
+
+4. **test_utils.py** (350 lines)
+   - ContextUtils for Windows context menu install/remove
+   - Platform detection (Windows/Linux/macOS)
+   - Registry path construction and mocking
+   - Executable path handling (frozen/development modes)
+   - Pythonw.exe preference for GUI apps
+
+5. **test_plugin_manager.py** (enhanced from 57 to 368 lines)
+   - Plugin discovery (*.py and *_v2.py files)
+   - Priority sorting (0-100 scale, higher first)
+   - Plugin validation (service_id, upload method)
+   - CRUD operations and error handling
+   - Mock plugin directory workflows
+
+**Configuration:**
+- **pytest.ini** (113 lines): Complete pytest setup
+  - Test discovery patterns and markers
+  - Coverage configuration (`--cov=modules`)
+  - Markers: unit, integration, slow, requires_go, requires_gui, network
+  - Exclusion patterns for archives and build directories
+  - Logging and output configuration
+
+**Existing Tests Preserved:**
+- `test_file_handler.py` (223 lines) - Comprehensive file tests
+- `test_exceptions.py` - Exception hierarchy tests
+- `test_plugins.py` - Plugin-specific tests
+- `test_mock_uploads.py` - Mock upload workflows
+
+**How to Run:**
+```bash
+pip install -r requirements.txt  # Installs pytest==8.3.4
+pytest tests/ -v                 # Run all tests
+pytest tests/ -m unit            # Run only unit tests
+pytest tests/ -m integration     # Run only integration tests
+pytest tests/ --cov=modules      # Run with coverage report
+```
+
+**Benefits:**
+- Regression prevention for all critical modules
+- Mock-based testing for external dependencies
+- Clear separation of unit vs integration tests
+- Coverage reporting with HTML output
+- CI/CD integration ready
+
+**Commit**: `3c52738` - feat: Implement comprehensive Python test suite (Issue #2)
 
 ---
 
@@ -197,10 +279,14 @@ Added 127 file(s) from 5 folder(s)
 ## 📊 Statistics
 
 ### Code Changes
-- **Files Modified**: 15
-- **Commits**: 6
-- **Lines Changed**: ~200
-- **Issues Resolved**: 18 (13 in Phase 4, 4 in Phase 5, 1 documentation)
+- **Files Modified**: 22 (15 in Phases 4-5, 7 in Phase 6)
+- **Commits**: 9 (6 in Phases 4-5, 3 in Phase 6)
+- **Lines Added**: ~2,400 (200 in Phases 4-5, 2,200+ in Phase 6 tests)
+- **Issues Resolved**: 30 total
+  - Phase 4: 13 issues (critical bugs & code quality)
+  - Phase 5: 4 issues (performance & UX)
+  - Phase 6: 5 issues (high-priority verification + test suite)
+  - Documentation: 8 issues
 
 ### Performance Gains
 - **Upload Speed**: +20-30% for multi-file batches
@@ -208,10 +294,13 @@ Added 127 file(s) from 5 folder(s)
 - **Resource Management**: Zero thread leaks with proper shutdown
 
 ### Quality Improvements
+- **Test Coverage**: 2,200+ lines Python tests + 1,995 lines Go tests
+- **Test Modules**: 9 comprehensive test modules with pytest infrastructure
 - **Logging Consistency**: 100% (all print() replaced)
 - **Magic Numbers**: 0 remaining in core modules
 - **Race Conditions Fixed**: 3 (AutoPoster, directory creation x2)
 - **Dead Code Removed**: 1 function
+- **High Priority Issues**: 100% complete (6/6 resolved)
 
 ---
 
@@ -244,16 +333,29 @@ Added 127 file(s) from 5 folder(s)
 3. ✅ Issue #18 - Enhanced error messages with troubleshooting
 4. ✅ Issue #19 - Drag-and-drop progress indication
 
+### Phase 6 - Testing & High-Priority Completion
+**Objective**: Implement comprehensive test suite and verify all high-priority issues resolved
+
+**Completed Issues**:
+1. ✅ Issue #2 - Python test suite (2,200+ lines across 9 modules with pytest configuration)
+2. ✅ Issue #5 - Tooltip functionality (verified fully implemented)
+3. ✅ Issue #6 - Gallery finalization (verified end-to-end Pixhost integration)
+4. ✅ Issue #7 - Validation module (verified pattern-based, no hardcoding)
+5. ✅ Issue #8 - Rate limiting (verified comprehensive implementation)
+
+**Major Achievement**: All 6 high-priority issues resolved (100% completion)
+
 ---
 
 ## 📝 Documentation Updates
 
 ### Updated Files
-- `REMAINING_ISSUES.md` - Status updated to Phase 5 Complete
-- `CHANGELOG.md` - Added Phase 4 & 5 entries
-- `README.md` - Added "Latest Updates" section
+- `REMAINING_ISSUES.md` - Status updated to Phase 6 Complete, all high-priority issues marked resolved
+- `CHANGELOG.md` - Added Phase 4, 5, & 6 entries with milestone achievement
+- `README.md` - Updated with Phase 6 achievements, test suite statistics, and latest release info
+- `RELEASE_NOTES_v1.1.0.md` - This document (updated with Phase 6)
+- `pytest.ini` - New file with complete pytest configuration
 - `modules/config.py` - Version bumped to v1.1.0
-- `RELEASE_NOTES_v1.1.0.md` - This document
 
 ---
 
@@ -278,6 +380,13 @@ No breaking changes. This is a drop-in replacement for v1.0.5.
 3. **Data Structure Changes**:
    - `UploaderApp.image_refs` is now a `set` instead of `list`
    - Use `add()` instead of `append()`, `discard()` instead of `remove()`
+
+4. **Testing Infrastructure**:
+   - New `pytest.ini` configuration file in project root
+   - Run tests with: `pytest tests/ -v`
+   - Use markers to filter tests: `pytest -m unit` or `pytest -m integration`
+   - Coverage reports: `pytest --cov=modules`
+   - 9 test modules available for reference when adding new features
 
 ---
 

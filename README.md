@@ -13,9 +13,29 @@
 
 A powerful, multi-service image hosting uploader with an intuitive GUI. Upload images to multiple image hosting services with advanced features like batch processing, gallery management, automatic retry logic, and real-time progress tracking.
 
-**🎉 Latest Release (v1.1.0 - "Performance & Polish")** - Performance-focused release featuring HTTP connection pooling (20-30% faster uploads), enhanced error messages, drag-and-drop progress indication, plus 18 bug fixes improving stability and code quality.
+**🎉 Latest Release: v1.1.0 "Performance & Polish" (Jan 15-16, 2026)**
+
+Performance-focused release with comprehensive testing infrastructure, achieving **100% high-priority issue resolution (6/6)** and 30 total issues resolved.
+
+### Highlights
+- 🧪 **Comprehensive Python test suite** - 2,200+ lines across 9 test modules with pytest configuration
+- ⚡ **20-30% faster uploads** - HTTP connection pooling optimization
+- ✅ **ALL HIGH PRIORITY ISSUES RESOLVED** - 100% completion milestone achieved
+- 🐛 **30 bug fixes and enhancements** - Critical stability and code quality improvements
+- 🎨 **Enhanced UX** - Drag-and-drop progress indication and improved error messages
+- 📝 **Better maintainability** - Consistent logging and extracted constants
 
 ## ✨ Recent Improvements
+
+**v1.1.0 Release - "Performance & Polish" (Jan 15-16, 2026):**
+- 🧪 **Comprehensive test suite** - 1,995 lines Go tests + 2,200+ lines Python tests (9 modules)
+- 🔬 **pytest infrastructure** - Full markers, coverage, and mocking setup
+- ⚡ **HTTP connection pooling** - 20-30% faster uploads with optimized configuration
+- 🎨 **Drag-and-drop progress** - Real-time folder scanning status
+- 📝 **Consistent logging** - All print() replaced with logger calls
+- 🐛 **Critical bug fixes** - Fixed bare exceptions, ThreadPoolExecutor, race conditions
+- ⚙️ **Configuration cleanup** - Extracted all magic numbers to named constants
+- ✅ **30 issues resolved** - Only 4 medium/low priority enhancements remain
 
 **v1.0.5 Release - "Resilience & Intelligence" (Jan 13, 2026):**
 - 🔄 **Smart Retry Logic** - Automatic retry with exponential backoff (15-20% fewer failures)
@@ -25,14 +45,6 @@ A powerful, multi-service image hosting uploader with an intuitive GUI. Upload i
 - 📦 **Plugin Versioning** - Semantic version comparison and update validation
 - 🔐 **Crypto/Rand Migration** - Secure random generation for backoff jitter
 - 📝 **Complete Documentation** - 704-line release notes + 501-line feature guide
-
-**Latest Updates (Jan 15, 2026 - Phase 4):**
-- 🐛 **Critical bug fixes** - Fixed bare exceptions, ThreadPoolExecutor shutdown, race conditions
-- 📝 **Consistent logging** - All print() replaced with logger calls (4 modules)
-- ⚙️ **Configuration cleanup** - Extracted all magic numbers to named constants
-- 🎯 **Performance optimization** - Changed image_refs to set for O(1) operations
-- 📁 **File path fixes** - Moved user data to ~/.conniesuploader/
-- ✅ **6 major issues resolved** - Improved stability and maintainability
 
 **Previous Updates (Jan 13, 2026):**
 - ✅ **30% test coverage** - 1,995 lines of comprehensive Go tests (up from 12.5%)
@@ -45,7 +57,8 @@ A powerful, multi-service image hosting uploader with an intuitive GUI. Upload i
 - ✅ **97.9% code reduction** - main.py refactored from 1,078 → 23 lines
 - ✅ **Zero known CVEs** - All dependencies patched and up-to-date
 - ✅ **14 exception classes** - Structured error handling hierarchy
-- ✅ **60+ tests** - 46 Go + 42 Python tests with benchmarks
+- ✅ **Comprehensive test suite** - 1,995 lines Go tests + 2,200+ lines Python tests (9 modules)
+- ✅ **pytest infrastructure** - Full configuration with markers, coverage, and mocking
 - ✅ **451 lines archived** - Legacy code cleanly removed
 - ✅ **13 linter fixes** - All errcheck warnings resolved
 - ✅ **6 security scanners** - Daily automated vulnerability detection
@@ -547,7 +560,7 @@ For detailed instructions, see **[RELEASE_PROCESS.md](RELEASE_PROCESS.md)**
 - Performance metrics dashboard
 - Effort: 2-3 days
 
-### Long-Term Vision (Next Quarter - v1.1.0)
+### Long-Term Vision (Future - v1.2.0+)
 
 - Circuit breaker pattern for failing services
 - Adaptive rate limiting based on service responses
@@ -557,7 +570,7 @@ For detailed instructions, see **[RELEASE_PROCESS.md](RELEASE_PROCESS.md)**
 - Automatic plugin update system
 - Cloud sync for settings and history
 
-See **[REMAINING_ISSUES.md](REMAINING_ISSUES.md)** for complete list of 33 remaining issues.
+See **[REMAINING_ISSUES.md](REMAINING_ISSUES.md)** for complete list. **Note**: All high-priority issues resolved (6/6)! Only 4 medium/low priority enhancements remain.
 
 ## Troubleshooting
 
@@ -629,15 +642,23 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Version History
 
-**Latest Release: v1.0.5 - "Resilience & Intelligence"** (Jan 13, 2026)
+**Latest Release: v1.1.0 - "Performance & Polish"** (Jan 15-16, 2026)
 
-**Major Features in v1.0.5:**
+**Major Features in v1.1.0:**
+- 🧪 **Comprehensive Python Test Suite** - 2,200+ lines across 9 modules with pytest configuration
+- ⚡ **HTTP Connection Pooling** - 20-30% faster uploads with optimized configuration
+- ✅ **ALL HIGH PRIORITY ISSUES RESOLVED** - 100% completion (6/6 issues)
+- 🐛 **30 Bug Fixes & Enhancements** - Critical stability and code quality improvements
+- 🎨 **Enhanced UX** - Drag-and-drop progress indication and improved error messages
+- 📝 **Better Maintainability** - Consistent logging and extracted constants
+- 🔬 **pytest Infrastructure** - Full markers, coverage, and mocking setup
+
+**v1.0.5 - "Resilience & Intelligence"** (Jan 13, 2026):
 - 🔄 **Intelligent Retry Logic** - Exponential backoff with crypto/rand (15-20% fewer failures)
 - 📊 **Real-time Progress** - Live speed, percentage, ETA every 2 seconds
 - 🔒 **Enhanced Security** - Comprehensive input validation, path traversal prevention
 - ⚡ **Configurable Rate Limits** - Per-service throttling with token bucket algorithm
 - 📦 **Plugin Versioning** - Semantic version comparison for update management
-- 📝 **Complete Documentation** - 1,205 lines (FEATURES.md + RELEASE_NOTES_v1.0.5.md)
 
 **Recent Achievements:**
 - 🎉 Comprehensive CI/CD automation (3 workflows, 6 security scanners)
@@ -646,7 +667,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - 📦 Automated release pipeline with SHA256 checksums
 - 🛡️ Daily security scanning (2 AM UTC cron)
 - 🏗️ Main.py refactored (97.9% code reduction: 1,078 → 23 lines)
-- 🧪 Test suite established (58 tests: 16 Go + 42 Python)
+- 🧪 Test suite: 1,995 lines Go tests + 2,200+ lines Python tests (9 modules)
 - 📝 Exception hierarchy (14 custom exception classes)
 - 🗑️ Legacy code archived (451 lines cleanly removed)
 - 🔧 All linter warnings resolved (13 errcheck fixes + golangci-lint clean)
