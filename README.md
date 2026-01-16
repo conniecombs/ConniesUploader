@@ -146,22 +146,35 @@ sha256sum ConniesUploader  # or shasum -a 256 ConniesUploader
 # Compare with the .sha256 file included in the release
 ```
 
-### Option 2: Build from Source (Windows)
+### Option 2: Build from Source (All Platforms)
 
-#### Automated Build
-Simply run the included build script:
-```batch
-build_uploader.bat
+#### Quick Build (Recommended)
+
+Use the cross-platform Makefile for the fastest and simplest build:
+
+```bash
+# Full build (clean + dependencies + compile)
+make build
+
+# Quick build (skip cleanup)
+make quick
+
+# Help
+make help
 ```
 
-This script will:
-1. Detect your system architecture (64-bit only - 32-bit deprecated)
-2. Download and install Python 3.11 if needed
-3. Download and install Go 1.24+ if needed
-4. Build the Go backend (uploader.exe)
-5. Create a Python virtual environment
-6. Install all dependencies
-7. Build the final executable using PyInstaller
+The Makefile automatically detects your platform (Windows/Linux/macOS) and handles all dependencies.
+
+**Other build options:**
+- **Windows**: Run `build_uploader.bat` (auto-installs Python and Go if needed)
+- **Linux/macOS**: Run `./build.sh` (with color output and progress indicators)
+
+All build scripts will:
+1. Check/install dependencies (Python 3.11+, Go 1.24+)
+2. Build the Go backend (uploader.exe/uploader)
+3. Create a Python virtual environment
+4. Install all Python dependencies
+5. Build the final executable using PyInstaller
 
 The final executable will be in the `dist` folder.
 
@@ -199,37 +212,17 @@ pip install -r requirements.txt
 python main.py
 ```
 
-### Option 3: Build from Source (Linux/macOS)
+### Build System Features
 
-**Prerequisites:**
-- Python 3.11+
-- Go 1.24+ (**required** - goquery v1.11.0 dependency)
+The new cross-platform build system (v1.1.0) includes:
 
-**Steps:**
-
-1. **Clone and navigate:**
-```bash
-git clone https://github.com/conniecombs/conniesuploader.git
-cd conniesuploader
-```
-
-2. **Build Go backend:**
-```bash
-go mod download
-go build -ldflags="-s -w" -o uploader uploader.go
-```
-
-3. **Install Python dependencies:**
-```bash
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-```
-
-4. **Run:**
-```bash
-python main.py
-```
+- ✅ **Makefile** - Universal build tool for all platforms
+- ✅ **build.sh** - Linux/macOS script with color output and detailed progress
+- ✅ **build_uploader.bat** - Windows script with auto-install (simplified from 311 to 227 lines)
+- ✅ **Automatic dependency detection** - Checks for Python and Go before building
+- ✅ **SHA256 verification** - Windows auto-install verifies downloads (security)
+- ✅ **Clean builds** - Use `make clean` or `--clean` flag to remove old artifacts
+- ✅ **Development mode** - Use `make dev` to set up environment without building
 
 ## Usage
 

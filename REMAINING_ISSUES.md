@@ -5,11 +5,11 @@
 **Product Version**: v1.1.0
 **Architecture Version**: v2.4.0
 **Status**: Phase 1-8 ✅ Complete | **ALL HIGH & MEDIUM PRIORITY ISSUES RESOLVED** ✅
-**Total Completed**: 38 issues (23 in latest session)
-**Remaining**: 7 low-priority issues (optional enhancements)
+**Total Completed**: 39 issues (24 in latest session)
+**Remaining**: 6 low-priority issues (optional enhancements)
 **High Priority**: ✅ **100% COMPLETE** (6/6 issues resolved)
 **Medium Priority**: ✅ **100% COMPLETE** (17/17 issues resolved)
-**Low Priority**: 🟢 **42% COMPLETE** (5/12 issues resolved)
+**Low Priority**: 🟢 **50% COMPLETE** (6/12 issues resolved)
 
 ---
 
@@ -548,13 +548,26 @@
 
 ### Code Hygiene
 
-#### **Issue #28: Build Script Verbosity**
-- **File**: `build_uploader.bat` (268 lines)
+#### **Issue #28: Build Script Verbosity** ✅ **COMPLETED** (2026-01-16)
+- **Files**: `build_uploader.bat`, `Makefile`, `build.sh`
+- **Status**: Simplified build system with cross-platform support
+- **Changes**:
+  - Reduced `build_uploader.bat` from 311 lines to 227 lines (27% reduction)
+  - Extracted helper functions (install_python, install_go, verify_hash)
+  - Created cross-platform `Makefile` (117 lines) with OS detection
+  - Created `build.sh` for Linux/Mac (244 lines) with color output
+  - Maintained all Windows auto-install features (Python/Go with SHA256 verification)
+  - Made pip installs quiet with -q flag for cleaner output
+- **Build Options**:
+  - `make build` - Cross-platform (recommended)
+  - `./build.sh` - Linux/Mac native script with color output
+  - `build_uploader.bat` - Windows with auto-install features
 - **Action Items**:
-  - [ ] Consider Makefile or Taskfile
-  - [ ] Extract logic into smaller scripts
-  - [ ] Add cross-platform build.sh for Linux/Mac
-- **Estimated Effort**: Medium (1-2 days)
+  - [x] Create cross-platform Makefile ✅
+  - [x] Create build.sh for Linux/Mac ✅
+  - [x] Simplify build_uploader.bat ✅
+  - [x] Extract logic into helper functions ✅
+- **Actual Effort**: 1 day
 
 #### **Issue #29: Unused Imports** ✅ **COMPLETED** (Already Resolved)
 - **File**: `main.py`
@@ -681,10 +694,10 @@
 | Category | Count | Completed | Estimated Effort Remaining |
 |----------|-------|-----------|---------------------------|
 | **High Priority** | 6 | 6 ✅ | 0 days ✅ |
-| **Medium Priority** | 15 | 17 ✅ | 0 days ✅ |
-| **Low Priority** | 12 | 5 ✅ | 3-7 days |
-| **UI/UX** | 1 | 1 | 0 days |
-| **Total Remaining** | 7 low-priority | 38 | ~3-7 days (optional enhancements) |
+| **Medium Priority** | 17 | 17 ✅ | 0 days ✅ |
+| **Low Priority** | 12 | 6 ✅ | 2-6 days |
+| **UI/UX** | 1 | 1 ✅ | 0 days ✅ |
+| **Total Remaining** | 6 low-priority | 39 | ~2-6 days (optional enhancements) |
 
 ### By Type
 - Testing: 2 issues (2 completed ✅)
@@ -701,11 +714,12 @@
 **Phase 8 - Low Priority Quick Wins (2026-01-16):**
 - ✅ **Issue #23**: README version badges - Verified all version badges are correct (v1.1.0 for app, 1.24 for Go)
 - ✅ **Issue #26**: Alt text for badges - Verified all 10 badges have proper accessibility alt text
+- ✅ **Issue #28**: Build script verbosity - Created cross-platform Makefile and build.sh, simplified build_uploader.bat from 311 to 227 lines
 - ✅ **Issue #29**: Unused imports - Verified all imports in main.py are actually used
 - ✅ **Issue #30**: Comment typos - Verified no typos exist in current codebase
 - ✅ **Issue #35**: Configurable user agent - Made HTTP User-Agent configurable via config map with getUserAgent() helper
 
-**🎉 ACHIEVEMENT: 4 more low-priority issues resolved! (38 total issues completed)**
+**🎉 ACHIEVEMENT: 6 low-priority issues resolved! (39 total issues completed, 50% of low-priority complete)**
 
 **Phase 7 - Medium Priority Completion (2026-01-16):**
 - ✅ **Issue #10**: Type hints - Added comprehensive type hints to critical functions in controller.py and main_window.py
