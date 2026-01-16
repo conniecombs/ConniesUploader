@@ -206,8 +206,8 @@ func TestDoRequest(t *testing.T) {
 	// Create a test server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Verify User-Agent
-		if ua := r.Header.Get("User-Agent"); ua != UserAgent {
-			t.Errorf("User-Agent = %q, want %q", ua, UserAgent)
+		if ua := r.Header.Get("User-Agent"); ua != DefaultUserAgent {
+			t.Errorf("User-Agent = %q, want %q", ua, DefaultUserAgent)
 		}
 
 		w.WriteHeader(http.StatusOK)
