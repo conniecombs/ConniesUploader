@@ -21,7 +21,7 @@ Start here if you're new to the project:
 
 1. **[README.md](../README.md)** - Overview, features, installation, and quick start
 2. **[Build Troubleshooting](guides/BUILD_TROUBLESHOOTING.md)** - Common build issues and solutions
-3. **[Latest Release Notes](releases/RELEASE_NOTES_v1.1.0.md)** - What's new in v1.1.0
+3. **[Latest Release Notes](releases/RELEASE_NOTES_v1.1.0.md)** - What's new in v1.1.0 (latest detailed notes)
 
 ### For Contributors
 Development and contribution guides:

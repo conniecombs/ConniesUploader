@@ -20,7 +20,7 @@ PYTHON_CMD="python3"
 GO_VERSION_MIN="1.24"
 PYTHON_VERSION_MIN="3.11"
 APP_NAME="ConniesUploader"
-VERSION="1.1.0"
+VERSION="1.2.0"
 
 # Functions
 print_header() {

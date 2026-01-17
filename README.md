@@ -1,6 +1,6 @@
 # Connie's Uploader Ultimate
 
-![Project version badge showing v1.1.0](https://img.shields.io/badge/version-1.1.0-blue.svg)
+![Project version badge showing v1.2.0](https://img.shields.io/badge/version-1.2.0-blue.svg)
 ![MIT License badge](https://img.shields.io/badge/license-MIT-green.svg)
 ![Supported platforms: Windows, Linux, and macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)
 ![Production readiness status at 92 percent](https://img.shields.io/badge/production%20ready-92%25-brightgreen.svg)
@@ -13,19 +13,20 @@
 
 A powerful, multi-service image hosting uploader with an intuitive GUI. Upload images to multiple image hosting services with advanced features like batch processing, gallery management, automatic retry logic, and real-time progress tracking.
 
-**🎉 Latest Release: v1.1.0 "Performance & Polish" (Jan 15-16, 2026)**
+**🎉 Latest Release: v1.2.0 "Stability & Maintenance" (Jan 17, 2026)**
 
-Performance-focused release with comprehensive testing infrastructure, achieving **100% high-priority issue resolution (6/6)** and 30 total issues resolved.
+Maintenance release focusing on version updates and project preparation for future development.
 
 ### Highlights
-- 🧪 **Comprehensive Python test suite** - 2,200+ lines across 9 test modules with pytest configuration
-- ⚡ **20-30% faster uploads** - HTTP connection pooling optimization
-- ✅ **ALL HIGH PRIORITY ISSUES RESOLVED** - 100% completion milestone achieved
-- 🐛 **30 bug fixes and enhancements** - Critical stability and code quality improvements
-- 🎨 **Enhanced UX** - Drag-and-drop progress indication and improved error messages
-- 📝 **Better maintainability** - Consistent logging and extracted constants
+- 📦 **Version 1.2.0 Release** - Updated all version references across the project
+- 🔧 **Maintenance Update** - Preparation for future development
+- 📝 **Documentation Updates** - All docs updated to reflect v1.2.0
 
 ## ✨ Recent Improvements
+
+**v1.2.0 Release - "Stability & Maintenance" (Jan 17, 2026):**
+- 📦 **Version Updates** - All version strings updated to 1.2.0
+- 📝 **Documentation Sync** - All documentation updated to reflect current version
 
 **v1.1.0 Release - "Performance & Polish" (Jan 15-16, 2026):**
 - 🧪 **Comprehensive test suite** - 1,995 lines Go tests + 2,200+ lines Python tests (9 modules)
@@ -121,7 +122,7 @@ Performance-focused release with comprehensive testing infrastructure, achieving
 
 **Download the latest release for your platform:**
 
-👉 **[Download v1.1.0](https://github.com/conniecombs/conniesuploader/releases/tag/v1.1.0)**
+👉 **[Download v1.2.0](https://github.com/conniecombs/conniesuploader/releases/tag/v1.2.0)**
 
 Available builds:
 - **Windows**: `ConniesUploader-windows.zip` (includes `.exe` + SHA256 checksum)
@@ -214,7 +215,7 @@ python main.py
 
 ### Build System Features
 
-The new cross-platform build system (v1.1.0) includes:
+The cross-platform build system includes:
 
 - ✅ **Makefile** - Universal build tool for all platforms
 - ✅ **build.sh** - Linux/macOS script with color output and detailed progress
@@ -660,9 +661,14 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Version History
 
-**Latest Release: v1.1.0 - "Performance & Polish"** (Jan 15-16, 2026)
+**Latest Release: v1.2.0 - "Stability & Maintenance"** (Jan 17, 2026)
 
-**Major Features in v1.1.0:**
+**v1.2.0 - "Stability & Maintenance"** (Jan 17, 2026):
+- 📦 Version updates across all files
+- 📝 Documentation synchronization
+
+**v1.1.0 - "Performance & Polish"** (Jan 15-16, 2026):
+- Major Features in v1.1.0:
 - 🧪 **Comprehensive Python Test Suite** - 2,200+ lines across 9 modules with pytest configuration
 - ⚡ **HTTP Connection Pooling** - 20-30% faster uploads with optimized configuration
 - ✅ **ALL HIGH PRIORITY ISSUES RESOLVED** - 100% completion (6/6 issues)

@@ -7,7 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### 🎉 Major Milestones
+---
+
+## [1.2.0] - 2026-01-17
+
+### 📦 Release Preparation
+
+**Version 1.2.0 "Stability & Maintenance"**
+
+This release focuses on version consistency across the project and preparation for future development.
+
+#### **Version Updates**
+- Updated version strings across all files to v1.2.0:
+  - `modules/config.py:8` - APP_VERSION = "1.2.0"
+  - `Makefile:25` - VERSION := 1.2.0
+  - `build.sh:23` - VERSION="1.2.0"
+  - `build_uploader.bat:10` - Updated build banner to v1.2.0
+  - `README.md` - Updated version badge and latest release information
+  - `ARCHITECTURE.md:5` - Product Version: v1.2.0
+  - `REMAINING_ISSUES.md:5` - Product Version: v1.2.0
+  - `CHANGELOG.md` - Added v1.2.0 release section
+
+#### **Documentation Updates**
+- README.md: Updated latest release section to v1.2.0
+- README.md: Updated download links to point to v1.2.0 release
+- README.md: Added v1.2.0 to version history section
+- REMAINING_ISSUES.md: Updated last updated date to 2026-01-17
+- All documentation now consistently references v1.2.0
+
+### 📝 Notes
+
+This is a maintenance release with no functional changes. All features and functionality from v1.1.0 remain unchanged. This release ensures version consistency across the project for future development.
+
+**Upgrading from v1.1.0:**
+- No changes required - this is a version update only
+- All features and settings remain compatible
+
+---
+
+### 🎉 Major Milestones (from v1.1.0)
 
 #### **ALL HIGH PRIORITY ISSUES RESOLVED** (2026-01-16 - Phase 6)
 - **Achievement**: 100% completion of high-priority technical debt (6/6 issues)
