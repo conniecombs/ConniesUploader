@@ -39,6 +39,7 @@ from modules.dnd import DragDropMixin
 from modules.credentials_manager import CredentialsManager
 from modules.auto_poster import AutoPoster
 from modules.plugin_manager import PluginManager
+from .safe_scrollable_frame import SafeScrollableFrame
 from loguru import logger
 
 
