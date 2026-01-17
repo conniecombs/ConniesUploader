@@ -8,9 +8,13 @@ import time
 from typing import Dict, Any, Optional, List
 from loguru import logger
 
+# --- ADD THIS LINE ---
+from modules import config 
+# ---------------------
 
 class SidecarBridge:
     _instance: Optional["SidecarBridge"] = None
+    # ... rest of the file
     _worker_count: int = 8  # Default worker count
 
     @classmethod

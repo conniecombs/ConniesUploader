@@ -22,6 +22,7 @@ import re
 from datetime import datetime
 from typing import Dict, Any
 from concurrent.futures import ThreadPoolExecutor
+from modules.ui.safe_scrollable_frame import SafeScrollableFrame
 
 # Local Imports
 from modules import config
