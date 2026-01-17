@@ -6,6 +6,7 @@ import os
 import sys
 import time
 from typing import Dict, Any, Optional, List
+from . import config
 from loguru import logger
 
 
