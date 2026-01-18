@@ -1,6 +1,6 @@
 # Connie's Uploader Ultimate
 
-![Project version badge showing v1.2.0](https://img.shields.io/badge/version-1.2.0-blue.svg)
+![Project version badge showing v1.2.1](https://img.shields.io/badge/version-1.2.1-blue.svg)
 ![MIT License badge](https://img.shields.io/badge/license-MIT-green.svg)
 ![Supported platforms: Windows, Linux, and macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)
 ![Production readiness status at 92 percent](https://img.shields.io/badge/production%20ready-92%25-brightgreen.svg)
@@ -13,16 +13,21 @@
 
 A powerful, multi-service image hosting uploader with an intuitive GUI. Upload images to multiple image hosting services with advanced features like batch processing, gallery management, automatic retry logic, and real-time progress tracking.
 
-**🎉 Latest Release: v1.2.0 "Stability & Maintenance" (Jan 17, 2026)**
+**🎉 Latest Release: v1.2.1 "Gallery Fix" (Jan 18, 2026)**
 
-Maintenance release focusing on version updates and project preparation for future development.
+Critical bug fix release addressing IMX gallery creation issues with the "One Gallery Per Folder" feature.
 
 ### Highlights
-- 📦 **Version 1.2.0 Release** - Updated all version references across the project
-- 🔧 **Maintenance Update** - Preparation for future development
-- 📝 **Documentation Updates** - All docs updated to reflect v1.2.0
+- 🐛 **Critical Bug Fix** - Fixed IMX gallery creation to properly respect auto_gallery setting
+- ✅ **Gallery Per Batch** - Each folder now correctly creates its own gallery when enabled
+- 🔄 **Plugin Consistency** - IMX behavior now matches Pixhost implementation
 
 ## ✨ Recent Improvements
+
+**v1.2.1 Release - "Gallery Fix" (Jan 18, 2026):**
+- 🐛 **Critical Gallery Bug Fix** - IMX plugin now correctly creates individual galleries per batch when "One Gallery Per Folder" is enabled
+- ✅ **Auto-Gallery Respect** - Fixed logic to prioritize auto_gallery setting over manual gallery ID
+- 🔄 **Plugin Consistency** - IMX behavior now matches Pixhost plugin implementation
 
 **v1.2.0 Release - "Stability & Maintenance" (Jan 17, 2026):**
 - 📦 **Version Updates** - All version strings updated to 1.2.0

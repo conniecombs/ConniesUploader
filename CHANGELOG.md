@@ -9,6 +9,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.2.1] - 2026-01-18
+
+### 🐛 Bug Fixes
+
+**Critical Gallery Creation Fix**
+
+Fixed a critical bug in the IMX plugin where the "One Gallery Per Folder" feature failed to create individual galleries per batch when a manual gallery ID was present in the config.
+
+#### **Issue Details**
+- **Problem**: When users enabled "One Gallery Per Folder" but had a gallery ID from a previous session in the optional field, all images from all batches were incorrectly uploaded to the same gallery instead of creating individual galleries per batch.
+- **Root Cause**: The `prepare_group()` method in `modules/plugins/imx.py` checked for a manual `gallery_id` BEFORE checking if `auto_gallery` was enabled, causing early return without creating new galleries.
+- **Impact**: Multi-folder uploads with auto-gallery enabled would fail to organize images into separate galleries.
+
+#### **Fix Implementation**
+- Reordered logic in `ImxPlugin.prepare_group()` to check `auto_gallery` setting FIRST
+- Now matches the correct behavior already implemented in Pixhost plugin
+- Enhanced docstrings and logging messages for better clarity
+
+#### **New Behavior**
+- ✅ If `auto_gallery` is **ENABLED**: Creates a new gallery for each batch (ignores manual gallery_id)
+- ✅ If `auto_gallery` is **DISABLED**: Uses manual gallery_id if specified, otherwise no gallery
+- ✅ Consistent behavior across all plugins (IMX, Pixhost, etc.)
+
+#### **Testing**
+- Verified all logic paths with comprehensive verification tests
+- Confirmed correct behavior for all setting combinations
+- Validated consistency with Pixhost plugin implementation
+
+**Files Changed**:
+- `modules/plugins/imx.py`: Fixed `prepare_group()` logic (lines 139-177)
+
+**Commit**: `e6a1cb0` - fix: Correct IMX gallery creation logic to respect auto_gallery setting
+
+---
+
 ## [1.2.0] - 2026-01-17
 
 ### 📦 Release Preparation
