@@ -813,6 +813,14 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             self.settings_mgr.save(cfg)
             cfg["api_key"] = self.creds.get("imx_api", "")
 
+            # When worker count is 1, force all service threads to 1 for true sequential uploads
+            if cfg.get("global_worker_count") == 1:
+                cfg["imx_threads"] = 1
+                cfg["pix_threads"] = 1
+                cfg["turbo_threads"] = 1
+                cfg["vipr_threads"] = 1
+                cfg["imagebam_threads"] = 1
+
             self.cancel_event.clear()
             self.results = []
             self.result_queue = queue.Queue(maxsize=1000)

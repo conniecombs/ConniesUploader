@@ -141,7 +141,7 @@ class ImxPlugin(ImageHostPlugin):
     ) -> None:
         """
         Called before the batch upload starts.
-        Always creates a gallery with the folder name if no manual gallery_id is specified.
+        Creates a gallery with the folder name if auto_gallery is enabled and no manual gallery_id is specified.
         """
         # If user manually specified a gallery_id, use it
         manual_gid = config.get("gallery_id", "").strip()
@@ -149,7 +149,12 @@ class ImxPlugin(ImageHostPlugin):
             logger.info(f"Using manual gallery ID: {manual_gid}")
             return
 
-        # Otherwise, always create a gallery with the folder name
+        # Only create gallery if auto_gallery setting is enabled
+        if not config.get("auto_gallery"):
+            logger.debug(f"Auto-gallery disabled, skipping gallery creation for: {group.title}")
+            return
+
+        # Create a gallery with the folder name
         user = creds.get("imx_user")
         pwd = creds.get("imx_pass")
 
@@ -166,7 +171,7 @@ class ImxPlugin(ImageHostPlugin):
             else:
                 logger.warning(f"Failed to create gallery for: {group.title}")
         else:
-            logger.warning("IMX credentials not set - cannot create gallery, IMX will auto-create 'untitled' gallery")
+            logger.warning("IMX credentials (username/password) not set - cannot create gallery")
 
     # NEW: Generic HTTP request builder (replaces hardcoded Go service logic)
     def build_http_request(self, file_path: str, config: Dict[str, Any], creds: Dict[str, Any]) -> Dict[str, Any]:

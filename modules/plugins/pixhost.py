@@ -181,13 +181,16 @@ class PixhostPlugin(ImageHostPlugin):
         """
         if config.get("auto_gallery"):
             clean_title = group.title.replace("[", "").replace("]", "").strip()
-            new_data = api.create_pixhost_gallery(clean_title, client=context["client"])
+            new_data = api.create_pixhost_gallery(clean_title)
 
             if new_data:
                 # Store gallery info on the group object
                 group.pix_data = new_data
                 group.gallery_id = new_data.get("gallery_hash", "")
-                context["created_galleries"].append(new_data)
+                # Store gallery_hash in config so it's used for uploads
+                config["gallery_hash"] = group.gallery_id
+                if "created_galleries" in context:
+                    context["created_galleries"].append(new_data)
                 logger.info(f"Created Pixhost gallery: {clean_title}")
 
     def upload_file(
