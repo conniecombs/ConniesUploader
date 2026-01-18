@@ -141,37 +141,40 @@ class ImxPlugin(ImageHostPlugin):
     ) -> None:
         """
         Called before the batch upload starts.
-        Creates a gallery with the folder name if auto_gallery is enabled and no manual gallery_id is specified.
+        Creates individual galleries per batch when auto_gallery is enabled.
+
+        Behavior:
+        - If auto_gallery is ENABLED: Creates a new gallery for this batch (ignores manual gallery_id)
+        - If auto_gallery is DISABLED: Uses manual gallery_id if specified, otherwise no gallery
         """
-        # If user manually specified a gallery_id, use it
-        manual_gid = config.get("gallery_id", "").strip()
-        if manual_gid:
-            logger.info(f"Using manual gallery ID: {manual_gid}")
-            return
+        # CRITICAL FIX: Check auto_gallery FIRST before manual gallery_id
+        # This ensures "One Gallery Per Folder" works even if a manual ID exists in config
+        if config.get("auto_gallery"):
+            # Auto-gallery mode: Create a new gallery for this batch
+            user = creds.get("imx_user")
+            pwd = creds.get("imx_pass")
 
-        # Only create gallery if auto_gallery setting is enabled
-        if not config.get("auto_gallery"):
-            logger.debug(f"Auto-gallery disabled, skipping gallery creation for: {group.title}")
-            return
+            if user and pwd:
+                # Use the API wrapper which calls Sidecar action="create_gallery"
+                gid = api.create_imx_gallery(user, pwd, group.title)
 
-        # Create a gallery with the folder name
-        user = creds.get("imx_user")
-        pwd = creds.get("imx_pass")
-
-        if user and pwd:
-            # Use the API wrapper which calls Sidecar action="create_gallery"
-            gid = api.create_imx_gallery(user, pwd, group.title)
-
-            if gid:
-                # Store the new Gallery ID in the group object
-                group.gallery_id = gid
-                # Also update the config for this specific run so the uploader sees it
-                config["gallery_id"] = gid
-                logger.info(f"Created IMX gallery: {group.title}")
+                if gid:
+                    # Store the new Gallery ID in the group object
+                    group.gallery_id = gid
+                    # Update the config for this specific batch so the uploader sees it
+                    config["gallery_id"] = gid
+                    logger.info(f"Created IMX gallery for batch: {group.title} (ID: {gid})")
+                else:
+                    logger.warning(f"Failed to create gallery for: {group.title}")
             else:
-                logger.warning(f"Failed to create gallery for: {group.title}")
+                logger.warning("IMX credentials (username/password) not set - cannot create auto-gallery")
         else:
-            logger.warning("IMX credentials (username/password) not set - cannot create gallery")
+            # Manual mode: Use manual gallery_id if specified
+            manual_gid = config.get("gallery_id", "").strip()
+            if manual_gid:
+                logger.info(f"Using manual gallery ID: {manual_gid}")
+            else:
+                logger.debug(f"Auto-gallery disabled and no manual ID - uploads will go to IMX default gallery")
 
     # NEW: Generic HTTP request builder (replaces hardcoded Go service logic)
     def build_http_request(self, file_path: str, config: Dict[str, Any], creds: Dict[str, Any]) -> Dict[str, Any]:
