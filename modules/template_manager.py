@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 conniecombs
+
 # modules/template_manager.py
 import re
 import json
@@ -112,7 +115,9 @@ class TemplateManager:
                 condition_met = bool(str(actual_value).strip())
 
             replacement = true_content if condition_met else false_content
-            template_content = template_content[: match.start()] + replacement + template_content[match.end() :]
+            template_content = (
+                template_content[: match.start()] + replacement + template_content[match.end() :]
+            )
             iteration += 1
         return template_content
 
@@ -178,7 +183,9 @@ class TemplateManager:
 
 
 class TemplateEditor(ctk.CTkToplevel):
-    def __init__(self, parent, template_mgr, current_mode="BBCode", data_callback=None, update_callback=None):
+    def __init__(
+        self, parent, template_mgr, current_mode="BBCode", data_callback=None, update_callback=None
+    ):
         super().__init__(parent)
         self.mgr = template_mgr
         self.data_callback = data_callback
@@ -203,23 +210,27 @@ class TemplateEditor(ctk.CTkToplevel):
         self.cb_fmt.pack(side="left", padx=10)
         preset_frame = ctk.CTkFrame(main)
         preset_frame.pack(fill="x", pady=(0, 5))
-        ctk.CTkLabel(preset_frame, text="Saved Templates:", font=("Segoe UI", 11, "bold")).pack(side="left", padx=5)
+        ctk.CTkLabel(preset_frame, text="Saved Templates:", font=("Segoe UI", 11, "bold")).pack(
+            side="left", padx=5
+        )
         self.saved_tmpl_var = ctk.StringVar()
         self.cb_saved = MouseWheelComboBox(
             preset_frame, variable=self.saved_tmpl_var, values=all_keys, state="readonly"
         )
         self.cb_saved.pack(side="left", fill="x", expand=True, padx=5, pady=5)
-        ctk.CTkButton(preset_frame, text="Load", width=60, command=self.load_saved_template).pack(side="left", padx=5)
+        ctk.CTkButton(preset_frame, text="Load", width=60, command=self.load_saved_template).pack(
+            side="left", padx=5
+        )
         toolbar = ctk.CTkFrame(main, height=35)
         toolbar.pack(fill="x", pady=(5, 0))
         styles = [("B", "Bold"), ("I", "Italic"), ("U", "Underline")]
         for text, mode in styles:
-            ctk.CTkButton(toolbar, text=text, width=30, command=lambda m=mode: self.format_text(m)).pack(
-                side="left", padx=2, pady=2
-            )
-        ctk.CTkButton(toolbar, text="Color", width=50, command=lambda: self.format_complex("Color")).pack(
-            side="left", padx=2, pady=2
-        )
+            ctk.CTkButton(
+                toolbar, text=text, width=30, command=lambda m=mode: self.format_text(m)
+            ).pack(side="left", padx=2, pady=2)
+        ctk.CTkButton(
+            toolbar, text="Color", width=50, command=lambda: self.format_complex("Color")
+        ).pack(side="left", padx=2, pady=2)
         ctk.CTkFrame(toolbar, width=2, height=20, fg_color="gray").pack(side="left", padx=5)
         ctk.CTkLabel(toolbar, text="Size:", width=30).pack(side="left", padx=(5, 2))
         self.cb_size = MouseWheelComboBox(
@@ -250,14 +261,16 @@ class TemplateEditor(ctk.CTkToplevel):
             ("Cover", "[img]#cover_url#[/img]"),
         ]
         for t, v in vars_to_add:
-            ctk.CTkButton(var_bar, text=t, width=70, height=24, command=lambda v=v: self.ins(v)).pack(
-                side="left", padx=2
-            )
+            ctk.CTkButton(
+                var_bar, text=t, width=70, height=24, command=lambda v=v: self.ins(v)
+            ).pack(side="left", padx=2)
         self.txt = ctk.CTkTextbox(main, wrap="word", font=("Consolas", 12))
         self.txt.pack(fill="both", expand=True, pady=(0, 15))
         btn = ctk.CTkFrame(main, fg_color="transparent")
         btn.pack(fill="x")
-        ctk.CTkButton(btn, text="Preview in Browser", command=self.generate_preview).pack(side="left")
+        ctk.CTkButton(btn, text="Preview in Browser", command=self.generate_preview).pack(
+            side="left"
+        )
         ctk.CTkButton(btn, text="Save As New...", command=self.save_as_new, fg_color="green").pack(
             side="right", padx=(5, 0)
         )
@@ -267,13 +280,25 @@ class TemplateEditor(ctk.CTkToplevel):
     def get_tags(self, mode, value=None):
         fmt = self.fmt.get()
         if mode == "Bold":
-            return ("[b]", "[/b]") if fmt == "BBCode" else ("**", "**") if fmt == "Markdown" else ("<b>", "</b>")
+            return (
+                ("[b]", "[/b]")
+                if fmt == "BBCode"
+                else ("**", "**") if fmt == "Markdown" else ("<b>", "</b>")
+            )
         elif mode == "Italic":
-            return ("[i]", "[/i]") if fmt == "BBCode" else ("*", "*") if fmt == "Markdown" else ("<i>", "</i>")
+            return (
+                ("[i]", "[/i]")
+                if fmt == "BBCode"
+                else ("*", "*") if fmt == "Markdown" else ("<i>", "</i>")
+            )
         elif mode == "Underline":
             return ("[u]", "[/u]") if fmt == "BBCode" else ("<u>", "</u>")
         elif mode == "Color":
-            return (f"[color={value}]", "[/color]") if fmt == "BBCode" else (f'<span style="color:{value}">', "</span>")
+            return (
+                (f"[color={value}]", "[/color]")
+                if fmt == "BBCode"
+                else (f'<span style="color:{value}">', "</span>")
+            )
         elif mode == "Size":
             return (
                 (f"[size={value}]", "[/size]")
@@ -390,15 +415,25 @@ class TemplateEditor(ctk.CTkToplevel):
         finally:
             self.mgr.set_template(curr_fmt, orig)
 
-        html = raw if curr_fmt == "HTML" else raw.replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br>")
+        html = (
+            raw
+            if curr_fmt == "HTML"
+            else raw.replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br>")
+        )
         if curr_fmt != "HTML":
             html = re.sub(r"\[url=(.*?)\]", r'<a href="\1">', html)
             html = html.replace("[/url]", "</a>")
-            html = re.sub(r"\[img\](.*?)\[/img\]", f'<img src="\\1" style="max-width:{size}px">', html)
+            html = re.sub(
+                r"\[img\](.*?)\[/img\]", f'<img src="\\1" style="max-width:{size}px">', html
+            )
 
-        final_html = f"<html><body style='padding:20px; font-family:sans-serif'>{html}</body></html>"
+        final_html = (
+            f"<html><body style='padding:20px; font-family:sans-serif'>{html}</body></html>"
+        )
         try:
-            with tempfile.NamedTemporaryFile("w", delete=False, suffix=".html", encoding="utf-8") as f:
+            with tempfile.NamedTemporaryFile(
+                "w", delete=False, suffix=".html", encoding="utf-8"
+            ) as f:
                 f.write(final_html)
                 path = f.name
             webbrowser.open("file://" + path)

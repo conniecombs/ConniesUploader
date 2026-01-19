@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 conniecombs
+
 # modules/controller.py
 import threading
 import queue
@@ -56,7 +59,9 @@ class UploadController:
         self.result_queue = queue.Queue(maxsize=1000)
         self.cancel_event = threading.Event()
 
-        self.upload_manager = UploadManager(self.progress_queue, self.result_queue, self.cancel_event)
+        self.upload_manager = UploadManager(
+            self.progress_queue, self.result_queue, self.cancel_event
+        )
         self.template_mgr = TemplateManager()
 
         self.results = []
@@ -88,7 +93,12 @@ class UploadController:
         #     self.rename_worker = RenameWorker(self.creds)
         #     self.rename_worker.start()
 
-    def start_upload(self, pending_files_map: Dict[str, List[str]], settings: Dict[str, Any], creds: Dict[str, Any]) -> None:
+    def start_upload(
+        self,
+        pending_files_map: Dict[str, List[str]],
+        settings: Dict[str, Any],
+        creds: Dict[str, Any],
+    ) -> None:
         """Start the upload process for all pending files.
 
         Args:
@@ -133,7 +143,9 @@ class UploadController:
             client = api.create_resilient_client()
             for gal in self.pix_galleries_to_finalize:
                 try:
-                    api.finalize_pixhost_gallery(gal.get("gallery_upload_hash"), gal.get("gallery_hash"), client=client)
+                    api.finalize_pixhost_gallery(
+                        gal.get("gallery_upload_hash"), gal.get("gallery_hash"), client=client
+                    )
                 except Exception as e:
                     logger.error(f"Pixhost finalize error: {e}")
             client.close()
@@ -147,7 +159,9 @@ class UploadController:
             except (OSError, pyperclip.PyperclipException) as e:
                 logger.warning(f"Could not copy to clipboard: {e}")
 
-    def generate_group_output(self, group_title: str, group_files: List[str], gallery_id: Optional[str], batch_index: int) -> None:
+    def generate_group_output(
+        self, group_title: str, group_files: List[str], gallery_id: Optional[str], batch_index: int
+    ) -> None:
         # Map file paths to results
         res_map = {r[0]: (r[1], r[2]) for r in self.results}
         group_results = []
@@ -190,14 +204,24 @@ class UploadController:
         elif svc == "imagebam.com":
             thumb_size = self.settings.get("imagebam_thumb", "180")
 
-        ctx = {"gallery_link": gal_link, "gallery_name": group_title, "gallery_id": gallery_id, "cover_url": cover_url, "thumb_size": thumb_size}
+        ctx = {
+            "gallery_link": gal_link,
+            "gallery_name": group_title,
+            "gallery_id": gallery_id,
+            "cover_url": cover_url,
+            "thumb_size": thumb_size,
+        }
 
         # Generate Text
-        text = self.template_mgr.apply(self.settings.get("output_format", "BBCode"), ctx, group_results)
+        text = self.template_mgr.apply(
+            self.settings.get("output_format", "BBCode"), ctx, group_results
+        )
 
         # Save to File
         try:
-            safe_title = "".join(c for c in group_title if c.isalnum() or c in (" ", "_", "-")).strip()
+            safe_title = "".join(
+                c for c in group_title if c.isalnum() or c in (" ", "_", "-")
+            ).strip()
             ts = datetime.now().strftime("%Y%m%d_%H%M")
             out_dir = "Output"
             os.makedirs(out_dir, exist_ok=True)
@@ -211,7 +235,9 @@ class UploadController:
             # Central History
             history_path = os.path.join(os.path.expanduser("~"), ".conniesuploader", "history")
             os.makedirs(history_path, exist_ok=True)
-            with open(os.path.join(history_path, f"{safe_title}_{ts}.txt"), "w", encoding="utf-8") as f:
+            with open(
+                os.path.join(history_path, f"{safe_title}_{ts}.txt"), "w", encoding="utf-8"
+            ) as f:
                 f.write(text)
 
             # Auto-Copy Buffer

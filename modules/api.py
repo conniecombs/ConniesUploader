@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 conniecombs
+
 """API wrappers for image hosting services via Go sidecar."""
 
 from typing import Dict, Optional, Tuple, Any
@@ -115,7 +118,9 @@ def create_pixhost_gallery(name: str, client: Any = None) -> Optional[Dict[str, 
     return None
 
 
-def finalize_pixhost_gallery(gallery_upload_hash: str, gallery_hash: str, client: Any = None) -> bool:
+def finalize_pixhost_gallery(
+    gallery_upload_hash: str, gallery_hash: str, client: Any = None
+) -> bool:
     """Finalize a Pixhost gallery (set title and make it visible).
 
     Args:

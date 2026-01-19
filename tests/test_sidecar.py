@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 conniecombs
+
 """Comprehensive tests for modules/sidecar.py - The Go sidecar bridge"""
 
 import pytest
@@ -10,7 +13,7 @@ from unittest.mock import Mock, patch, MagicMock
 from pathlib import Path
 
 # Add parent directory to path for imports
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from modules.sidecar import SidecarBridge
 
@@ -21,6 +24,7 @@ class TestSidecarImports:
     def test_module_import(self):
         """Test that sidecar module imports without error"""
         from modules import sidecar
+
         assert sidecar is not None
 
     def test_sidecar_bridge_class_exists(self):
@@ -29,8 +33,8 @@ class TestSidecarImports:
 
     def test_singleton_pattern(self):
         """Test that SidecarBridge implements singleton pattern"""
-        assert hasattr(SidecarBridge, 'get')
-        assert hasattr(SidecarBridge, '_instance')
+        assert hasattr(SidecarBridge, "get")
+        assert hasattr(SidecarBridge, "_instance")
 
 
 @pytest.mark.unit
@@ -74,14 +78,14 @@ class TestSidecarBinaryLocation:
 
     def test_binary_name_windows(self):
         """Test that binary name is correct for Windows"""
-        with patch('os.name', 'nt'):
+        with patch("os.name", "nt"):
             binary_name = "uploader.exe" if os.name == "nt" else "uploader"
             if os.name == "nt":
                 assert binary_name == "uploader.exe"
 
     def test_binary_name_unix(self):
         """Test that binary name is correct for Unix-like systems"""
-        with patch('os.name', 'posix'):
+        with patch("os.name", "posix"):
             binary_name = "uploader.exe" if os.name == "nt" else "uploader"
             if os.name != "nt":
                 assert binary_name == "uploader"
@@ -90,17 +94,17 @@ class TestSidecarBinaryLocation:
         """Test base directory calculation in development mode"""
         # In development mode, should go up from modules/ to project root
         modules_dir = os.path.dirname(os.path.abspath(__file__))
-        expected_base = os.path.abspath(os.path.join(modules_dir, '..', '..'))
+        expected_base = os.path.abspath(os.path.join(modules_dir, "..", ".."))
 
         # Verify logic
-        base_dir = os.path.abspath(os.path.join(modules_dir, '..', '..'))
+        base_dir = os.path.abspath(os.path.join(modules_dir, "..", ".."))
         assert os.path.exists(base_dir)
 
-    @patch('sys.frozen', True, create=True)
-    @patch('sys._MEIPASS', '/tmp/pyinstaller_bundle', create=True)
+    @patch("sys.frozen", True, create=True)
+    @patch("sys._MEIPASS", "/tmp/pyinstaller_bundle", create=True)
     def test_base_directory_pyinstaller_mode(self):
         """Test base directory calculation in PyInstaller mode"""
-        if hasattr(sys, '_MEIPASS'):
+        if hasattr(sys, "_MEIPASS"):
             assert sys._MEIPASS is not None
 
 
@@ -136,8 +140,8 @@ class TestSidecarLocking:
         # Just verify threading.Lock is available
         lock = threading.Lock()
         assert lock is not None
-        assert hasattr(lock, 'acquire')
-        assert hasattr(lock, 'release')
+        assert hasattr(lock, "acquire")
+        assert hasattr(lock, "release")
 
     def test_listeners_lock_exists(self):
         """Test that listeners lock exists"""
@@ -179,7 +183,7 @@ class TestSidecarRestartLogic:
         delays = []
 
         for attempt in range(5):
-            delay = base_delay * (2 ** attempt)
+            delay = base_delay * (2**attempt)
             delays.append(delay)
 
         # Verify delays grow
@@ -197,7 +201,7 @@ class TestSidecarRequestParsing:
             "action": "upload",
             "service": "imx.to",
             "files": ["/path/to/image.jpg"],
-            "config": {"key": "value"}
+            "config": {"key": "value"},
         }
 
         assert "action" in payload
@@ -209,7 +213,7 @@ class TestSidecarRequestParsing:
         response = {
             "type": "result",
             "status": "success",
-            "data": {"url": "https://example.com/image.jpg"}
+            "data": {"url": "https://example.com/image.jpg"},
         }
 
         assert "type" in response
@@ -269,7 +273,7 @@ class TestSidecarShutdown:
         mock_proc.poll.return_value = None  # Running
 
         # Simulate shutdown
-        if hasattr(mock_proc.stdin, 'close'):
+        if hasattr(mock_proc.stdin, "close"):
             mock_proc.stdin.close()
 
         # Verify we can check if process is alive
@@ -294,8 +298,8 @@ class TestSidecarShutdown:
         mock_proc.poll.return_value = None  # Still running after wait
 
         # Would call terminate/kill
-        assert hasattr(mock_proc, 'terminate')
-        assert hasattr(mock_proc, 'kill')
+        assert hasattr(mock_proc, "terminate")
+        assert hasattr(mock_proc, "kill")
 
 
 @pytest.mark.unit
@@ -306,8 +310,8 @@ class TestSidecarIntegrationPoints:
         """Test that sidecar uses config module constants"""
         from modules import config
 
-        assert hasattr(config, 'SIDECAR_MAX_RESTARTS')
-        assert hasattr(config, 'SIDECAR_RESTART_DELAY_SECONDS')
+        assert hasattr(config, "SIDECAR_MAX_RESTARTS")
+        assert hasattr(config, "SIDECAR_RESTART_DELAY_SECONDS")
         assert config.SIDECAR_MAX_RESTARTS > 0
         assert config.SIDECAR_RESTART_DELAY_SECONDS > 0
 
@@ -317,16 +321,16 @@ class TestSidecarIntegrationPoints:
 
         # Verify logger can be used
         assert logger is not None
-        assert hasattr(logger, 'info')
-        assert hasattr(logger, 'error')
-        assert hasattr(logger, 'warning')
+        assert hasattr(logger, "info")
+        assert hasattr(logger, "error")
+        assert hasattr(logger, "warning")
 
 
 @pytest.mark.integration
 class TestSidecarMockProcess:
     """Integration tests with mocked subprocess"""
 
-    @patch('subprocess.Popen')
+    @patch("subprocess.Popen")
     def test_process_creation_called(self, mock_popen):
         """Test that subprocess.Popen is called with correct arguments"""
         mock_proc = Mock()

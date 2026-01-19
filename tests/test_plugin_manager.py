@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 conniecombs
+
 """Comprehensive tests for modules/plugin_manager.py - Plugin discovery and management"""
 
 import pytest
@@ -8,7 +11,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 # Add parent directory to path for imports
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from modules.plugin_manager import PluginManager
 
@@ -20,6 +23,7 @@ class TestPluginManagerImports:
     def test_module_import(self):
         """Test that plugin_manager module imports without error"""
         from modules import plugin_manager
+
         assert plugin_manager is not None
 
     def test_plugin_manager_class_exists(self):
@@ -57,26 +61,26 @@ class TestPluginDiscovery:
 
     def test_discover_plugins_method_exists(self):
         """Test that discover_plugins method exists"""
-        assert hasattr(PluginManager, 'discover_plugins')
+        assert hasattr(PluginManager, "discover_plugins")
 
     def test_get_plugin_method_exists(self):
         """Test that get_plugin method exists"""
-        assert hasattr(PluginManager, 'get_plugin')
+        assert hasattr(PluginManager, "get_plugin")
 
     def test_get_all_plugins_method_exists(self):
         """Test that get_all_plugins method exists"""
-        assert hasattr(PluginManager, 'get_all_plugins')
+        assert hasattr(PluginManager, "get_all_plugins")
 
     def test_discover_py_files(self):
         """Test discovery of .py plugin files"""
         with tempfile.TemporaryDirectory() as temp_dir:
             # Create mock plugin file
             plugin_file = Path(temp_dir) / "test_plugin.py"
-            plugin_content = '''
+            plugin_content = """
 class TestPlugin:
     service_id = "test.service"
     priority = 50
-'''
+"""
             plugin_file.write_text(plugin_content)
 
             # Discovery logic would find this file
@@ -124,7 +128,7 @@ class TestPluginPriority:
         plugins = [
             {"name": "low", "priority": 25},
             {"name": "high", "priority": 75},
-            {"name": "medium", "priority": 50}
+            {"name": "medium", "priority": 50},
         ]
 
         sorted_plugins = sorted(plugins, key=lambda p: p["priority"], reverse=True)
@@ -151,7 +155,7 @@ class TestPluginAttributes:
         mock_plugin = Mock()
         mock_plugin.service_id = "test.service"
 
-        assert hasattr(mock_plugin, 'service_id')
+        assert hasattr(mock_plugin, "service_id")
         assert isinstance(mock_plugin.service_id, str)
 
     def test_plugin_has_priority(self):
@@ -159,7 +163,7 @@ class TestPluginAttributes:
         mock_plugin = Mock()
         mock_plugin.priority = 50
 
-        assert hasattr(mock_plugin, 'priority')
+        assert hasattr(mock_plugin, "priority")
         assert isinstance(mock_plugin.priority, int)
 
     def test_plugin_has_upload_method(self):
@@ -167,7 +171,7 @@ class TestPluginAttributes:
         mock_plugin = Mock()
         mock_plugin.upload = Mock(return_value=("viewer_url", "thumb_url"))
 
-        assert hasattr(mock_plugin, 'upload')
+        assert hasattr(mock_plugin, "upload")
         assert callable(mock_plugin.upload)
 
 
@@ -178,10 +182,7 @@ class TestPluginRetrieval:
     def test_get_plugin_by_service_id(self):
         """Test retrieving plugin by service ID"""
         # Mock data structure
-        plugins = {
-            "imx.to": Mock(service_id="imx.to"),
-            "pixhost.to": Mock(service_id="pixhost.to")
-        }
+        plugins = {"imx.to": Mock(service_id="imx.to"), "pixhost.to": Mock(service_id="pixhost.to")}
 
         # Simulate get_plugin
         service_id = "imx.to"
@@ -199,11 +200,7 @@ class TestPluginRetrieval:
 
     def test_get_all_plugins_returns_list(self):
         """Test that get_all_plugins returns iterable"""
-        plugins = {
-            "service1": Mock(),
-            "service2": Mock(),
-            "service3": Mock()
-        }
+        plugins = {"service1": Mock(), "service2": Mock(), "service3": Mock()}
 
         all_plugins = list(plugins.values())
         assert len(all_plugins) == 3
@@ -215,6 +212,7 @@ class TestPluginValidation:
 
     def test_valid_plugin_structure(self):
         """Test that valid plugins have required attributes"""
+
         class ValidPlugin:
             service_id = "test.service"
             priority = 50
@@ -224,12 +222,13 @@ class TestPluginValidation:
 
         plugin = ValidPlugin()
 
-        assert hasattr(plugin, 'service_id')
-        assert hasattr(plugin, 'upload')
+        assert hasattr(plugin, "service_id")
+        assert hasattr(plugin, "upload")
         assert callable(plugin.upload)
 
     def test_invalid_plugin_missing_service_id(self):
         """Test detection of plugins missing service_id"""
+
         class InvalidPlugin:
             priority = 50
 
@@ -237,16 +236,17 @@ class TestPluginValidation:
                 return ("viewer", "thumb")
 
         plugin = InvalidPlugin()
-        assert not hasattr(plugin, 'service_id')
+        assert not hasattr(plugin, "service_id")
 
     def test_invalid_plugin_missing_upload(self):
         """Test detection of plugins missing upload method"""
+
         class InvalidPlugin:
             service_id = "test.service"
             priority = 50
 
         plugin = InvalidPlugin()
-        assert not hasattr(plugin, 'upload')
+        assert not hasattr(plugin, "upload")
 
 
 @pytest.mark.unit
@@ -296,6 +296,7 @@ class TestPluginErrors:
         try:
             # Simulate import error
             import nonexistent_module
+
             pytest.fail("Should raise ImportError")
         except ImportError:
             # Should be caught and logged
@@ -303,13 +304,14 @@ class TestPluginErrors:
 
     def test_handle_invalid_plugin_class(self):
         """Test handling of invalid plugin classes"""
+
         class InvalidPlugin:
             pass  # Missing required attributes
 
         plugin = InvalidPlugin()
 
         # Should validate before adding to manager
-        has_required = hasattr(plugin, 'service_id') and hasattr(plugin, 'upload')
+        has_required = hasattr(plugin, "service_id") and hasattr(plugin, "upload")
         assert not has_required
 
 
@@ -327,14 +329,14 @@ class TestPluginManagerIntegration:
             (plugins_dir / "__init__.py").touch()
 
             # Create mock plugin
-            plugin_content = '''
+            plugin_content = """
 class MockPlugin:
     service_id = "mock.service"
     priority = 50
 
     def upload(self, file_path, config):
         return ("http://example.com/view", "http://example.com/thumb.jpg")
-'''
+"""
             (plugins_dir / "mock_plugin.py").write_text(plugin_content)
 
             assert plugins_dir.exists()
@@ -349,14 +351,14 @@ class MockPlugin:
             # Create plugins
             for i in range(3):
                 plugin_file = plugins_dir / f"plugin{i}.py"
-                plugin_content = f'''
+                plugin_content = f"""
 class Plugin{i}:
     service_id = "service{i}.test"
     priority = {i * 25}
 
     def upload(self, file_path, config):
         return ("url", "thumb")
-'''
+"""
                 plugin_file.write_text(plugin_content)
 
             # Verify files exist

@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 conniecombs
+
 # modules/settings_manager.py
 import json
 import os
@@ -8,6 +11,7 @@ from .exceptions import InvalidConfigException
 
 try:
     from jsonschema import validate, ValidationError as JsonSchemaValidationError
+
     JSONSCHEMA_AVAILABLE = True
 except ImportError:
     JSONSCHEMA_AVAILABLE = False
@@ -23,13 +27,13 @@ class SettingsManager:
             "service": {
                 "type": "string",
                 "enum": ["imx.to", "pixhost.to", "turboimagehost", "vipr.im", "imagebam.com"],
-                "description": "Selected image hosting service"
+                "description": "Selected image hosting service",
             },
             "global_worker_count": {
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 20,
-                "description": "Number of concurrent upload workers"
+                "description": "Number of concurrent upload workers",
             },
             # IMX settings
             "imx_thumb": {"type": "string", "pattern": "^[0-9]+$"},
@@ -228,9 +232,7 @@ class SettingsManager:
             logger.error(f"Cannot save invalid configuration:\n{error_msg}")
 
             if JSONSCHEMA_AVAILABLE:
-                raise InvalidConfigException(
-                    f"Cannot save invalid configuration:\n{error_msg}"
-                )
+                raise InvalidConfigException(f"Cannot save invalid configuration:\n{error_msg}")
             else:
                 logger.warning("Saving without validation (jsonschema not installed)")
 

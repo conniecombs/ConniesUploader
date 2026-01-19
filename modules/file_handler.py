@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 conniecombs
+
 """File handling utilities for image processing and validation."""
 
 import os
@@ -31,8 +34,7 @@ def validate_file_extension(file_path: str) -> bool:
     if not filename.lower().endswith(VALID_EXTENSIONS):
         supported = ", ".join(VALID_EXTENSIONS)
         raise InvalidFileException(
-            f"File '{filename}' has an unsupported format. "
-            f"Supported formats: {supported}"
+            f"File '{filename}' has an unsupported format. " f"Supported formats: {supported}"
         )
     return True
 
@@ -190,9 +192,28 @@ def sanitize_filename(filename: str, max_length: int = 200) -> str:
 
     # Handle Windows reserved names
     reserved_names = {
-        "CON", "PRN", "AUX", "NUL",
-        "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
-        "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"
+        "CON",
+        "PRN",
+        "AUX",
+        "NUL",
+        "COM1",
+        "COM2",
+        "COM3",
+        "COM4",
+        "COM5",
+        "COM6",
+        "COM7",
+        "COM8",
+        "COM9",
+        "LPT1",
+        "LPT2",
+        "LPT3",
+        "LPT4",
+        "LPT5",
+        "LPT6",
+        "LPT7",
+        "LPT8",
+        "LPT9",
     }
     if filename.upper() in reserved_names:
         filename = f"file_{filename}"

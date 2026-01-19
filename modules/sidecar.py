@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 conniecombs
+
 import subprocess
 import json
 import threading
@@ -10,8 +13,10 @@ from . import config
 from loguru import logger
 
 # --- ADD THIS LINE ---
-from modules import config 
+from modules import config
+
 # ---------------------
+
 
 class SidecarBridge:
     _instance: Optional["SidecarBridge"] = None
@@ -47,7 +52,7 @@ class SidecarBridge:
         # Determine base directory for finding uploader.exe
         if getattr(sys, "frozen", False):
             # PyInstaller mode - use _MEIPASS for temp extraction folder
-            if hasattr(sys, '_MEIPASS'):
+            if hasattr(sys, "_MEIPASS"):
                 # Running from PyInstaller bundle
                 base_dir = sys._MEIPASS
             else:
@@ -76,11 +81,13 @@ class SidecarBridge:
             logger.error(f"  1. PRIMARY: {os.path.join(base_dir, binary_name)} ❌ Not found")
             logger.error(f"  2. FALLBACK: {os.path.join(os.getcwd(), binary_name)} ❌ Not found")
             if getattr(sys, "frozen", False):
-                logger.error(f"  3. FALLBACK (PyInstaller): {os.path.join(os.path.dirname(sys.executable), binary_name)} ❌ Not found")
+                logger.error(
+                    f"  3. FALLBACK (PyInstaller): {os.path.join(os.path.dirname(sys.executable), binary_name)} ❌ Not found"
+                )
             logger.error(f"")
             logger.error(f"Environment Info:")
             logger.error(f"  • Running in PyInstaller mode: {getattr(sys, 'frozen', False)}")
-            if hasattr(sys, '_MEIPASS'):
+            if hasattr(sys, "_MEIPASS"):
                 logger.error(f"  • PyInstaller temp dir (_MEIPASS): {sys._MEIPASS}")
             logger.error(f"")
             logger.error(f"💡 Troubleshooting:")
@@ -161,8 +168,10 @@ class SidecarBridge:
             # Try to restart with exponential backoff (protected by lock to prevent race conditions)
             with self.restart_lock:
                 if self.restart_count < self.max_restarts:
-                    delay = self.restart_delay * (2 ** self.restart_count)
-                    logger.info(f"Attempting to restart sidecar in {delay}s (attempt {self.restart_count + 1}/{self.max_restarts})")
+                    delay = self.restart_delay * (2**self.restart_count)
+                    logger.info(
+                        f"Attempting to restart sidecar in {delay}s (attempt {self.restart_count + 1}/{self.max_restarts})"
+                    )
                     time.sleep(delay)
 
                     self.restart_count += 1
@@ -177,12 +186,16 @@ class SidecarBridge:
                             logger.info("Sidecar restarted successfully")
                             self.restart_count = 0
                         else:
-                            logger.warning("Sidecar process failed to start (not alive after startup)")
+                            logger.warning(
+                                "Sidecar process failed to start (not alive after startup)"
+                            )
                     except Exception as e:
                         logger.error(f"Exception during sidecar restart: {e}", exc_info=True)
                         # Don't recurse - let the restart count increment naturally
                 else:
-                    logger.critical(f"Sidecar failed to restart after {self.max_restarts} attempts - giving up")
+                    logger.critical(
+                        f"Sidecar failed to restart after {self.max_restarts} attempts - giving up"
+                    )
                     self.proc = None
 
     def _dispatch_event(self, data: Dict[str, Any]) -> None:
@@ -194,9 +207,11 @@ class SidecarBridge:
         # DIAGNOSTIC: Log ALL events to see what's being sent
         event_type = data.get("type")
         if event_type in ["status", "result", "error"]:
-            msg = data.get('msg', '')
+            msg = data.get("msg", "")
             msg_str = f", msg={msg}" if msg and event_type == "error" else ""
-            logger.info(f"[GO-EVENT] type={event_type}, file={data.get('file', 'N/A')}, status={data.get('status', 'N/A')}, url={data.get('url', 'N/A')[:50] if data.get('url') else 'N/A'}{msg_str}")
+            logger.info(
+                f"[GO-EVENT] type={event_type}, file={data.get('file', 'N/A')}, status={data.get('status', 'N/A')}, url={data.get('url', 'N/A')[:50] if data.get('url') else 'N/A'}{msg_str}"
+            )
 
         # 2. Broadcast to all listeners
         with self.listeners_lock:

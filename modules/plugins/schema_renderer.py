@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 conniecombs
+
 # modules/plugins/schema_renderer.py
 """
 Schema-based UI rendering for plugins.
@@ -85,7 +88,7 @@ class ToolTip:
             borderwidth=1,
             font=("sans-serif", "9", "normal"),
             padx=5,
-            pady=3
+            pady=3,
         )
         label.pack()
 
@@ -316,9 +319,7 @@ class SchemaRenderer:
             if subfield_type == "label":
                 label_text = subfield.get("text", "")
                 width = subfield.get("width", 60)
-                ctk.CTkLabel(frame, text=label_text, width=width).pack(
-                    side="left", padx=(0, 5)
-                )
+                ctk.CTkLabel(frame, text=label_text, width=width).pack(side="left", padx=(0, 5))
 
             elif subfield_type == "dropdown":
                 values = subfield.get("values", [])
@@ -363,9 +364,7 @@ class SchemaRenderer:
             if field.get("type") == "inline_group":
                 for subfield in field.get("fields", []):
                     if subfield.get("type") != "label":
-                        self._extract_field_value(
-                            subfield, ui_vars, config, errors
-                        )
+                        self._extract_field_value(subfield, ui_vars, config, errors)
                 continue
 
             self._extract_field_value(field, ui_vars, config, errors)
@@ -400,9 +399,7 @@ class SchemaRenderer:
                 max_val = field.get("max", 999999)
 
                 if num_val < min_val or num_val > max_val:
-                    errors.append(
-                        f"{label} must be between {min_val} and {max_val}"
-                    )
+                    errors.append(f"{label} must be between {min_val} and {max_val}")
 
                 config[key] = num_val
             except (ValueError, TypeError):

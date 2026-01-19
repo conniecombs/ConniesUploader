@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+er: MIT
+# Copyright (c) 2025 conniecombs
+
 """
 Plugin Discovery Diagnostic Script
 Checks which plugins are being discovered and reports any errors.
@@ -17,8 +20,8 @@ print("=" * 70)
 # Step 1: Check if plugin files exist
 print("\n[1] Checking plugin files...")
 plugin_dir = "modules/plugins"
-plugin_files = [f for f in os.listdir(plugin_dir) if f.endswith('.py') and not f.startswith('_')]
-plugin_files = [f for f in plugin_files if 'legacy' not in f and 'v2' not in f]
+plugin_files = [f for f in os.listdir(plugin_dir) if f.endswith(".py") and not f.startswith("_")]
+plugin_files = [f for f in plugin_files if "legacy" not in f and "v2" not in f]
 
 print(f"Found {len(plugin_files)} plugin files:")
 for f in sorted(plugin_files):
@@ -29,10 +32,11 @@ for f in sorted(plugin_files):
 # Step 2: Try importing each plugin module
 print("\n[2] Testing plugin module imports...")
 import importlib
+
 failed_imports = []
 
 for plugin_file in sorted(plugin_files):
-    if plugin_file in ['base.py', 'helpers.py', 'schema_renderer.py', '__init__.py']:
+    if plugin_file in ["base.py", "helpers.py", "schema_renderer.py", "__init__.py"]:
         continue
 
     module_name = plugin_file[:-3]  # Remove .py
@@ -57,8 +61,8 @@ try:
 
     print(f"\nSuccessfully loaded {len(plugins)} plugins:")
     for plugin in plugins:
-        impl = plugin.metadata.get('implementation', 'unknown')
-        version = plugin.metadata.get('version', '?')
+        impl = plugin.metadata.get("implementation", "unknown")
+        version = plugin.metadata.get("version", "?")
         print(f"  ✓ {plugin.name:20} id={plugin.id:25} v{version} ({impl})")
 
     if errors:
@@ -82,9 +86,10 @@ try:
         print("\n  Checking if imgur.py can be imported...")
         try:
             from modules.plugins import imgur
+
             print("  ✓ imgur module can be imported")
             print(f"     Has ImgurPlugin: {hasattr(imgur, 'ImgurPlugin')}")
-            if hasattr(imgur, 'ImgurPlugin'):
+            if hasattr(imgur, "ImgurPlugin"):
                 try:
                     instance = imgur.ImgurPlugin()
                     print(f"     Plugin ID: {instance.id}")
@@ -94,11 +99,13 @@ try:
         except Exception as e:
             print(f"  ✗ Cannot import imgur module: {e}")
             import traceback
+
             traceback.print_exc()
 
 except Exception as e:
     print(f"✗ Error loading PluginManager: {e}")
     import traceback
+
     traceback.print_exc()
 
 print("\n" + "=" * 70)

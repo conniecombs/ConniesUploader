@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 conniecombs
+
 """UI modules for Connie's Uploader Ultimate.
 
 This package contains the refactored UI components extracted from the monolithic main.py.

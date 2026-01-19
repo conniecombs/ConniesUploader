@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 conniecombs
+
 # modules/config.py
 import sys
 import re
@@ -87,7 +90,14 @@ logger.remove()
 # Only log to stderr if it exists (fixes EXE crash)
 if sys.stderr:
     logger.add(sys.stderr, level="INFO")
-logger.add(CRASH_LOG_FILE, rotation="1 MB", retention="10 days", level="DEBUG", backtrace=True, diagnose=True)
+logger.add(
+    CRASH_LOG_FILE,
+    rotation="1 MB",
+    retention="10 days",
+    level="DEBUG",
+    backtrace=True,
+    diagnose=True,
+)
 
 
 def natural_sort_key(s: str):

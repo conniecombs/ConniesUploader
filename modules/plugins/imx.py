@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 conniecombs
+
 # modules/plugins/imx.py
 """
 IMX.to plugin - Schema-based implementation.
@@ -167,24 +170,32 @@ class ImxPlugin(ImageHostPlugin):
                 else:
                     logger.warning(f"Failed to create gallery for: {group.title}")
             else:
-                logger.warning("IMX credentials (username/password) not set - cannot create auto-gallery")
+                logger.warning(
+                    "IMX credentials (username/password) not set - cannot create auto-gallery"
+                )
         else:
             # Manual mode: Use manual gallery_id if specified
             manual_gid = config.get("gallery_id", "").strip()
             if manual_gid:
                 logger.info(f"Using manual gallery ID: {manual_gid}")
             else:
-                logger.debug(f"Auto-gallery disabled and no manual ID - uploads will go to IMX default gallery")
+                logger.debug(
+                    f"Auto-gallery disabled and no manual ID - uploads will go to IMX default gallery"
+                )
 
     # NEW: Generic HTTP request builder (replaces hardcoded Go service logic)
-    def build_http_request(self, file_path: str, config: Dict[str, Any], creds: Dict[str, Any]) -> Dict[str, Any]:
+    def build_http_request(
+        self, file_path: str, config: Dict[str, Any], creds: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """
         Build HTTP request specification for IMX.to upload.
         This replaces the hardcoded uploadImx() function in Go.
         """
         # DIAGNOSTIC: Log what we receive from UI
         logger.info(f"IMX build_http_request called with config keys: {list(config.keys())}")
-        logger.info(f"IMX thumbnail_size from config: {repr(config.get('thumbnail_size'))} (type: {type(config.get('thumbnail_size')).__name__})")
+        logger.info(
+            f"IMX thumbnail_size from config: {repr(config.get('thumbnail_size'))} (type: {type(config.get('thumbnail_size')).__name__})"
+        )
 
         # Map thumbnail size to IMX API ID (matching old working code)
         size_map = {"100": "1", "150": "6", "180": "2", "250": "3", "300": "4", "600": "5"}
@@ -194,15 +205,12 @@ class ImxPlugin(ImageHostPlugin):
         # Convert to string in case UI passes integer or other type
         thumb_size_value = str(thumb_size_raw) if thumb_size_raw else "180"
         thumb_size = size_map.get(thumb_size_value, "2")
-        logger.info(f"IMX thumbnail mapping: raw={repr(thumb_size_raw)} → '{thumb_size_value}' → API ID '{thumb_size}'")
+        logger.info(
+            f"IMX thumbnail mapping: raw={repr(thumb_size_raw)} → '{thumb_size_value}' → API ID '{thumb_size}'"
+        )
 
         # Map thumbnail format to IMX API ID
-        format_map = {
-            "Fixed Width": "1",
-            "Fixed Height": "4",
-            "Proportional": "2",
-            "Square": "3"
-        }
+        format_map = {"Fixed Width": "1", "Fixed Height": "4", "Proportional": "2", "Square": "3"}
         # Support both new (thumbnail_format) and legacy (imx_format) keys
         thumb_format_raw = config.get("thumbnail_format") or config.get("imx_format")
         thumb_format_value = str(thumb_format_raw) if thumb_format_raw else "Fixed Width"
@@ -237,8 +245,8 @@ class ImxPlugin(ImageHostPlugin):
                 "url_path": "data.image_url",
                 "thumb_path": "data.thumbnail_url",
                 "status_path": "status",
-                "success_value": "success"
-            }
+                "success_value": "success",
+            },
         }
 
     # Go-based upload - stubs for abstract methods (uploads handled by Go sidecar)
@@ -246,6 +254,13 @@ class ImxPlugin(ImageHostPlugin):
         """Stub - Go sidecar handles session initialization."""
         return {}
 
-    def upload_file(self, file_path: str, group, config: Dict[str, Any], context: Dict[str, Any], progress_callback):
+    def upload_file(
+        self,
+        file_path: str,
+        group,
+        config: Dict[str, Any],
+        context: Dict[str, Any],
+        progress_callback,
+    ):
         """Stub - Go sidecar handles file uploads via build_http_request()."""
         pass

@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 conniecombs
+
 """Credential management for image hosting services."""
 
 import keyring
@@ -130,9 +133,7 @@ class CredentialsManager:
         creds = {}
         for service_config in cls.SERVICE_CONFIGS.values():
             for field in service_config["fields"]:
-                value = keyring.get_password(
-                    field["keyring_service"], field["keyring_username"]
-                )
+                value = keyring.get_password(field["keyring_service"], field["keyring_username"])
                 creds[field["key"]] = value or ""
         return creds
 
@@ -189,9 +190,9 @@ class CredentialsManager:
                 # Add section header if specified
                 if "section" in field and field["section"] != current_section:
                     current_section = field["section"]
-                    ctk.CTkLabel(
-                        tab, text=current_section, font=("", 12, "bold")
-                    ).pack(anchor="w", pady=(10 if current_section != field.get("section") else 0, 0))
+                    ctk.CTkLabel(tab, text=current_section, font=("", 12, "bold")).pack(
+                        anchor="w", pady=(10 if current_section != field.get("section") else 0, 0)
+                    )
 
                 # Add field label
                 ctk.CTkLabel(tab, text=field["label"]).pack(anchor="w")
@@ -200,9 +201,7 @@ class CredentialsManager:
                 var = ctk.StringVar(value=current_creds.get(field["key"], ""))
                 field_vars[field["key"]] = var
 
-                entry = ctk.CTkEntry(
-                    tab, textvariable=var, show=field.get("show", "")
-                )
+                entry = ctk.CTkEntry(tab, textvariable=var, show=field.get("show", ""))
                 entry.pack(fill="x", pady=(0, 5))
 
         def save_all():
@@ -223,9 +222,7 @@ class CredentialsManager:
         # Button frame
         btn_frame = ctk.CTkFrame(dlg, fg_color="transparent")
         btn_frame.pack(fill="x", padx=10, pady=10)
-        ctk.CTkButton(btn_frame, text="Save All", command=save_all).pack(
-            side="right", padx=5
+        ctk.CTkButton(btn_frame, text="Save All", command=save_all).pack(side="right", padx=5)
+        ctk.CTkButton(btn_frame, text="Cancel", command=dlg.destroy, fg_color="gray").pack(
+            side="right"
         )
-        ctk.CTkButton(
-            btn_frame, text="Cancel", command=dlg.destroy, fg_color="gray"
-        ).pack(side="right")

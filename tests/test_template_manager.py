@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 conniecombs
+
 """Comprehensive tests for modules/template_manager.py - Template management and substitution"""
 
 import pytest
@@ -8,7 +11,7 @@ import json
 from pathlib import Path
 
 # Add parent directory to path for imports
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from modules.template_manager import TemplateManager
 
@@ -20,6 +23,7 @@ class TestTemplateManagerImports:
     def test_module_import(self):
         """Test that template_manager module imports successfully"""
         from modules import template_manager
+
         assert template_manager is not None
 
     def test_template_manager_class_exists(self):
@@ -57,10 +61,10 @@ class TestTemplateManagerInstantiation:
             # Create template file with sample data
             sample_templates = {
                 "BBCode": "[url={viewer}][img]{thumb}[/img][/url]",
-                "HTML": '<a href="{viewer}"><img src="{thumb}" /></a>'
+                "HTML": '<a href="{viewer}"><img src="{thumb}" /></a>',
             }
 
-            with open(templates_file, 'w') as f:
+            with open(templates_file, "w") as f:
                 json.dump(sample_templates, f)
 
             tm = TemplateManager(str(templates_file))
@@ -155,7 +159,7 @@ class TestTemplatePlaceholders:
 
         values = {
             "viewer": "https://example.com/view/123",
-            "thumb": "https://example.com/thumb/123.jpg"
+            "thumb": "https://example.com/thumb/123.jpg",
         }
 
         result = template.format(**values)
@@ -188,7 +192,7 @@ class TestTemplatePlaceholders:
         values = {
             "thumb": "https://example.com/thumb.jpg",
             "extra": "ignored",
-            "another": "also ignored"
+            "another": "also ignored",
         }
 
         result = template.format(**values)
@@ -210,7 +214,7 @@ class TestTemplatePersistence:
             tm.save()  # Assuming save method exists
 
             # Read file directly
-            with open(templates_file, 'r') as f:
+            with open(templates_file, "r") as f:
                 saved_data = json.load(f)
 
             assert "Test" in saved_data
@@ -236,7 +240,7 @@ class TestTemplatePersistence:
             templates_file = Path(temp_dir) / "templates.json"
 
             # Write invalid JSON
-            with open(templates_file, 'w') as f:
+            with open(templates_file, "w") as f:
                 f.write("{invalid json")
 
             # Should handle gracefully
@@ -321,7 +325,9 @@ class TestTemplateValidation:
             templates_file = Path(temp_dir) / "templates.json"
             tm = TemplateManager(str(templates_file))
 
-            template_with_special = '<a href="{viewer}" title="View & Download">[img]{thumb}[/img]</a>'
+            template_with_special = (
+                '<a href="{viewer}" title="View & Download">[img]{thumb}[/img]</a>'
+            )
             tm.add_template("Special", template_with_special)
 
             retrieved = tm.get_template("Special")
@@ -375,7 +381,9 @@ class TestTemplateManagerIntegration:
 
             # Retrieve and use template
             template = tm.get_template("Workflow")
-            result = template.format(viewer="http://example.com", thumb="http://example.com/thumb.jpg")
+            result = template.format(
+                viewer="http://example.com", thumb="http://example.com/thumb.jpg"
+            )
             assert result == "[url=http://example.com]http://example.com/thumb.jpg[/url]"
 
             # Update template

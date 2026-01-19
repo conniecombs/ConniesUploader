@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 conniecombs
+
 # modules/plugins/vipr.py
 """
 Vipr.im plugin - Schema-based implementation with custom UI elements.
@@ -86,7 +89,15 @@ class ViprPlugin(ImageHostPlugin):
                 "type": "dropdown",
                 "key": "thumbnail_size",
                 "label": "Thumbnail Size",
-                "values": ["100x100", "170x170", "250x250", "300x300", "350x350", "500x500", "800x800"],
+                "values": [
+                    "100x100",
+                    "170x170",
+                    "250x250",
+                    "300x300",
+                    "350x350",
+                    "500x500",
+                    "800x800",
+                ],
                 "default": "170x170",
                 "required": True,
             },
@@ -142,14 +153,18 @@ class ViprPlugin(ImageHostPlugin):
         ctk.CTkLabel(parent, text="─" * 40, text_color="gray").pack(pady=5)
 
         ctk.CTkButton(
-            parent, text="🔄 Refresh Galleries / Login", command=lambda: self._refresh_galleries(parent)
+            parent,
+            text="🔄 Refresh Galleries / Login",
+            command=lambda: self._refresh_galleries(parent),
         ).pack(fill="x", pady=10)
 
         # Gallery dropdown (dynamically populated)
         gal_name = current_settings.get("vipr_gallery_name", "None")
         ui_vars["vipr_gallery_name"] = ctk.StringVar(value=gal_name)
 
-        self.cb_gallery = MouseWheelComboBox(parent, variable=ui_vars["vipr_gallery_name"], values=["None"])
+        self.cb_gallery = MouseWheelComboBox(
+            parent, variable=ui_vars["vipr_gallery_name"], values=["None"]
+        )
         self.cb_gallery.pack(fill="x")
 
         return ui_vars
@@ -216,7 +231,9 @@ class ViprPlugin(ImageHostPlugin):
         threading.Thread(target=_task, daemon=True).start()
 
     # NEW: Generic HTTP request builder with session management (Phase 3)
-    def build_http_request(self, file_path: str, config: Dict[str, Any], creds: Dict[str, Any]) -> Dict[str, Any]:
+    def build_http_request(
+        self, file_path: str, config: Dict[str, Any], creds: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """
         Build HTTP request specification for Vipr.im upload with session management.
         Uses Phase 3 multi-step pre-request hooks:
@@ -227,7 +244,7 @@ class ViprPlugin(ImageHostPlugin):
         import string
 
         # Generate random upload ID
-        upload_id = ''.join(random.choices(string.ascii_letters + string.digits, k=12))
+        upload_id = "".join(random.choices(string.ascii_letters + string.digits, k=12))
 
         # Base endpoint (will be overridden if pre-request extracts custom endpoint)
         base_endpoint = "https://vipr.im/cgi-bin/upload.cgi"
@@ -245,7 +262,7 @@ class ViprPlugin(ImageHostPlugin):
                 "form_fields": {
                     "op": "login",
                     "login": creds.get("vipr_user", ""),
-                    "password": creds.get("vipr_pass", "")
+                    "password": creds.get("vipr_pass", ""),
                 },
                 "use_cookies": True,  # Set session cookies
                 "extract_fields": {},  # No extraction from login POST
@@ -260,25 +277,28 @@ class ViprPlugin(ImageHostPlugin):
                     "use_cookies": True,  # Use cookies from step 1
                     "extract_fields": {
                         "sess_id": "input[name='sess_id']",  # Extract session ID
-                        "endpoint": "form[action*='upload.cgi']"  # Extract upload endpoint
+                        "endpoint": "form[action*='upload.cgi']",  # Extract upload endpoint
                     },
-                    "response_type": "html"
-                }
+                    "response_type": "html",
+                },
             },
             "multipart_fields": {
                 "file_0": {"type": "file", "value": file_path},
                 "upload_type": {"type": "text", "value": "file"},
                 "sess_id": {"type": "dynamic", "value": "sess_id"},  # Use extracted session ID
-                "thumb_size": {"type": "text", "value": str(config.get("thumbnail_size", "170x170"))},
+                "thumb_size": {
+                    "type": "text",
+                    "value": str(config.get("thumbnail_size", "170x170")),
+                },
                 "fld_id": {"type": "text", "value": str(config.get("vipr_gal_id", "0"))},
                 "tos": {"type": "text", "value": "1"},
-                "submit_btn": {"type": "text", "value": "Upload"}
+                "submit_btn": {"type": "text", "value": "Upload"},
             },
             "response_parser": {
                 "type": "html",
                 "url_path": "input[name='link_url']",  # CSS selector for image URL
-                "thumb_path": "input[name='thumb_url']"  # CSS selector for thumbnail URL
-            }
+                "thumb_path": "input[name='thumb_url']",  # CSS selector for thumbnail URL
+            },
         }
 
     # Go-based upload - stubs for abstract methods (uploads handled by Go sidecar)
@@ -286,6 +306,13 @@ class ViprPlugin(ImageHostPlugin):
         """Stub - Go sidecar handles session initialization."""
         return {}
 
-    def upload_file(self, file_path: str, group, config: Dict[str, Any], context: Dict[str, Any], progress_callback):
+    def upload_file(
+        self,
+        file_path: str,
+        group,
+        config: Dict[str, Any],
+        context: Dict[str, Any],
+        progress_callback,
+    ):
         """Stub - Go sidecar handles file uploads."""
         pass

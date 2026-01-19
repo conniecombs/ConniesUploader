@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 conniecombs
+
 # modules/plugins/base.py
 import abc
 from typing import Dict, Any, Tuple, Optional, List
@@ -227,7 +230,13 @@ class ImageHostPlugin(abc.ABC):
         """
         pass
 
-    def prepare_group(self, group_info: Any, config: Dict[str, Any], context: Dict[str, Any], creds: Dict[str, Any]) -> None:
+    def prepare_group(
+        self,
+        group_info: Any,
+        config: Dict[str, Any],
+        context: Dict[str, Any],
+        creds: Dict[str, Any],
+    ) -> None:
         """
         Optional: Runs before processing a specific group of files.
         Used for creating galleries per folder (e.g., IMX, Pixhost).
@@ -236,14 +245,23 @@ class ImageHostPlugin(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def upload_file(self, file_path: str, group_info: Any, config: Dict[str, Any], context: Dict[str, Any], progress_callback) -> Tuple[str, str]:
+    def upload_file(
+        self,
+        file_path: str,
+        group_info: Any,
+        config: Dict[str, Any],
+        context: Dict[str, Any],
+        progress_callback,
+    ) -> Tuple[str, str]:
         """
         Uploads a single file.
         Returns: (viewer_url, thumb_url)
         """
         pass
 
-    def build_http_request(self, file_path: str, config: Dict[str, Any], creds: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def build_http_request(
+        self, file_path: str, config: Dict[str, Any], creds: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
         """
         NEW: Build a generic HTTP request specification for Go sidecar execution.
 

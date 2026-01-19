@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+er: MIT
+# Copyright (c) 2025 conniecombs
+
 # tests/test_mock_uploads.py
 """
 Mock Upload Test Program - Fully Functional Plugin Testing
@@ -24,7 +27,7 @@ from dataclasses import dataclass
 import argparse
 
 # Add parent directory to path for imports
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from modules.plugin_manager import PluginManager
 from modules.plugins import helpers
@@ -34,9 +37,11 @@ from modules.plugins import helpers
 # Mock Data Classes
 # ============================================================================
 
+
 @dataclass
 class MockFile:
     """Mock file object for testing."""
+
     path: str
     name: str
     size: int = 1024 * 1024  # 1MB default
@@ -48,6 +53,7 @@ class MockFile:
 @dataclass
 class MockGroup:
     """Mock group object for testing."""
+
     title: str
     files: List[str]
     auto_gallery: bool = True
@@ -59,6 +65,7 @@ class MockGroup:
 @dataclass
 class MockUploadResult:
     """Mock upload result."""
+
     viewer_url: str
     thumb_url: str
     success: bool = True
@@ -75,6 +82,7 @@ class MockUploadResult:
 # Mock Upload Responses
 # ============================================================================
 
+
 class MockUploadResponses:
     """Mock upload responses for each plugin."""
 
@@ -84,7 +92,7 @@ class MockUploadResponses:
         hash_id = f"abc{len(filename)}def"
         return MockUploadResult(
             viewer_url=f"https://pixhost.to/show/{hash_id}",
-            thumb_url=f"https://t0.pixhost.to/thumbs/{hash_id}/test.jpg"
+            thumb_url=f"https://t0.pixhost.to/thumbs/{hash_id}/test.jpg",
         )
 
     @staticmethod
@@ -92,8 +100,7 @@ class MockUploadResponses:
         """Mock IMX upload response."""
         img_id = f"i{len(filename)}xyz"
         return MockUploadResult(
-            viewer_url=f"https://imx.to/i/{img_id}",
-            thumb_url=f"https://imx.to/t/{img_id}.jpg"
+            viewer_url=f"https://imx.to/i/{img_id}", thumb_url=f"https://imx.to/t/{img_id}.jpg"
         )
 
     @staticmethod
@@ -102,7 +109,7 @@ class MockUploadResponses:
         img_id = f"turbo{len(filename)}"
         return MockUploadResult(
             viewer_url=f"https://www.turboimagehost.com/p/{img_id}",
-            thumb_url=f"https://www.turboimagehost.com/th/{img_id}.jpg"
+            thumb_url=f"https://www.turboimagehost.com/th/{img_id}.jpg",
         )
 
     @staticmethod
@@ -111,7 +118,7 @@ class MockUploadResponses:
         img_id = f"bam{len(filename)}img"
         return MockUploadResult(
             viewer_url=f"https://www.imagebam.com/view/{img_id}",
-            thumb_url=f"https://thumbs.imagebam.com/{img_id}.jpg"
+            thumb_url=f"https://thumbs.imagebam.com/{img_id}.jpg",
         )
 
     @staticmethod
@@ -119,8 +126,7 @@ class MockUploadResponses:
         """Mock Imgur upload response."""
         img_id = f"abc{len(filename)}XYZ"
         return MockUploadResult(
-            viewer_url=f"https://imgur.com/{img_id}",
-            thumb_url=f"https://i.imgur.com/{img_id}m.jpg"
+            viewer_url=f"https://imgur.com/{img_id}", thumb_url=f"https://i.imgur.com/{img_id}m.jpg"
         )
 
     @staticmethod
@@ -128,14 +134,14 @@ class MockUploadResponses:
         """Mock Vipr upload response."""
         img_id = f"vipr{len(filename)}"
         return MockUploadResult(
-            viewer_url=f"https://vipr.im/i/{img_id}",
-            thumb_url=f"https://vipr.im/t/{img_id}.jpg"
+            viewer_url=f"https://vipr.im/i/{img_id}", thumb_url=f"https://vipr.im/t/{img_id}.jpg"
         )
 
 
 # ============================================================================
 # Mock Upload Simulator
 # ============================================================================
+
 
 class MockUploadSimulator:
     """Simulates uploads for testing plugins."""
@@ -149,30 +155,31 @@ class MockUploadSimulator:
         """Create mock files for testing."""
         files = []
         for i in range(count):
-            files.append(MockFile(
-                path=f"/mock/path/image_{i+1}.jpg",
-                name=f"image_{i+1}.jpg",
-                size=(i + 1) * 512 * 1024  # Varying sizes
-            ))
+            files.append(
+                MockFile(
+                    path=f"/mock/path/image_{i+1}.jpg",
+                    name=f"image_{i+1}.jpg",
+                    size=(i + 1) * 512 * 1024,  # Varying sizes
+                )
+            )
         return files
 
     def create_mock_group(self, title: str, file_count: int = 5) -> MockGroup:
         """Create mock group for testing."""
         files = self.create_mock_files(file_count)
-        return MockGroup(
-            title=title,
-            files=[f.path for f in files]
-        )
+        return MockGroup(title=title, files=[f.path for f in files])
 
     def mock_progress_callback(self, progress: float):
         """Mock progress callback."""
         if self.verbose:
             bar_length = 30
             filled = int(bar_length * progress)
-            bar = '█' * filled + '░' * (bar_length - filled)
-            print(f"\r  Progress: [{bar}] {progress*100:.1f}%", end='', flush=True)
+            bar = "█" * filled + "░" * (bar_length - filled)
+            print(f"\r  Progress: [{bar}] {progress*100:.1f}%", end="", flush=True)
 
-    def simulate_upload(self, plugin, file: MockFile, group: MockGroup, config: Dict[str, Any]) -> MockUploadResult:
+    def simulate_upload(
+        self, plugin, file: MockFile, group: MockGroup, config: Dict[str, Any]
+    ) -> MockUploadResult:
         """Simulate single file upload."""
         self.upload_count += 1
 
@@ -189,22 +196,22 @@ class MockUploadSimulator:
 
         # Get mock response based on plugin
         plugin_id = plugin.id
-        if 'pixhost' in plugin_id:
+        if "pixhost" in plugin_id:
             result = self.responses.pixhost(file.name)
-        elif 'imx' in plugin_id:
+        elif "imx" in plugin_id:
             result = self.responses.imx(file.name)
-        elif 'turbo' in plugin_id:
+        elif "turbo" in plugin_id:
             result = self.responses.turbo(file.name)
-        elif 'imagebam' in plugin_id:
+        elif "imagebam" in plugin_id:
             result = self.responses.imagebam(file.name)
-        elif 'imgur' in plugin_id:
+        elif "imgur" in plugin_id:
             result = self.responses.imgur(file.name)
-        elif 'vipr' in plugin_id:
+        elif "vipr" in plugin_id:
             result = self.responses.vipr(file.name)
         else:
             result = MockUploadResult(
                 viewer_url=f"https://example.com/{file.name}",
-                thumb_url=f"https://example.com/thumb/{file.name}"
+                thumb_url=f"https://example.com/thumb/{file.name}",
             )
 
         if self.verbose:
@@ -216,6 +223,7 @@ class MockUploadSimulator:
 # ============================================================================
 # Plugin Test Runner
 # ============================================================================
+
 
 class PluginTestRunner:
     """Runs comprehensive plugin tests with mock uploads."""
@@ -314,7 +322,7 @@ class PluginTestRunner:
             "content_type": "Safe",
             "cover_count": "2",
             "save_links": True,
-            "gallery_id": ""
+            "gallery_id": "",
         }
 
         errors = plugin.validate_configuration(config)
@@ -336,8 +344,7 @@ class PluginTestRunner:
 
         # Create mock data
         group = self.simulator.create_mock_group(
-            title=f"Test Gallery - {plugin.name}",
-            file_count=file_count
+            title=f"Test Gallery - {plugin.name}", file_count=file_count
         )
 
         print(f"  Group: {group}")
@@ -350,7 +357,7 @@ class PluginTestRunner:
             "cover_count": "1",
             "save_links": True,
             "gallery_id": "",
-            "auto_gallery": True
+            "auto_gallery": True,
         }
 
         # Validate config
@@ -362,7 +369,7 @@ class PluginTestRunner:
             file = MockFile(path=file_path, name=os.path.basename(file_path))
 
             if not self.verbose:
-                print(f"  Uploading {i}/{file_count}: {file.name}...", end='')
+                print(f"  Uploading {i}/{file_count}: {file.name}...", end="")
 
             result = self.simulator.simulate_upload(plugin, file, group, config)
             results.append(result)
@@ -432,7 +439,10 @@ class PluginTestRunner:
                 ("Metadata", lambda: self.test_plugin_metadata(plugin)),
                 ("Schema", lambda: self.test_plugin_schema(plugin)),
                 ("Validation", lambda: self.test_plugin_validation(plugin)),
-                ("Mock Upload", lambda: self.test_plugin_upload(plugin, file_count=3 if self.verbose else 2)),
+                (
+                    "Mock Upload",
+                    lambda: self.test_plugin_upload(plugin, file_count=3 if self.verbose else 2),
+                ),
             ]
 
             plugin_results = {}
@@ -475,25 +485,18 @@ class PluginTestRunner:
 # Main Entry Point
 # ============================================================================
 
+
 def main():
     """Main entry point."""
-    parser = argparse.ArgumentParser(
-        description="Mock Upload Test Program - Plugin System Testing"
+    parser = argparse.ArgumentParser(description="Mock Upload Test Program - Plugin System Testing")
+    parser.add_argument(
+        "--plugin", help="Test specific plugin only (e.g., 'pixhost.to', 'imgur.com')", default=None
     )
     parser.add_argument(
-        "--plugin",
-        help="Test specific plugin only (e.g., 'pixhost.to', 'imgur.com')",
-        default=None
+        "--verbose", "-v", action="store_true", help="Verbose output with detailed information"
     )
     parser.add_argument(
-        "--verbose", "-v",
-        action="store_true",
-        help="Verbose output with detailed information"
-    )
-    parser.add_argument(
-        "--quick", "-q",
-        action="store_true",
-        help="Quick test mode (minimal output)"
+        "--quick", "-q", action="store_true", help="Quick test mode (minimal output)"
     )
 
     args = parser.parse_args()

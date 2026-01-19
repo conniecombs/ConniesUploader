@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 conniecombs
+
 """Comprehensive tests for modules/validation.py - Input validation and sanitization"""
 
 import pytest
@@ -8,14 +11,14 @@ from pathlib import Path
 from unittest.mock import Mock
 
 # Add parent directory to path for imports
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from modules.validation import (
     validate_file_path,
     validate_directory_path,
     sanitize_filename,
     validate_service_name,
-    validate_thread_count
+    validate_thread_count,
 )
 
 
@@ -54,7 +57,7 @@ class TestValidateFilePath:
 
         try:
             # Should pass with .jpg extension
-            result = validate_file_path(jpg_file, allowed_extensions=('.jpg', '.png'))
+            result = validate_file_path(jpg_file, allowed_extensions=(".jpg", ".png"))
             assert result is not None
         finally:
             os.unlink(jpg_file)
@@ -65,7 +68,7 @@ class TestValidateFilePath:
             txt_file = f.name
 
         try:
-            result = validate_file_path(txt_file, allowed_extensions=('.jpg', '.png'))
+            result = validate_file_path(txt_file, allowed_extensions=(".jpg", ".png"))
             assert result is None
         finally:
             os.unlink(txt_file)
@@ -144,7 +147,7 @@ class TestSanitizeFilename:
 
     def test_dangerous_characters_removed(self):
         """Test removal of dangerous characters"""
-        result = sanitize_filename("file<>:\"|?*/name")
+        result = sanitize_filename('file<>:"|?*/name')
         assert "<" not in result
         assert ">" not in result
         assert ":" not in result
@@ -368,7 +371,7 @@ class TestValidationIntegration:
             file_path.touch()
 
             # Validate the sanitized file
-            result = validate_file_path(str(file_path), allowed_extensions=('.jpg',))
+            result = validate_file_path(str(file_path), allowed_extensions=(".jpg",))
             assert result is not None
             assert "<" not in result
             assert ":" not in result

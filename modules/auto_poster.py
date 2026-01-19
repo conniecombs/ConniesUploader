@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 conniecombs
+
 """Automatic posting to ViperGirls forum."""
 
 import time
@@ -44,9 +47,7 @@ class AutoPoster:
 
         with self.lock:
             self.post_queue[batch_index] = {"content": content, "thread": thread_name}
-            logger.info(
-                f"Auto-Post Queue: Queued Batch #{batch_index} for thread '{thread_name}'"
-            )
+            logger.info(f"Auto-Post Queue: Queued Batch #{batch_index} for thread '{thread_name}'")
 
     def start_processing(
         self, is_uploading_callback: Callable[[], bool], cancel_event: threading.Event
@@ -123,13 +124,9 @@ class AutoPoster:
                     )
 
                     if vg.post_reply(thread_id, content):
-                        logger.info(
-                            f"Auto-Post Queue: Batch #{self.next_index} SUCCESS."
-                        )
+                        logger.info(f"Auto-Post Queue: Batch #{self.next_index} SUCCESS.")
                     else:
-                        logger.error(
-                            f"Auto-Post Queue: Batch #{self.next_index} FAILED."
-                        )
+                        logger.error(f"Auto-Post Queue: Batch #{self.next_index} FAILED.")
 
                 self.next_index += 1
                 time.sleep(config.POST_COOLDOWN_SECONDS)

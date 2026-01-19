@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 conniecombs
+
 # modules/plugins/helpers.py
 """
 Plugin helper utilities - Common patterns extracted for reuse.
@@ -46,9 +49,7 @@ def validate_cover_count(config: Dict[str, Any], errors: List[str]) -> None:
         errors.append("Cover count must be a valid number")
 
 
-def validate_gallery_id(
-    gallery_id: str, errors: List[str], alphanumeric: bool = True
-) -> None:
+def validate_gallery_id(gallery_id: str, errors: List[str], alphanumeric: bool = True) -> None:
     """
     Validate gallery ID format.
 

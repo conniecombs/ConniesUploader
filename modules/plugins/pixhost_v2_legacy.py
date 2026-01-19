@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 conniecombs
+
 # modules/plugins/pixhost_v2.py
 """
 Pixhost.to plugin - Schema-based version (Phase 1 implementation).
@@ -136,7 +139,12 @@ class PixhostPluginV2(ImageHostPlugin):
                 logger.info(f"Created Pixhost gallery: {clean_title}")
 
     def upload_file(
-        self, file_path: str, group, config: Dict[str, Any], context: Dict[str, Any], progress_callback
+        self,
+        file_path: str,
+        group,
+        config: Dict[str, Any],
+        context: Dict[str, Any],
+        progress_callback,
     ):
         """
         Upload a single file to Pixhost.
@@ -197,7 +205,9 @@ class PixhostPluginV2(ImageHostPlugin):
         for gal in context.get("created_galleries", []):
             try:
                 api.finalize_pixhost_gallery(
-                    gal.get("gallery_upload_hash"), gal.get("gallery_hash"), client=context["client"]
+                    gal.get("gallery_upload_hash"),
+                    gal.get("gallery_hash"),
+                    client=context["client"],
                 )
                 logger.info(f"Finalized Pixhost gallery: {gal.get('gallery_hash')}")
             except Exception as e:
