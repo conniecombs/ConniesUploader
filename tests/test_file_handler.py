@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 conniecombs
+
 """Tests for modules/file_handler.py"""
 
 import pytest
@@ -7,13 +10,14 @@ from pathlib import Path
 
 # Add parent directory to path for imports
 import sys
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from modules.file_handler import (
     sanitize_filename,
     scan_inputs,
     get_files_from_directory,
-    VALID_EXTENSIONS
+    VALID_EXTENSIONS,
 )
 
 

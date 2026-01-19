@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 conniecombs
+
 import customtkinter as ctk
 import tkinter as tk
 from tkinter import messagebox
@@ -90,7 +93,10 @@ class DragDropMixin:
             if y_root > t_y and y_root < t_y + t_h:
                 idx_src = self.groups.index(self.drag_data["item"])
                 idx_dst = self.groups.index(target)
-                self.groups[idx_src], self.groups[idx_dst] = self.groups[idx_dst], self.groups[idx_src]
+                self.groups[idx_src], self.groups[idx_dst] = (
+                    self.groups[idx_dst],
+                    self.groups[idx_src],
+                )
 
                 for g in self.groups:
                     g.pack_forget()
@@ -108,7 +114,9 @@ class DragDropMixin:
         self.drag_data["item"] = filepath
         self.drag_data["type"] = "file"
         self.drag_data["widget_start"] = row_widget
-        row_widget.configure(fg_color="#3A7EBF" if ctk.get_appearance_mode() == "Light" else "#1F538D")
+        row_widget.configure(
+            fg_color="#3A7EBF" if ctk.get_appearance_mode() == "Light" else "#1F538D"
+        )
         self.configure(cursor="hand2")
 
     def _on_row_drag_motion(self, event):
@@ -145,7 +153,9 @@ class DragDropMixin:
                         with self.lock:
                             self.file_widgets[fp]["row"].pack(before=target_row_widget)
             else:
-                self._move_file_to_group(fp, current_group, target_group, before_widget=target_row_widget)
+                self._move_file_to_group(
+                    fp, current_group, target_group, before_widget=target_row_widget
+                )
 
         self.drag_data = {"item": None, "type": None}
 
@@ -217,7 +227,9 @@ class DragDropMixin:
 
     def _show_group_context(self, event, group):
         self.context_menu.delete(0, "end")
-        self.context_menu.add_command(label="Delete Batch", command=lambda: self._delete_group(group))
+        self.context_menu.add_command(
+            label="Delete Batch", command=lambda: self._delete_group(group)
+        )
         self.context_menu.tk_popup(event.x_root, event.y_root)
 
     def _show_row_context(self, event, filepath):
@@ -228,7 +240,9 @@ class DragDropMixin:
         row.configure(fg_color="#E0E0E0" if ctk.get_appearance_mode() == "Light" else "#404040")
 
         self.context_menu.delete(0, "end")
-        self.context_menu.add_command(label="Delete Image", command=lambda: self._delete_file(filepath))
+        self.context_menu.add_command(
+            label="Delete Image", command=lambda: self._delete_file(filepath)
+        )
         self.context_menu.tk_popup(event.x_root, event.y_root)
 
     def _delete_group(self, group):

@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 conniecombs
+
 """Comprehensive tests for modules/utils.py - Utility functions"""
 
 import pytest
@@ -6,7 +9,7 @@ import os
 from unittest.mock import Mock, patch, MagicMock
 
 # Add parent directory to path for imports
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from modules.utils import ContextUtils
 
@@ -18,6 +21,7 @@ class TestUtilsImports:
     def test_module_import(self):
         """Test that utils module imports successfully"""
         from modules import utils
+
         assert utils is not None
 
     def test_context_utils_class_exists(self):
@@ -31,8 +35,8 @@ class TestContextUtils:
 
     def test_context_utils_is_static(self):
         """Test that ContextUtils methods are static"""
-        assert hasattr(ContextUtils, 'install_menu')
-        assert hasattr(ContextUtils, 'remove_menu')
+        assert hasattr(ContextUtils, "install_menu")
+        assert hasattr(ContextUtils, "remove_menu")
 
         # Should be callable without instantiation
         assert callable(ContextUtils.install_menu)
@@ -40,7 +44,7 @@ class TestContextUtils:
 
 
 @pytest.mark.unit
-@patch('platform.system')
+@patch("platform.system")
 class TestInstallMenu:
     """Test context menu installation"""
 
@@ -54,10 +58,12 @@ class TestInstallMenu:
         mock_system.return_value = "Darwin"  # macOS
         ContextUtils.install_menu()  # Should not raise error
 
-    @patch('winreg.CreateKey')
-    @patch('winreg.SetValue')
-    @patch('tkinter.messagebox.showinfo')
-    def test_install_menu_on_windows(self, mock_showinfo, mock_setvalue, mock_createkey, mock_system):
+    @patch("winreg.CreateKey")
+    @patch("winreg.SetValue")
+    @patch("tkinter.messagebox.showinfo")
+    def test_install_menu_on_windows(
+        self, mock_showinfo, mock_setvalue, mock_createkey, mock_system
+    ):
         """Test successful context menu installation on Windows"""
         mock_system.return_value = "Windows"
         mock_key = MagicMock()
@@ -73,8 +79,8 @@ class TestInstallMenu:
             # May fail if winreg is not available (non-Windows test environment)
             pass
 
-    @patch('winreg.CreateKey')
-    @patch('tkinter.messagebox.showerror')
+    @patch("winreg.CreateKey")
+    @patch("tkinter.messagebox.showerror")
     def test_install_menu_handles_errors(self, mock_showerror, mock_createkey, mock_system):
         """Test error handling during installation"""
         mock_system.return_value = "Windows"
@@ -100,19 +106,19 @@ class TestInstallMenu:
             # Logic should check if pythonw exists
             assert isinstance(py_exe, str)
 
-    @patch('sys.frozen', True, create=True)
+    @patch("sys.frozen", True, create=True)
     def test_install_menu_frozen_mode(self, mock_system):
         """Test context menu installation in frozen (PyInstaller) mode"""
         mock_system.return_value = "Windows"
 
         # In frozen mode, should use sys.executable directly
-        if hasattr(sys, 'frozen') and sys.frozen:
+        if hasattr(sys, "frozen") and sys.frozen:
             exe = sys.executable
             assert os.path.exists(exe) or True  # May not exist in test environment
 
 
 @pytest.mark.unit
-@patch('platform.system')
+@patch("platform.system")
 class TestRemoveMenu:
     """Test context menu removal"""
 
@@ -124,8 +130,8 @@ class TestRemoveMenu:
         mock_system.return_value = "Darwin"
         ContextUtils.remove_menu()  # Should not raise error
 
-    @patch('winreg.DeleteKey')
-    @patch('tkinter.messagebox.showinfo')
+    @patch("winreg.DeleteKey")
+    @patch("tkinter.messagebox.showinfo")
     def test_remove_menu_on_windows(self, mock_showinfo, mock_deletekey, mock_system):
         """Test successful context menu removal on Windows"""
         mock_system.return_value = "Windows"
@@ -140,8 +146,8 @@ class TestRemoveMenu:
             # May fail if winreg is not available
             pass
 
-    @patch('winreg.DeleteKey')
-    @patch('loguru.logger.warning')
+    @patch("winreg.DeleteKey")
+    @patch("loguru.logger.warning")
     def test_remove_menu_handles_missing(self, mock_warning, mock_deletekey, mock_system):
         """Test handling when context menu is not installed"""
         mock_system.return_value = "Windows"
@@ -158,7 +164,7 @@ class TestRemoveMenu:
             # Acceptable if winreg is not available
             pass
 
-    @patch('winreg.DeleteKey')
+    @patch("winreg.DeleteKey")
     def test_remove_menu_deletes_in_order(self, mock_deletekey, mock_system):
         """Test that registry keys are deleted in correct order"""
         mock_system.return_value = "Windows"
@@ -179,19 +185,19 @@ class TestRemoveMenu:
 class TestContextUtilsPlatformDetection:
     """Test platform detection logic"""
 
-    @patch('platform.system')
+    @patch("platform.system")
     def test_detects_windows(self, mock_system):
         """Test Windows platform detection"""
         mock_system.return_value = "Windows"
         assert platform.system() == "Windows" or mock_system.return_value == "Windows"
 
-    @patch('platform.system')
+    @patch("platform.system")
     def test_detects_linux(self, mock_system):
         """Test Linux platform detection"""
         mock_system.return_value = "Linux"
         assert mock_system.return_value == "Linux"
 
-    @patch('platform.system')
+    @patch("platform.system")
     def test_detects_macos(self, mock_system):
         """Test macOS platform detection"""
         mock_system.return_value = "Darwin"
@@ -292,12 +298,14 @@ class TestCommandConstruction:
 class TestContextUtilsIntegration:
     """Integration tests for context utils"""
 
-    @patch('platform.system')
-    @patch('winreg.CreateKey')
-    @patch('winreg.SetValue')
-    @patch('winreg.DeleteKey')
-    @patch('tkinter.messagebox.showinfo')
-    def test_install_and_remove_cycle(self, mock_showinfo, mock_deletekey, mock_setvalue, mock_createkey, mock_system):
+    @patch("platform.system")
+    @patch("winreg.CreateKey")
+    @patch("winreg.SetValue")
+    @patch("winreg.DeleteKey")
+    @patch("tkinter.messagebox.showinfo")
+    def test_install_and_remove_cycle(
+        self, mock_showinfo, mock_deletekey, mock_setvalue, mock_createkey, mock_system
+    ):
         """Test complete install and remove cycle"""
         mock_system.return_value = "Windows"
         mock_key = MagicMock()

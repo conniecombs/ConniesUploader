@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 conniecombs
+
 # modules/plugins/imagebam.py
 """
 ImageBam.com plugin - Schema-based implementation with Go sidecar uploads.
@@ -88,7 +91,9 @@ class ImageBamPlugin(ImageHostPlugin):
         ]
 
     # NEW: Generic HTTP request builder with complex session management (Phase 3)
-    def build_http_request(self, file_path: str, config: Dict[str, Any], creds: Dict[str, Any]) -> Dict[str, Any]:
+    def build_http_request(
+        self, file_path: str, config: Dict[str, Any], creds: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """
         Build HTTP request specification for ImageBam upload with complex session management.
         Uses Phase 3 multi-step pre-request hooks (4 steps):
@@ -135,7 +140,7 @@ class ImageBamPlugin(ImageHostPlugin):
                         "_token": "{login_token}",  # Will be substituted with extracted value
                         "email": creds.get("imagebam_user", ""),
                         "password": creds.get("imagebam_pass", ""),
-                        "remember": "on"
+                        "remember": "on",
                     },
                     "use_cookies": True,
                     "extract_fields": {},
@@ -160,20 +165,20 @@ class ImageBamPlugin(ImageHostPlugin):
                             "headers": {
                                 "X-Requested-With": "XMLHttpRequest",
                                 "X-CSRF-TOKEN": "{csrf_token}",  # Use extracted CSRF
-                                "Content-Type": "application/x-www-form-urlencoded"
+                                "Content-Type": "application/x-www-form-urlencoded",
                             },
                             "form_fields": {
                                 "content_type": content_type_id,
-                                "thumbnail_size": thumb_size_id
+                                "thumbnail_size": thumb_size_id,
                             },
                             "use_cookies": True,
                             "extract_fields": {
                                 "upload_token": "data"  # Extract upload token from JSON response
                             },
-                            "response_type": "json"
-                        }
-                    }
-                }
+                            "response_type": "json",
+                        },
+                    },
+                },
             }
 
         return {
@@ -183,20 +188,21 @@ class ImageBamPlugin(ImageHostPlugin):
             "pre_request": pre_request_spec,
             "multipart_fields": {
                 "files[0]": {"type": "file", "value": file_path},
-                "upload_session": {"type": "dynamic", "value": "upload_token"},  # Use extracted upload token
+                "upload_session": {
+                    "type": "dynamic",
+                    "value": "upload_token",
+                },  # Use extracted upload token
             },
             "response_parser": {
                 "type": "json",
                 "url_path": "files.0.sourceUrl",  # ImageBam response: {"files":[{"sourceUrl":"...","thumbUrl":"..."}]}
-                "thumb_path": "files.0.thumbUrl"
-            }
+                "thumb_path": "files.0.thumbUrl",
+            },
         }
 
     # --- Upload Implementation (Go sidecar handles uploads) ---
 
-    def initialize_session(
-        self, config: Dict[str, Any], creds: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def initialize_session(self, config: Dict[str, Any], creds: Dict[str, Any]) -> Dict[str, Any]:
         """Stub - Go sidecar handles session initialization."""
         return {}
 
@@ -207,7 +213,12 @@ class ImageBamPlugin(ImageHostPlugin):
         pass
 
     def upload_file(
-        self, file_path: str, group, config: Dict[str, Any], context: Dict[str, Any], progress_callback
+        self,
+        file_path: str,
+        group,
+        config: Dict[str, Any],
+        context: Dict[str, Any],
+        progress_callback,
     ):
         """Stub - Go sidecar handles file uploads via build_http_request()."""
         pass

@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 conniecombs
+
 """Main application window for Connie's Uploader Ultimate.
 
 Refactored from monolithic main.py for better maintainability.
@@ -41,7 +44,6 @@ from modules.auto_poster import AutoPoster
 from modules.plugin_manager import PluginManager
 from .safe_scrollable_frame import SafeScrollableFrame
 from loguru import logger
-
 
 
 class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
@@ -127,11 +129,14 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
 
         # Configure sidecar worker count before it's started
         from modules.sidecar import SidecarBridge
+
         worker_count = self.settings.get("global_worker_count", 8)
         SidecarBridge.set_worker_count(worker_count)
 
         self.template_mgr = TemplateManager()
-        self.upload_manager = UploadManager(self.progress_queue, self.result_queue, self.cancel_event)
+        self.upload_manager = UploadManager(
+            self.progress_queue, self.result_queue, self.cancel_event
+        )
 
         self._load_credentials()
         # RenameWorker disabled - not currently used (no enqueue calls in codebase)
@@ -139,7 +144,9 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         self.rename_worker = None
 
         # Central history directory
-        self.central_history_path = os.path.join(os.path.expanduser("~"), ".conniesuploader", "history")
+        self.central_history_path = os.path.join(
+            os.path.expanduser("~"), ".conniesuploader", "history"
+        )
         if not os.path.exists(self.central_history_path):
             os.makedirs(self.central_history_path)
 
@@ -182,7 +189,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         self.update_idletasks()
 
         # Register drop target on the main file list container
-        if hasattr(self.list_container, '_parent_canvas'):
+        if hasattr(self.list_container, "_parent_canvas"):
             try:
                 canvas = self.list_container._parent_canvas
                 if canvas:
@@ -192,22 +199,29 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
                 else:
                     logger.warning("list_container._parent_canvas is None")
             except Exception as e:
-                logger.error(f"✗ Could not register drop target on list_container: {e}", exc_info=True)
+                logger.error(
+                    f"✗ Could not register drop target on list_container: {e}", exc_info=True
+                )
         else:
             logger.warning("list_container does not have _parent_canvas attribute")
 
         # Register drop target on the settings scrollable frame
-        if hasattr(self.settings_frame_container, '_parent_canvas'):
+        if hasattr(self.settings_frame_container, "_parent_canvas"):
             try:
                 canvas = self.settings_frame_container._parent_canvas
                 if canvas:
                     canvas.drop_target_register(DND_FILES)
                     canvas.dnd_bind("<<Drop>>", self.drop_files)
-                    logger.info(f"✓ Registered drop target on settings_frame_container canvas: {canvas}")
+                    logger.info(
+                        f"✓ Registered drop target on settings_frame_container canvas: {canvas}"
+                    )
                 else:
                     logger.warning("settings_frame_container._parent_canvas is None")
             except Exception as e:
-                logger.error(f"✗ Could not register drop target on settings_frame_container: {e}", exc_info=True)
+                logger.error(
+                    f"✗ Could not register drop target on settings_frame_container: {e}",
+                    exc_info=True,
+                )
         else:
             logger.warning("settings_frame_container does not have _parent_canvas attribute")
 
@@ -264,23 +278,38 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         view_menu.add_command(label="Execution Log", command=self.toggle_log)
         view_menu.add_separator()
         view_menu.add_checkbutton(
-            label="Show Image Previews", onvalue=True, offvalue=False, variable=self.var_show_previews
+            label="Show Image Previews",
+            onvalue=True,
+            offvalue=False,
+            variable=self.var_show_previews,
         )
         view_menu.add_checkbutton(
-            label="Separate Batches for Files", onvalue=True, offvalue=False, variable=self.var_separate_batches
+            label="Separate Batches for Files",
+            onvalue=True,
+            offvalue=False,
+            variable=self.var_separate_batches,
         )
 
         view_menu.add_separator()
         appearance_menu = tk.Menu(view_menu, tearoff=0)
         view_menu.add_cascade(label="Appearance Mode", menu=appearance_menu)
         appearance_menu.add_radiobutton(
-            label="System", variable=self.var_appearance_mode, value="System", command=self.change_appearance_mode
+            label="System",
+            variable=self.var_appearance_mode,
+            value="System",
+            command=self.change_appearance_mode,
         )
         appearance_menu.add_radiobutton(
-            label="Light", variable=self.var_appearance_mode, value="Light", command=self.change_appearance_mode
+            label="Light",
+            variable=self.var_appearance_mode,
+            value="Light",
+            command=self.change_appearance_mode,
         )
         appearance_menu.add_radiobutton(
-            label="Dark", variable=self.var_appearance_mode, value="Dark", command=self.change_appearance_mode
+            label="Dark",
+            variable=self.var_appearance_mode,
+            value="Dark",
+            command=self.change_appearance_mode,
         )
 
     def change_appearance_mode(self):
@@ -394,11 +423,13 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         main_container = ctk.CTkFrame(self)
         main_container.pack(fill="both", expand=True, padx=15, pady=15)
 
-        self.settings_frame_container = SafeScrollableFrame(main_container, width=320, fg_color="transparent")
-        self.settings_frame_container.pack(side="left", fill="y", padx=(0, 10))
-        ctk.CTkLabel(self.settings_frame_container, text="Settings", font=("Segoe UI", 16, "bold")).pack(
-            pady=10, padx=10, anchor="w"
+        self.settings_frame_container = SafeScrollableFrame(
+            main_container, width=320, fg_color="transparent"
         )
+        self.settings_frame_container.pack(side="left", fill="y", padx=(0, 10))
+        ctk.CTkLabel(
+            self.settings_frame_container, text="Settings", font=("Segoe UI", 16, "bold")
+        ).pack(pady=10, padx=10, anchor="w")
 
         out_frame = ctk.CTkFrame(self.settings_frame_container)
         out_frame.pack(fill="x", padx=10, pady=5)
@@ -407,16 +438,18 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             anchor="w", padx=5, pady=2
         )
         self.var_auto_gallery = ctk.BooleanVar()
-        ctk.CTkCheckBox(out_frame, text="One Gallery Per Folder", variable=self.var_auto_gallery).pack(
-            anchor="w", padx=5, pady=2
-        )
+        ctk.CTkCheckBox(
+            out_frame, text="One Gallery Per Folder", variable=self.var_auto_gallery
+        ).pack(anchor="w", padx=5, pady=2)
 
         # Global worker count setting
         worker_frame = ctk.CTkFrame(out_frame, fg_color="transparent")
         worker_frame.pack(fill="x", padx=5, pady=5)
         ctk.CTkLabel(worker_frame, text="Worker Count:", width=100).pack(side="left")
         self.var_global_worker_count = ctk.IntVar(value=8)
-        worker_spinbox = ctk.CTkEntry(worker_frame, textvariable=self.var_global_worker_count, width=60)
+        worker_spinbox = ctk.CTkEntry(
+            worker_frame, textvariable=self.var_global_worker_count, width=60
+        )
         worker_spinbox.pack(side="left", padx=5)
         ctk.CTkLabel(worker_frame, text="(1-16)", font=("Segoe UI", 10)).pack(side="left")
 
@@ -425,9 +458,9 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         )
         self.btn_open.pack(fill="x", padx=5, pady=10)
 
-        ctk.CTkLabel(self.settings_frame_container, text="Select Image Host", font=("Segoe UI", 13, "bold")).pack(
-            pady=(15, 2), padx=10, anchor="w"
-        )
+        ctk.CTkLabel(
+            self.settings_frame_container, text="Select Image Host", font=("Segoe UI", 13, "bold")
+        ).pack(pady=(15, 2), padx=10, anchor="w")
         # Dynamically get available plugins from PluginManager
         plugin_manager = PluginManager()
         available_services = plugin_manager.get_service_names()
@@ -442,7 +475,9 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         )
         self.cb_service_select.pack(fill="x", padx=10, pady=(0, 10))
 
-        self.service_settings_container = ctk.CTkFrame(self.settings_frame_container, fg_color="transparent")
+        self.service_settings_container = ctk.CTkFrame(
+            self.settings_frame_container, fg_color="transparent"
+        )
         self.service_settings_container.pack(fill="x", padx=5, pady=0)
 
         # --- REFACTOR: Delegate frame creation to ServiceSettingsView ---
@@ -464,8 +499,12 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
 
         util_grid = ctk.CTkFrame(btn_frame, fg_color="transparent")
         util_grid.pack(fill="x")
-        ctk.CTkButton(util_grid, text="Retry Failed", command=self.retry_failed, width=100).pack(side="left", padx=2)
-        ctk.CTkButton(util_grid, text="Clear List", command=self.clear_list, width=100).pack(side="right", padx=2)
+        ctk.CTkButton(util_grid, text="Retry Failed", command=self.retry_failed, width=100).pack(
+            side="left", padx=2
+        )
+        ctk.CTkButton(util_grid, text="Clear List", command=self.clear_list, width=100).pack(
+            side="right", padx=2
+        )
 
         right_panel = ctk.CTkFrame(main_container)
         right_panel.pack(side="right", fill="both", expand=True)
@@ -613,7 +652,8 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
 
         if has_subdirs:
             if messagebox.askyesno(
-                "Recursive Scan", "Do you want to scan recursively for all subfolders containing images?"
+                "Recursive Scan",
+                "Do you want to scan recursively for all subfolders containing images?",
             ):
                 dirs_to_add = []
                 for root, dirs, files in os.walk(folder):
@@ -626,7 +666,11 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
                     messagebox.showinfo("Info", "No folders with supported images found.")
                 return
 
-            subdirs = [os.path.join(folder, d) for d in os.listdir(folder) if os.path.isdir(os.path.join(folder, d))]
+            subdirs = [
+                os.path.join(folder, d)
+                for d in os.listdir(folder)
+                if os.path.isdir(os.path.join(folder, d))
+            ]
             if subdirs:
                 if messagebox.askyesno(
                     "Batch Add Groups",
@@ -636,7 +680,8 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
                     files_in_root = [
                         f
                         for f in os.listdir(folder)
-                        if os.path.isfile(os.path.join(folder, f)) and f.lower().endswith(file_handler.VALID_EXTENSIONS)
+                        if os.path.isfile(os.path.join(folder, f))
+                        and f.lower().endswith(file_handler.VALID_EXTENSIONS)
                     ]
                     if files_in_root:
                         self._process_files([folder])
@@ -668,7 +713,9 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
                     logger.info(f"   📂 Scanning folder: {folder_name}")
 
                     # Update status with current folder being scanned
-                    self.lbl_eta.configure(text=f"Scanning folder {idx}/{len(inputs)}: {folder_name}...")
+                    self.lbl_eta.configure(
+                        text=f"Scanning folder {idx}/{len(inputs)}: {folder_name}..."
+                    )
                     self.update_idletasks()  # Force UI update
 
                     try:
@@ -680,15 +727,21 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
                             file_count += len(files_in_folder)
 
                             if target_group:
-                                self.thumb_executor.submit(self._thumb_worker, files_in_folder, target_group, show_previews)
+                                self.thumb_executor.submit(
+                                    self._thumb_worker, files_in_folder, target_group, show_previews
+                                )
                             else:
                                 grp = self._create_group(folder_name)
-                                self.thumb_executor.submit(self._thumb_worker, files_in_folder, grp, show_previews)
+                                self.thumb_executor.submit(
+                                    self._thumb_worker, files_in_folder, grp, show_previews
+                                )
                         else:
                             logger.warning(f"      ⚠ No valid images in folder: {folder_name}")
                             empty_folders.append(folder_name)
                     except Exception as e:
-                        logger.error(f"      ✗ Error scanning folder {folder_name}: {e}", exc_info=True)
+                        logger.error(
+                            f"      ✗ Error scanning folder {folder_name}: {e}", exc_info=True
+                        )
                         rejected_count += 1
 
                 elif os.path.isfile(path):
@@ -704,7 +757,9 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
                             rejected_count += 1
                     else:
                         ext = os.path.splitext(path)[1]
-                        logger.warning(f"      ⚠ Rejected (invalid extension): {os.path.basename(path)} ({ext})")
+                        logger.warning(
+                            f"      ⚠ Rejected (invalid extension): {os.path.basename(path)} ({ext})"
+                        )
                         rejected_count += 1
                 else:
                     logger.warning(f"      ⚠ Path does not exist or is not accessible: {path}")
@@ -714,7 +769,9 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
                 logger.info(f"   📄 Processing {len(misc_files)} miscellaneous file(s)")
                 misc_files.sort(key=config.natural_sort_key)
                 if target_group:
-                    self.thumb_executor.submit(self._thumb_worker, misc_files, target_group, show_previews)
+                    self.thumb_executor.submit(
+                        self._thumb_worker, misc_files, target_group, show_previews
+                    )
                 elif self.var_separate_batches.get():
                     for f in misc_files:
                         grp_name = os.path.basename(f)
@@ -724,7 +781,9 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
                     misc_group = next((g for g in self.groups if g.title == "Miscellaneous"), None)
                     if not misc_group:
                         misc_group = self._create_group("Miscellaneous")
-                    self.thumb_executor.submit(self._thumb_worker, misc_files, misc_group, show_previews)
+                    self.thumb_executor.submit(
+                        self._thumb_worker, misc_files, misc_group, show_previews
+                    )
 
             # Provide user feedback
             if file_count == 0:
@@ -738,7 +797,9 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
                     msg += f"\nRejected files: {rejected_count}"
                 messagebox.showwarning("No Valid Files", msg)
             else:
-                logger.info(f"✓ Successfully processed {file_count} file(s) from {folder_count} folder(s)")
+                logger.info(
+                    f"✓ Successfully processed {file_count} file(s) from {folder_count} folder(s)"
+                )
                 status_msg = f"Added {file_count} file(s) from {folder_count} folder(s)"
                 if rejected_count > 0:
                     logger.info(f"   ({rejected_count} file(s) rejected)")
@@ -748,7 +809,9 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         except Exception as e:
             logger.error(f"✗ Error in _process_files: {e}", exc_info=True)
             self.lbl_eta.configure(text="Error processing files")
-            messagebox.showerror("Processing Error", f"An error occurred while processing files:\n\n{str(e)}")
+            messagebox.showerror(
+                "Processing Error", f"An error occurred while processing files:\n\n{str(e)}"
+            )
 
     def _create_group(self, title):
         t_names = list(self.saved_threads_data.keys()) if self.saved_threads_data else []
@@ -804,7 +867,9 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
                         pending_by_group[grp].append(fp)
 
         if not pending_by_group:
-            messagebox.showinfo("Info", "No pending files found. Please add files or use 'Retry Failed'.")
+            messagebox.showinfo(
+                "Info", "No pending files found. Please add files or use 'Retry Failed'."
+            )
             return
 
         try:
@@ -857,7 +922,9 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             sorted_groups = sorted(
                 self.groups,
                 key=lambda g: (
-                    self.list_container.winfo_children().index(g) if g in self.list_container.winfo_children() else 999
+                    self.list_container.winfo_children().index(g)
+                    if g in self.list_container.winfo_children()
+                    else 999
                 ),
             )
             for i, grp in enumerate(sorted_groups):
@@ -873,8 +940,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             # Start AutoPoster if needed
             if active_post_jobs:
                 self.auto_poster.start_processing(
-                    is_uploading_callback=lambda: self.is_uploading,
-                    cancel_event=self.cancel_event
+                    is_uploading_callback=lambda: self.is_uploading, cancel_event=self.cancel_event
                 )
 
             self.upload_manager.start_batch(pending_by_group, cfg, self.creds)
@@ -945,7 +1011,9 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
                                     self.upload_count += 1
                                 w["state"] = "success" if v == "Done" else "failed"
                                 w["prog"].set(1.0)
-                                w["prog"].configure(progress_color="#34C759" if v == "Done" else "#FF3B30")
+                                w["prog"].configure(
+                                    progress_color="#34C759" if v == "Done" else "#FF3B30"
+                                )
                                 self._update_group_progress(f)
                         elif k == "prog":
                             w["prog"].set(v)
@@ -966,7 +1034,9 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         row.pack(fill="x", pady=1)
         img_widget = None
         if pil_image:
-            img_widget = ctk.CTkImage(light_image=pil_image, dark_image=pil_image, size=config.UI_THUMB_SIZE)
+            img_widget = ctk.CTkImage(
+                light_image=pil_image, dark_image=pil_image, size=config.UI_THUMB_SIZE
+            )
             l = ctk.CTkLabel(row, image=img_widget, text="")
             l.pack(side="left", padx=5)
             self.image_refs.add(img_widget)
@@ -974,7 +1044,9 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             ctk.CTkLabel(row, text="[Img]", width=40).pack(side="left")
         st = ctk.CTkLabel(row, text="Wait", width=60)
         st.pack(side="left")
-        ctk.CTkLabel(row, text=os.path.basename(fp)).pack(side="left", fill="x", expand=True, padx=5)
+        ctk.CTkLabel(row, text=os.path.basename(fp)).pack(
+            side="left", fill="x", expand=True, padx=5
+        )
         pr = ctk.CTkProgressBar(row, width=100)
         pr.set(0)
         pr.pack(side="right", padx=5)
@@ -985,7 +1057,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
                 "prog": pr,
                 "state": "pending",
                 "group": group_widget,
-                "image_ref": img_widget  # Store reference for cleanup
+                "image_ref": img_widget,  # Store reference for cleanup
             }
             file_count = len(self.file_widgets)
         self.lbl_eta.configure(text=f"Files: {file_count}")
@@ -1103,11 +1175,18 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             elif svc == "vipr.im":
                 gal_link = f"https://vipr.im/f/{gal_id}"
 
-        ctx = {"gallery_link": gal_link, "gallery_name": group.title, "gallery_id": gal_id, "cover_url": cover_url, "thumb_size": thumb_size}
+        ctx = {
+            "gallery_link": gal_link,
+            "gallery_name": group.title,
+            "gallery_id": gal_id,
+            "cover_url": cover_url,
+            "thumb_size": thumb_size,
+        }
         text = self.template_mgr.apply(group.selected_template, ctx, group_results)
 
         try:
             from modules.file_handler import sanitize_filename
+
             safe_title = sanitize_filename(group.title)
             ts = datetime.now().strftime("%Y%m%d_%H%M")
             out_dir = "Output"
@@ -1235,7 +1314,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             time.sleep(0.5)  # Give uploads time to detect cancellation
 
         # Stop AutoPoster
-        if hasattr(self, 'auto_poster') and self.auto_poster:
+        if hasattr(self, "auto_poster") and self.auto_poster:
             logger.info("Stopping AutoPoster...")
             try:
                 self.auto_poster.stop()
@@ -1243,7 +1322,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
                 logger.warning(f"Error stopping AutoPoster: {e}")
 
         # Stop RenameWorker
-        if hasattr(self, 'rename_worker') and self.rename_worker:
+        if hasattr(self, "rename_worker") and self.rename_worker:
             logger.info("Stopping RenameWorker...")
             try:
                 self.rename_worker.stop()
@@ -1253,7 +1332,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
                 logger.warning(f"Error stopping RenameWorker: {e}")
 
         # Shutdown thumbnail executor
-        if hasattr(self, 'thumb_executor') and self.thumb_executor:
+        if hasattr(self, "thumb_executor") and self.thumb_executor:
             logger.info("Shutting down thumbnail executor...")
             try:
                 self.thumb_executor.shutdown(wait=True)
@@ -1261,7 +1340,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
                 logger.warning(f"Error shutting down thumb_executor: {e}")
 
         # Shutdown upload manager
-        if hasattr(self, 'upload_manager') and self.upload_manager:
+        if hasattr(self, "upload_manager") and self.upload_manager:
             logger.info("Shutting down upload manager...")
             try:
                 self.upload_manager.shutdown()
@@ -1272,6 +1351,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         logger.info("Terminating sidecar process...")
         try:
             from modules.sidecar import SidecarBridge
+
             sidecar = SidecarBridge.get()
             sidecar.shutdown()
         except Exception as e:

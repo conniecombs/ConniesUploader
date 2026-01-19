@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 conniecombs
+
 import customtkinter as ctk
 from tkinter import messagebox, simpledialog
 import threading
@@ -57,9 +60,9 @@ class GalleryManager(ctk.CTkToplevel):
         self.ent_name = ctk.CTkEntry(bottom)
         self.ent_name.pack(fill="x", padx=5, pady=(0, 5))
 
-        ctk.CTkButton(bottom, text="Create Gallery", command=self._create_gallery, fg_color="green").pack(
-            fill="x", padx=5, pady=5
-        )
+        ctk.CTkButton(
+            bottom, text="Create Gallery", command=self._create_gallery, fg_color="green"
+        ).pack(fill="x", padx=5, pady=5)
 
     def _ask_cookies_dialog(self):
         dialog = ctk.CTkInputDialog(text="Paste your 'PHPSESSID' cookie value:", title="Cookie 1/3")
@@ -130,12 +133,16 @@ class GalleryManager(ctk.CTkToplevel):
                         text_color="black",
                     )
                     btn.pack(pady=20)
-                    ctk.CTkLabel(self.scroll, text="Login Failed.\nUse the button above if this persists.").pack(pady=5)
+                    ctk.CTkLabel(
+                        self.scroll, text="Login Failed.\nUse the button above if this persists."
+                    ).pack(pady=5)
                 else:
                     ctk.CTkLabel(self.scroll, text="No galleries found.").pack(pady=20)
             else:
                 # Load more pressed but no more data
-                ctk.CTkLabel(self.scroll, text="-- No more results --", text_color="gray").pack(pady=10)
+                ctk.CTkLabel(self.scroll, text="-- No more results --", text_color="gray").pack(
+                    pady=10
+                )
             return
 
         for item in data:
@@ -146,7 +153,9 @@ class GalleryManager(ctk.CTkToplevel):
             gid = item.get("id") or item.get("gallery_hash")
 
             ctk.CTkLabel(f, text=name, font=("", 12, "bold")).pack(side="left", padx=5)
-            ctk.CTkLabel(f, text=f"({gid})", text_color="gray", font=("", 11)).pack(side="left", padx=5)
+            ctk.CTkLabel(f, text=f"({gid})", text_color="gray", font=("", 11)).pack(
+                side="left", padx=5
+            )
 
             if self.callback:
                 ctk.CTkButton(
@@ -161,7 +170,10 @@ class GalleryManager(ctk.CTkToplevel):
         # (Assuming if we found data, there *might* be another page)
         if self.service_var.get() == "imx.to":
             self.btn_load_more = ctk.CTkButton(
-                self.scroll, text="Load Next Page", command=self._load_more_pages, fg_color="#3B8ED0"
+                self.scroll,
+                text="Load Next Page",
+                command=self._load_more_pages,
+                fg_color="#3B8ED0",
             )
             self.btn_load_more.pack(pady=15)
 
@@ -280,7 +292,9 @@ class GalleryManager(ctk.CTkToplevel):
             seen = set()
             # FIX: Updated pattern to make <i> tags optional
             # Old pattern: r"href=['\"](?:https?://[^/'\"]+)?/g/(\w+)['\"][^>]*>\s*<i>([^<]+)</i>"
-            pattern = r"href=['\"](?:https?://[^/'\"]+)?/g/(\w+)['\"][^>]*>\s*(?:<i>)?([^<]+)(?:</i>)?"
+            pattern = (
+                r"href=['\"](?:https?://[^/'\"]+)?/g/(\w+)['\"][^>]*>\s*(?:<i>)?([^<]+)(?:</i>)?"
+            )
             for gid, gname in re.findall(pattern, r.text, re.IGNORECASE):
                 if gid not in seen:
                     galleries.append({"id": gid, "name": gname.strip()})

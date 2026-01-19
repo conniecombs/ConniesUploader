@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 conniecombs
+
 """Safe scrollable frame widget with canvas master checking."""
 
 import customtkinter as ctk

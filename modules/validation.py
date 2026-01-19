@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 conniecombs
+
 """Input validation utilities for security and data integrity."""
 
 import os
@@ -42,7 +45,9 @@ def validate_file_path(filepath: str, allowed_extensions: tuple = None) -> Optio
         # Validate extension if specified
         if allowed_extensions:
             if not abs_path.suffix.lower() in allowed_extensions:
-                logger.warning(f"Invalid file extension for {filepath}. Allowed: {allowed_extensions}")
+                logger.warning(
+                    f"Invalid file extension for {filepath}. Allowed: {allowed_extensions}"
+                )
                 return None
 
         # Additional security: check for suspicious patterns

@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Question or Discussion
+    url: https://github.com/conniecombs/ConniesUploader/discussions
+    about: For questions, discussions, or general help, please use GitHub Discussions
+  - name: Documentation
+    url: https://github.com/conniecombs/ConniesUploader/blob/main/README.md
+    about: Check out our documentation for guides and troubleshooting

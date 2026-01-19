@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 conniecombs
+
 # modules/plugins/pixhost.py
 """
 Pixhost.to plugin - Schema-based implementation with Go sidecar uploads.
@@ -131,7 +134,9 @@ class PixhostPlugin(ImageHostPlugin):
 
     # --- Upload Implementation (Go Sidecar Handles Uploads) ---
 
-    def build_http_request(self, file_path: str, config: Dict[str, Any], creds: Dict[str, Any]) -> Dict[str, Any]:
+    def build_http_request(
+        self, file_path: str, config: Dict[str, Any], creds: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """
         Build HTTP request specification for Pixhost.to upload.
         This replaces the hardcoded uploadPixhost() function in Go.
@@ -164,7 +169,7 @@ class PixhostPlugin(ImageHostPlugin):
                 "url_path": "show_url",
                 "thumb_path": "th_url",
                 # Pixhost returns empty show_url on error, no explicit status field
-            }
+            },
         }
 
     def initialize_session(self, config: Dict[str, Any], creds: Dict[str, Any]) -> Dict[str, Any]:
@@ -194,7 +199,12 @@ class PixhostPlugin(ImageHostPlugin):
                 logger.info(f"Created Pixhost gallery: {clean_title}")
 
     def upload_file(
-        self, file_path: str, group, config: Dict[str, Any], context: Dict[str, Any], progress_callback
+        self,
+        file_path: str,
+        group,
+        config: Dict[str, Any],
+        context: Dict[str, Any],
+        progress_callback,
     ):
         """Stub - Go sidecar handles file uploads via build_http_request()."""
         pass

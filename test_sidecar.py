@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
+er: MIT
+# Copyright (c) 2025 conniecombs
+
 """
 Test script to verify Go sidecar (uploader.exe) can be found.
 Run this after building to verify the sidecar is properly bundled.
 """
 import os
 import sys
+
 
 def test_sidecar_location():
     """Test all possible locations where sidecar might be found."""
@@ -18,7 +22,7 @@ def test_sidecar_location():
     print(f"Running from PyInstaller: {is_frozen}")
 
     if is_frozen:
-        if hasattr(sys, '_MEIPASS'):
+        if hasattr(sys, "_MEIPASS"):
             print(f"PyInstaller temp dir (_MEIPASS): {sys._MEIPASS}")
         print(f"Executable location: {sys.executable}")
         print(f"Executable directory: {os.path.dirname(sys.executable)}")
@@ -31,7 +35,7 @@ def test_sidecar_location():
     locations = []
 
     # Location 1: PyInstaller temp directory
-    if hasattr(sys, '_MEIPASS'):
+    if hasattr(sys, "_MEIPASS"):
         locations.append(("PyInstaller _MEIPASS", sys._MEIPASS))
 
     # Location 2: Executable directory
@@ -80,6 +84,7 @@ def test_sidecar_location():
     print("=" * 60)
 
     return found
+
 
 if __name__ == "__main__":
     success = test_sidecar_location()

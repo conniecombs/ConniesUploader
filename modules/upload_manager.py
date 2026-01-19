@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 conniecombs
+
 # modules/upload_manager.py
 import threading
 import json
@@ -16,7 +19,7 @@ class UploadManager:
         self,
         progress_queue: "queue.Queue[Tuple[str, str, str]]",
         result_queue: "queue.Queue[Tuple[str, str, str]]",
-        cancel_event: threading.Event
+        cancel_event: threading.Event,
     ) -> None:
         self.progress_queue = progress_queue
         self.result_queue = result_queue
@@ -28,10 +31,7 @@ class UploadManager:
         self.listener_thread: threading.Thread = None
 
     def start_batch(
-        self,
-        pending_by_group: Dict[Any, List[str]],
-        cfg: Dict[str, Any],
-        creds: Dict[str, str]
+        self, pending_by_group: Dict[Any, List[str]], cfg: Dict[str, Any], creds: Dict[str, str]
     ) -> None:
         """
         Submits a batch of groups to the persistent Go sidecar.
@@ -44,13 +44,12 @@ class UploadManager:
         self.listener_thread.start()
 
         # 3. Dispatch jobs asynchronously
-        threading.Thread(target=self._dispatch_jobs, args=(pending_by_group, cfg, creds), daemon=True).start()
+        threading.Thread(
+            target=self._dispatch_jobs, args=(pending_by_group, cfg, creds), daemon=True
+        ).start()
 
     def _dispatch_jobs(
-        self,
-        pending_by_group: Dict[Any, List[str]],
-        cfg: Dict[str, Any],
-        creds: Dict[str, str]
+        self, pending_by_group: Dict[Any, List[str]], cfg: Dict[str, Any], creds: Dict[str, str]
     ) -> None:
         """Sends job JSONs to the Go process via the Bridge."""
         for group_obj, files in pending_by_group.items():
@@ -64,7 +63,7 @@ class UploadManager:
             service_id = group_cfg.get("service", "")
             plugin = self.plugin_manager.get_plugin(service_id)
 
-            if plugin and hasattr(plugin, 'prepare_group'):
+            if plugin and hasattr(plugin, "prepare_group"):
                 try:
                     # This call creates the gallery if 'gallery_id' is empty in config
                     # and updates group_cfg['gallery_id'] with the new ID
@@ -115,27 +114,22 @@ class UploadManager:
             if standards:
                 self._send_job(standards, group_cfg, creds)
 
-    def _send_job(
-        self,
-        file_list: List[str],
-        cfg: Dict[str, Any],
-        creds: Dict[str, str]
-    ) -> None:
+    def _send_job(self, file_list: List[str], cfg: Dict[str, Any], creds: Dict[str, str]) -> None:
         service_id = cfg["service"]
 
         # DIAGNOSTIC: Log config being sent to plugin
-        logger.info(f"_send_job for {service_id}: thumbnail_size={repr(cfg.get('thumbnail_size'))}, imx_thumb={repr(cfg.get('imx_thumb'))}")
+        logger.info(
+            f"_send_job for {service_id}: thumbnail_size={repr(cfg.get('thumbnail_size'))}, imx_thumb={repr(cfg.get('imx_thumb'))}"
+        )
 
         # NEW: Check if plugin supports generic HTTP runner
         plugin = self.plugin_manager.get_plugin(service_id)
-        if plugin and hasattr(plugin, 'build_http_request'):
+        if plugin and hasattr(plugin, "build_http_request"):
             # Try to build HTTP request spec for first file (as template)
             # Note: For file-specific fields, Go will substitute the actual file path
             try:
                 http_spec = plugin.build_http_request(
-                    file_path=file_list[0] if file_list else "",
-                    config=cfg,
-                    creds=creds
+                    file_path=file_list[0] if file_list else "", config=cfg, creds=creds
                 )
 
                 if http_spec:
@@ -145,12 +139,16 @@ class UploadManager:
                         "service": service_id,
                         "files": [os.path.normpath(f) for f in file_list],
                         "creds": creds,  # Pass all creds for backward compat
-                        "config": {"threads": str(cfg.get(f"{service_id.split('.')[0]}_threads", 2))},
+                        "config": {
+                            "threads": str(cfg.get(f"{service_id.split('.')[0]}_threads", 2))
+                        },
                         "http_spec": http_spec,
                         "context_data": {},
                     }
 
-                    logger.info(f"Using generic HTTP runner for {service_id} ({len(file_list)} files)")
+                    logger.info(
+                        f"Using generic HTTP runner for {service_id} ({len(file_list)} files)"
+                    )
                     self.bridge.send_cmd(job_data)
                     return
 
@@ -159,7 +157,9 @@ class UploadManager:
                 # Send error events for all files in this batch
                 for file_path in file_list:
                     self.result_queue.put((file_path, "", ""))
-                    self.progress_queue.put(("status", file_path, "error: plugin configuration failed"))
+                    self.progress_queue.put(
+                        ("status", file_path, "error: plugin configuration failed")
+                    )
                 return
 
     def _process_events(self) -> None:

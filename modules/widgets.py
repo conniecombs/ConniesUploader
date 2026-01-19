@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 conniecombs
+
 import customtkinter as ctk
 import tkinter as tk
 from tkinter import ttk
@@ -188,15 +191,19 @@ class ServiceSettingsView:
         self.app.service_frames["imx.to"] = p
         ctk.CTkLabel(p, text="Requires Credentials", text_color="red").pack(pady=5)
         ctk.CTkLabel(p, text="Thumb Size:").pack(anchor="w")
-        MouseWheelComboBox(p, variable=self.app.var_imx_thumb, values=["100", "180", "250", "300", "600"]).pack(
-            fill="x"
-        )
+        MouseWheelComboBox(
+            p, variable=self.app.var_imx_thumb, values=["100", "180", "250", "300", "600"]
+        ).pack(fill="x")
         ctk.CTkLabel(p, text="Format:").pack(anchor="w")
         MouseWheelComboBox(
-            p, variable=self.app.var_imx_format, values=["Fixed Width", "Fixed Height", "Proportional", "Square"]
+            p,
+            variable=self.app.var_imx_format,
+            values=["Fixed Width", "Fixed Height", "Proportional", "Square"],
         ).pack(fill="x")
         self._create_cover_count_combo(p, self.app.var_imx_cover_count)
-        ctk.CTkCheckBox(p, text="Links.txt", variable=self.app.var_imx_links).pack(anchor="w", pady=5)
+        ctk.CTkCheckBox(p, text="Links.txt", variable=self.app.var_imx_links).pack(
+            anchor="w", pady=5
+        )
         ctk.CTkLabel(p, text="Gallery ID:").pack(anchor="w", pady=(10, 0))
         self.app.ent_imx_gal = ctk.CTkEntry(p)
         self.app.ent_imx_gal.pack(fill="x")
@@ -205,13 +212,19 @@ class ServiceSettingsView:
         p = ctk.CTkFrame(self.parent)
         self.app.service_frames["pixhost.to"] = p
         ctk.CTkLabel(p, text="Content:").pack(anchor="w")
-        MouseWheelComboBox(p, variable=self.app.var_pix_content, values=["Safe", "Adult"]).pack(fill="x")
+        MouseWheelComboBox(p, variable=self.app.var_pix_content, values=["Safe", "Adult"]).pack(
+            fill="x"
+        )
         ctk.CTkLabel(p, text="Thumb Size:").pack(anchor="w")
         MouseWheelComboBox(
-            p, variable=self.app.var_pix_thumb, values=["150", "200", "250", "300", "350", "400", "450", "500"]
+            p,
+            variable=self.app.var_pix_thumb,
+            values=["150", "200", "250", "300", "350", "400", "450", "500"],
         ).pack(fill="x")
         self._create_cover_count_combo(p, self.app.var_pix_cover_count)
-        ctk.CTkCheckBox(p, text="Links.txt", variable=self.app.var_pix_links).pack(anchor="w", pady=5)
+        ctk.CTkCheckBox(p, text="Links.txt", variable=self.app.var_pix_links).pack(
+            anchor="w", pady=5
+        )
         ctk.CTkLabel(p, text="Gallery Hash (Optional):").pack(anchor="w", pady=(10, 0))
         self.app.ent_pix_hash = ctk.CTkEntry(p)
         self.app.ent_pix_hash.pack(fill="x")
@@ -222,10 +235,14 @@ class ServiceSettingsView:
         ctk.CTkLabel(p, text="Login Optional", text_color="red").pack(pady=5)
         ctk.CTkLabel(p, text="Thumb Size:").pack(anchor="w")
         MouseWheelComboBox(
-            p, variable=self.app.var_turbo_thumb, values=["150", "200", "250", "300", "350", "400", "500", "600"]
+            p,
+            variable=self.app.var_turbo_thumb,
+            values=["150", "200", "250", "300", "350", "400", "500", "600"],
         ).pack(fill="x")
         self._create_cover_count_combo(p, self.app.var_turbo_cover_count)
-        ctk.CTkCheckBox(p, text="Links.txt", variable=self.app.var_turbo_links).pack(anchor="w", pady=5)
+        ctk.CTkCheckBox(p, text="Links.txt", variable=self.app.var_turbo_links).pack(
+            anchor="w", pady=5
+        )
         ctk.CTkLabel(p, text="Gallery ID:").pack(anchor="w")
         self.app.ent_turbo_gal = ctk.CTkEntry(p)
         self.app.ent_turbo_gal.pack(fill="x")
@@ -241,24 +258,39 @@ class ServiceSettingsView:
             values=["100x100", "170x170", "250x250", "300x300", "350x350", "500x500", "800x800"],
         ).pack(fill="x")
         self._create_cover_count_combo(p, self.app.var_vipr_cover_count)
-        ctk.CTkCheckBox(p, text="Links.txt", variable=self.app.var_vipr_links).pack(anchor="w", pady=5)
-        ctk.CTkButton(p, text="Refresh Galleries / Login", command=self.app.refresh_vipr_galleries).pack(
-            fill="x", pady=10
+        ctk.CTkCheckBox(p, text="Links.txt", variable=self.app.var_vipr_links).pack(
+            anchor="w", pady=5
         )
-        self.app.cb_vipr_gallery = MouseWheelComboBox(p, variable=self.app.var_vipr_gallery, values=["None"])
+        ctk.CTkButton(
+            p, text="Refresh Galleries / Login", command=self.app.refresh_vipr_galleries
+        ).pack(fill="x", pady=10)
+        self.app.cb_vipr_gallery = MouseWheelComboBox(
+            p, variable=self.app.var_vipr_gallery, values=["None"]
+        )
         self.app.cb_vipr_gallery.pack(fill="x")
 
     def _build_imagebam(self):
         p = ctk.CTkFrame(self.parent)
         self.app.service_frames["imagebam.com"] = p
         ctk.CTkLabel(p, text="Content Type:").pack(anchor="w")
-        MouseWheelComboBox(p, variable=self.app.var_ib_content, values=["Safe", "Adult"]).pack(fill="x")
+        MouseWheelComboBox(p, variable=self.app.var_ib_content, values=["Safe", "Adult"]).pack(
+            fill="x"
+        )
         ctk.CTkLabel(p, text="Thumb Size:").pack(anchor="w")
-        MouseWheelComboBox(p, variable=self.app.var_ib_thumb, values=["100", "180", "250", "300"]).pack(fill="x")
+        MouseWheelComboBox(
+            p, variable=self.app.var_ib_thumb, values=["100", "180", "250", "300"]
+        ).pack(fill="x")
 
 
 class CollapsibleGroupFrame(ctk.CTkFrame):
-    def __init__(self, parent, title="Group", thread_names=None, template_names=None, default_template="BBCode"):
+    def __init__(
+        self,
+        parent,
+        title="Group",
+        thread_names=None,
+        template_names=None,
+        default_template="BBCode",
+    ):
         super().__init__(parent)
         self.parent = parent
         self.title = title
@@ -271,7 +303,9 @@ class CollapsibleGroupFrame(ctk.CTkFrame):
         self.header = ctk.CTkFrame(self, height=30, corner_radius=6)
         self.header.pack(fill="x", pady=(2, 0), ipadx=5, ipady=2)
 
-        self.btn_toggle = ctk.CTkButton(self.header, text="-", width=20, height=20, command=self.toggle)
+        self.btn_toggle = ctk.CTkButton(
+            self.header, text="-", width=20, height=20, command=self.toggle
+        )
         self.btn_toggle.pack(side="left", padx=5)
 
         self.lbl_title = ctk.CTkLabel(self.header, text=title, font=("Segoe UI", 13, "bold"))
@@ -289,7 +323,11 @@ class CollapsibleGroupFrame(ctk.CTkFrame):
             vals += sorted(thread_names)
         self.thread_var = ctk.StringVar(value="Do Not Post")
         self.thread_combo = NativeComboBox(
-            self.header, width=20, values=vals, variable=self.thread_var, command=self._on_thread_change
+            self.header,
+            width=20,
+            values=vals,
+            variable=self.thread_var,
+            command=self._on_thread_change,
         )
         self.thread_combo.pack(side="right", padx=5)
 

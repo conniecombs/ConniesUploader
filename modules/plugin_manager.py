@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 conniecombs
+
 # modules/plugin_manager.py
 """
 Plugin Manager with Automatic Discovery (Phase 3).
@@ -40,10 +43,10 @@ import modules.plugins
 
 
 # Plugin Priority Constants (0-100 scale, lower = higher priority)
-PRIORITY_CRITICAL = 10   # Critical/system plugins (highest priority)
-PRIORITY_HIGH = 25       # High priority plugins
-PRIORITY_MEDIUM = 50     # Default priority
-PRIORITY_LOW = 75        # Low priority plugins
+PRIORITY_CRITICAL = 10  # Critical/system plugins (highest priority)
+PRIORITY_HIGH = 25  # High priority plugins
+PRIORITY_MEDIUM = 50  # Default priority
+PRIORITY_LOW = 75  # Low priority plugins
 
 
 class PluginManager:
@@ -96,9 +99,7 @@ class PluginManager:
 
         # Use pkgutil.iter_modules which works in both dev and PyInstaller builds
         # This is the standard way to discover modules in a package
-        plugin_modules = [
-            name for _, name, _ in pkgutil.iter_modules(modules.plugins.__path__)
-        ]
+        plugin_modules = [name for _, name, _ in pkgutil.iter_modules(modules.plugins.__path__)]
 
         logger.debug(f"Found {len(plugin_modules)} potential plugin modules: {plugin_modules}")
 
@@ -272,7 +273,7 @@ class PluginManager:
             "3" -> (3, 0, 0)
         """
         # Extract numbers from version string (handles "v2.1.3" or "2.1.3")
-        match = re.match(r'v?(\d+)(?:\.(\d+))?(?:\.(\d+))?', str(version_str))
+        match = re.match(r"v?(\d+)(?:\.(\d+))?(?:\.(\d+))?", str(version_str))
         if not match:
             logger.warning(f"Invalid version format: {version_str}, defaulting to 0.0.0")
             return (0, 0, 0)
@@ -386,7 +387,9 @@ class PluginManager:
             logger.info(f"Update available for {plugin_id}: {current_version} -> {new_version}")
             return True
         else:
-            logger.debug(f"Version {new_version} is not newer than {current_version} for {plugin_id}")
+            logger.debug(
+                f"Version {new_version} is not newer than {current_version} for {plugin_id}"
+            )
             return False
 
     def get_all_plugin_info(self) -> List[Dict[str, any]]:
@@ -396,7 +399,4 @@ class PluginManager:
         Returns:
             List of plugin information dictionaries
         """
-        return [
-            self.get_plugin_info(plugin_id)
-            for plugin_id in self._plugins.keys()
-        ]
+        return [self.get_plugin_info(plugin_id) for plugin_id in self._plugins.keys()]

@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 conniecombs
+
 import json
 import os
 import customtkinter as ctk
@@ -101,7 +104,9 @@ class ViperToolsWindow(ctk.CTkToplevel):
         self.ent_url = ctk.CTkEntry(self.controls, placeholder_text="URL or Thread ID")
         self.ent_url.pack(pady=5, padx=10)
 
-        ctk.CTkButton(self.controls, text="Save Thread", command=self.add_thread).pack(pady=10, padx=10)
+        ctk.CTkButton(self.controls, text="Save Thread", command=self.add_thread).pack(
+            pady=10, padx=10
+        )
         ctk.CTkLabel(self.controls, text="-----------------").pack(pady=5)
         ctk.CTkButton(self.controls, text="Refresh List", command=self.refresh_list).pack(pady=5)
 
@@ -118,11 +123,17 @@ class ViperToolsWindow(ctk.CTkToplevel):
             row.pack(fill="x", pady=2)
 
             ctk.CTkLabel(row, text=name, font=("", 12, "bold")).pack(side="left", padx=5)
-            ctk.CTkLabel(row, text=data.get("url", "???"), text_color="gray").pack(side="left", padx=5)
-
-            ctk.CTkButton(row, text="X", width=30, fg_color="red", command=lambda n=name: self.delete_thread(n)).pack(
-                side="right", padx=5
+            ctk.CTkLabel(row, text=data.get("url", "???"), text_color="gray").pack(
+                side="left", padx=5
             )
+
+            ctk.CTkButton(
+                row,
+                text="X",
+                width=30,
+                fg_color="red",
+                command=lambda n=name: self.delete_thread(n),
+            ).pack(side="right", padx=5)
 
     def add_thread(self):
         name = self.ent_name.get().strip()

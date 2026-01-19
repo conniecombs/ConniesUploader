@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 conniecombs
+
 # modules/plugins/imx.py
 import customtkinter as ctk
 from .base import ImageHostPlugin

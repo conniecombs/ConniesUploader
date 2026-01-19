@@ -34,3 +34,4 @@ jsonschema==4.23.0
 # Testing and Code Quality
 pytest==8.3.4
 flake8==7.1.1
+black==24.10.0

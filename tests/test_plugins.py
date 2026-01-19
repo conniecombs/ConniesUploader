@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 conniecombs
+
 # tests/test_plugins.py
 """
 Plugin system test suite - Phase 6 Testing Framework.
@@ -17,7 +20,7 @@ from typing import Dict, Any
 from unittest.mock import Mock, MagicMock
 
 # Add parent directory to path for imports
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from modules.plugins import helpers
 from modules.plugins.base import ImageHostPlugin
@@ -166,7 +169,9 @@ class TestPluginSchemas(unittest.TestCase):
         from modules.plugins import pixhost, imgur, turbo
 
         for plugin_module in [pixhost, imgur, turbo]:
-            plugin_class = getattr(plugin_module, f"{plugin_module.__name__.split('.')[-1].capitalize()}Plugin")
+            plugin_class = getattr(
+                plugin_module, f"{plugin_module.__name__.split('.')[-1].capitalize()}Plugin"
+            )
             instance = plugin_class()
             schema = instance.settings_schema
 
@@ -179,24 +184,32 @@ class TestPluginSchemas(unittest.TestCase):
 
                 # Fields with keys should have labels
                 if "key" in field:
-                    self.assertIn("label", field, f"Field with key '{field.get('key')}' missing label")
+                    self.assertIn(
+                        "label", field, f"Field with key '{field.get('key')}' missing label"
+                    )
 
     def test_standard_keys_used(self):
         """Test that plugins use standard configuration keys."""
         from modules.plugins import pixhost, imgur, turbo, imagebam
 
-        standard_keys = {"thumbnail_size", "content_type", "cover_count", "save_links", "gallery_id"}
+        standard_keys = {
+            "thumbnail_size",
+            "content_type",
+            "cover_count",
+            "save_links",
+            "gallery_id",
+        }
 
         # Map module names to class names (handle special cases like ImageBam)
         class_name_map = {
             "pixhost": "PixhostPlugin",
             "imgur": "ImgurPlugin",
             "turbo": "TurboPlugin",
-            "imagebam": "ImageBamPlugin"
+            "imagebam": "ImageBamPlugin",
         }
 
         for plugin_module in [pixhost, imgur, turbo, imagebam]:
-            module_name = plugin_module.__name__.split('.')[-1]
+            module_name = plugin_module.__name__.split(".")[-1]
             plugin_class = getattr(plugin_module, class_name_map[module_name])
             instance = plugin_class()
             schema = instance.settings_schema
@@ -216,8 +229,9 @@ class TestPluginSchemas(unittest.TestCase):
             if len(used_standard) > 0:
                 # If any standard keys used, they should be named correctly
                 for key in used_standard:
-                    self.assertIn(key, standard_keys,
-                                f"Plugin {instance.name} uses non-standard key: {key}")
+                    self.assertIn(
+                        key, standard_keys, f"Plugin {instance.name} uses non-standard key: {key}"
+                    )
 
 
 class TestPluginMetadata(unittest.TestCase):
@@ -236,18 +250,19 @@ class TestPluginMetadata(unittest.TestCase):
             "turbo": "TurboPlugin",
             "imagebam": "ImageBamPlugin",
             "imx": "ImxPlugin",
-            "vipr": "ViprPlugin"
+            "vipr": "ViprPlugin",
         }
 
         for plugin_module in [pixhost, imgur, turbo, imagebam, imx, vipr]:
-            module_name = plugin_module.__name__.split('.')[-1]
+            module_name = plugin_module.__name__.split(".")[-1]
             plugin_class = getattr(plugin_module, class_name_map[module_name])
             instance = plugin_class()
             metadata = instance.metadata
 
             for field in required_fields:
-                self.assertIn(field, metadata,
-                            f"Plugin {instance.name} missing metadata field: {field}")
+                self.assertIn(
+                    field, metadata, f"Plugin {instance.name} missing metadata field: {field}"
+                )
                 self.assertIsNotNone(metadata[field])
                 self.assertNotEqual(metadata[field], "")
 
@@ -256,7 +271,9 @@ class TestPluginMetadata(unittest.TestCase):
         from modules.plugins import pixhost, imgur
 
         for plugin_module in [pixhost, imgur]:
-            plugin_class = getattr(plugin_module, f"{plugin_module.__name__.split('.')[-1].capitalize()}Plugin")
+            plugin_class = getattr(
+                plugin_module, f"{plugin_module.__name__.split('.')[-1].capitalize()}Plugin"
+            )
             instance = plugin_class()
             version = instance.metadata.get("version")
 
@@ -270,7 +287,9 @@ class TestPluginMetadata(unittest.TestCase):
         from modules.plugins import pixhost, imgur
 
         for plugin_module in [pixhost, imgur]:
-            plugin_class = getattr(plugin_module, f"{plugin_module.__name__.split('.')[-1].capitalize()}Plugin")
+            plugin_class = getattr(
+                plugin_module, f"{plugin_module.__name__.split('.')[-1].capitalize()}Plugin"
+            )
             instance = plugin_class()
             features = instance.metadata.get("features", {})
 
@@ -328,6 +347,7 @@ class TestPluginBaseClass(unittest.TestCase):
 
     def _create_test_plugin(self):
         """Create a minimal test plugin implementation."""
+
         class TestPlugin(ImageHostPlugin):
             @property
             def id(self):

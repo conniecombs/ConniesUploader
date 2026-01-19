@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 conniecombs
+
 # modules/plugins/imgur.py
 """
 Imgur plugin - Schema-based implementation with Go sidecar uploads.
@@ -59,7 +62,16 @@ class ImgurPlugin(ImageHostPlugin):
             ],
             "limits": {
                 "max_file_size": 20 * 1024 * 1024,  # 20MB for free accounts
-                "allowed_formats": [".jpg", ".jpeg", ".png", ".gif", ".apng", ".tiff", ".mp4", ".webm"],
+                "allowed_formats": [
+                    ".jpg",
+                    ".jpeg",
+                    ".png",
+                    ".gif",
+                    ".apng",
+                    ".tiff",
+                    ".mp4",
+                    ".webm",
+                ],
                 "rate_limit": "1250 uploads per day (free account)",
                 "max_resolution": (None, None),  # No specific limit
                 "min_resolution": (1, 1),
@@ -138,14 +150,17 @@ class ImgurPlugin(ImageHostPlugin):
 
     # --- Upload Implementation ---
 
-    def initialize_session(
-        self, config: Dict[str, Any], creds: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def initialize_session(self, config: Dict[str, Any], creds: Dict[str, Any]) -> Dict[str, Any]:
         """Stub - Go sidecar handles session initialization."""
         return {}
 
     def upload_file(
-        self, file_path: str, group, config: Dict[str, Any], context: Dict[str, Any], progress_callback
+        self,
+        file_path: str,
+        group,
+        config: Dict[str, Any],
+        context: Dict[str, Any],
+        progress_callback,
     ):
         """Stub - Go sidecar handles file uploads."""
         pass
