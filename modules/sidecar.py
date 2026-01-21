@@ -25,8 +25,17 @@ class SidecarBridge:
 
     @classmethod
     def set_worker_count(cls, count: int) -> None:
-        """Set the worker count before the sidecar is started."""
-        cls._worker_count = max(1, min(count, 16))  # Clamp between 1 and 16
+        """Set the worker count and restart sidecar if already running."""
+        new_count = max(1, min(count, 16))  # Clamp between 1 and 16
+
+        # If worker count changed and sidecar is already running, restart it
+        if new_count != cls._worker_count:
+            cls._worker_count = new_count
+            if cls._instance and cls._instance._is_process_alive():
+                logger.info(f"Worker count changed to {new_count}, restarting sidecar...")
+                cls._instance._restart_for_config_change()
+        else:
+            cls._worker_count = new_count
 
     @classmethod
     def get(cls) -> "SidecarBridge":
@@ -265,6 +274,34 @@ class SidecarBridge:
             self.remove_listener(temp_q)
 
         return response
+
+    def _restart_for_config_change(self) -> None:
+        """Restart the sidecar process to apply configuration changes."""
+        logger.info("Restarting sidecar for configuration change...")
+
+        # Shutdown current process
+        if self.proc and self._is_process_alive():
+            try:
+                if self.proc.stdin:
+                    self.proc.stdin.close()
+                self.proc.wait(timeout=2.0)
+            except subprocess.TimeoutExpired:
+                logger.warning("Sidecar did not terminate gracefully during restart, forcing...")
+                self.proc.terminate()
+                try:
+                    self.proc.wait(timeout=1.0)
+                except subprocess.TimeoutExpired:
+                    self.proc.kill()
+                    self.proc.wait()
+
+        # Reset process and start new one
+        self.proc = None
+        self._start_process()
+
+        if self._is_process_alive():
+            logger.info("Sidecar restarted successfully with new configuration")
+        else:
+            logger.error("Failed to restart sidecar")
 
     def shutdown(self) -> None:
         """Gracefully shutdown the sidecar process."""

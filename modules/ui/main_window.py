@@ -804,6 +804,12 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
                 if rejected_count > 0:
                     logger.info(f"   ({rejected_count} file(s) rejected)")
                     status_msg += f" ({rejected_count} rejected)"
+
+                # Show loading message for large batches
+                if file_count > 100:
+                    status_msg += f" - Loading thumbnails..."
+                    logger.info(f"Loading thumbnails for {file_count} files (this may take a moment)...")
+
                 self.lbl_eta.configure(text=status_msg)
 
         except Exception as e:
@@ -843,17 +849,24 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         return group
 
     def _thumb_worker(self, files, group_widget, show_previews):
-        for f in files:
+        for idx, f in enumerate(files, 1):
             with self.lock:
                 if f in self.file_widgets:
+                    logger.debug(f"File already in widgets, skipping: {f}")
                     continue
             pil_image = None
             if show_previews:
                 try:
                     pil_image = file_handler.generate_thumbnail(f)
-                except Exception:
+                except Exception as e:
+                    logger.debug(f"Thumbnail generation failed for {os.path.basename(f)}: {e}")
                     pil_image = None
-            self.ui_queue.put(("add", f, pil_image, group_widget))
+            try:
+                self.ui_queue.put(("add", f, pil_image, group_widget), timeout=5.0)
+            except queue.Full:
+                logger.warning(f"UI queue full, skipping thumbnail for {os.path.basename(f)}")
+                # Still add the file without thumbnail
+                self.ui_queue.put(("add", f, None, group_widget), timeout=5.0)
             time.sleep(0.001)
 
     def start_upload(self) -> None:
@@ -877,6 +890,10 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             self.settings = cfg
             self.settings_mgr.save(cfg)
             cfg["api_key"] = self.creds.get("imx_api", "")
+
+            # Apply worker count setting (will restart sidecar if changed)
+            from modules.sidecar import SidecarBridge
+            SidecarBridge.set_worker_count(cfg.get("global_worker_count", 8))
 
             # When worker count is 1, force all service threads to 1 for true sequential uploads
             if cfg.get("global_worker_count") == 1:
@@ -980,14 +997,19 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
     def _process_ui_queue(self):
         """Process UI updates from ui_queue (batch file additions)."""
         ui_limit = config.UI_QUEUE_BATCH_SIZE
+        processed = 0
         try:
             while ui_limit > 0:
                 a, f, p, g = self.ui_queue.get_nowait()
                 if a == "add" and g.winfo_exists():
                     self._create_row(f, p, g)
+                    processed += 1
                 ui_limit -= 1
         except queue.Empty:
             pass
+        # Log queue status for large batches to help diagnose stalling
+        if processed > 0 and self.ui_queue.qsize() > 100:
+            logger.debug(f"UI queue processed {processed} items, {self.ui_queue.qsize()} remaining")
 
     def _process_progress_queue(self):
         """Process progress updates from progress_queue (status changes, progress bars)."""
@@ -1015,6 +1037,10 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
                                     progress_color="#34C759" if v == "Done" else "#FF3B30"
                                 )
                                 self._update_group_progress(f)
+                                # Update overall progress bar
+                                if self.upload_total > 0:
+                                    progress = self.upload_count / self.upload_total
+                                    self.overall_progress.set(progress)
                         elif k == "prog":
                             w["prog"].set(v)
                 prog_limit -= 1
@@ -1238,10 +1264,18 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
     def open_output_folder(self):
         if self.current_output_files:
             folder = os.path.dirname(os.path.abspath(self.current_output_files[0]))
-            if platform.system() == "Windows":
-                os.startfile(folder)
-            else:
-                subprocess.run(["xdg-open", folder], check=False, shell=False)
+            try:
+                if platform.system() == "Windows":
+                    os.startfile(folder)
+                else:
+                    subprocess.run(["xdg-open", folder], check=False, shell=False)
+                logger.info(f"Opened output folder: {folder}")
+            except Exception as e:
+                logger.error(f"Failed to open output folder: {e}")
+                messagebox.showerror("Error", f"Could not open output folder:\n{folder}\n\nError: {str(e)}")
+        else:
+            logger.warning("No output files available to open folder")
+            messagebox.showinfo("Info", "No output files have been generated yet.")
 
     def toggle_log(self):
         if self.log_window_ref and self.log_window_ref.winfo_exists():
@@ -1279,6 +1313,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         self.lbl_eta.configure(text="Cleared.")
         self.btn_start.configure(state="normal")
         self.btn_stop.configure(state="disabled")
+        self.btn_open.configure(state="disabled")
 
     def _cleanup_orphaned_images(self):
         """Periodically clean up image references that are no longer in use."""
@@ -1335,7 +1370,10 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         if hasattr(self, "thumb_executor") and self.thumb_executor:
             logger.info("Shutting down thumbnail executor...")
             try:
-                self.thumb_executor.shutdown(wait=True)
+                # Use wait=False and manual timeout to prevent hanging
+                self.thumb_executor.shutdown(wait=False, cancel_futures=True)
+                # Give it a moment to finish current tasks
+                time.sleep(0.3)
             except Exception as e:
                 logger.warning(f"Error shutting down thumb_executor: {e}")
 
