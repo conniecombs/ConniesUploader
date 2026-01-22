@@ -2678,6 +2678,26 @@ func scrapeImxGalleries(creds map[string]string) []map[string]string {
 }
 
 func createImxGallery(creds map[string]string, name string) (string, error) {
+	// Login first to establish authenticated session
+	username := creds["imx_user"]
+	password := creds["imx_pass"]
+
+	if username == "" || password == "" {
+		return "", fmt.Errorf("IMX username and password required for gallery creation")
+	}
+
+	// Perform login to IMX
+	loginData := url.Values{
+		"login": {username},
+		"password": {password},
+	}
+	loginResp, err := doRequest(context.Background(), "POST", "https://imx.to/login.html", strings.NewReader(loginData.Encode()), "application/x-www-form-urlencoded")
+	if err != nil {
+		return "", fmt.Errorf("IMX login failed: %w", err)
+	}
+	_ = loginResp.Body.Close()
+
+	// Now create the gallery with authenticated session
 	v := url.Values{"name": {name}, "public": {"1"}, "submit": {"Save"}}
 	resp, err := doRequest(context.Background(), "POST", "https://imx.to/user/gallery/add", strings.NewReader(v.Encode()), "application/x-www-form-urlencoded")
 	if err != nil {
