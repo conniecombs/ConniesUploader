@@ -200,6 +200,23 @@ jobs:
           --hidden-import modules.plugins.imgur \
           main.py
 
+    - name: Verify build and bundling
+      run: |
+        if [ ! -f "dist/ConniesUploader" ]; then
+          echo "❌ Build failed - no executable found in dist/ folder"
+          ls -la dist/ || echo "dist/ directory not found"
+          exit 1
+        fi
+        SIZE=$(stat -c%s "dist/ConniesUploader" 2>/dev/null || echo "0")
+        SIZE_MB=$((SIZE / 1024 / 1024))
+        echo "✅ Build size: ${SIZE_MB} MB (${SIZE} bytes)"
+
+        # Verify sidecar is bundled (file should be > 15MB)
+        if [ "$SIZE" -lt "15000000" ]; then
+          echo "❌ Build size is only ${SIZE_MB} MB. Sidecar likely missing!"
+          exit 1
+        fi
+
     - name: Calculate checksums
       run: |
         cd dist
@@ -265,6 +282,23 @@ jobs:
           --hidden-import modules.plugins.imagebam \
           --hidden-import modules.plugins.imgur \
           main.py
+
+    - name: Verify build and bundling
+      run: |
+        if [ ! -f "dist/ConniesUploader" ]; then
+          echo "❌ Build failed - no executable found in dist/ folder"
+          ls -la dist/ || echo "dist/ directory not found"
+          exit 1
+        fi
+        SIZE=$(stat -f%z "dist/ConniesUploader" 2>/dev/null || echo "0")
+        SIZE_MB=$((SIZE / 1024 / 1024))
+        echo "✅ Build size: ${SIZE_MB} MB (${SIZE} bytes)"
+
+        # Verify sidecar is bundled (file should be > 15MB)
+        if [ "$SIZE" -lt "15000000" ]; then
+          echo "❌ Build size is only ${SIZE_MB} MB. Sidecar likely missing!"
+          exit 1
+        fi
 
     - name: Calculate checksums
       run: |
