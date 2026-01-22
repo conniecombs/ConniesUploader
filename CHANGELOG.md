@@ -9,6 +9,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.2.2] - 2026-01-22
+
+### 🐛 Bug Fixes
+
+**Batch Upload Stability Improvements**
+
+Fixed 5 critical issues discovered during large batch upload testing (1141 files across 34 folders).
+
+#### **1. Worker Count Setting Not Respected**
+- **Problem**: Changing Worker Count in UI had no effect - uploads always used 8 workers regardless of setting
+- **Root Cause**: Sidecar process only started once at initialization; UI setting changes didn't restart it
+- **Fix**: Added automatic sidecar restart when worker count changes
+  - `SidecarBridge.set_worker_count()` now detects changes and restarts sidecar
+  - `start_upload()` applies current worker count before each upload
+  - Graceful restart with timeout handling
+
+#### **2. File Reading Stalling with Large Batches**
+- **Problem**: Reading stalled at 500 of 1141 files; "Already read" message but files not visible in UI
+- **Root Cause**: UI queue backlog with large batches + thumbnail generation delays
+- **Fix**: Enhanced queue handling and user feedback
+  - Added 5-second timeout to UI queue operations
+  - Fallback: files added without thumbnails if queue is full
+  - "Loading thumbnails..." message for batches > 100 files
+  - Queue size monitoring with debug logging
+
+#### **3. Program Hanging on Close**
+- **Problem**: Program hung for ~20 seconds when trying to close during thumbnail generation
+- **Root Cause**: `thumb_executor.shutdown(wait=True)` waited indefinitely for all tasks
+- **Fix**: Changed to non-blocking shutdown
+  - `shutdown(wait=False, cancel_futures=True)` cancels pending tasks
+  - 300ms grace period for current tasks to finish
+  - Program now closes in <1 second
+
+#### **4. Bottom Progress Bar Not Updating**
+- **Problem**: Progress bar stayed at 0% until all uploads finished, then jumped to 100%
+- **Fix**: Added real-time progress calculation
+  - Updates every time a file completes: `progress = upload_count / upload_total`
+  - Live feedback as files complete
+
+#### **5. "Open Output Folder" Button Not Working**
+- **Problem**: Button did nothing after upload completion or after clearing list
+- **Fix**: Added comprehensive error handling
+  - Try/catch around `os.startfile()` and `subprocess.run()`
+  - Clear error messages if folder can't be opened
+  - Button properly disabled when list is cleared
+  - Info message if no output files exist
+
+### 🏗️ Build System
+
+**Release Workflow Improvements**
+
+- **Added build verification** for Linux and macOS release workflows
+  - Prevents "tar: file not found" errors
+  - Checks file existence and size before packaging
+  - Verifies Go sidecar is properly bundled (> 15MB)
+  - Early failure with clear error messages
+
+**Files Changed**:
+- `modules/ui/main_window.py`: Fixed 5 UI/upload issues
+- `modules/sidecar.py`: Added `_restart_for_config_change()` method
+- `.github/workflows/release.yml`: Added build verification for Linux/macOS
+
+**Commits**:
+- `e261bc9` - fix: Address 5 critical issues from batch upload testing
+- `372ffdb` - fix: Add build verification for Linux and macOS release workflows
+
+---
+
 ## [1.2.1] - 2026-01-18
 
 ### 🐛 Bug Fixes
