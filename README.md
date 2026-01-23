@@ -676,7 +676,14 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Version History
 
-**Latest Release: v1.2.1 - "Gallery Fix"** (Jan 18, 2026)
+**Latest Release: v1.2.2 - "Batch Upload Stability"** (Jan 22, 2026)
+
+**v1.2.2 - "Batch Upload Stability"** (Jan 22, 2026):
+- 🔧 **Worker Count Fix** - Worker count setting now properly applied via sidecar restart
+- 🚀 **Large Batch Support** - Fixed file reading stalls with 1000+ file batches
+- 📊 **Progress Bar Updates** - Real-time overall progress feedback during uploads
+- 🪟 **UI Improvements** - Fixed "Open Output Folder" button and program hang on close
+- 🏗️ **Build Verification** - Added Linux/macOS build checks to prevent release failures
 
 **v1.2.1 - "Gallery Fix"** (Jan 18, 2026):
 - 🐛 Critical bug fix - IMX gallery creation now respects auto_gallery setting
