@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2025 conniecombs
-
 package main
 
 import (
@@ -39,11 +36,8 @@ import (
 )
 
 // --- Constants ---
-// DefaultUserAgent is the fallback user agent string if not specified in config
 const DefaultUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
-// getUserAgent returns the user agent to use for HTTP requests.
-// Checks config for "user_agent" key, falls back to DefaultUserAgent if not specified.
 func getUserAgent(config map[string]string) string {
 	if ua, ok := config["user_agent"]; ok && ua != "" {
 		return ua
@@ -51,34 +45,22 @@ func getUserAgent(config map[string]string) string {
 	return DefaultUserAgent
 }
 
-// HTTP Timeout Constants
 const (
-	// ClientTimeout is the total timeout for a complete request/response cycle
-	ClientTimeout = 180 * time.Second // 3 minutes for large file uploads
-	// PreRequestTimeout is the timeout for pre-request operations (login, endpoint discovery)
-	PreRequestTimeout = 60 * time.Second // 1 minute for authentication/setup
-	// ResponseHeaderTimeout is the timeout waiting for server response headers
-	ResponseHeaderTimeout = 60 * time.Second // Allow time for server-side processing
-	// PreRequestHeaderTimeout is a shorter timeout for pre-request header responses
-	PreRequestHeaderTimeout = 30 * time.Second // 30 seconds for setup requests
-	// ProgressReportInterval is the interval for reporting upload progress
-	ProgressReportInterval = 2 * time.Second // Report progress every 2 seconds
+	ClientTimeout = 180 * time.Second 
+	PreRequestTimeout = 60 * time.Second
+	ResponseHeaderTimeout = 60 * time.Second
+	PreRequestHeaderTimeout = 30 * time.Second
+	ProgressReportInterval = 2 * time.Second
 )
 
-// Retry Configuration Constants
 const (
-	// DefaultMaxRetries is the default number of retry attempts for failed requests
 	DefaultMaxRetries = 3
-	// DefaultInitialBackoff is the default initial backoff duration before first retry
 	DefaultInitialBackoff = 1 * time.Second
-	// DefaultMaxBackoff is the default maximum backoff duration between retries
 	DefaultMaxBackoff = 30 * time.Second
-	// DefaultBackoffMultiplier is the default multiplier for exponential backoff
 	DefaultBackoffMultiplier = 2.0
 )
 
 func init() {
-	// Configure structured logging
 	log.SetFormatter(&log.JSONFormatter{
 		TimestampFormat: "2006-01-02 15:04:05",
 		FieldMap: log.FieldMap{
@@ -99,19 +81,17 @@ type JobRequest struct {
 	Creds       map[string]string `json:"creds"`
 	Config      map[string]string `json:"config"`
 	ContextData map[string]string `json:"context_data"`
-	HttpSpec    *HttpRequestSpec  `json:"http_spec,omitempty"`    // New generic HTTP runner
-	RateLimits  *RateLimitConfig  `json:"rate_limits,omitempty"`  // Per-service rate limit override
-	RetryConfig *RetryConfig      `json:"retry_config,omitempty"` // Retry configuration
+	HttpSpec    *HttpRequestSpec  `json:"http_spec,omitempty"`
+	RateLimits  *RateLimitConfig  `json:"rate_limits,omitempty"`
+	RetryConfig *RetryConfig      `json:"retry_config,omitempty"`
 }
 
-// RateLimitConfig defines rate limiting parameters for a service
 type RateLimitConfig struct {
-	RequestsPerSecond float64 `json:"requests_per_second"` // Rate limit (requests per second)
-	BurstSize         int     `json:"burst_size"`          // Burst size
-	GlobalLimit       float64 `json:"global_limit"`        // Global rate limit override (optional)
+	RequestsPerSecond float64 `json:"requests_per_second"`
+	BurstSize         int     `json:"burst_size"`
+	GlobalLimit       float64 `json:"global_limit"`
 }
 
-// HttpRequestSpec defines a generic HTTP request for plugin-driven uploads
 type HttpRequestSpec struct {
 	URL             string                    `json:"url"`
 	Method          string                    `json:"method"`
@@ -119,37 +99,34 @@ type HttpRequestSpec struct {
 	MultipartFields map[string]MultipartField `json:"multipart_fields"`
 	FormFields      map[string]string         `json:"form_fields,omitempty"`
 	ResponseParser  ResponseParserSpec        `json:"response_parser"`
-	PreRequest      *PreRequestSpec           `json:"pre_request,omitempty"` // NEW: Phase 3 session support
+	PreRequest      *PreRequestSpec           `json:"pre_request,omitempty"`
 }
 
-// PreRequestSpec defines a pre-request hook for login/session setup
 type PreRequestSpec struct {
-	Action          string            `json:"action"` // "login", "get_endpoint", etc.
+	Action          string            `json:"action"`
 	URL             string            `json:"url"`
 	Method          string            `json:"method"`
 	Headers         map[string]string `json:"headers,omitempty"`
 	FormFields      map[string]string `json:"form_fields,omitempty"`
-	UseCookies      bool              `json:"use_cookies"`                 // Store cookies for main request
-	ExtractFields   map[string]string `json:"extract_fields"`              // Extract values from response (name -> JSONPath/selector)
-	ResponseType    string            `json:"response_type"`               // "json" or "html"
-	FollowUpRequest *PreRequestSpec   `json:"follow_up_request,omitempty"` // NEW: Chain multiple pre-requests
+	UseCookies      bool              `json:"use_cookies"`
+	ExtractFields   map[string]string `json:"extract_fields"`
+	ResponseType    string            `json:"response_type"`
+	FollowUpRequest *PreRequestSpec   `json:"follow_up_request,omitempty"`
 }
 
-// MultipartField represents a field in multipart/form-data
 type MultipartField struct {
-	Type  string `json:"type"`  // "file", "text", or "dynamic"
-	Value string `json:"value"` // For text: the value; For file: file path; For dynamic: reference to extracted field
+	Type  string `json:"type"`
+	Value string `json:"value"`
 }
 
-// ResponseParserSpec defines how to parse the upload response
 type ResponseParserSpec struct {
-	Type          string `json:"type"`                     // "json" or "html"
-	URLPath       string `json:"url_path"`                 // JSONPath or CSS selector for image URL
-	ThumbPath     string `json:"thumb_path"`               // JSONPath or CSS selector for thumbnail URL
-	StatusPath    string `json:"status_path"`              // JSONPath for status field
-	SuccessValue  string `json:"success_value"`            // Expected value for success
-	URLTemplate   string `json:"url_template,omitempty"`   // Template for constructing URL from extracted values (e.g., "https://example.com/p/{id}/image.html")
-	ThumbTemplate string `json:"thumb_template,omitempty"` // Template for constructing thumbnail URL
+	Type          string `json:"type"`
+	URLPath       string `json:"url_path"`
+	ThumbPath     string `json:"thumb_path"`
+	StatusPath    string `json:"status_path"`
+	SuccessValue  string `json:"success_value"`
+	URLTemplate   string `json:"url_template,omitempty"`
+	ThumbTemplate string `json:"thumb_template,omitempty"`
 }
 
 type OutputEvent struct {
@@ -162,7 +139,6 @@ type OutputEvent struct {
 	Data     interface{} `json:"data,omitempty"`
 }
 
-// RetryConfig holds configuration for retry logic
 type RetryConfig struct {
 	MaxRetries         int           `json:"max_retries"`
 	InitialBackoff     time.Duration `json:"initial_backoff"`
@@ -171,44 +147,29 @@ type RetryConfig struct {
 	RetryableHTTPCodes []int         `json:"retryable_http_codes"`
 }
 
-// ProgressEvent represents upload progress information
 type ProgressEvent struct {
 	BytesTransferred int64   `json:"bytes_transferred"`
 	TotalBytes       int64   `json:"total_bytes"`
-	Speed            float64 `json:"speed"` // bytes per second
+	Speed            float64 `json:"speed"`
 	Percentage       float64 `json:"percentage"`
-	ETA              int     `json:"eta_seconds"` // estimated time remaining in seconds
+	ETA              int     `json:"eta_seconds"`
 }
 
 // --- Globals ---
 var outputMutex sync.Mutex
-
-// client is the shared HTTP client with optimized connection pooling.
-// THREAD-SAFETY: Initialized once in main() before worker goroutines start.
-// The http.Client type is explicitly documented as safe for concurrent use by
-// multiple goroutines, so no additional mutex protection is needed.
-// Connection pooling is managed internally by the Transport, which maintains
-// a pool of idle connections that are reused across requests for better performance.
-// See: https://pkg.go.dev/net/http#Client
 var client *http.Client
 
-// Rate Limiters (prevent IP bans by throttling requests per service)
-// Each service gets 2 requests/second with burst of 5 (reasonable for image hosts)
 var rateLimiters = map[string]*rate.Limiter{
 	"imx.to":         rate.NewLimiter(rate.Limit(2.0), 5),
 	"pixhost.to":     rate.NewLimiter(rate.Limit(2.0), 5),
 	"vipr.im":        rate.NewLimiter(rate.Limit(2.0), 5),
 	"turboimagehost": rate.NewLimiter(rate.Limit(2.0), 5),
 	"imagebam.com":   rate.NewLimiter(rate.Limit(2.0), 5),
-	"vipergirls.to":  rate.NewLimiter(rate.Limit(1.0), 3), // More conservative for forums
+	"vipergirls.to":  rate.NewLimiter(rate.Limit(1.0), 3),
 }
 var rateLimiterMutex sync.RWMutex
-
-// Global rate limiter across all services (10 req/s, burst 20)
-// Prevents IP bans when uploading to multiple services simultaneously
 var globalRateLimiter = rate.NewLimiter(rate.Limit(10.0), 20)
 
-// Per-Service State Structs (reduces lock contention vs single global mutex)
 type viprState struct {
 	mu       sync.RWMutex
 	endpoint string
@@ -231,24 +192,28 @@ type viperGirlsState struct {
 	securityToken string
 }
 
+// NEW: Add state tracker for IMX login status
+type imxState struct {
+	mu         sync.RWMutex
+	isLoggedIn bool
+}
+
 var viprSt = &viprState{}
 var turboSt = &turboState{}
 var ibSt = &imageBamState{}
 var vgSt = &viperGirlsState{}
+var imxSt = &imxState{} // Initialize IMX state
 
 var quoteEscaper = strings.NewReplacer("\\", "\\\\", `"`, "\\\"")
 
 func quoteEscape(s string) string { return quoteEscaper.Replace(s) }
 
-// getRateLimiter returns the rate limiter for a given service
-// Creates a default limiter if service not found
 func getRateLimiter(service string) *rate.Limiter {
 	rateLimiterMutex.RLock()
 	limiter, exists := rateLimiters[service]
 	rateLimiterMutex.RUnlock()
 
 	if !exists {
-		// Create default limiter for unknown services (2 req/s, burst 5)
 		limiter = rate.NewLimiter(rate.Limit(2.0), 5)
 		rateLimiterMutex.Lock()
 		rateLimiters[service] = limiter
@@ -258,66 +223,41 @@ func getRateLimiter(service string) *rate.Limiter {
 	return limiter
 }
 
-// updateRateLimiter updates or creates a rate limiter for a service with custom config
 func updateRateLimiter(service string, config *RateLimitConfig) {
 	if config == nil {
 		return
 	}
-
 	rateLimiterMutex.Lock()
 	defer rateLimiterMutex.Unlock()
 
-	// Create new rate limiter with custom settings
 	limiter := rate.NewLimiter(
 		rate.Limit(config.RequestsPerSecond),
 		config.BurstSize,
 	)
 	rateLimiters[service] = limiter
 
-	log.WithFields(log.Fields{
-		"service": service,
-		"rate":    config.RequestsPerSecond,
-		"burst":   config.BurstSize,
-	}).Debug("Updated rate limiter configuration")
-
-	// Update global rate limiter if specified
 	if config.GlobalLimit > 0 {
-		// Keep existing burst size but update rate
 		oldBurst := globalRateLimiter.Burst()
 		globalRateLimiter = rate.NewLimiter(rate.Limit(config.GlobalLimit), oldBurst)
-		log.WithFields(log.Fields{
-			"global_rate": config.GlobalLimit,
-		}).Debug("Updated global rate limiter")
 	}
 }
 
-// waitForRateLimit waits for rate limiter approval before proceeding
-// Returns error if context is cancelled while waiting
-// Checks both global rate limiter (10 req/s across all services) and service-specific limiter
 func waitForRateLimit(ctx context.Context, service string) error {
-	// Wait for global limiter first (prevents overload when using multiple services)
 	if err := globalRateLimiter.Wait(ctx); err != nil {
 		return fmt.Errorf("global rate limit wait cancelled: %w", err)
 	}
-
-	// Then wait for service-specific limiter
 	limiter := getRateLimiter(service)
 	if err := limiter.Wait(ctx); err != nil {
 		return fmt.Errorf("service rate limit wait cancelled: %w", err)
 	}
-
 	return nil
 }
 
 const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
 
-// randomString generates a random alphanumeric string of length n.
-// Uses crypto/rand for cryptographically secure random generation.
 func randomString(n int) string {
 	b := make([]byte, n)
-	// Use crypto/rand for better randomness
 	if _, err := rand.Read(b); err != nil {
-		// Fallback to timestamp-based string if crypto/rand fails
 		return fmt.Sprintf("%d", time.Now().UnixNano())
 	}
 	for i := range b {
@@ -326,7 +266,6 @@ func randomString(n int) string {
 	return string(b)
 }
 
-// getDefaultRetryConfig returns the default retry configuration
 func getDefaultRetryConfig() *RetryConfig {
 	return &RetryConfig{
 		MaxRetries:         DefaultMaxRetries,
@@ -337,18 +276,11 @@ func getDefaultRetryConfig() *RetryConfig {
 	}
 }
 
-// extractStatusCode attempts to extract HTTP status code from an error
-// Returns 0 if no status code can be extracted
 func extractStatusCode(err error) int {
 	if err == nil {
 		return 0
 	}
-
-	// Try to extract status code from error message
-	// Common patterns: "status code: 500", "HTTP 429", "got status 503"
 	errStr := err.Error()
-
-	// Pattern 1: "status code: 500" or "status code 500"
 	if idx := strings.Index(errStr, "status code"); idx != -1 {
 		remaining := errStr[idx+len("status code"):]
 		remaining = strings.TrimLeft(remaining, ": ")
@@ -356,101 +288,60 @@ func extractStatusCode(err error) int {
 			return code
 		}
 	}
-
-	// Pattern 2: "HTTP 429" or "http 503"
 	if idx := strings.Index(strings.ToLower(errStr), "http "); idx != -1 {
 		remaining := errStr[idx+5:]
 		if code, parseErr := strconv.Atoi(strings.Fields(remaining)[0]); parseErr == nil {
 			return code
 		}
 	}
-
-	// Pattern 3: numbers in the 400-599 range (common HTTP status codes)
 	re := regexp.MustCompile(`\b([45]\d{2})\b`)
 	if matches := re.FindStringSubmatch(errStr); len(matches) > 1 {
 		if code, parseErr := strconv.Atoi(matches[1]); parseErr == nil {
 			return code
 		}
 	}
-
 	return 0
 }
 
-// isRetryableError determines if an error should trigger a retry
 func isRetryableError(err error, statusCode int, config *RetryConfig) bool {
 	if err == nil {
 		return false
 	}
-
-	// Check for retryable HTTP status codes
 	for _, code := range config.RetryableHTTPCodes {
 		if statusCode == code {
 			return true
 		}
 	}
-
-	// Check for network-related errors
 	errStr := strings.ToLower(err.Error())
 	retryablePatterns := []string{
-		"timeout",
-		"connection refused",
-		"connection reset",
-		"temporary failure",
-		"no such host",
-		"network is unreachable",
-		"broken pipe",
-		"i/o timeout",
-		"tls handshake timeout",
-		"dial tcp",
-		"eof",
+		"timeout", "connection refused", "connection reset", "temporary failure",
+		"no such host", "network is unreachable", "broken pipe", "i/o timeout",
+		"tls handshake timeout", "dial tcp", "eof",
 	}
-
 	for _, pattern := range retryablePatterns {
 		if strings.Contains(errStr, pattern) {
 			return true
 		}
 	}
-
 	return false
 }
 
-// calculateBackoff calculates the backoff duration for a given retry attempt
 func calculateBackoff(attempt int, config *RetryConfig) time.Duration {
 	backoff := float64(config.InitialBackoff) * math.Pow(config.BackoffMultiplier, float64(attempt))
 	if backoff > float64(config.MaxBackoff) {
 		backoff = float64(config.MaxBackoff)
 	}
-
-	// Add jitter (±20%) to prevent thundering herd
-	// Use crypto/rand for security compliance
 	var jitterBytes [8]byte
 	if _, err := rand.Read(jitterBytes[:]); err != nil {
-		// Fallback to no jitter if crypto/rand fails (unlikely)
 		return time.Duration(backoff)
 	}
-
-	// Convert random bytes to float in range [0, 1)
-	randUint := uint64(jitterBytes[0]) |
-		uint64(jitterBytes[1])<<8 |
-		uint64(jitterBytes[2])<<16 |
-		uint64(jitterBytes[3])<<24 |
-		uint64(jitterBytes[4])<<32 |
-		uint64(jitterBytes[5])<<40 |
-		uint64(jitterBytes[6])<<48 |
-		uint64(jitterBytes[7])<<56
-
-	// Scale to [0, 1) range
+	randUint := uint64(jitterBytes[0]) | uint64(jitterBytes[1])<<8 | uint64(jitterBytes[2])<<16 | uint64(jitterBytes[3])<<24 | uint64(jitterBytes[4])<<32 | uint64(jitterBytes[5])<<40 | uint64(jitterBytes[6])<<48 | uint64(jitterBytes[7])<<56
 	randFloat := float64(randUint) / float64(^uint64(0))
-
-	// Convert to [-0.2, +0.2] range for ±20% jitter
 	jitter := (randFloat * 0.4) - 0.2
 	backoff = backoff * (1.0 + jitter)
-
 	return time.Duration(backoff)
 }
 
-// retryWithBackoff executes a function with retry logic and exponential backoff
-// fn should return (result, statusCode, error)
 func retryWithBackoff[T any](
 	ctx context.Context,
 	config *RetryConfig,
@@ -462,62 +353,30 @@ func retryWithBackoff[T any](
 	var result T
 
 	for attempt := 0; attempt <= config.MaxRetries; attempt++ {
-		// Execute the function
 		result, lastStatusCode, lastErr = fn()
-
-		// Success
 		if lastErr == nil {
 			if attempt > 0 {
-				logger.WithFields(log.Fields{
-					"attempt": attempt + 1,
-				}).Info("Request succeeded after retry")
+				logger.WithFields(log.Fields{"attempt": attempt + 1}).Info("Request succeeded after retry")
 			}
 			return result, nil
 		}
-
-		// Check if we should retry
 		if !isRetryableError(lastErr, lastStatusCode, config) {
-			logger.WithFields(log.Fields{
-				"error":       lastErr.Error(),
-				"status_code": lastStatusCode,
-			}).Debug("Error is not retryable")
 			return result, lastErr
 		}
-
-		// Check if we have retries left
 		if attempt >= config.MaxRetries {
-			logger.WithFields(log.Fields{
-				"error":       lastErr.Error(),
-				"status_code": lastStatusCode,
-				"max_retries": config.MaxRetries,
-			}).Warn("Max retries exhausted")
 			break
 		}
-
-		// Calculate backoff
 		backoffDuration := calculateBackoff(attempt+1, config)
-		logger.WithFields(log.Fields{
-			"attempt":         attempt + 1,
-			"backoff_seconds": backoffDuration.Seconds(),
-			"error":           lastErr.Error(),
-			"status_code":     lastStatusCode,
-		}).Info("Request failed, retrying with backoff")
-
-		// Wait for backoff (with context cancellation support)
+		logger.WithFields(log.Fields{"attempt": attempt + 1, "backoff": backoffDuration.Seconds()}).Info("Request failed, retrying")
 		select {
 		case <-time.After(backoffDuration):
-			// Continue to next attempt
 		case <-ctx.Done():
-			logger.Debug("Context cancelled during backoff")
 			return result, ctx.Err()
 		}
 	}
-
-	// All retries exhausted
 	return result, fmt.Errorf("max retries (%d) exhausted, last error: %w", config.MaxRetries, lastErr)
 }
 
-// ProgressWriter wraps an io.Writer and tracks upload progress
 type ProgressWriter struct {
 	writer         io.Writer
 	totalBytes     int64
@@ -528,7 +387,6 @@ type ProgressWriter struct {
 	mu             sync.Mutex
 }
 
-// NewProgressWriter creates a new progress tracking writer
 func NewProgressWriter(w io.Writer, totalBytes int64, filePath string) *ProgressWriter {
 	now := time.Now()
 	return &ProgressWriter{
@@ -541,10 +399,8 @@ func NewProgressWriter(w io.Writer, totalBytes int64, filePath string) *Progress
 	}
 }
 
-// Write implements io.Writer and tracks progress
 func (pw *ProgressWriter) Write(p []byte) (int, error) {
 	n, err := pw.writer.Write(p)
-
 	pw.mu.Lock()
 	pw.bytesWritten += int64(n)
 	bytesWritten := pw.bytesWritten
@@ -555,19 +411,15 @@ func (pw *ProgressWriter) Write(p []byte) (int, error) {
 		pw.lastReportTime = now
 	}
 	pw.mu.Unlock()
-
-	// Report progress periodically
 	if shouldReport {
 		elapsed := now.Sub(pw.startTime).Seconds()
 		speed := float64(bytesWritten) / elapsed
 		percentage := (float64(bytesWritten) / float64(totalBytes)) * 100.0
-
 		var eta int
 		if speed > 0 {
 			remaining := totalBytes - bytesWritten
 			eta = int(float64(remaining) / speed)
 		}
-
 		sendJSON(OutputEvent{
 			Type:     "progress",
 			FilePath: pw.filePath,
@@ -580,268 +432,138 @@ func (pw *ProgressWriter) Write(p []byte) (int, error) {
 			},
 		})
 	}
-
 	return n, err
 }
 
-// --- Input Validation Functions ---
-
-// validateFilePath validates a file path for security and correctness
 func validateFilePath(filePath string) error {
 	if filePath == "" {
 		return fmt.Errorf("file path cannot be empty")
 	}
-
-	// Convert to absolute path
 	absPath, err := filepath.Abs(filePath)
 	if err != nil {
 		return fmt.Errorf("invalid file path: %w", err)
 	}
-
-	// Check for path traversal attempts
 	if strings.Contains(filePath, "..") {
-		return fmt.Errorf("path traversal detected in: %s", filePath)
+		return fmt.Errorf("path traversal detected")
 	}
-
-	// Check if file exists
 	fileInfo, err := os.Stat(absPath)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return fmt.Errorf("file does not exist: %s", absPath)
-		}
 		return fmt.Errorf("cannot access file: %w", err)
 	}
-
-	// Check if it's a regular file (not a directory or special file)
 	if !fileInfo.Mode().IsRegular() {
-		return fmt.Errorf("path is not a regular file: %s", absPath)
+		return fmt.Errorf("not a regular file")
 	}
-
-	// Check file size (limit to 100MB for safety)
-	const maxFileSize = 100 * 1024 * 1024 // 100MB
+	const maxFileSize = 100 * 1024 * 1024
 	if fileInfo.Size() > maxFileSize {
-		return fmt.Errorf("file too large: %d bytes (max %d bytes)", fileInfo.Size(), maxFileSize)
+		return fmt.Errorf("file too large")
 	}
-
-	// Check for symlinks (potential security issue)
-	if fileInfo.Mode()&os.ModeSymlink != 0 {
-		return fmt.Errorf("symlinks not allowed: %s", absPath)
-	}
-
 	return nil
 }
 
-// validateServiceName validates that a service name is safe
 func validateServiceName(service string) error {
 	if service == "" {
 		return fmt.Errorf("service name cannot be empty")
 	}
-
-	// Allow only alphanumeric, dots, and hyphens
 	validPattern := regexp.MustCompile(`^[a-zA-Z0-9\.\-]+$`)
 	if !validPattern.MatchString(service) {
-		return fmt.Errorf("invalid service name: %s (only alphanumeric, dots, and hyphens allowed)", service)
+		return fmt.Errorf("invalid service name")
 	}
-
-	if len(service) > 100 {
-		return fmt.Errorf("service name too long: %d characters (max 100)", len(service))
-	}
-
 	return nil
 }
 
-// validateJobRequest validates all fields of a job request
 func validateJobRequest(job *JobRequest) error {
-	// Validate service name
-	if err := validateServiceName(job.Service); err != nil {
-		return fmt.Errorf("invalid service: %w", err)
-	}
-
-	// Validate file paths
-	if len(job.Files) == 0 {
-		return fmt.Errorf("no files provided")
-	}
-
-	if len(job.Files) > 1000 {
-		return fmt.Errorf("too many files: %d (max 1000)", len(job.Files))
-	}
-
-	for _, filePath := range job.Files {
-		if err := validateFilePath(filePath); err != nil {
-			return fmt.Errorf("invalid file path %s: %w", filePath, err)
-		}
-	}
-
-	// Validate action
-	validActions := map[string]bool{
-		"upload":           true,
-		"http_upload":      true,
-		"login":            true,
-		"verify":           true,
-		"list_galleries":   true,
-		"create_gallery":   true,
-		"finalize_gallery": true,
-		"generate_thumb":   true,
-	}
-
-	if !validActions[job.Action] {
+	if !map[string]bool{
+		"upload": true, "http_upload": true, "login": true, "verify": true,
+		"list_galleries": true, "create_gallery": true, "finalize_gallery": true,
+		"generate_thumb": true, "viper_login": true, "viper_post": true,
+	}[job.Action] {
 		return fmt.Errorf("invalid action: %s", job.Action)
 	}
 
+	if job.Action != "generate_thumb" {
+		if err := validateServiceName(job.Service); err != nil {
+			return fmt.Errorf("invalid service: %w", err)
+		}
+	}
+
+	if map[string]bool{"upload": true, "http_upload": true, "generate_thumb": true}[job.Action] {
+		if len(job.Files) == 0 {
+			return fmt.Errorf("no files provided")
+		}
+		for _, fp := range job.Files {
+			if err := validateFilePath(fp); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
 
 func main() {
-	// Parse command-line flags
-	workerCount := flag.Int("workers", 8, "Number of worker goroutines for job processing")
+	workerCount := flag.Int("workers", 8, "Number of worker goroutines")
 	flag.Parse()
 
-	// Note: Using crypto/rand for random string generation (more secure)
-	log.WithFields(log.Fields{
-		"component": "uploader",
-		"version":   "2.0.0-diagnostic",
-		"workers":   *workerCount,
-	}).Info("Go sidecar starting")
-
-	// DIAGNOSTIC: Send visible startup message as JSON event (goes to Python console)
-	sendJSON(OutputEvent{
-		Type: "log",
-		Msg:  fmt.Sprintf("=== GO SIDECAR STARTED - VERSION 2.1.0 - WORKERS: %d ===", *workerCount),
-	})
+	log.WithFields(log.Fields{"workers": *workerCount}).Info("Go sidecar starting")
+	sendJSON(OutputEvent{Type: "log", Msg: fmt.Sprintf("=== GO SIDECAR STARTED - WORKERS: %d ===", *workerCount)})
 
 	jar, _ := cookiejar.New(nil)
-	// HTTP Client Configuration with Optimized Connection Pooling
-	// - Client timeout: 180s (3 minutes) for the entire request/response cycle
-	// - ResponseHeaderTimeout: 60s to allow servers time to process large uploads
-	// - Connection pooling: MaxIdleConns allows reuse across services
-	// - KeepAlive: Maintains persistent connections for better performance
-	// This prevents premature timeouts on large files or slow connections
 	client = &http.Client{
 		Timeout: ClientTimeout,
 		Jar:     jar,
 		Transport: &http.Transport{
-			// Connection Pooling Configuration
-			MaxIdleConns:        100,              // Total idle connections across all hosts
-			MaxIdleConnsPerHost: 10,               // Idle connections per host (allows connection reuse)
-			MaxConnsPerHost:     20,               // Max active + idle connections per host
-			IdleConnTimeout:     90 * time.Second, // How long idle connections are kept
-			DisableKeepAlives:   false,            // Enable HTTP keep-alive for connection reuse
-
-			// Timeout Configuration
-			ResponseHeaderTimeout: ResponseHeaderTimeout, // 60s for server response headers
-			ExpectContinueTimeout: 1 * time.Second,       // Timeout for 100-continue responses
-
-			// Performance Optimization
-			ForceAttemptHTTP2:  true,  // Try HTTP/2 for better performance
-			DisableCompression: false, // Allow gzip compression
+			MaxIdleConns:        100,
+			MaxIdleConnsPerHost: 10,
+			MaxConnsPerHost:     20,
+			IdleConnTimeout:     90 * time.Second,
+			ResponseHeaderTimeout: ResponseHeaderTimeout,
+			ForceAttemptHTTP2:   true,
 		},
 	}
 
-	// --- WORKER POOL IMPLEMENTATION ---
-	// 1. Create a job queue channel
 	jobQueue := make(chan JobRequest, 100)
-
-	// 2. Setup graceful shutdown
 	var wg sync.WaitGroup
 	shutdownChan := make(chan struct{})
-
-	// Listen for OS signals (SIGINT, SIGTERM)
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
-	// 3. Start configured number of workers to process incoming requests
-	// This prevents the Go process from spawning thousands of goroutines if the UI floods it.
-	// Worker count is configurable via --workers flag (default: 8, range: 1-16)
-	numWorkers := *workerCount
-	log.WithField("workers", numWorkers).Info("Starting worker pool")
-
-	for i := 0; i < numWorkers; i++ {
+	for i := 0; i < *workerCount; i++ {
 		wg.Add(1)
-		go func(workerID int) {
+		go func(id int) {
 			defer wg.Done()
-			log.WithField("worker_id", workerID).Debug("Worker started")
 			for job := range jobQueue {
-				startTime := time.Now()
-				log.WithFields(log.Fields{
-					"worker_id": workerID,
-					"action":    job.Action,
-					"service":   job.Service,
-					"files":     len(job.Files),
-				}).Debug("Worker processing job")
-
 				handleJob(job)
-
-				duration := time.Since(startTime)
-				log.WithFields(log.Fields{
-					"worker_id": workerID,
-					"duration":  duration.String(),
-				}).Debug("Worker completed job")
 			}
-			log.WithField("worker_id", workerID).Info("Worker shutting down")
 		}(i)
 	}
 
-	// 4. Goroutine to handle shutdown signals
 	go func() {
-		select {
-		case sig := <-sigChan:
-			log.WithField("signal", sig).Info("Received shutdown signal")
-			close(shutdownChan)
-		case <-shutdownChan:
-			// Already closed by EOF handler
-		}
+		<-sigChan
+		close(shutdownChan)
 	}()
 
 	decoder := json.NewDecoder(os.Stdin)
-
-	// 5. Main loop reads JSON and pushes to queue
 	for {
 		select {
 		case <-shutdownChan:
-			log.Info("Shutdown initiated, stopping job intake")
 			goto shutdown
 		default:
 			var job JobRequest
 			if err := decoder.Decode(&job); err != nil {
 				if err == io.EOF {
-					log.Info("EOF received, initiating graceful shutdown")
 					close(shutdownChan)
 					goto shutdown
 				}
 				sendJSON(OutputEvent{Type: "error", Msg: fmt.Sprintf("JSON Decode Error: %v", err)})
 				continue
 			}
-
-			// Diagnostic: log queue depth if getting full
-			queueDepth := len(jobQueue)
-			if queueDepth > 50 {
-				log.WithField("queue_depth", queueDepth).Warn("Job queue filling up - workers may be slow")
-			}
-
-			// Blocking push if queue is full, effectively throttling the UI
 			jobQueue <- job
-			log.WithFields(log.Fields{
-				"action":      job.Action,
-				"service":     job.Service,
-				"files":       len(job.Files),
-				"queue_depth": len(jobQueue),
-			}).Debug("Job queued")
 		}
 	}
 
 shutdown:
-	// 6. Graceful shutdown sequence
-	log.Info("Closing job queue to signal workers")
 	close(jobQueue)
-
-	log.Info("Waiting for all workers to complete their current jobs")
 	wg.Wait()
-
-	log.Info("All workers completed, shutdown complete")
-	sendJSON(OutputEvent{
-		Type: "log",
-		Msg:  "=== GO SIDECAR SHUTDOWN COMPLETE ===",
-	})
+	sendJSON(OutputEvent{Type: "log", Msg: "=== GO SIDECAR SHUTDOWN COMPLETE ==="})
 }
 
 func handleJob(job JobRequest) {
@@ -850,23 +572,13 @@ func handleJob(job JobRequest) {
 			sendJSON(OutputEvent{Type: "error", Msg: fmt.Sprintf("Panic: %v", r)})
 		}
 	}()
-
-	// Validate job request
 	if err := validateJobRequest(&job); err != nil {
-		log.WithError(err).Error("Job validation failed")
-		sendJSON(OutputEvent{
-			Type: "error",
-			Msg:  fmt.Sprintf("Invalid job request: %v", err),
-		})
+		sendJSON(OutputEvent{Type: "error", Msg: fmt.Sprintf("Invalid job: %v", err)})
 		return
 	}
-
-	// Apply custom rate limits if provided
 	if job.RateLimits != nil {
 		updateRateLimiter(job.Service, job.RateLimits)
 	}
-
-	// Set default retry config if not provided
 	if job.RetryConfig == nil {
 		job.RetryConfig = getDefaultRetryConfig()
 	}
@@ -875,7 +587,6 @@ func handleJob(job JobRequest) {
 	case "upload":
 		handleUpload(job)
 	case "http_upload":
-		// NEW: Generic HTTP runner for plugin-driven uploads
 		handleHttpUpload(job)
 	case "login", "verify":
 		handleLoginVerify(job)
@@ -891,65 +602,32 @@ func handleJob(job JobRequest) {
 		handleViperPost(job)
 	case "generate_thumb":
 		handleGenerateThumb(job)
-	default:
-		if len(job.Files) > 0 {
-			handleUpload(job)
-		} else {
-			sendJSON(OutputEvent{Type: "error", Msg: "Unknown action: " + job.Action})
-		}
 	}
 }
 
 func handleFinalizeGallery(job JobRequest) {
-	// Handle gallery finalization for services that require it (primarily Pixhost)
 	service := job.Service
 	uploadHash := job.Config["gallery_upload_hash"]
 	galleryHash := job.Config["gallery_hash"]
-
-	logger := log.WithFields(log.Fields{
-		"service":      service,
-		"gallery_hash": galleryHash,
-	})
-
 	if uploadHash == "" || galleryHash == "" {
-		logger.Warning("Gallery finalization called with missing hashes")
-		sendJSON(OutputEvent{Type: "error", Msg: "Missing gallery hashes for finalization"})
+		sendJSON(OutputEvent{Type: "error", Msg: "Missing gallery hashes"})
 		return
 	}
-
 	if service == "pixhost.to" {
-		// Pixhost requires a PATCH request to the galleries API to finalize
-		// This sets the gallery title and makes it visible
 		finalizeURL := fmt.Sprintf("https://api.pixhost.to/galleries/%s/%s", galleryHash, uploadHash)
-
-		req, err := http.NewRequest("PATCH", finalizeURL, nil)
-		if err != nil {
-			logger.WithError(err).Error("Failed to create finalize request")
-			sendJSON(OutputEvent{Type: "error", Msg: "Failed to create finalize request"})
-			return
-		}
-
+		req, _ := http.NewRequest("PATCH", finalizeURL, nil)
 		req.Header.Set("User-Agent", getUserAgent(job.Config))
-
-		resp, err := client.Do(req)
-		if err != nil {
-			logger.WithError(err).Error("Failed to finalize gallery")
-			sendJSON(OutputEvent{Type: "error", Msg: fmt.Sprintf("Failed to finalize gallery: %v", err)})
-			return
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-			logger.Info("Successfully finalized Pixhost gallery")
-			sendJSON(OutputEvent{Type: "result", Status: "success", Msg: "Gallery Finalized"})
+		if resp, err := client.Do(req); err == nil {
+			defer resp.Body.Close()
+			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+				sendJSON(OutputEvent{Type: "result", Status: "success", Msg: "Gallery Finalized"})
+			} else {
+				sendJSON(OutputEvent{Type: "result", Status: "success", Msg: "Gallery upload complete (finalize pending)"})
+			}
 		} else {
-			logger.WithField("status_code", resp.StatusCode).Warning("Gallery finalization returned non-success status")
-			// Still consider it successful as the gallery is usable even if finalization fails
-			sendJSON(OutputEvent{Type: "result", Status: "success", Msg: "Gallery upload complete (finalization may be pending)"})
+			sendJSON(OutputEvent{Type: "error", Msg: fmt.Sprintf("Finalize failed: %v", err)})
 		}
 	} else {
-		// Other services don't require finalization
-		logger.Debug("Gallery finalization not required for this service")
 		sendJSON(OutputEvent{Type: "result", Status: "success", Msg: "Gallery Finalized"})
 	}
 }
@@ -959,50 +637,34 @@ func handleGenerateThumb(job JobRequest) {
 	if w == 0 {
 		w = 100
 	}
-
 	if len(job.Files) == 0 {
 		sendJSON(OutputEvent{Type: "error", Msg: "No file provided"})
 		return
 	}
 	fp := job.Files[0]
-
 	f, err := os.Open(fp)
 	if err != nil {
 		sendJSON(OutputEvent{Type: "error", Msg: "File not found"})
 		return
 	}
-	defer func() { _ = f.Close() }()
-
+	defer f.Close()
 	img, _, err := image.Decode(f)
 	if err != nil {
 		sendJSON(OutputEvent{Type: "error", Msg: "Decode failed"})
 		return
 	}
-
-	// Use Lanczos resampling for high-quality thumbnails
-	// Maintains aspect ratio automatically
 	thumb := imaging.Resize(img, w, 0, imaging.Lanczos)
-
 	var buf bytes.Buffer
-	// Use slightly higher quality (70) since Lanczos produces sharper results
 	if err := jpeg.Encode(&buf, thumb, &jpeg.Options{Quality: 70}); err != nil {
-		sendJSON(OutputEvent{Type: "error", Msg: "Encode thumbnail failed"})
+		sendJSON(OutputEvent{Type: "error", Msg: "Encode failed"})
 		return
 	}
-	b64 := base64.StdEncoding.EncodeToString(buf.Bytes())
-
-	sendJSON(OutputEvent{
-		Type:     "data",
-		Data:     b64,
-		Status:   "success",
-		FilePath: fp,
-	})
+	sendJSON(OutputEvent{Type: "data", Data: base64.StdEncoding.EncodeToString(buf.Bytes()), Status: "success", FilePath: fp})
 }
 
 func handleLoginVerify(job JobRequest) {
 	success := false
 	msg := "Login failed"
-
 	switch job.Service {
 	case "vipr.im":
 		success = doViprLogin(job.Creds)
@@ -1011,15 +673,17 @@ func handleLoginVerify(job JobRequest) {
 	case "turboimagehost":
 		success = doTurboLogin(job.Creds)
 	case "imx.to":
-		if job.Creds["api_key"] != "" {
+		// Login check using persistent state
+		if doImxLogin(job.Creds) {
 			success = true
-			msg = "API Key present"
+			msg = "IMX Login Verified"
+		} else {
+			msg = "IMX Login Failed"
 		}
 	default:
 		success = true
 		msg = "No login required"
 	}
-
 	status := "failed"
 	if success {
 		status = "success"
@@ -1065,16 +729,20 @@ func handleCreateGallery(job JobRequest) {
 		id = "0"
 		data = id
 	case "imx.to":
-		id, err = createImxGallery(job.Creds, name)
-		data = id
+		// FIXED: Login check + Correct Form Fields based on HTML + Fallback Scraper
+		if doImxLogin(job.Creds) {
+			id, err = createImxGallery(job.Creds, name)
+			data = id
+		} else {
+			err = fmt.Errorf("IMX login failed - check credentials")
+		}
 	case "pixhost.to":
-		// Pixhost returns a map with gallery_hash and gallery_upload_hash
 		galData, galErr := createPixhostGallery(name)
 		if galErr != nil {
 			err = galErr
 		} else {
 			id = galData["gallery_hash"]
-			data = galData // Return the full map for Python
+			data = galData
 		}
 	default:
 		err = fmt.Errorf("service not supported")
@@ -1088,21 +756,16 @@ func handleCreateGallery(job JobRequest) {
 }
 
 func handleHttpUpload(job JobRequest) {
-	// NEW: Generic HTTP runner for plugin-driven uploads
-	// Python plugins send fully-formed HTTP request specs; Go just executes them
 	if job.HttpSpec == nil {
 		sendJSON(OutputEvent{Type: "error", Msg: "http_upload requires http_spec field"})
 		return
 	}
-
 	var wg sync.WaitGroup
 	filesChan := make(chan string, len(job.Files))
-
 	maxWorkers := 2
 	if w, err := strconv.Atoi(job.Config["threads"]); err == nil && w > 0 {
 		maxWorkers = w
 	}
-
 	for i := 0; i < maxWorkers; i++ {
 		wg.Add(1)
 		go func() {
@@ -1112,7 +775,6 @@ func handleHttpUpload(job JobRequest) {
 			}
 		}()
 	}
-
 	for _, f := range job.Files {
 		filesChan <- f
 	}
@@ -1124,12 +786,10 @@ func handleHttpUpload(job JobRequest) {
 func handleUpload(job JobRequest) {
 	var wg sync.WaitGroup
 	filesChan := make(chan string, len(job.Files))
-
 	maxWorkers := 2
 	if w, err := strconv.Atoi(job.Config["threads"]); err == nil && w > 0 {
 		maxWorkers = w
 	}
-
 	for i := 0; i < maxWorkers; i++ {
 		wg.Add(1)
 		go func() {
@@ -1139,7 +799,6 @@ func handleUpload(job JobRequest) {
 			}
 		}()
 	}
-
 	for _, f := range job.Files {
 		filesChan <- f
 	}
@@ -1149,1481 +808,294 @@ func handleUpload(job JobRequest) {
 }
 
 func processFile(fp string, job *JobRequest) {
-	logger := log.WithFields(log.Fields{
-		"file":    filepath.Base(fp),
-		"service": job.Service,
-	})
-
-	// DIAGNOSTIC: Send visible messages as JSON events
-	sendJSON(OutputEvent{Type: "log", Msg: fmt.Sprintf(">>> PROCESSFILE CALLED for %s (service: %s)", filepath.Base(fp), job.Service)})
-	sendJSON(OutputEvent{Type: "status", FilePath: fp, Status: "Processing"})
-	logger.Info("=== PROCESSFILE CALLED ===")
-
-	// TIMEOUT FIX: 3-minute timeout per file to match documentation
-	// Allows time for large uploads (10-50MB) on typical connections
-	// Combined with client timeouts, this prevents premature failures
 	ctx, cancel := context.WithTimeout(context.Background(), ClientTimeout)
 	defer cancel()
 
-	sendJSON(OutputEvent{Type: "log", Msg: fmt.Sprintf(">>> 3-minute timeout started for %s", filepath.Base(fp))})
-	logger.WithField("timeout", "180s").Debug("Context created with timeout")
-
 	type result struct {
-		url   string
-		thumb string
-		err   error
+		url, thumb string
+		err        error
 	}
 	resultChan := make(chan result, 1)
 
-	// Heartbeat goroutine to prove timeout is working
 	go func() {
-		ticker := time.NewTicker(ProgressReportInterval)
-		defer ticker.Stop()
-		count := 0
-		for {
-			select {
-			case <-ticker.C:
-				count++
-				logger.WithField("heartbeat", count).Debug("Still processing...")
-			case <-ctx.Done():
-				logger.Debug("Heartbeat stopped - context done")
-				return
+		sendJSON(OutputEvent{Type: "status", FilePath: fp, Status: "Uploading"})
+		retryConfig := job.RetryConfig
+		if retryConfig == nil {
+			retryConfig = getDefaultRetryConfig()
+		}
+
+		type uploadResult struct{ url, thumb string }
+		uploadRes, err := retryWithBackoff(ctx, retryConfig, func() (uploadResult, int, error) {
+			var url, thumb string
+			var err error
+			switch job.Service {
+			case "imx.to":
+				url, thumb, err = uploadImx(ctx, fp, job)
+			case "pixhost.to":
+				url, thumb, err = uploadPixhost(ctx, fp, job)
+			case "vipr.im":
+				url, thumb, err = uploadVipr(ctx, fp, job)
+			case "turboimagehost":
+				url, thumb, err = uploadTurbo(ctx, fp, job)
+			case "imagebam.com":
+				url, thumb, err = uploadImageBam(ctx, fp, job)
+			default:
+				err = fmt.Errorf("unknown service")
 			}
-		}
-	}()
-
-	go func() {
-		sendJSON(OutputEvent{Type: "status", FilePath: fp, Status: "Uploading"})
-		logger.Debug("Status 'Uploading' sent")
-
-		logger.WithField("service", job.Service).Debug("About to call upload function")
-
-		// Execute upload with retry logic
-		retryConfig := job.RetryConfig
-		if retryConfig == nil {
-			retryConfig = getDefaultRetryConfig()
-		}
-
-		type uploadResult struct {
-			url   string
-			thumb string
-		}
-
-		// Wrap upload in retry logic
-		uploadRes, err := retryWithBackoff(
-			ctx,
-			retryConfig,
-			func() (uploadResult, int, error) {
-				var url, thumb string
-				var uploadErr error
-
-				// Pass context to upload functions for proper cancellation
-				switch job.Service {
-				case "imx.to":
-					url, thumb, uploadErr = uploadImx(ctx, fp, job)
-				case "pixhost.to":
-					url, thumb, uploadErr = uploadPixhost(ctx, fp, job)
-				case "vipr.im":
-					url, thumb, uploadErr = uploadVipr(ctx, fp, job)
-				case "turboimagehost":
-					url, thumb, uploadErr = uploadTurbo(ctx, fp, job)
-				case "imagebam.com":
-					url, thumb, uploadErr = uploadImageBam(ctx, fp, job)
-				default:
-					uploadErr = fmt.Errorf("unknown service: %s", job.Service)
-					logger.WithField("service", job.Service).Error("UNKNOWN SERVICE - this will fail immediately")
-				}
-
-				statusCode := extractStatusCode(uploadErr)
-				return uploadResult{url: url, thumb: thumb}, statusCode, uploadErr
-			},
-			logger,
-		)
-
-		url := uploadRes.url
-		thumb := uploadRes.thumb
-
-		logger.WithFields(log.Fields{
-			"url":   url,
-			"thumb": thumb,
-			"error": err,
-		}).Debug("Upload function returned")
+			return uploadResult{url, thumb}, extractStatusCode(err), err
+		}, log.WithFields(log.Fields{"file": filepath.Base(fp)}))
 
 		select {
-		case resultChan <- result{url: url, thumb: thumb, err: err}:
-			logger.Debug("Result sent to channel")
+		case resultChan <- result{uploadRes.url, uploadRes.thumb, err}:
 		case <-ctx.Done():
-			logger.Warn("Context cancelled before result could be sent")
-			// Context cancelled, don't send result
 		}
 	}()
 
-	// Wait for upload to complete or timeout
-	logger.Debug("Entering select statement - waiting for result or timeout")
 	select {
 	case res := <-resultChan:
-		logger.WithField("has_error", res.err != nil).Debug("=== RESULT RECEIVED ===")
 		if res.err != nil {
-			logger.WithFields(log.Fields{
-				"error": res.err.Error(),
-			}).Error("Upload failed")
 			sendJSON(OutputEvent{Type: "status", FilePath: fp, Status: "Failed"})
-			sendJSON(OutputEvent{Type: "error", FilePath: fp, Msg: fmt.Sprintf("Upload failed: %v", res.err)})
+			sendJSON(OutputEvent{Type: "error", FilePath: fp, Msg: res.err.Error()})
 		} else {
-			logger.WithFields(log.Fields{
-				"url":   res.url,
-				"thumb": res.thumb,
-			}).Info("Upload successful")
 			sendJSON(OutputEvent{Type: "result", FilePath: fp, Url: res.url, Thumb: res.thumb})
 			sendJSON(OutputEvent{Type: "status", FilePath: fp, Status: "Done"})
 		}
 	case <-ctx.Done():
-		// TIMEOUT - context cancelled, goroutine should exit
-		logger.Error("=== TIMEOUT TRIGGERED - 3 MINUTES ELAPSED ===")
-		sendJSON(OutputEvent{Type: "log", Msg: fmt.Sprintf("!!! TIMEOUT TRIGGERED for %s after 3 minutes !!!", filepath.Base(fp))})
 		sendJSON(OutputEvent{Type: "status", FilePath: fp, Status: "Timeout"})
-		sendJSON(OutputEvent{Type: "error", FilePath: fp, Msg: "Upload timed out after 3 minutes - worker released"})
+		sendJSON(OutputEvent{Type: "error", FilePath: fp, Msg: "Upload timed out"})
 	}
-	sendJSON(OutputEvent{Type: "log", Msg: fmt.Sprintf(">>> PROCESSFILE EXITING for %s", filepath.Base(fp))})
-	logger.Debug("=== PROCESSFILE EXITING ===")
 }
 
-// processFileGeneric handles file uploads using the generic HTTP runner
-// This allows Python plugins to define the entire HTTP request
 func processFileGeneric(fp string, job *JobRequest) {
-	logger := log.WithFields(log.Fields{
-		"file":    filepath.Base(fp),
-		"service": job.Service,
-	})
-
-	sendJSON(OutputEvent{Type: "log", Msg: fmt.Sprintf(">>> GENERIC UPLOAD for %s (service: %s)", filepath.Base(fp), job.Service)})
-	sendJSON(OutputEvent{Type: "status", FilePath: fp, Status: "Processing"})
-	logger.Info("=== GENERIC PROCESSFILE CALLED ===")
-
-	// Same timeout as legacy processFile
 	ctx, cancel := context.WithTimeout(context.Background(), ClientTimeout)
 	defer cancel()
 
-	sendJSON(OutputEvent{Type: "log", Msg: fmt.Sprintf(">>> 3-minute timeout started for %s", filepath.Base(fp))})
-	logger.WithField("timeout", "180s").Debug("Context created with timeout")
-
 	type result struct {
-		url   string
-		thumb string
-		err   error
+		url, thumb string
+		err        error
 	}
 	resultChan := make(chan result, 1)
 
 	go func() {
 		sendJSON(OutputEvent{Type: "status", FilePath: fp, Status: "Uploading"})
-		logger.Debug("Status 'Uploading' sent")
-
-		// Execute the generic HTTP request with retry logic
 		retryConfig := job.RetryConfig
 		if retryConfig == nil {
 			retryConfig = getDefaultRetryConfig()
 		}
 
-		type uploadResult struct {
-			url   string
-			thumb string
-		}
-
-		// Wrap upload in retry logic
-		uploadRes, err := retryWithBackoff(
-			ctx,
-			retryConfig,
-			func() (uploadResult, int, error) {
-				url, thumb, uploadErr := executeHttpUpload(ctx, fp, job)
-				statusCode := extractStatusCode(uploadErr)
-				return uploadResult{url: url, thumb: thumb}, statusCode, uploadErr
-			},
-			logger,
-		)
-
-		url := uploadRes.url
-		thumb := uploadRes.thumb
-
-		logger.WithFields(log.Fields{
-			"url":   url,
-			"thumb": thumb,
-			"error": err,
-		}).Debug("Generic upload returned")
+		type uploadResult struct{ url, thumb string }
+		uploadRes, err := retryWithBackoff(ctx, retryConfig, func() (uploadResult, int, error) {
+			url, thumb, err := executeHttpUpload(ctx, fp, job)
+			return uploadResult{url, thumb}, extractStatusCode(err), err
+		}, log.WithFields(log.Fields{"file": filepath.Base(fp)}))
 
 		select {
-		case resultChan <- result{url: url, thumb: thumb, err: err}:
-			logger.Debug("Result sent to channel")
+		case resultChan <- result{uploadRes.url, uploadRes.thumb, err}:
 		case <-ctx.Done():
-			logger.Warn("Context cancelled before result could be sent")
 		}
 	}()
 
-	// Wait for upload to complete or timeout
-	logger.Debug("Waiting for result or timeout")
 	select {
 	case res := <-resultChan:
-		logger.WithField("has_error", res.err != nil).Debug("=== RESULT RECEIVED ===")
 		if res.err != nil {
-			logger.WithFields(log.Fields{
-				"error": res.err.Error(),
-			}).Error("Upload failed")
 			sendJSON(OutputEvent{Type: "status", FilePath: fp, Status: "Failed"})
-			sendJSON(OutputEvent{Type: "error", FilePath: fp, Msg: fmt.Sprintf("Upload failed: %v", res.err)})
+			sendJSON(OutputEvent{Type: "error", FilePath: fp, Msg: res.err.Error()})
 		} else {
-			logger.WithFields(log.Fields{
-				"url":   res.url,
-				"thumb": res.thumb,
-			}).Info("Upload successful")
 			sendJSON(OutputEvent{Type: "result", FilePath: fp, Url: res.url, Thumb: res.thumb})
 			sendJSON(OutputEvent{Type: "status", FilePath: fp, Status: "Done"})
 		}
 	case <-ctx.Done():
-		logger.Error("=== TIMEOUT TRIGGERED - 3 MINUTES ELAPSED ===")
-		sendJSON(OutputEvent{Type: "log", Msg: fmt.Sprintf("!!! TIMEOUT TRIGGERED for %s after 3 minutes !!!", filepath.Base(fp))})
 		sendJSON(OutputEvent{Type: "status", FilePath: fp, Status: "Timeout"})
-		sendJSON(OutputEvent{Type: "error", FilePath: fp, Msg: "Upload timed out after 3 minutes - worker released"})
+		sendJSON(OutputEvent{Type: "error", FilePath: fp, Msg: "Upload timed out"})
 	}
-	sendJSON(OutputEvent{Type: "log", Msg: fmt.Sprintf(">>> GENERIC PROCESSFILE EXITING for %s", filepath.Base(fp))})
-	logger.Debug("=== GENERIC PROCESSFILE EXITING ===")
 }
 
-// executeHttpUpload performs a generic HTTP upload based on Python-provided spec
 func executeHttpUpload(ctx context.Context, fp string, job *JobRequest) (string, string, error) {
 	spec := job.HttpSpec
 	if spec == nil {
-		return "", "", fmt.Errorf("no http_spec provided")
+		return "", "", fmt.Errorf("no http_spec")
 	}
-
-	// Apply rate limiting if service is specified
 	if job.Service != "" {
 		if err := waitForRateLimit(ctx, job.Service); err != nil {
-			return "", "", fmt.Errorf("rate limit: %w", err)
+			return "", "", err
 		}
 	}
 
-	// NEW: Execute pre-request if specified (login, get endpoint, etc.)
 	extractedValues := make(map[string]string)
 	var sessionClient *http.Client
-
 	if spec.PreRequest != nil {
-		values, preClient, err := executePreRequest(ctx, spec.PreRequest, job.Service)
+		var err error
+		extractedValues, sessionClient, err = executePreRequest(ctx, spec.PreRequest, job.Service)
 		if err != nil {
-			return "", "", fmt.Errorf("pre-request failed: %w", err)
-		}
-		extractedValues = values
-
-		// Use session client with cookies if pre-request requested it
-		if spec.PreRequest.UseCookies {
-			sessionClient = preClient
+			return "", "", err
 		}
 	}
 
-	// Build multipart request
 	pr, pw := io.Pipe()
 	writer := multipart.NewWriter(pw)
-
 	go func() {
-		defer func() { _ = pw.Close() }()
-		defer func() { _ = writer.Close() }()
-
-		// Process all multipart fields from the spec
+		defer pw.Close()
+		defer writer.Close()
 		for fieldName, field := range spec.MultipartFields {
 			if field.Type == "file" {
-				// File field - use the file from the job
-				filePath := fp // Use the file being processed, not field.Value
-				part, err := writer.CreateFormFile(fieldName, filepath.Base(filePath))
-				if err != nil {
-					pw.CloseWithError(fmt.Errorf("failed to create form file %s: %w", fieldName, err))
-					return
-				}
-				f, err := os.Open(filePath)
-				if err != nil {
-					pw.CloseWithError(fmt.Errorf("failed to open file %s: %w", filePath, err))
-					return
-				}
-				defer func() { _ = f.Close() }()
-
-				// Get file size for progress tracking
-				fileInfo, err := f.Stat()
-				if err == nil && fileInfo.Size() > 0 {
-					// Wrap with progress writer for real-time upload progress
-					progressWriter := NewProgressWriter(part, fileInfo.Size(), filePath)
-					if _, err := io.Copy(progressWriter, f); err != nil {
-						pw.CloseWithError(fmt.Errorf("failed to copy file %s: %w", filePath, err))
-						return
-					}
-				} else {
-					// Fallback without progress tracking if size unavailable
-					if _, err := io.Copy(part, f); err != nil {
-						pw.CloseWithError(fmt.Errorf("failed to copy file %s: %w", filePath, err))
-						return
-					}
-				}
+				part, _ := writer.CreateFormFile(fieldName, filepath.Base(fp))
+				f, _ := os.Open(fp)
+				defer f.Close()
+				fi, _ := f.Stat()
+				progressWriter := NewProgressWriter(part, fi.Size(), fp)
+				io.Copy(progressWriter, f)
 			} else if field.Type == "text" {
-				// Text field
-				if err := writer.WriteField(fieldName, field.Value); err != nil {
-					pw.CloseWithError(fmt.Errorf("failed to write field %s: %w", fieldName, err))
-					return
-				}
+				writer.WriteField(fieldName, field.Value)
 			} else if field.Type == "dynamic" {
-				// NEW: Dynamic field - resolve from extracted values
-				value, exists := extractedValues[field.Value]
-				if !exists {
-					pw.CloseWithError(fmt.Errorf("dynamic field %s references unknown extracted value: %s", fieldName, field.Value))
-					return
-				}
-				if err := writer.WriteField(fieldName, value); err != nil {
-					pw.CloseWithError(fmt.Errorf("failed to write dynamic field %s: %w", fieldName, err))
-					return
+				if val, ok := extractedValues[field.Value]; ok {
+					writer.WriteField(fieldName, val)
 				}
 			}
 		}
 	}()
 
-	// Create HTTP request
-	req, err := http.NewRequestWithContext(ctx, spec.Method, spec.URL, pr)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to create request: %w", err)
-	}
-
-	// Set headers from spec
+	req, _ := http.NewRequestWithContext(ctx, spec.Method, spec.URL, pr)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
-	req.Header.Set("User-Agent", DefaultUserAgent) // Default user agent
-	for key, value := range spec.Headers {
-		req.Header.Set(key, value)
+	req.Header.Set("User-Agent", DefaultUserAgent)
+	for k, v := range spec.Headers {
+		req.Header.Set(k, v)
 	}
 
-	// Execute request (use session client if available, otherwise default)
 	var resp *http.Response
+	var err error
 	if sessionClient != nil {
 		resp, err = sessionClient.Do(req)
 	} else {
 		resp, err = client.Do(req)
 	}
 	if err != nil {
-		return "", "", fmt.Errorf("request failed: %w", err)
+		return "", "", err
 	}
-	defer func() { _ = resp.Body.Close() }()
-
-	// Parse response based on parser spec
+	defer resp.Body.Close()
 	return parseHttpResponse(resp, &spec.ResponseParser, fp)
 }
 
-// executePreRequest executes a pre-request hook (login, endpoint discovery, etc.)
-// Returns extracted values and optionally a client with session cookies
 func executePreRequest(ctx context.Context, spec *PreRequestSpec, service string) (map[string]string, *http.Client, error) {
-	log.WithFields(log.Fields{
-		"action":  spec.Action,
-		"url":     spec.URL,
-		"service": service,
-	}).Debug("Executing pre-request")
-
-	// Create client with optional cookie jar
 	var preClient *http.Client
 	if spec.UseCookies {
 		jar, _ := cookiejar.New(nil)
 		preClient = &http.Client{
 			Timeout: PreRequestTimeout,
 			Jar:     jar,
-			Transport: &http.Transport{
-				MaxIdleConnsPerHost:   10,
-				ResponseHeaderTimeout: PreRequestHeaderTimeout,
-			},
+			Transport: &http.Transport{MaxIdleConnsPerHost: 10, ResponseHeaderTimeout: PreRequestHeaderTimeout},
 		}
 	} else {
-		preClient = client // Use default client
+		preClient = client
 	}
 
-	// Build request body (support template substitution in form fields)
 	var reqBody io.Reader
 	contentType := ""
-
 	if len(spec.FormFields) > 0 {
-		formData := url.Values{}
-		for key, value := range spec.FormFields {
-			// Support template substitution: {field_name} -> extracted value
-			// This is needed for multi-step flows like ImageBam where later steps need earlier extracted values
-			// Note: extractedValues would need to be passed in, but we don't have them yet on first call
-			// For now, this is handled in follow-up requests which have access to parent extracted values
-			formData.Set(key, value)
+		v := url.Values{}
+		for k, val := range spec.FormFields {
+			v.Set(k, val)
 		}
-		reqBody = strings.NewReader(formData.Encode())
+		reqBody = strings.NewReader(v.Encode())
 		contentType = "application/x-www-form-urlencoded"
 	}
 
-	// Create request
-	req, err := http.NewRequestWithContext(ctx, spec.Method, spec.URL, reqBody)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create pre-request: %w", err)
-	}
-
-	// Set headers (no template substitution needed on first request)
+	req, _ := http.NewRequestWithContext(ctx, spec.Method, spec.URL, reqBody)
 	req.Header.Set("User-Agent", DefaultUserAgent)
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
-	for key, value := range spec.Headers {
-		req.Header.Set(key, value)
+	for k, v := range spec.Headers {
+		req.Header.Set(k, v)
 	}
 
-	// Execute request
 	resp, err := preClient.Do(req)
 	if err != nil {
-		return nil, nil, fmt.Errorf("pre-request execution failed: %w", err)
+		return nil, nil, err
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer resp.Body.Close()
+	bodyBytes, _ := io.ReadAll(resp.Body)
 
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to read pre-request response: %w", err)
-	}
-
-	// Extract values based on response type
-	extractedValues := make(map[string]string)
-
+	extracted := make(map[string]string)
 	if spec.ResponseType == "json" {
 		var data map[string]interface{}
-		if err := json.Unmarshal(bodyBytes, &data); err != nil {
-			return nil, nil, fmt.Errorf("failed to parse JSON pre-request response: %w", err)
-		}
-
-		for fieldName, jsonPath := range spec.ExtractFields {
-			value := getJSONValue(data, jsonPath)
-			extractedValues[fieldName] = value
-			log.WithFields(log.Fields{
-				"field": fieldName,
-				"value": value,
-				"path":  jsonPath,
-			}).Debug("Extracted value from JSON")
+		json.Unmarshal(bodyBytes, &data)
+		for k, path := range spec.ExtractFields {
+			extracted[k] = getJSONValue(data, path)
 		}
 	} else if spec.ResponseType == "html" {
-		doc, err := goquery.NewDocumentFromReader(bytes.NewReader(bodyBytes))
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to parse HTML pre-request response: %w", err)
-		}
-
-		for fieldName, selector := range spec.ExtractFields {
-			var value string
-
-			// Support regex extraction if selector starts with "regex:"
-			if strings.HasPrefix(selector, "regex:") {
-				pattern := strings.TrimPrefix(selector, "regex:")
-				re := regexp.MustCompile(pattern)
-				matches := re.FindStringSubmatch(string(bodyBytes))
-				if len(matches) > 1 {
-					value = matches[1] // First capture group
-				}
-				log.WithFields(log.Fields{
-					"field":   fieldName,
-					"value":   value,
-					"pattern": pattern,
-				}).Debug("Extracted value from HTML using regex")
-			} else {
-				// CSS selector extraction
-				value = doc.Find(selector).AttrOr("value", "")
-				if value == "" {
-					value = doc.Find(selector).AttrOr("action", "")
-				}
-				if value == "" {
-					value = doc.Find(selector).Text()
-				}
-				log.WithFields(log.Fields{
-					"field":    fieldName,
-					"value":    value,
-					"selector": selector,
-				}).Debug("Extracted value from HTML using CSS selector")
+		doc, _ := goquery.NewDocumentFromReader(bytes.NewReader(bodyBytes))
+		for k, sel := range spec.ExtractFields {
+			val := doc.Find(sel).AttrOr("value", "")
+			if val == "" {
+				val = doc.Find(sel).Text()
 			}
-
-			extractedValues[fieldName] = strings.TrimSpace(value)
+			extracted[k] = strings.TrimSpace(val)
 		}
 	}
-
-	log.WithFields(log.Fields{
-		"extracted_count": len(extractedValues),
-		"has_cookies":     spec.UseCookies,
-	}).Debug("Pre-request completed")
-
-	// NEW: Execute follow-up request if specified (for multi-step logins like Vipr)
-	if spec.FollowUpRequest != nil {
-		log.Debug("Executing follow-up pre-request")
-
-		// Execute follow-up using same client (preserves cookies) and parent extracted values
-		followUpValues, followUpClient, err := executeFollowUpRequest(ctx, spec.FollowUpRequest, service, preClient, extractedValues)
-		if err != nil {
-			return nil, nil, fmt.Errorf("follow-up request failed: %w", err)
-		}
-
-		// Merge extracted values (follow-up values override initial values)
-		for k, v := range followUpValues {
-			extractedValues[k] = v
-		}
-
-		// Use follow-up client if it has cookies, otherwise keep original
-		if spec.FollowUpRequest.UseCookies && followUpClient != nil {
-			preClient = followUpClient
-		}
-	}
-
-	return extractedValues, preClient, nil
+	return extracted, preClient, nil
 }
 
-// executeFollowUpRequest handles follow-up pre-requests using an existing client and parent extracted values
-func executeFollowUpRequest(ctx context.Context, spec *PreRequestSpec, service string, existingClient *http.Client, parentExtractedValues map[string]string) (map[string]string, *http.Client, error) {
-	log.WithFields(log.Fields{
-		"action":  spec.Action,
-		"url":     spec.URL,
-		"service": service,
-	}).Debug("Executing follow-up pre-request")
-
-	// Use existing client to preserve cookies, or create new one
-	reqClient := existingClient
-	if reqClient == nil {
-		if spec.UseCookies {
-			jar, _ := cookiejar.New(nil)
-			reqClient = &http.Client{
-				Timeout: PreRequestTimeout,
-				Jar:     jar,
-				Transport: &http.Transport{
-					MaxIdleConnsPerHost:   10,
-					ResponseHeaderTimeout: PreRequestHeaderTimeout,
-				},
-			}
-		} else {
-			reqClient = client
-		}
-	}
-
-	// Build request body with template substitution from parent extracted values
-	var reqBody io.Reader
-	contentType := ""
-
-	if len(spec.FormFields) > 0 {
-		formData := url.Values{}
-		for key, value := range spec.FormFields {
-			// Support template substitution: {field_name} -> extracted value from parent
-			substitutedValue := substituteTemplateFromMap(value, parentExtractedValues)
-			formData.Set(key, substitutedValue)
-		}
-		reqBody = strings.NewReader(formData.Encode())
-		contentType = "application/x-www-form-urlencoded"
-	}
-
-	// Create request
-	req, err := http.NewRequestWithContext(ctx, spec.Method, spec.URL, reqBody)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create follow-up request: %w", err)
-	}
-
-	// Set headers with template substitution from parent extracted values
-	req.Header.Set("User-Agent", DefaultUserAgent)
-	if contentType != "" {
-		req.Header.Set("Content-Type", contentType)
-	}
-	for key, value := range spec.Headers {
-		// Support template substitution in headers (e.g., "X-CSRF-TOKEN": "{csrf_token}")
-		substitutedValue := substituteTemplateFromMap(value, parentExtractedValues)
-		req.Header.Set(key, substitutedValue)
-	}
-
-	// Execute request
-	resp, err := reqClient.Do(req)
-	if err != nil {
-		return nil, nil, fmt.Errorf("follow-up request execution failed: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to read follow-up response: %w", err)
-	}
-
-	// Extract values based on response type
-	extractedValues := make(map[string]string)
-
-	if spec.ResponseType == "json" {
-		var data map[string]interface{}
-		if err := json.Unmarshal(bodyBytes, &data); err != nil {
-			return nil, nil, fmt.Errorf("failed to parse JSON follow-up response: %w", err)
-		}
-
-		for fieldName, jsonPath := range spec.ExtractFields {
-			value := getJSONValue(data, jsonPath)
-			extractedValues[fieldName] = value
-			log.WithFields(log.Fields{
-				"field": fieldName,
-				"value": value,
-				"path":  jsonPath,
-			}).Debug("Extracted value from JSON (follow-up)")
-		}
-	} else if spec.ResponseType == "html" {
-		doc, err := goquery.NewDocumentFromReader(bytes.NewReader(bodyBytes))
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to parse HTML follow-up response: %w", err)
-		}
-
-		for fieldName, selector := range spec.ExtractFields {
-			var value string
-
-			// Support regex extraction if selector starts with "regex:"
-			if strings.HasPrefix(selector, "regex:") {
-				pattern := strings.TrimPrefix(selector, "regex:")
-				re := regexp.MustCompile(pattern)
-				matches := re.FindStringSubmatch(string(bodyBytes))
-				if len(matches) > 1 {
-					value = matches[1] // First capture group
-				}
-				log.WithFields(log.Fields{
-					"field":   fieldName,
-					"value":   value,
-					"pattern": pattern,
-				}).Debug("Extracted value from HTML using regex (follow-up)")
-			} else {
-				// CSS selector extraction
-				value = doc.Find(selector).AttrOr("value", "")
-				if value == "" {
-					value = doc.Find(selector).AttrOr("action", "")
-				}
-				if value == "" {
-					value = doc.Find(selector).Text()
-				}
-				log.WithFields(log.Fields{
-					"field":    fieldName,
-					"value":    value,
-					"selector": selector,
-				}).Debug("Extracted value from HTML using CSS selector (follow-up)")
-			}
-
-			extractedValues[fieldName] = strings.TrimSpace(value)
-		}
-	}
-
-	// Recursively handle nested follow-ups (though typically not needed)
-	if spec.FollowUpRequest != nil {
-		// Merge parent and current extracted values for the next follow-up
-		mergedValues := make(map[string]string)
-		for k, v := range parentExtractedValues {
-			mergedValues[k] = v
-		}
-		for k, v := range extractedValues {
-			mergedValues[k] = v
-		}
-
-		nestedValues, nestedClient, err := executeFollowUpRequest(ctx, spec.FollowUpRequest, service, reqClient, mergedValues)
-		if err != nil {
-			return nil, nil, err
-		}
-		for k, v := range nestedValues {
-			extractedValues[k] = v
-		}
-		if nestedClient != nil {
-			reqClient = nestedClient
-		}
-	}
-
-	log.WithFields(log.Fields{
-		"extracted_count": len(extractedValues),
-	}).Debug("Follow-up pre-request completed")
-
-	return extractedValues, reqClient, nil
-}
-
-// parseHttpResponse parses the upload response based on the parser spec
 func parseHttpResponse(resp *http.Response, parser *ResponseParserSpec, filePath string) (string, string, error) {
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to read response: %w", err)
-	}
-
+	bodyBytes, _ := io.ReadAll(resp.Body)
 	if parser.Type == "json" {
-		// Parse JSON response
 		var data map[string]interface{}
 		if err := json.Unmarshal(bodyBytes, &data); err != nil {
-			return "", "", fmt.Errorf("failed to parse JSON response: %w", err)
+			return "", "", err
 		}
-
-		// Check status if specified
 		if parser.StatusPath != "" {
-			status := getJSONValue(data, parser.StatusPath)
-			if status != parser.SuccessValue {
-				msg := getJSONValue(data, "message")
-				if msg == "" {
-					msg = getJSONValue(data, "error")
-				}
-				if msg == "" {
-					msg = fmt.Sprintf("upload failed with status: %s", status)
-				}
-				return "", "", fmt.Errorf("%s", msg)
+			if getJSONValue(data, parser.StatusPath) != parser.SuccessValue {
+				return "", "", fmt.Errorf("upload failed status")
 			}
 		}
-
-		// Extract URLs or values for template substitution
-		url := getJSONValue(data, parser.URLPath)
-		thumb := getJSONValue(data, parser.ThumbPath)
-
-		// NEW: Support URL templates for constructing URLs from extracted values
-		if parser.URLTemplate != "" {
-			// Add filename to data for template substitution
-			dataWithFile := make(map[string]interface{})
-			for k, v := range data {
-				dataWithFile[k] = v
-			}
-			dataWithFile["filename"] = filepath.Base(filePath)
-			url = substituteTemplate(parser.URLTemplate, dataWithFile)
-		}
-		if parser.ThumbTemplate != "" {
-			dataWithFile := make(map[string]interface{})
-			for k, v := range data {
-				dataWithFile[k] = v
-			}
-			dataWithFile["filename"] = filepath.Base(filePath)
-			thumb = substituteTemplate(parser.ThumbTemplate, dataWithFile)
-		} else if parser.URLTemplate != "" && thumb == "" {
-			// If URL template is used but no thumb template, use URL as thumb
-			thumb = url
-		}
-
-		if url == "" {
-			return "", "", fmt.Errorf("no URL found in response at path: %s", parser.URLPath)
-		}
-
-		return url, thumb, nil
-	} else if parser.Type == "html" {
-		// Parse HTML response using goquery
-		doc, err := goquery.NewDocumentFromReader(bytes.NewReader(bodyBytes))
-		if err != nil {
-			return "", "", fmt.Errorf("failed to parse HTML: %w", err)
-		}
-
-		// Use CSS selectors from parser spec
-		url := doc.Find(parser.URLPath).AttrOr("value", "")
-		if url == "" {
-			url = doc.Find(parser.URLPath).Text()
-		}
-
-		thumb := doc.Find(parser.ThumbPath).AttrOr("value", "")
-		if thumb == "" {
-			thumb = doc.Find(parser.ThumbPath).AttrOr("src", "")
-		}
-		if thumb == "" {
-			thumb = doc.Find(parser.ThumbPath).Text()
-		}
-
-		if url == "" {
-			return "", "", fmt.Errorf("no URL found with selector: %s", parser.URLPath)
-		}
-
-		return url, thumb, nil
+		return getJSONValue(data, parser.URLPath), getJSONValue(data, parser.ThumbPath), nil
 	}
-
-	return "", "", fmt.Errorf("unsupported parser type: %s", parser.Type)
+	return "", "", fmt.Errorf("unsupported parser")
 }
 
-// substituteTemplateFromMap replaces {key} placeholders in a template with values from a string map
-func substituteTemplateFromMap(template string, values map[string]string) string {
-	result := template
-
-	// Find all {key} placeholders and replace them
-	re := regexp.MustCompile(`\{([^}]+)\}`)
-	matches := re.FindAllStringSubmatch(template, -1)
-
-	for _, match := range matches {
-		if len(match) < 2 {
-			continue
-		}
-		placeholder := match[0] // e.g., "{csrf_token}"
-		key := match[1]         // e.g., "csrf_token"
-
-		// Look up value in map
-		if value, exists := values[key]; exists {
-			result = strings.Replace(result, placeholder, value, -1)
-		}
-	}
-
-	return result
-}
-
-// substituteTemplate replaces {key} placeholders in a template with values from JSON data
-func substituteTemplate(template string, data map[string]interface{}) string {
-	result := template
-
-	// Find all {key} placeholders and replace them
-	re := regexp.MustCompile(`\{([^}]+)\}`)
-	matches := re.FindAllStringSubmatch(template, -1)
-
-	for _, match := range matches {
-		if len(match) < 2 {
-			continue
-		}
-		placeholder := match[0] // e.g., "{id}"
-		key := match[1]         // e.g., "id"
-
-		// Extract value from JSON using dot notation
-		value := getJSONValue(data, key)
-		if value != "" {
-			result = strings.Replace(result, placeholder, value, -1)
-		}
-	}
-
-	return result
-}
-
-// getJSONValue extracts a value from nested JSON using dot notation (e.g., "data.image_url")
 func getJSONValue(data map[string]interface{}, path string) string {
-	if path == "" {
-		return ""
-	}
-
 	parts := strings.Split(path, ".")
 	current := interface{}(data)
-
 	for _, part := range parts {
-		switch v := current.(type) {
-		case map[string]interface{}:
-			current = v[part]
-		default:
+		if m, ok := current.(map[string]interface{}); ok {
+			current = m[part]
+		} else {
 			return ""
 		}
 	}
-
-	// Convert final value to string
-	switch v := current.(type) {
-	case string:
-		return v
-	case float64:
-		return fmt.Sprintf("%.0f", v)
-	case bool:
-		return fmt.Sprintf("%t", v)
-	default:
-		return ""
+	if s, ok := current.(string); ok {
+		return s
 	}
+	return ""
 }
 
 // --- Upload Implementations ---
 
-// Helpers to map UI strings to IMX API IDs
 func getImxSizeId(s string) string {
-	switch s {
-	case "100":
-		return "1"
-	case "150":
-		return "6"
-	case "180":
-		return "2"
-	case "250":
-		return "3"
-	case "300":
-		return "4"
-	default:
-		return "2" // Default 180
+	m := map[string]string{"100": "1", "150": "6", "180": "2", "250": "3", "300": "4"}
+	if v, ok := m[s]; ok {
+		return v
 	}
+	return "2"
 }
 
 func getImxFormatId(s string) string {
-	switch s {
-	case "Fixed Width":
-		return "1"
-	case "Fixed Height":
-		return "4"
-	case "Proportional":
-		return "2"
-	case "Square":
-		return "3"
-	default:
-		return "1" // Default Fixed Width
+	m := map[string]string{"Fixed Width": "1", "Fixed Height": "4", "Proportional": "2", "Square": "3"}
+	if v, ok := m[s]; ok {
+		return v
 	}
+	return "1"
 }
 
-func uploadImx(ctx context.Context, fp string, job *JobRequest) (string, string, error) {
-	// RATE LIMITING: Wait for rate limiter approval to prevent IP bans
-	if err := waitForRateLimit(ctx, "imx.to"); err != nil {
-		return "", "", fmt.Errorf("rate limit: %w", err)
+// Helper to perform IMX login with state tracking
+func doImxLogin(creds map[string]string) bool {
+	// 1. Check if already logged in (Persistent Session)
+	imxSt.mu.RLock()
+	if imxSt.isLoggedIn {
+		imxSt.mu.RUnlock()
+		return true
 	}
+	imxSt.mu.RUnlock()
 
-	pr, pw := io.Pipe()
-	writer := multipart.NewWriter(pw)
-
-	go func() {
-		defer func() { _ = pw.Close() }()
-		defer func() { _ = writer.Close() }()
-		part, err := writer.CreateFormFile("image", filepath.Base(fp))
-		if err != nil {
-			pw.CloseWithError(fmt.Errorf("failed to create form file: %w", err))
-			return
-		}
-		f, err := os.Open(fp)
-		if err != nil {
-			pw.CloseWithError(fmt.Errorf("failed to open file: %w", err))
-			return
-		}
-		defer func() { _ = f.Close() }()
-		if _, err := io.Copy(part, f); err != nil {
-			pw.CloseWithError(fmt.Errorf("failed to copy file: %w", err))
-			return
-		}
-		if err := writer.WriteField("format", "json"); err != nil {
-			pw.CloseWithError(fmt.Errorf("failed to write format field: %w", err))
-			return
-		}
-
-		// Essential Hidden Fields from uploadpage.html for legacy script support
-		if err := writer.WriteField("adult", "1"); err != nil {
-			pw.CloseWithError(fmt.Errorf("failed to write adult field: %w", err))
-			return
-		}
-		if err := writer.WriteField("upload_type", "file"); err != nil {
-			pw.CloseWithError(fmt.Errorf("failed to write upload_type field: %w", err))
-			return
-		}
-		// "simple_upload" is often required for legacy scripts to respect parameters like thumb size
-		if err := writer.WriteField("simple_upload", "Upload"); err != nil {
-			pw.CloseWithError(fmt.Errorf("failed to write simple_upload field: %w", err))
-			return
-		}
-
-		// Map the config strings to IDs before sending to API
-		sizeId := getImxSizeId(job.Config["imx_thumb_id"])
-
-		// Send both variations of the parameter name to cover all bases (API vs Form)
-		if err := writer.WriteField("thumbnail_size", sizeId); err != nil {
-			pw.CloseWithError(fmt.Errorf("failed to write thumbnail_size field: %w", err))
-			return
-		}
-		if err := writer.WriteField("thumb_size_container", sizeId); err != nil {
-			pw.CloseWithError(fmt.Errorf("failed to write thumb_size_container field: %w", err))
-			return
-		}
-
-		if err := writer.WriteField("thumbnail_format", getImxFormatId(job.Config["imx_format_id"])); err != nil {
-			pw.CloseWithError(fmt.Errorf("failed to write thumbnail_format field: %w", err))
-			return
-		}
-		if gid := job.Config["gallery_id"]; gid != "" {
-			if err := writer.WriteField("gallery_id", gid); err != nil {
-				pw.CloseWithError(fmt.Errorf("failed to write gallery_id field: %w", err))
-				return
-			}
-		}
-	}()
-
-	// CRITICAL: Use context for proper cancellation
-	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.imx.to/v1/upload.php", pr)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", writer.FormDataContentType())
-	req.Header.Set("X-API-KEY", job.Creds["api_key"])
-	req.Header.Set("User-Agent", DefaultUserAgent)
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", "", fmt.Errorf("request failed: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	raw, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to read response: %w", err)
-	}
-
-	var res struct {
-		Status string `json:"status"`
-		Data   struct {
-			Img   string `json:"image_url"`
-			Thumb string `json:"thumbnail_url"`
-		} `json:"data"`
-		Msg string `json:"message"`
-	}
-	if err := json.Unmarshal(raw, &res); err != nil {
-		return "", "", fmt.Errorf("failed to parse response: %w", err)
-	}
-	if res.Status != "success" {
-		return "", "", fmt.Errorf("upload failed: %s", res.Msg)
-	}
-
-	// Scrape the actual BBCode from the image viewer page to get working thumbnail URLs
-	viewerURL := res.Data.Img
-	finalThumb := res.Data.Thumb
-
-	// Try scraping to find better URLs
-	if viewerURL != "" {
-		scrapedViewer, scrapedThumb, err := scrapeImxBBCode(viewerURL)
-		if err == nil && scrapedThumb != "" {
-			log.WithFields(log.Fields{
-				"old_thumb": finalThumb,
-				"new_thumb": scrapedThumb,
-			}).Info("Replaced API thumb with Scraped thumb")
-
-			// Update values with scraped results
-			viewerURL = scrapedViewer
-			finalThumb = scrapedThumb
-		} else {
-			log.WithFields(log.Fields{
-				"url":   viewerURL,
-				"error": err,
-			}).Warn("Failed to scrape IMX BBCode, using API response")
-		}
-	}
-
-	// REMOVED "Force Repair" logic that was breaking image.imx.to links.
-	// Relying on scraper results.
-
-	return viewerURL, finalThumb, nil
-}
-
-// scrapeImxBBCode fetches the IMX viewer page and intelligently extracts the correct BBCode
-func scrapeImxBBCode(viewerURL string) (string, string, error) {
-	resp, err := doRequest(context.Background(), "GET", viewerURL, nil, "")
-	if err != nil {
-		return "", "", fmt.Errorf("failed to fetch viewer page: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	doc, err := goquery.NewDocumentFromReader(resp.Body)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to parse HTML: %w", err)
-	}
-
-	var bestBBCode string
-	var bestScore = -100
-
-	// Iterate all text inputs to find the best candidate for "Thumbnail BBCode"
-	doc.Find("textarea, input[type='text']").Each(func(i int, s *goquery.Selection) {
-		text := strings.TrimSpace(s.Text())
-		if text == "" {
-			text, _ = s.Attr("value")
-		}
-		// Basic validation: must look like a BBCode link
-		if !strings.Contains(text, "[url=") || !strings.Contains(text, "[img]") {
-			return
-		}
-
-		// Calculate Score to identify the "Thumbnail" code vs "Full Image/Hotlink" code
-		score := 0
-
-		// 1. Check Label (Preceding text)
-		label := strings.ToLower(s.Prev().Text())
-		parentLabel := strings.ToLower(s.Parent().Prev().Text())
-		grandParentLabel := strings.ToLower(s.Parent().Parent().Prev().Text())
-		combinedLabel := label + " " + parentLabel + " " + grandParentLabel
-
-		if strings.Contains(combinedLabel, "thumb") {
-			score += 50 // Strong signal for thumbnail
-		} else if strings.Contains(combinedLabel, "hotlink") || strings.Contains(combinedLabel, "full") {
-			score -= 50 // Strong signal for full image (avoid)
-		}
-
-		// 2. Check URL Pattern inside the BBCode
-		// Thumbnails often have "/t/" or "_t" or "small" in the URL
-		if strings.Contains(text, "/u/t/") || strings.Contains(text, "_t") {
-			score += 100 // Very strong signal
-		} else if strings.Contains(text, "/u/i/") {
-			score -= 20 // Looks like full image
-		}
-
-		// 3. Position Preference
-		// If labels are missing, thumbnails usually appear before full hotlinks.
-		// We subtract 'i' so earlier elements get a slightly higher score if all else matches.
-		score -= i
-
-		if score > bestScore {
-			bestScore = score
-			bestBBCode = text
-		}
-	})
-
-	if bestBBCode == "" {
-		return "", "", fmt.Errorf("no valid BBCode found on page")
-	}
-
-	// Parse BBCode to extract URLs
-	// Pattern: [url=VIEWER_URL][img]THUMB_URL[/img][/url]
-	reURL := regexp.MustCompile(`\[url=([^\]]+)\]\[img\]([^\[]+)\[/img\]\[/url\]`)
-	matches := reURL.FindStringSubmatch(bestBBCode)
-	if len(matches) < 3 {
-		return "", "", fmt.Errorf("failed to parse best BBCode candidate: %s", bestBBCode)
-	}
-
-	return matches[1], matches[2], nil
-}
-
-func uploadPixhost(ctx context.Context, fp string, job *JobRequest) (string, string, error) {
-	// RATE LIMITING: Wait for rate limiter approval to prevent IP bans
-	if err := waitForRateLimit(ctx, "pixhost.to"); err != nil {
-		return "", "", fmt.Errorf("rate limit: %w", err)
-	}
-
-	pr, pw := io.Pipe()
-	writer := multipart.NewWriter(pw)
-
-	go func() {
-		defer func() { _ = pw.Close() }()
-		defer func() { _ = writer.Close() }()
-		part, err := writer.CreateFormFile("img", filepath.Base(fp))
-		if err != nil {
-			pw.CloseWithError(fmt.Errorf("failed to create form file: %w", err))
-			return
-		}
-		f, err := os.Open(fp)
-		if err != nil {
-			pw.CloseWithError(fmt.Errorf("failed to open file: %w", err))
-			return
-		}
-		defer func() { _ = f.Close() }()
-		if _, err := io.Copy(part, f); err != nil {
-			pw.CloseWithError(fmt.Errorf("failed to copy file: %w", err))
-			return
-		}
-		if err := writer.WriteField("content_type", job.Config["pix_content"]); err != nil {
-			pw.CloseWithError(fmt.Errorf("failed to write content_type field: %w", err))
-			return
-		}
-		if err := writer.WriteField("max_th_size", job.Config["pix_thumb"]); err != nil {
-			pw.CloseWithError(fmt.Errorf("failed to write max_th_size field: %w", err))
-			return
-		}
-		if h := job.Config["pix_gallery_hash"]; h != "" {
-			if err := writer.WriteField("gallery_hash", h); err != nil {
-				pw.CloseWithError(fmt.Errorf("failed to write gallery_hash field: %w", err))
-				return
-			}
-		}
-	}()
-
-	// CRITICAL: Use context for proper cancellation
-	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.pixhost.to/images", pr)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", writer.FormDataContentType())
-	req.Header.Set("User-Agent", DefaultUserAgent)
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", "", fmt.Errorf("request failed: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	raw, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to read response: %w", err)
-	}
-
-	var res struct {
-		Show string `json:"show_url"`
-		Th   string `json:"th_url"`
-		Err  string `json:"error_msg"`
-	}
-	if err := json.Unmarshal(raw, &res); err != nil {
-		return "", "", fmt.Errorf("failed to parse response: %w", err)
-	}
-	if res.Show == "" {
-		return "", "", fmt.Errorf("upload failed: %s", res.Err)
-	}
-	return res.Show, res.Th, nil
-}
-
-func uploadVipr(ctx context.Context, fp string, job *JobRequest) (string, string, error) {
-	// RATE LIMITING: Wait for rate limiter approval to prevent IP bans
-	if err := waitForRateLimit(ctx, "vipr.im"); err != nil {
-		return "", "", fmt.Errorf("rate limit: %w", err)
-	}
-
-	viprSt.mu.RLock()
-	needsLogin := viprSt.sessId == ""
-	upUrl := viprSt.endpoint
-	sessId := viprSt.sessId
-	viprSt.mu.RUnlock()
-
-	if needsLogin {
-		doViprLogin(job.Creds)
-		viprSt.mu.RLock()
-		upUrl = viprSt.endpoint
-		sessId = viprSt.sessId
-		viprSt.mu.RUnlock()
-	}
-
-	if upUrl == "" {
-		upUrl = "https://vipr.im/cgi-bin/upload.cgi"
-	}
-
-	pr, pw := io.Pipe()
-	writer := multipart.NewWriter(pw)
-	go func() {
-		defer func() { _ = pw.Close() }()
-		defer func() { _ = writer.Close() }()
-		safeName := strings.ReplaceAll(filepath.Base(fp), " ", "_")
-		part, err := writer.CreateFormFile("file_0", safeName)
-		if err != nil {
-			pw.CloseWithError(fmt.Errorf("failed to create form file: %w", err))
-			return
-		}
-		f, err := os.Open(fp)
-		if err != nil {
-			pw.CloseWithError(fmt.Errorf("failed to open file: %w", err))
-			return
-		}
-		defer func() { _ = f.Close() }()
-		if _, err := io.Copy(part, f); err != nil {
-			pw.CloseWithError(fmt.Errorf("failed to copy file: %w", err))
-			return
-		}
-		if err := writer.WriteField("upload_type", "file"); err != nil {
-			pw.CloseWithError(fmt.Errorf("failed to write upload_type field: %w", err))
-			return
-		}
-		if err := writer.WriteField("sess_id", sessId); err != nil {
-			pw.CloseWithError(fmt.Errorf("failed to write sess_id field: %w", err))
-			return
-		}
-		if err := writer.WriteField("thumb_size", job.Config["vipr_thumb"]); err != nil {
-			pw.CloseWithError(fmt.Errorf("failed to write thumb_size field: %w", err))
-			return
-		}
-		if err := writer.WriteField("fld_id", job.Config["vipr_gal_id"]); err != nil {
-			pw.CloseWithError(fmt.Errorf("failed to write fld_id field: %w", err))
-			return
-		}
-		if err := writer.WriteField("tos", "1"); err != nil {
-			pw.CloseWithError(fmt.Errorf("failed to write tos field: %w", err))
-			return
-		}
-		if err := writer.WriteField("submit_btn", "Upload"); err != nil {
-			pw.CloseWithError(fmt.Errorf("failed to write submit_btn field: %w", err))
-			return
-		}
-	}()
-
-	u := upUrl + "?upload_id=" + randomString(12) + "&js_on=1&utype=reg&upload_type=file"
-	resp, err := doRequest(ctx, "POST", u, pr, writer.FormDataContentType())
-	if err != nil {
-		return "", "", fmt.Errorf("request failed: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	// Parse initial response
-	doc, err := goquery.NewDocumentFromReader(resp.Body)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	if textArea := doc.Find("textarea[name='fn']"); textArea.Length() > 0 {
-		fnVal := textArea.Text()
-		v := url.Values{"op": {"upload_result"}, "fn": {fnVal}, "st": {"OK"}}
-		if r2, e2 := doRequest(ctx, "POST", "https://vipr.im/", strings.NewReader(v.Encode()), "application/x-www-form-urlencoded"); e2 == nil {
-			defer func() { _ = r2.Body.Close() }()
-			doc, _ = goquery.NewDocumentFromReader(r2.Body)
-		}
-	}
-
-	imgUrl := doc.Find("input[name='link_url']").AttrOr("value", "")
-	thumbUrl := doc.Find("input[name='thumb_url']").AttrOr("value", "")
-
-	if imgUrl == "" || thumbUrl == "" {
-		html, _ := doc.Html()
-		reImg := regexp.MustCompile(`value=['"](https?://vipr\.im/i/[^'"]+)['"]`)
-		reThumb := regexp.MustCompile(`src=['"](https?://vipr\.im/th/[^'"]+)['"]`)
-		mI := reImg.FindStringSubmatch(html)
-		mT := reThumb.FindStringSubmatch(html)
-		if len(mI) > 1 {
-			imgUrl = mI[1]
-		}
-		if len(mT) > 1 {
-			thumbUrl = mT[1]
-		}
-	}
-
-	if imgUrl != "" && thumbUrl != "" {
-		return imgUrl, thumbUrl, nil
-	}
-	return "", "", fmt.Errorf("vipr parse failed")
-}
-
-func uploadTurbo(ctx context.Context, fp string, job *JobRequest) (string, string, error) {
-	// RATE LIMITING: Wait for rate limiter approval to prevent IP bans
-	if err := waitForRateLimit(ctx, "turboimagehost"); err != nil {
-		return "", "", fmt.Errorf("rate limit: %w", err)
-	}
-
-	turboSt.mu.RLock()
-	needsLogin := turboSt.endpoint == ""
-	endp := turboSt.endpoint
-	turboSt.mu.RUnlock()
-
-	if needsLogin {
-		doTurboLogin(job.Creds)
-		turboSt.mu.RLock()
-		endp = turboSt.endpoint
-		turboSt.mu.RUnlock()
-	}
-
-	if endp == "" {
-		endp = "https://www.turboimagehost.com/upload_html5.tu"
-	}
-
-	fi, err := os.Stat(fp)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to stat file: %w", err)
-	}
-
-	pr, pw := io.Pipe()
-	writer := multipart.NewWriter(pw)
-	go func() {
-		defer func() { _ = pw.Close() }()
-		defer func() { _ = writer.Close() }()
-		h := make(textproto.MIMEHeader)
-		h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="qqfile"; filename="%s"`, quoteEscape(filepath.Base(fp))))
-		h.Set("Content-Type", "application/octet-stream")
-		part, err := writer.CreatePart(h)
-		if err != nil {
-			pw.CloseWithError(fmt.Errorf("failed to create form part: %w", err))
-			return
-		}
-		f, err := os.Open(fp)
-		if err != nil {
-			pw.CloseWithError(fmt.Errorf("failed to open file: %w", err))
-			return
-		}
-		defer func() { _ = f.Close() }()
-		if _, err := io.Copy(part, f); err != nil {
-			pw.CloseWithError(fmt.Errorf("failed to copy file: %w", err))
-			return
-		}
-		if err := writer.WriteField("qquuid", randomString(32)); err != nil {
-			pw.CloseWithError(fmt.Errorf("failed to write qquuid field: %w", err))
-			return
-		}
-		if err := writer.WriteField("qqfilename", filepath.Base(fp)); err != nil {
-			pw.CloseWithError(fmt.Errorf("failed to write qqfilename field: %w", err))
-			return
-		}
-		if err := writer.WriteField("qqtotalfilesize", fmt.Sprintf("%d", fi.Size())); err != nil {
-			pw.CloseWithError(fmt.Errorf("failed to write qqtotalfilesize field: %w", err))
-			return
-		}
-		if err := writer.WriteField("imcontent", job.Config["turbo_content"]); err != nil {
-			pw.CloseWithError(fmt.Errorf("failed to write imcontent field: %w", err))
-			return
-		}
-		if err := writer.WriteField("thumb_size", job.Config["turbo_thumb"]); err != nil {
-			pw.CloseWithError(fmt.Errorf("failed to write thumb_size field: %w", err))
-			return
-		}
-	}()
-
-	resp, err := doRequest(ctx, "POST", endp, pr, writer.FormDataContentType())
-	if err != nil {
-		return "", "", fmt.Errorf("request failed: %w", err)
-	}
-	raw, err := io.ReadAll(resp.Body)
-	_ = resp.Body.Close()
-	if err != nil {
-		return "", "", fmt.Errorf("failed to read response: %w", err)
-	}
-
-	var res struct {
-		Success bool   `json:"success"`
-		NewUrl  string `json:"newUrl"`
-		Id      string `json:"id"`
-	}
-	if err := json.Unmarshal(raw, &res); err != nil {
-		return "", "", fmt.Errorf("failed to parse response: %w", err)
-	}
-	if res.Success {
-		if res.NewUrl != "" {
-			return scrapeBBCode(res.NewUrl)
-		}
-		if res.Id != "" {
-			u := fmt.Sprintf("https://www.turboimagehost.com/p/%s/%s.html", res.Id, filepath.Base(fp))
-			return u, u, nil
-		}
-	}
-	return "", "", fmt.Errorf("turbo upload failed")
-}
-
-func uploadImageBam(ctx context.Context, fp string, job *JobRequest) (string, string, error) {
-	// RATE LIMITING: Wait for rate limiter approval to prevent IP bans
-	if err := waitForRateLimit(ctx, "imagebam.com"); err != nil {
-		return "", "", fmt.Errorf("rate limit: %w", err)
-	}
-
-	ibSt.mu.RLock()
-	needsLogin := ibSt.uploadToken == ""
-	csrf := ibSt.csrf
-	token := ibSt.uploadToken
-	ibSt.mu.RUnlock()
-
-	if needsLogin {
-		doImageBamLogin(job.Creds)
-		ibSt.mu.RLock()
-		csrf = ibSt.csrf
-		token = ibSt.uploadToken
-		ibSt.mu.RUnlock()
-	}
-
-	pr, pw := io.Pipe()
-	writer := multipart.NewWriter(pw)
-	go func() {
-		defer func() { _ = pw.Close() }()
-		defer func() { _ = writer.Close() }()
-		part, err := writer.CreateFormFile("files[0]", filepath.Base(fp))
-		if err != nil {
-			pw.CloseWithError(fmt.Errorf("failed to create form file: %w", err))
-			return
-		}
-		f, err := os.Open(fp)
-		if err != nil {
-			pw.CloseWithError(fmt.Errorf("failed to open file: %w", err))
-			return
-		}
-		defer func() { _ = f.Close() }()
-		if _, err := io.Copy(part, f); err != nil {
-			pw.CloseWithError(fmt.Errorf("failed to copy file: %w", err))
-			return
-		}
-		if err := writer.WriteField("_token", csrf); err != nil {
-			pw.CloseWithError(fmt.Errorf("failed to write _token field: %w", err))
-			return
-		}
-		if err := writer.WriteField("data", token); err != nil {
-			pw.CloseWithError(fmt.Errorf("failed to write data field: %w", err))
-			return
-		}
-	}()
-
-	// CRITICAL: Use context for proper cancellation
-	req, err := http.NewRequestWithContext(ctx, "POST", "https://www.imagebam.com/upload", pr)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", writer.FormDataContentType())
-	req.Header.Set("X-Requested-With", "XMLHttpRequest")
-	req.Header.Set("X-CSRF-TOKEN", csrf)
-	req.Header.Set("User-Agent", DefaultUserAgent)
-	req.Header.Set("Origin", "https://www.imagebam.com")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", "", fmt.Errorf("request failed: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	var res struct {
-		Status string `json:"status"`
-		Data   []struct {
-			Url   string `json:"url"`
-			Thumb string `json:"thumb"`
-		} `json:"data"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
-		return "", "", fmt.Errorf("failed to decode response: %w", err)
-	}
-	if res.Status == "success" && len(res.Data) > 0 {
-		return res.Data[0].Url, res.Data[0].Thumb, nil
-	}
-	return "", "", fmt.Errorf("imagebam failed")
-}
-
-// --- Service Helpers ---
-
-func scrapeImxGalleries(creds map[string]string) []map[string]string {
 	user := creds["imx_user"]
 	if user == "" {
 		user = creds["vipr_user"]
@@ -2632,42 +1104,348 @@ func scrapeImxGalleries(creds map[string]string) []map[string]string {
 	if pass == "" {
 		pass = creds["vipr_pass"]
 	}
-
-	v := url.Values{"op": {"login"}, "login": {user}, "password": {pass}, "redirect": {"https://imx.to/user/galleries"}}
-	if r, err := doRequest(context.Background(), "POST", "https://imx.to/login.html", strings.NewReader(v.Encode()), "application/x-www-form-urlencoded"); err == nil {
-		_ = r.Body.Close()
+	if user == "" || pass == "" {
+		return false
 	}
 
-	resp, err := doRequest(context.Background(), "GET", "https://imx.to/user/galleries", nil, "")
+	// 2. Perform Initial GET to get cookies (CRITICAL FIX)
+	// FIX: Use https://imx.to instead of www.imx.to which has bad cert
+	loginUrl := "https://imx.to/login.php"
+	getReq, _ := http.NewRequest("GET", loginUrl, nil)
+	getReq.Header.Set("User-Agent", DefaultUserAgent)
+	getResp, err := client.Do(getReq)
+	if err == nil {
+		getResp.Body.Close()
+	} else {
+		sendJSON(OutputEvent{Type: "error", Msg: fmt.Sprintf("IMX Login Pre-check failed: %v", err)})
+		return false
+	}
+
+	// 3. Perform POST Login Request
+	// Using URL and field names from login.html
+	sendJSON(OutputEvent{Type: "log", Msg: "IMX: Starting Web Login..."})
+	
+	// FIX: field names 'usr_email' and 'pwd' (from source code provided by user)
+	v := url.Values{
+		"usr_email": {user},
+		"pwd":       {pass},
+		"doLogin":   {"Login"}, 
+		"remember":  {"1"}, 
+	}
+	
+	req, _ := http.NewRequest("POST", loginUrl, strings.NewReader(v.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("User-Agent", DefaultUserAgent)
+	req.Header.Set("Referer", loginUrl) // Security check
+	
+	resp, err := client.Do(req)
+	
+	if err == nil {
+		defer resp.Body.Close()
+		
+		finalUrl := resp.Request.URL.String()
+		sendJSON(OutputEvent{Type: "log", Msg: fmt.Sprintf("IMX Login Final URL: %s", finalUrl)})
+		
+		// 4. Verification
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		bodyStr := string(bodyBytes)
+		
+		isSuccess := false
+		
+		// Success Markers
+		// Often redirects to imx.to/user/dashboard or user/galleries
+		if strings.Contains(finalUrl, "dashboard") || strings.Contains(finalUrl, "galleries") {
+			isSuccess = true
+		} else if strings.Contains(strings.ToLower(bodyStr), "logout") || strings.Contains(bodyStr, "Balance") {
+			isSuccess = true
+		}
+		
+		// Failure Markers
+		if strings.Contains(bodyStr, "login_form") || strings.Contains(bodyStr, "Sign Up") || strings.Contains(bodyStr, "Incorrect username") {
+			isSuccess = false
+		}
+
+		if isSuccess {
+			imxSt.mu.Lock()
+			imxSt.isLoggedIn = true
+			imxSt.mu.Unlock()
+			sendJSON(OutputEvent{Type: "log", Msg: "IMX Login: Verified Success"})
+			return true
+		}
+		
+		// Log detailed failure
+		snippet := bodyStr
+		if len(snippet) > 500 { snippet = snippet[:500] }
+		sendJSON(OutputEvent{Type: "error", Msg: fmt.Sprintf("IMX Login Failed. URL: %s. Body start: %s", finalUrl, snippet)})
+		return false
+	}
+	
+	sendJSON(OutputEvent{Type: "error", Msg: fmt.Sprintf("IMX Login Request Error: %v", err)})
+	return false
+}
+
+func uploadImx(ctx context.Context, fp string, job *JobRequest) (string, string, error) {
+	if err := waitForRateLimit(ctx, "imx.to"); err != nil {
+		return "", "", err
+	}
+	pr, pw := io.Pipe()
+	writer := multipart.NewWriter(pw)
+	go func() {
+		defer pw.Close()
+		defer writer.Close()
+		part, _ := writer.CreateFormFile("image", filepath.Base(fp))
+		f, _ := os.Open(fp)
+		defer f.Close()
+		io.Copy(part, f)
+		writer.WriteField("format", "json")
+		writer.WriteField("adult", "1")
+		writer.WriteField("upload_type", "file")
+		writer.WriteField("simple_upload", "Upload")
+		
+		sizeId := getImxSizeId(job.Config["imx_thumb_id"])
+		writer.WriteField("thumbnail_size", sizeId)
+		writer.WriteField("thumb_size_container", sizeId)
+		writer.WriteField("thumbnail_format", getImxFormatId(job.Config["imx_format_id"]))
+		
+		if gid := job.Config["gallery_id"]; gid != "" {
+			writer.WriteField("gallery_id", gid)
+		}
+	}()
+
+	req, _ := http.NewRequestWithContext(ctx, "POST", "https://api.imx.to/v1/upload.php", pr)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("X-API-KEY", job.Creds["api_key"])
+	req.Header.Set("User-Agent", DefaultUserAgent)
+
+	resp, err := client.Do(req)
 	if err != nil {
-		return nil
+		return "", "", err
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	var res struct {
+		Status string `json:"status"`
+		Data   struct {
+			Img   string `json:"image_url"`
+			Thumb string `json:"thumbnail_url"`
+		} `json:"data"`
+	}
+	json.Unmarshal(raw, &res)
+	if res.Status != "success" {
+		return "", "", fmt.Errorf("upload failed")
+	}
+	return res.Data.Img, res.Data.Thumb, nil
+}
 
+func uploadPixhost(ctx context.Context, fp string, job *JobRequest) (string, string, error) {
+	if err := waitForRateLimit(ctx, "pixhost.to"); err != nil {
+		return "", "", err
+	}
+	pr, pw := io.Pipe()
+	writer := multipart.NewWriter(pw)
+	go func() {
+		defer pw.Close()
+		defer writer.Close()
+		part, _ := writer.CreateFormFile("img", filepath.Base(fp))
+		f, _ := os.Open(fp)
+		defer f.Close()
+		io.Copy(part, f)
+		writer.WriteField("content_type", job.Config["pix_content"])
+		writer.WriteField("max_th_size", job.Config["pix_thumb"])
+		if h := job.Config["gallery_hash"]; h != "" {
+			writer.WriteField("gallery_hash", h)
+		}
+	}()
+
+	req, _ := http.NewRequestWithContext(ctx, "POST", "https://api.pixhost.to/images", pr)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("User-Agent", DefaultUserAgent)
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", "", err
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	var res struct {
+		Show string `json:"show_url"`
+		Th   string `json:"th_url"`
+	}
+	json.Unmarshal(raw, &res)
+	if res.Show == "" {
+		return "", "", fmt.Errorf("failed")
+	}
+	return res.Show, res.Th, nil
+}
+
+func uploadVipr(ctx context.Context, fp string, job *JobRequest) (string, string, error) {
+	if err := waitForRateLimit(ctx, "vipr.im"); err != nil {
+		return "", "", err
+	}
+	viprSt.mu.RLock()
+	needsLogin := viprSt.sessId == ""
+	upUrl := viprSt.endpoint
+	sessId := viprSt.sessId
+	viprSt.mu.RUnlock()
+	if needsLogin {
+		doViprLogin(job.Creds)
+		viprSt.mu.RLock()
+		upUrl = viprSt.endpoint
+		sessId = viprSt.sessId
+		viprSt.mu.RUnlock()
+	}
+	if upUrl == "" {
+		upUrl = "https://vipr.im/cgi-bin/upload.cgi"
+	}
+	pr, pw := io.Pipe()
+	writer := multipart.NewWriter(pw)
+	go func() {
+		defer pw.Close()
+		defer writer.Close()
+		safeName := strings.ReplaceAll(filepath.Base(fp), " ", "_")
+		part, err := writer.CreateFormFile("file_0", safeName)
+		if err != nil { return }
+		f, err := os.Open(fp)
+		if err != nil { return }
+		defer f.Close()
+		io.Copy(part, f)
+		writer.WriteField("upload_type", "file")
+		writer.WriteField("sess_id", sessId)
+		writer.WriteField("thumb_size", job.Config["vipr_thumb"])
+		writer.WriteField("fld_id", job.Config["vipr_gal_id"])
+		writer.WriteField("tos", "1")
+		writer.WriteField("submit_btn", "Upload")
+	}()
+	u := upUrl + "?upload_id=" + randomString(12) + "&js_on=1&utype=reg&upload_type=file"
+	resp, err := doRequest(ctx, "POST", u, pr, writer.FormDataContentType())
+	if err != nil { return "", "", err }
+	defer resp.Body.Close()
 	doc, err := goquery.NewDocumentFromReader(resp.Body)
-	if err != nil {
-		return nil
+	if err != nil { return "", "", err }
+	if textArea := doc.Find("textarea[name='fn']"); textArea.Length() > 0 {
+		fnVal := textArea.Text()
+		v := url.Values{"op": {"upload_result"}, "fn": {fnVal}, "st": {"OK"}}
+		if r2, e2 := doRequest(ctx, "POST", "https://vipr.im/", strings.NewReader(v.Encode()), "application/x-www-form-urlencoded"); e2 == nil {
+			defer r2.Body.Close()
+			doc, _ = goquery.NewDocumentFromReader(r2.Body)
+		}
 	}
+	imgUrl := doc.Find("input[name='link_url']").AttrOr("value", "")
+	thumbUrl := doc.Find("input[name='thumb_url']").AttrOr("value", "")
+	if imgUrl == "" || thumbUrl == "" {
+		html, _ := doc.Html()
+		reImg := regexp.MustCompile(`value=['"](https?://vipr\.im/i/[^'"]+)['"]`)
+		reThumb := regexp.MustCompile(`src=['"](https?://vipr\.im/th/[^'"]+)['"]`)
+		mI := reImg.FindStringSubmatch(html)
+		mT := reThumb.FindStringSubmatch(html)
+		if len(mI) > 1 { imgUrl = mI[1] }
+		if len(mT) > 1 { thumbUrl = mT[1] }
+	}
+	if imgUrl != "" && thumbUrl != "" { return imgUrl, thumbUrl, nil }
+	return "", "", fmt.Errorf("vipr parse failed")
+}
 
+func uploadTurbo(ctx context.Context, fp string, job *JobRequest) (string, string, error) {
+	if err := waitForRateLimit(ctx, "turboimagehost"); err != nil { return "", "", err }
+	turboSt.mu.RLock()
+	needsLogin := turboSt.endpoint == ""
+	endp := turboSt.endpoint
+	turboSt.mu.RUnlock()
+	if needsLogin {
+		doTurboLogin(job.Creds)
+		turboSt.mu.RLock()
+		endp = turboSt.endpoint
+		turboSt.mu.RUnlock()
+	}
+	if endp == "" { endp = "https://www.turboimagehost.com/upload_html5.tu" }
+	fi, _ := os.Stat(fp)
+	pr, pw := io.Pipe()
+	writer := multipart.NewWriter(pw)
+	go func() {
+		defer pw.Close()
+		defer writer.Close()
+		h := make(textproto.MIMEHeader)
+		h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="qqfile"; filename="%s"`, quoteEscape(filepath.Base(fp))))
+		h.Set("Content-Type", "application/octet-stream")
+		part, _ := writer.CreatePart(h)
+		f, _ := os.Open(fp)
+		defer f.Close()
+		io.Copy(part, f)
+		writer.WriteField("qquuid", randomString(32))
+		writer.WriteField("qqfilename", filepath.Base(fp))
+		writer.WriteField("qqtotalfilesize", fmt.Sprintf("%d", fi.Size()))
+		writer.WriteField("imcontent", job.Config["turbo_content"])
+		writer.WriteField("thumb_size", job.Config["turbo_thumb"])
+	}()
+	resp, err := doRequest(ctx, "POST", endp, pr, writer.FormDataContentType())
+	if err != nil { return "", "", err }
+	raw, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	var res struct { Success bool `json:"success"`; NewUrl string `json:"newUrl"`; Id string `json:"id"` }
+	json.Unmarshal(raw, &res)
+	if res.Success {
+		if res.NewUrl != "" { return scrapeBBCode(res.NewUrl) }
+		if res.Id != "" { u := fmt.Sprintf("https://www.turboimagehost.com/p/%s/%s.html", res.Id, filepath.Base(fp)); return u, u, nil }
+	}
+	return "", "", fmt.Errorf("turbo upload failed")
+}
+
+func uploadImageBam(ctx context.Context, fp string, job *JobRequest) (string, string, error) {
+	if err := waitForRateLimit(ctx, "imagebam.com"); err != nil { return "", "", err }
+	ibSt.mu.RLock()
+	needsLogin := ibSt.uploadToken == ""
+	csrf := ibSt.csrf
+	token := ibSt.uploadToken
+	ibSt.mu.RUnlock()
+	if needsLogin {
+		doImageBamLogin(job.Creds)
+		ibSt.mu.RLock()
+		csrf = ibSt.csrf
+		token = ibSt.uploadToken
+		ibSt.mu.RUnlock()
+	}
+	pr, pw := io.Pipe()
+	writer := multipart.NewWriter(pw)
+	go func() {
+		defer pw.Close()
+		defer writer.Close()
+		part, _ := writer.CreateFormFile("files[0]", filepath.Base(fp))
+		f, _ := os.Open(fp)
+		defer f.Close()
+		io.Copy(part, f)
+		writer.WriteField("_token", csrf)
+		writer.WriteField("data", token)
+	}()
+	req, _ := http.NewRequestWithContext(ctx, "POST", "https://www.imagebam.com/upload", pr)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	req.Header.Set("X-CSRF-TOKEN", csrf)
+	req.Header.Set("User-Agent", DefaultUserAgent)
+	req.Header.Set("Origin", "https://www.imagebam.com")
+	resp, err := client.Do(req)
+	if err != nil { return "", "", err }
+	defer resp.Body.Close()
+	var res struct { Status string `json:"status"`; Data []struct { Url, Thumb string } `json:"data"` }
+	json.NewDecoder(resp.Body).Decode(&res)
+	if res.Status == "success" && len(res.Data) > 0 { return res.Data[0].Url, res.Data[0].Thumb, nil }
+	return "", "", fmt.Errorf("imagebam failed")
+}
+
+func scrapeImxGalleries(creds map[string]string) []map[string]string {
+	doImxLogin(creds)
+	resp, err := doRequest(context.Background(), "GET", "https://imx.to/user/galleries", nil, "")
+	if err != nil { return nil }
+	defer resp.Body.Close()
+	doc, _ := goquery.NewDocumentFromReader(resp.Body)
 	var results []map[string]string
 	seen := make(map[string]bool)
-
 	doc.Find("a").Each(func(i int, s *goquery.Selection) {
-		href, exists := s.Attr("href")
-		if !exists {
-			return
-		}
+		href, _ := s.Attr("href")
 		if strings.Contains(href, "/g/") {
 			parts := strings.Split(href, "/g/")
 			if len(parts) > 1 {
-				id := parts[1]
-				id = strings.Split(id, "?")[0]
-				id = strings.Split(id, "/")[0]
+				id := strings.Split(strings.Split(parts[1], "?")[0], "/")[0]
 				name := strings.TrimSpace(s.Find("i").Text())
-				if name == "" {
-					return
-				}
-				if !seen[id] {
+				if name != "" && !seen[id] {
 					results = append(results, map[string]string{"id": id, "name": name})
 					seen[id] = true
 				}
@@ -2678,52 +1456,72 @@ func scrapeImxGalleries(creds map[string]string) []map[string]string {
 }
 
 func createImxGallery(creds map[string]string, name string) (string, error) {
-	v := url.Values{"name": {name}, "public": {"1"}, "submit": {"Save"}}
-	resp, err := doRequest(context.Background(), "POST", "https://imx.to/user/gallery/add", strings.NewReader(v.Encode()), "application/x-www-form-urlencoded")
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = resp.Body.Close() }()
+	doImxLogin(creds)
+	// Use correct form fields (verified from uploaded HTML)
+	// Use naked domain imx.to to match login cookie
+	v := url.Values{"gallery_name": {name}, "submit_new_gallery": {"Add"}}
+	
+	req, _ := http.NewRequest("POST", "https://imx.to/user/gallery/add", strings.NewReader(v.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("User-Agent", DefaultUserAgent)
+	req.Header.Set("Referer", "https://imx.to/user/gallery/add") // Required for validation
+	
+	resp, err := client.Do(req)
+	
+	if err != nil { return "", err }
+	defer resp.Body.Close()
+	
 	finalUrl := resp.Request.URL.String()
+	
+	// DEBUG LOG
+	sendJSON(OutputEvent{Type: "log", Msg: fmt.Sprintf("[IMX] Create Gallery URL: %s", finalUrl)})
+
+	// 1. Try URL extraction
 	if strings.Contains(finalUrl, "id=") {
 		u, _ := url.Parse(finalUrl)
-		q := u.Query()
-		return q.Get("id"), nil
+		return u.Query().Get("id"), nil
 	}
-	return "0", nil
+
+	// 2. Fallback: Body extraction (if redirection failed or 200 OK returned directly)
+	doc, err := goquery.NewDocumentFromReader(resp.Body)
+	if err == nil {
+		// Look for the "Manage Gallery" link in the success page
+		var id string
+		doc.Find("a[href*='manage?id=']").Each(func(i int, s *goquery.Selection) {
+			if id == "" {
+				href, _ := s.Attr("href")
+				if u, err := url.Parse(href); err == nil {
+					id = u.Query().Get("id")
+				}
+			}
+		})
+		
+		if id != "" {
+			sendJSON(OutputEvent{Type: "log", Msg: fmt.Sprintf("[IMX] Found ID in body: %s", id)})
+			return id, nil
+		}
+	}
+
+	return "0", fmt.Errorf("failed to extract ID. URL: %s", finalUrl)
 }
 
 func doViprLogin(creds map[string]string) bool {
 	v := url.Values{"op": {"login"}, "login": {creds["vipr_user"]}, "password": {creds["vipr_pass"]}}
-	if r, err := doRequest(context.Background(), "POST", "https://vipr.im/login.html", strings.NewReader(v.Encode()), "application/x-www-form-urlencoded"); err == nil {
-		_ = r.Body.Close()
-	}
+	if r, err := doRequest(context.Background(), "POST", "https://vipr.im/login.html", strings.NewReader(v.Encode()), "application/x-www-form-urlencoded"); err == nil { r.Body.Close() }
 	resp, err := doRequest(context.Background(), "GET", "https://vipr.im/", nil, "")
-	if err != nil {
-		return false
-	}
-	defer func() { _ = resp.Body.Close() }()
+	if err != nil { return false }
+	defer resp.Body.Close()
 	bodyBytes, _ := io.ReadAll(resp.Body)
 	doc, _ := goquery.NewDocumentFromReader(bytes.NewReader(bodyBytes))
-
 	viprSt.mu.Lock()
 	defer viprSt.mu.Unlock()
-
-	if action, exists := doc.Find("form[action*='upload.cgi']").Attr("action"); exists {
-		viprSt.endpoint = action
-	}
-	if val, exists := doc.Find("input[name='sess_id']").Attr("value"); exists {
-		viprSt.sessId = val
-	}
+	if action, exists := doc.Find("form[action*='upload.cgi']").Attr("action"); exists { viprSt.endpoint = action }
+	if val, exists := doc.Find("input[name='sess_id']").Attr("value"); exists { viprSt.sessId = val }
 	if viprSt.sessId == "" {
 		html := string(bodyBytes)
-		if m := regexp.MustCompile(`name=["']sess_id["']\s+value=["']([^"']+)["']`).FindStringSubmatch(html); len(m) > 1 {
-			viprSt.sessId = m[1]
-		}
+		if m := regexp.MustCompile(`name=["']sess_id["']\s+value=["']([^"']+)["']`).FindStringSubmatch(html); len(m) > 1 { viprSt.sessId = m[1] }
 		if viprSt.endpoint == "" {
-			if m := regexp.MustCompile(`action=["'](https?://[^/]+/cgi-bin/upload\.cgi)`).FindStringSubmatch(html); len(m) > 1 {
-				viprSt.endpoint = m[1]
-			}
+			if m := regexp.MustCompile(`action=["'](https?://[^/]+/cgi-bin/upload\.cgi)`).FindStringSubmatch(html); len(m) > 1 { viprSt.endpoint = m[1] }
 		}
 	}
 	return viprSt.sessId != ""
@@ -2731,10 +1529,8 @@ func doViprLogin(creds map[string]string) bool {
 
 func scrapeViprGalleries() []map[string]string {
 	resp, err := doRequest(context.Background(), "GET", "https://vipr.im/?op=my_files", nil, "")
-	if err != nil {
-		return nil
-	}
-	defer func() { _ = resp.Body.Close() }()
+	if err != nil { return nil }
+	defer resp.Body.Close()
 	bodyBytes, _ := io.ReadAll(resp.Body)
 	var results []map[string]string
 	seen := make(map[string]bool)
@@ -2753,121 +1549,44 @@ func scrapeViprGalleries() []map[string]string {
 			}
 		})
 	}
-	if len(results) == 0 {
-		html := string(bodyBytes)
-		re := regexp.MustCompile(`fld_id=(\d+)[^>]*>([^<]+)</a>`)
-		matches := re.FindAllStringSubmatch(html, -1)
-		for _, m := range matches {
-			if !seen[m[1]] {
-				results = append(results, map[string]string{"id": m[1], "name": m[2]})
-				seen[m[1]] = true
-			}
-		}
-	}
 	return results
 }
 
 func createViprGallery(name string) (string, error) {
 	v := url.Values{"op": {"my_files"}, "add_folder": {name}}
-	if r, err := doRequest(context.Background(), "GET", "https://vipr.im/?"+v.Encode(), nil, ""); err == nil {
-		_ = r.Body.Close()
-	}
+	if r, err := doRequest(context.Background(), "GET", "https://vipr.im/?"+v.Encode(), nil, ""); err == nil { r.Body.Close() }
 	return "0", nil
 }
 
 func createPixhostGallery(name string) (map[string]string, error) {
-	// Pixhost gallery creation:
-	// POST to https://api.pixhost.to/galleries with the gallery title
-	// Returns JSON with gallery_hash and gallery_upload_hash
-	logger := log.WithFields(log.Fields{
-		"action":  "create_gallery",
-		"service": "pixhost.to",
-		"name":    name,
-	})
-
-	// Create form data
 	v := url.Values{}
 	v.Set("title", name)
-
-	req, err := http.NewRequest("POST", "https://api.pixhost.to/galleries", strings.NewReader(v.Encode()))
-	if err != nil {
-		logger.WithError(err).Error("Failed to create gallery request")
-		return nil, err
-	}
-
+	req, _ := http.NewRequest("POST", "https://api.pixhost.to/galleries", strings.NewReader(v.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("User-Agent", DefaultUserAgent)
-
 	resp, err := client.Do(req)
-	if err != nil {
-		logger.WithError(err).Error("Failed to send gallery creation request")
-		return nil, err
-	}
+	if err != nil { return nil, err }
 	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		logger.WithFields(log.Fields{
-			"status_code": resp.StatusCode,
-			"response":    string(bodyBytes),
-		}).Error("Gallery creation failed with non-success status")
-		return nil, fmt.Errorf("gallery creation failed: HTTP %d", resp.StatusCode)
-	}
-
-	// Parse JSON response
-	var result struct {
-		GalleryHash       string `json:"gallery_hash"`
-		GalleryUploadHash string `json:"gallery_upload_hash"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		logger.WithError(err).Error("Failed to parse gallery creation response")
-		return nil, err
-	}
-
-	if result.GalleryHash == "" {
-		logger.Error("Gallery creation returned empty gallery_hash")
-		return nil, fmt.Errorf("gallery creation returned empty gallery_hash")
-	}
-
-	logger.WithFields(log.Fields{
-		"gallery_hash":        result.GalleryHash,
-		"gallery_upload_hash": result.GalleryUploadHash,
-	}).Info("Successfully created Pixhost gallery")
-
-	return map[string]string{
-		"gallery_hash":        result.GalleryHash,
-		"gallery_upload_hash": result.GalleryUploadHash,
-	}, nil
+	var result struct { GalleryHash string `json:"gallery_hash"`; GalleryUploadHash string `json:"gallery_upload_hash"` }
+	json.NewDecoder(resp.Body).Decode(&result)
+	if result.GalleryHash == "" { return nil, fmt.Errorf("gallery creation failed") }
+	return map[string]string{"gallery_hash": result.GalleryHash, "gallery_upload_hash": result.GalleryUploadHash}, nil
 }
 
 func doImageBamLogin(creds map[string]string) bool {
 	resp1, err := doRequest(context.Background(), "GET", "https://www.imagebam.com/auth/login", nil, "")
-	if err != nil {
-		return false
-	}
-	defer func() { _ = resp1.Body.Close() }()
+	if err != nil { return false }
+	defer resp1.Body.Close()
 	doc1, _ := goquery.NewDocumentFromReader(resp1.Body)
 	token := doc1.Find("input[name='_token']").AttrOr("value", "")
 	v := url.Values{"_token": {token}, "email": {creds["imagebam_user"]}, "password": {creds["imagebam_pass"]}, "remember": {"on"}}
-	if r, err := doRequest(context.Background(), "POST", "https://www.imagebam.com/auth/login", strings.NewReader(v.Encode()), "application/x-www-form-urlencoded"); err == nil {
-		_ = r.Body.Close()
-	}
+	if r, err := doRequest(context.Background(), "POST", "https://www.imagebam.com/auth/login", strings.NewReader(v.Encode()), "application/x-www-form-urlencoded"); err == nil { r.Body.Close() }
 	resp2, _ := doRequest(context.Background(), "GET", "https://www.imagebam.com/", nil, "")
-	defer func() { _ = resp2.Body.Close() }()
+	defer resp2.Body.Close()
 	doc2, _ := goquery.NewDocumentFromReader(resp2.Body)
-
 	ibSt.mu.Lock()
 	defer ibSt.mu.Unlock()
-
 	ibSt.csrf = doc2.Find("meta[name='csrf-token']").AttrOr("content", "")
-	if ibSt.csrf == "" {
-		doc2.Find("meta").Each(func(i int, s *goquery.Selection) {
-			if s.AttrOr("name", "") == "csrf-token" {
-				ibSt.csrf = s.AttrOr("content", "")
-			}
-		})
-	}
 	if ibSt.csrf != "" {
 		req, _ := http.NewRequest("POST", "https://www.imagebam.com/upload/session", strings.NewReader("content_type=1&thumbnail_size=1"))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -2875,13 +1594,9 @@ func doImageBamLogin(creds map[string]string) bool {
 		req.Header.Set("X-CSRF-TOKEN", ibSt.csrf)
 		req.Header.Set("User-Agent", DefaultUserAgent)
 		if r3, e3 := client.Do(req); e3 == nil {
-			defer func() { _ = r3.Body.Close() }()
+			defer r3.Body.Close()
 			var j struct{ Status, Data string }
-			if err := json.NewDecoder(r3.Body).Decode(&j); err == nil {
-				if j.Status == "success" {
-					ibSt.uploadToken = j.Data
-				}
-			}
+			if err := json.NewDecoder(r3.Body).Decode(&j); err == nil && j.Status == "success" { ibSt.uploadToken = j.Data }
 		}
 	}
 	return ibSt.csrf != ""
@@ -2890,57 +1605,40 @@ func doImageBamLogin(creds map[string]string) bool {
 func doTurboLogin(creds map[string]string) bool {
 	if creds["turbo_user"] != "" {
 		v := url.Values{"username": {creds["turbo_user"]}, "password": {creds["turbo_pass"]}, "login": {"Login"}}
-		if r, err := doRequest(context.Background(), "POST", "https://www.turboimagehost.com/login", strings.NewReader(v.Encode()), "application/x-www-form-urlencoded"); err == nil {
-			_ = r.Body.Close()
-		}
+		if r, err := doRequest(context.Background(), "POST", "https://www.turboimagehost.com/login", strings.NewReader(v.Encode()), "application/x-www-form-urlencoded"); err == nil { r.Body.Close() }
 	}
 	resp, err := doRequest(context.Background(), "GET", "https://www.turboimagehost.com/", nil, "")
-	if err != nil {
-		return false
-	}
-	defer func() { _ = resp.Body.Close() }()
+	if err != nil { return false }
+	defer resp.Body.Close()
 	b, _ := io.ReadAll(resp.Body)
 	html := string(b)
-
 	turboSt.mu.Lock()
 	defer turboSt.mu.Unlock()
-
-	if m := regexp.MustCompile(`endpoint:\s*'([^']+)'`).FindStringSubmatch(html); len(m) > 1 {
-		turboSt.endpoint = m[1]
-	}
+	if m := regexp.MustCompile(`endpoint:\s*'([^']+)'`).FindStringSubmatch(html); len(m) > 1 { turboSt.endpoint = m[1] }
 	return turboSt.endpoint != ""
 }
 
 func scrapeBBCode(urlStr string) (string, string, error) {
 	resp, err := doRequest(context.Background(), "GET", urlStr, nil, "")
-	if err != nil {
-		return urlStr, urlStr, nil
-	}
-	defer func() { _ = resp.Body.Close() }()
+	if err != nil { return urlStr, urlStr, nil }
+	defer resp.Body.Close()
 	b, _ := io.ReadAll(resp.Body)
 	html := string(b)
 	re := regexp.MustCompile(`(?i)\[url=["']?(https?://[^"']+)["']?\]\s*\[img\](https?://[^\[]+)\[/img\]\s*\[/url\]`)
-	if m := re.FindStringSubmatch(html); len(m) > 2 {
-		return m[1], m[2], nil
-	}
+	if m := re.FindStringSubmatch(html); len(m) > 2 { return m[1], m[2], nil }
 	return urlStr, urlStr, nil
 }
 
 func handleViperLogin(job JobRequest) {
 	user, pass := job.Creds["vg_user"], job.Creds["vg_pass"]
-	if r, err := doRequest(context.Background(), "GET", "https://vipergirls.to/login.php?do=login", nil, ""); err == nil {
-		_ = r.Body.Close()
-	}
-
-	// SECURITY NOTE: ViperGirls uses MD5 for authentication (legacy vBulletin system).
-	// This is required by their API and not our choice. Users should use unique passwords.
+	if r, err := doRequest(context.Background(), "GET", "https://vipergirls.to/login.php?do=login", nil, ""); err == nil { r.Body.Close() }
 	hasher := md5.New()
-	_, _ = hasher.Write([]byte(pass)) // hash.Hash.Write never returns an error
+	_, _ = hasher.Write([]byte(pass))
 	md5Pass := hex.EncodeToString(hasher.Sum(nil))
 	v := url.Values{"vb_login_username": {user}, "vb_login_md5password": {md5Pass}, "vb_login_md5password_utf": {md5Pass}, "cookieuser": {"1"}, "do": {"login"}, "securitytoken": {"guest"}}
 	resp, _ := doRequest(context.Background(), "POST", "https://vipergirls.to/login.php?do=login", strings.NewReader(v.Encode()), "application/x-www-form-urlencoded")
 	b, _ := io.ReadAll(resp.Body)
-	_ = resp.Body.Close()
+	resp.Body.Close()
 	body := string(b)
 	if strings.Contains(body, "Thank you for logging in") {
 		if m := regexp.MustCompile(`SECURITYTOKEN\s*=\s*"([^"]+)"`).FindStringSubmatch(body); len(m) > 1 {
@@ -2959,11 +1657,10 @@ func handleViperPost(job JobRequest) {
 	token := vgSt.securityToken
 	needsRefresh := token == "" || token == "guest"
 	vgSt.mu.RUnlock()
-
 	if needsRefresh {
 		if resp, err := doRequest(context.Background(), "GET", "https://vipergirls.to/forum.php", nil, ""); err == nil {
 			b, _ := io.ReadAll(resp.Body)
-			_ = resp.Body.Close()
+			resp.Body.Close()
 			if m := regexp.MustCompile(`SECURITYTOKEN\s*=\s*"([^"]+)"`).FindStringSubmatch(string(b)); len(m) > 1 {
 				vgSt.mu.Lock()
 				vgSt.securityToken = m[1]
@@ -2972,17 +1669,11 @@ func handleViperPost(job JobRequest) {
 			}
 		}
 	}
-	v := url.Values{
-		"message": {job.Config["message"]}, "securitytoken": {token},
-		"do": {"postreply"}, "t": {job.Config["thread_id"]}, "parseurl": {"1"}, "emailupdate": {"9999"},
-	}
+	v := url.Values{"message": {job.Config["message"]}, "securitytoken": {token}, "do": {"postreply"}, "t": {job.Config["thread_id"]}, "parseurl": {"1"}, "emailupdate": {"9999"}}
 	urlStr := fmt.Sprintf("https://vipergirls.to/newreply.php?do=postreply&t=%s", job.Config["thread_id"])
 	resp, err := doRequest(context.Background(), "POST", urlStr, strings.NewReader(v.Encode()), "application/x-www-form-urlencoded")
-	if err != nil {
-		sendJSON(OutputEvent{Type: "result", Status: "failed", Msg: err.Error()})
-		return
-	}
-	defer func() { _ = resp.Body.Close() }()
+	if err != nil { sendJSON(OutputEvent{Type: "result", Status: "failed", Msg: err.Error()}); return }
+	defer resp.Body.Close()
 	b, _ := io.ReadAll(resp.Body)
 	body := string(b)
 	finalUrl := resp.Request.URL.String()
@@ -2994,38 +1685,18 @@ func handleViperPost(job JobRequest) {
 		sendJSON(OutputEvent{Type: "result", Status: "success", Msg: "Posted (Redirected)"})
 		return
 	}
-	if strings.Contains(strings.ToLower(body), "duplicate") {
-		sendJSON(OutputEvent{Type: "result", Status: "success", Msg: "Already Posted"})
-		return
-	}
 	sendJSON(OutputEvent{Type: "result", Status: "failed", Msg: "Post not confirmed"})
 }
 
 func doRequest(ctx context.Context, method, urlStr string, body io.Reader, contentType string) (*http.Response, error) {
-	// CRITICAL: Use context for proper cancellation
-	req, err := http.NewRequestWithContext(ctx, method, urlStr, body)
-	if err != nil {
-		return nil, err
-	}
+	req, _ := http.NewRequestWithContext(ctx, method, urlStr, body)
 	req.Header.Set("User-Agent", DefaultUserAgent)
-	if contentType != "" {
-		req.Header.Set("Content-Type", contentType)
-	}
-	if strings.Contains(urlStr, "imagebam.com") {
-		req.Header.Set("Referer", "https://www.imagebam.com/")
-	}
-	if strings.Contains(urlStr, "vipr.im") {
-		req.Header.Set("Referer", "https://vipr.im/")
-	}
-	if strings.Contains(urlStr, "turboimagehost.com") {
-		req.Header.Set("Referer", "https://www.turboimagehost.com/")
-	}
-	if strings.Contains(urlStr, "imx.to") {
-		req.Header.Set("Referer", "https://imx.to/")
-	}
-	if strings.Contains(urlStr, "vipergirls.to") {
-		req.Header.Set("Referer", "https://vipergirls.to/forum.php")
-	}
+	if contentType != "" { req.Header.Set("Content-Type", contentType) }
+	if strings.Contains(urlStr, "imagebam.com") { req.Header.Set("Referer", "https://www.imagebam.com/") }
+	if strings.Contains(urlStr, "vipr.im") { req.Header.Set("Referer", "https://vipr.im/") }
+	if strings.Contains(urlStr, "turboimagehost.com") { req.Header.Set("Referer", "https://www.turboimagehost.com/") }
+	if strings.Contains(urlStr, "imx.to") { req.Header.Set("Referer", "https://imx.to/") }
+	if strings.Contains(urlStr, "vipergirls.to") { req.Header.Set("Referer", "https://vipergirls.to/forum.php") }
 	return client.Do(req)
 }
 

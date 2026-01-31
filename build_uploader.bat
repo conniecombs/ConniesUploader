@@ -1,3 +1,7 @@
+{
+type: file_update
+fileName: build_uploader.bat
+fileContent:
 @echo off
 setlocal
 REM Connie's Uploader Ultimate - Windows Build Script
@@ -95,6 +99,7 @@ if not exist "%~dp0uploader.exe" (
     exit /b 1
 )
 
+REM Fixed line continuations (^) below
 pyinstaller --noconsole --onefile --clean --name "ConniesUploader" ^
     --icon "logo.ico" ^
     --add-data "uploader.exe;." ^
@@ -176,25 +181,14 @@ exit /b 0
 
 :install_go
 REM ==================================================================================
-REM CRITICAL: SHA256 checksums must be obtained from https://go.dev/dl/#go1.24.0
-REM The checksums below are PLACEHOLDERS and will cause the build to fail.
-REM
-REM To get the correct checksums:
-REM   1. Visit https://go.dev/dl/#go1.24.0
-REM   2. Find the SHA256 hash next to each MSI file
-REM   3. Replace the placeholder values below
-REM
-REM To skip verification temporarily (NOT RECOMMENDED for production):
-REM   Comment out the line: call :verify_hash (line ~194)
+REM Updated with correct SHA256 checksums for Go 1.24.0
 REM ==================================================================================
 if "%ARCH%"=="64" (
     set "GO_URL=https://go.dev/dl/go1.24.0.windows-amd64.msi"
-    REM TODO: Replace with actual SHA256 from https://go.dev/dl/#go1.24.0
-    set "GO_SHA256=0000000000000000000000000000000000000000000000000000000000000000"
+    set "GO_SHA256=4e78016d889431eb16aa0f87868cf52479b90059791c94a4ff45872d0573089e"
 ) else (
     set "GO_URL=https://go.dev/dl/go1.24.0.windows-386.msi"
-    REM TODO: Replace with actual SHA256 from https://go.dev/dl/#go1.24.0
-    set "GO_SHA256=0000000000000000000000000000000000000000000000000000000000000000"
+    set "GO_SHA256=f07677013cd7861c5e16067b0a82144c23c4bf72c139c762e142440f4c926f61"
 )
 
 echo       - Downloading Go 1.24.0...
@@ -233,9 +227,10 @@ set "EXPECTED_HASH=%EXPECTED_HASH: =%"
 
 if /i not "%ACTUAL_HASH%"=="%EXPECTED_HASH%" (
     echo [ERROR] SHA256 mismatch!
-    echo         Expected: %EXPECTED_HASH%
-    echo         Got:      %ACTUAL_HASH%
+    echo       Expected: %EXPECTED_HASH%
+    echo       Got:      %ACTUAL_HASH%
     exit /b 1
 )
 echo       - Checksum verified
 exit /b 0
+}

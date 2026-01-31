@@ -65,9 +65,21 @@ class UploadManager:
 
             if plugin and hasattr(plugin, "prepare_group"):
                 try:
+                    # Pass a mutable context dictionary to capture created galleries
+                    context = {}
+                    
                     # This call creates the gallery if 'gallery_id' is empty in config
                     # and updates group_cfg['gallery_id'] with the new ID
-                    plugin.prepare_group(group_obj, group_cfg, {}, creds)
+                    plugin.prepare_group(group_obj, group_cfg, context, creds)
+                    
+                    # Handle created galleries for finalization (Fix for v1.2.2 regression)
+                    if "created_galleries" in context:
+                        for gal_data in context["created_galleries"]:
+                            # Signal main thread to register this gallery for finalization
+                            # Format: ('register_pix_gal', None, gal_data_dict)
+                            self.progress_queue.put(('register_pix_gal', None, gal_data))
+                            logger.info(f"Registered gallery for finalization: {gal_data.get('gallery_hash')}")
+                            
                 except Exception as e:
                     logger.error(f"Failed to prepare group {group_obj.title}: {e}")
             # --- FIX END ---
@@ -117,17 +129,21 @@ class UploadManager:
     def _send_job(self, file_list: List[str], cfg: Dict[str, Any], creds: Dict[str, str]) -> None:
         service_id = cfg["service"]
 
+        # Ensure all config values are strings for Go compatibility
+        # Go struct expects map[string]string, but Python JSON dump preserves types (int, bool)
+        str_config = {k: str(v) for k, v in cfg.items()}
+
         # DIAGNOSTIC: Log config being sent to plugin
         logger.info(
-            f"_send_job for {service_id}: thumbnail_size={repr(cfg.get('thumbnail_size'))}, imx_thumb={repr(cfg.get('imx_thumb'))}"
+            f"_send_job for {service_id}: thumbnail_size={repr(cfg.get('thumbnail_size'))}"
         )
 
         # NEW: Check if plugin supports generic HTTP runner
         plugin = self.plugin_manager.get_plugin(service_id)
         if plugin and hasattr(plugin, "build_http_request"):
             # Try to build HTTP request spec for first file (as template)
-            # Note: For file-specific fields, Go will substitute the actual file path
             try:
+                # Note: Plugins might expect raw types (ints), so pass original cfg to them
                 http_spec = plugin.build_http_request(
                     file_path=file_list[0] if file_list else "", config=cfg, creds=creds
                 )
@@ -138,10 +154,9 @@ class UploadManager:
                         "action": "http_upload",
                         "service": service_id,
                         "files": [os.path.normpath(f) for f in file_list],
-                        "creds": creds,  # Pass all creds for backward compat
-                        "config": {
-                            "threads": str(cfg.get(f"{service_id.split('.')[0]}_threads", 2))
-                        },
+                        "creds": creds,
+                        # Pass stringified config to Go
+                        "config": str_config,
                         "http_spec": http_spec,
                         "context_data": {},
                     }
@@ -161,6 +176,16 @@ class UploadManager:
                         ("status", file_path, "error: plugin configuration failed")
                     )
                 return
+
+        # --- Legacy Fallback for Plugins without HTTP Spec ---
+        job_data = {
+            "action": "upload",
+            "service": service_id,
+            "files": [os.path.normpath(f) for f in file_list],
+            "creds": creds,
+            "config": str_config,  # Use stringified config here too
+        }
+        self.bridge.send_cmd(job_data)
 
     def _process_events(self) -> None:
         """Reads events from the bridge and updates queues."""
@@ -183,15 +208,17 @@ class UploadManager:
                     # Intercept broken IMX thumbnails (image.imx.to/u/t/) and fix them to i.imx.to/t/
                     if thumb and "image.imx.to/u/t/" in thumb:
                         thumb = thumb.replace("image.imx.to/u/t/", "i.imx.to/t/")
-                        # Optional debug log
-                        # logger.debug(f"Patched IMX thumbnail for {fp}")
-                    # --------------------------------
 
                     self.result_queue.put((fp, url, thumb))
 
                 elif evt == "batch_complete":
-                    # Optional: handle batch completion logic here if needed
                     pass
+                
+                elif evt == "log":
+                    logger.debug(f"SIDECAR: {data.get('msg')}")
+                    
+                elif evt == "error":
+                    logger.error(f"SIDECAR ERROR: {data.get('msg')}")
 
             except queue.Empty:
                 continue
@@ -200,11 +227,7 @@ class UploadManager:
 
     def shutdown(self) -> None:
         """Shutdown the upload manager gracefully."""
-        # Unregister from bridge
         self.bridge.remove_listener(self.event_queue)
-
-        # Wait for listener thread to finish (it checks cancel_event)
         if self.listener_thread and self.listener_thread.is_alive():
             self.listener_thread.join(timeout=2.0)
-
         logger.info("UploadManager shut down")

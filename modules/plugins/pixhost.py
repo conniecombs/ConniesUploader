@@ -32,7 +32,7 @@ class PixhostPlugin(ImageHostPlugin):
     def metadata(self) -> Dict[str, Any]:
         """Plugin metadata for Pixhost.to"""
         return {
-            "version": "2.0.0",
+            "version": "2.0.1",
             "author": "Connie's Uploader Team",
             "description": "Upload images to Pixhost.to with gallery support and cover image handling",
             "website": "https://pixhost.to",
@@ -58,9 +58,6 @@ class PixhostPlugin(ImageHostPlugin):
     def settings_schema(self) -> List[Dict[str, Any]]:
         """
         Declarative UI schema for Pixhost settings.
-
-        This replaces the manual render_settings() method, reducing code
-        from ~40 lines to ~50 lines of pure data (60% reduction).
         """
         return [
             {
@@ -117,9 +114,6 @@ class PixhostPlugin(ImageHostPlugin):
     def validate_configuration(self, config: Dict[str, Any]) -> List[str]:
         """
         Custom validation for Pixhost configuration.
-
-        The schema system handles basic validation (required fields, types, ranges).
-        This method adds service-specific validation logic.
         """
         errors = []
 
@@ -139,7 +133,6 @@ class PixhostPlugin(ImageHostPlugin):
     ) -> Dict[str, Any]:
         """
         Build HTTP request specification for Pixhost.to upload.
-        This replaces the hardcoded uploadPixhost() function in Go.
         """
         # Map content type to Pixhost API value
         content_type = "1" if config.get("content_type") == "Adult" else "0"
@@ -182,8 +175,9 @@ class PixhostPlugin(ImageHostPlugin):
         """
         Prepare group for upload.
 
-        If auto_gallery is enabled, creates a new gallery for this group.
+        Handles both Auto-Gallery creation and Manual Gallery configuration.
         """
+        # 1. Handle Auto-Gallery (One Gallery Per Folder)
         if config.get("auto_gallery"):
             clean_title = group.title.replace("[", "").replace("]", "").strip()
             new_data = api.create_pixhost_gallery(clean_title)
@@ -192,11 +186,26 @@ class PixhostPlugin(ImageHostPlugin):
                 # Store gallery info on the group object
                 group.pix_data = new_data
                 group.gallery_id = new_data.get("gallery_hash", "")
+                
                 # Store gallery_hash in config so it's used for uploads
                 config["gallery_hash"] = group.gallery_id
-                if "created_galleries" in context:
-                    context["created_galleries"].append(new_data)
+                
+                # Add to context for finalization by UploadManager
+                if "created_galleries" not in context:
+                    context["created_galleries"] = []
+                context["created_galleries"].append(new_data)
+                
                 logger.info(f"Created Pixhost gallery: {clean_title}")
+            else:
+                logger.warning(f"Failed to create gallery for: {group.title}")
+
+        # 2. Handle Manual Gallery (if not using auto-gallery or if creation failed)
+        # The UI sends 'pix_gallery_hash', but the uploader needs 'gallery_hash'
+        if not config.get("gallery_hash"):
+            manual_hash = config.get("pix_gallery_hash", "").strip()
+            if manual_hash:
+                config["gallery_hash"] = manual_hash
+                logger.info(f"Using manual gallery hash: {manual_hash}")
 
     def upload_file(
         self,
