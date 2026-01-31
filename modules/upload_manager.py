@@ -52,37 +52,59 @@ class UploadManager:
         self, pending_by_group: Dict[Any, List[str]], cfg: Dict[str, Any], creds: Dict[str, str]
     ) -> None:
         """Sends job JSONs to the Go process via the Bridge."""
+        
+        # --- PHASE 1: PRE-CREATE ALL GALLERIES (Synchronous) ---
+        # We do this first to ensure gallery creation messages (request/response) 
+        # don't get mixed up with upload progress messages in the sidecar pipe.
+        # This prevents the "only 1st folder gets a gallery" bug.
+        
+        logger.info("--- Starting Phase 1: Gallery Creation ---")
+        
         for group_obj, files in pending_by_group.items():
             if self.cancel_event.is_set():
-                break
+                return
 
-            # --- FIX START: Prepare Group (Create Gallery) ---
-            # Create a copy of config so specific gallery IDs don't leak to other groups
-            group_cfg = cfg.copy()
-
-            service_id = group_cfg.get("service", "")
+            service_id = cfg.get("service", "")
             plugin = self.plugin_manager.get_plugin(service_id)
 
             if plugin and hasattr(plugin, "prepare_group"):
                 try:
                     # Pass a mutable context dictionary to capture created galleries
                     context = {}
+                    # Use a temp config so we don't pollute the main cfg object yet
+                    temp_cfg = cfg.copy()
                     
-                    # This call creates the gallery if 'gallery_id' is empty in config
-                    # and updates group_cfg['gallery_id'] with the new ID
-                    plugin.prepare_group(group_obj, group_cfg, context, creds)
+                    # This call creates the gallery and sets group_obj.gallery_id
+                    plugin.prepare_group(group_obj, temp_cfg, context, creds)
                     
-                    # Handle created galleries for finalization (Fix for v1.2.2 regression)
+                    # Handle created galleries for finalization (Pixhost)
                     if "created_galleries" in context:
                         for gal_data in context["created_galleries"]:
-                            # Signal main thread to register this gallery for finalization
-                            # Format: ('register_pix_gal', None, gal_data_dict)
                             self.progress_queue.put(('register_pix_gal', None, gal_data))
                             logger.info(f"Registered gallery for finalization: {gal_data.get('gallery_hash')}")
                             
                 except Exception as e:
                     logger.error(f"Failed to prepare group {group_obj.title}: {e}")
-            # --- FIX END ---
+
+        logger.info("--- Starting Phase 2: Upload Dispatch ---")
+
+        # --- PHASE 2: DISPATCH UPLOADS (Asynchronous) ---
+        for group_obj, files in pending_by_group.items():
+            if self.cancel_event.is_set():
+                break
+
+            # Create a copy of config for this specific group's upload job
+            group_cfg = cfg.copy()
+            
+            # Apply the gallery ID that was created in Phase 1
+            # We check both standard 'gallery_id' and Pixhost's 'gallery_hash'
+            # Note: The plugin.prepare_group method stores it in group_obj.gallery_id
+            if hasattr(group_obj, 'gallery_id') and group_obj.gallery_id:
+                gid = group_obj.gallery_id
+                group_cfg['gallery_id'] = gid
+                group_cfg['gallery_hash'] = gid      # For Pixhost compatibility
+                group_cfg['pix_gallery_hash'] = gid  # Legacy key safety
+                logger.info(f"Group '{group_obj.title}' attached to Gallery ID: {gid}")
 
             # Determine configured cover count
             svc = group_cfg.get("service", "")
@@ -130,7 +152,6 @@ class UploadManager:
         service_id = cfg["service"]
 
         # Ensure all config values are strings for Go compatibility
-        # Go struct expects map[string]string, but Python JSON dump preserves types (int, bool)
         str_config = {k: str(v) for k, v in cfg.items()}
 
         # DIAGNOSTIC: Log config being sent to plugin
