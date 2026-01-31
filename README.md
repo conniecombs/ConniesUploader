@@ -1,6 +1,6 @@
 # Connie's Uploader Ultimate
 
-![Project version badge showing v1.2.2](https://img.shields.io/badge/version-1.2.2-blue.svg)
+![Project version badge showing v1.2.3](https://img.shields.io/badge/version-1.2.3-blue.svg)
 ![MIT License badge](https://img.shields.io/badge/license-MIT-green.svg)
 ![Supported platforms: Windows, Linux, and macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)
 ![Production readiness status at 92 percent](https://img.shields.io/badge/production%20ready-92%25-brightgreen.svg)
@@ -13,16 +13,14 @@
 
 A powerful, multi-service image hosting uploader with an intuitive GUI. Upload images to multiple image hosting services with advanced features like batch processing, gallery management, automatic retry logic, and real-time progress tracking.
 
-**🎉 Latest Release: v1.2.2 "Batch Upload Stability" (Jan 22, 2026)**
+**🎉 Latest Release: v1.2.3 "Gallery Logic Fix" (Jan 31, 2026)**
 
-Critical stability release addressing issues discovered during large batch upload testing.
+This release fixes the inline gallery creation logic in the Go sidecar.
 
 ### Highlights
-- 🔧 **Worker Count Fix** - Worker count setting now properly applied via sidecar restart
-- 🚀 **Large Batch Support** - Fixed file reading stalls with 1000+ file batches
-- 📊 **Progress Bar Updates** - Real-time overall progress feedback during uploads
-- 🪟 **UI Improvements** - Fixed "Open Output Folder" button and program hang on close
-- 🏗️ **Build Verification** - Added Linux/macOS build checks to prevent release failures
+- 🔧 **IMX Gallery Fix** - Corrected inline gallery creation logic with proper login state tracking
+- 🔐 **IMX Login Improvements** - Added persistent session state and proper form field names
+- 🛠️ **URL Domain Fix** - Fixed IMX URLs to use naked domain (imx.to) for proper cookie handling
 
 ## ✨ Recent Improvements
 
@@ -137,7 +135,7 @@ Critical stability release addressing issues discovered during large batch uploa
 
 **Download the latest release for your platform:**
 
-👉 **[Download v1.2.2](https://github.com/conniecombs/conniesuploader/releases/tag/v1.2.2)**
+👉 **[Download v1.2.3](https://github.com/conniecombs/conniesuploader/releases/tag/v1.2.3)**
 
 Available builds:
 - **Windows**: `ConniesUploader-windows.zip` (includes `.exe` + SHA256 checksum)
@@ -676,7 +674,12 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Version History
 
-**Latest Release: v1.2.2 - "Batch Upload Stability"** (Jan 22, 2026)
+**Latest Release: v1.2.3 - "Gallery Logic Fix"** (Jan 31, 2026)
+
+**v1.2.3 - "Gallery Logic Fix"** (Jan 31, 2026):
+- 🔧 **IMX Gallery Fix** - Corrected inline gallery creation logic with proper login state tracking
+- 🔐 **IMX Login Improvements** - Added persistent session state and proper form field names
+- 🛠️ **URL Domain Fix** - Fixed IMX URLs to use naked domain (imx.to) for proper cookie handling
 
 **v1.2.2 - "Batch Upload Stability"** (Jan 22, 2026):
 - 🔧 **Worker Count Fix** - Worker count setting now properly applied via sidecar restart

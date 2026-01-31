@@ -11,7 +11,7 @@ cd /d "%~dp0"
 title Connie's Uploader - Build Tool
 
 echo ========================================================
-echo       Connie's Uploader Ultimate - Build v1.2.2
+echo       Connie's Uploader Ultimate - Build v1.2.3
 echo ========================================================
 echo.
 

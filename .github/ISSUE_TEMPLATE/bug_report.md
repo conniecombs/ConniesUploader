@@ -28,7 +28,7 @@ If applicable, add screenshots to help explain your problem.
 ## Environment
 **Desktop:**
  - OS: [e.g. Windows 10, Ubuntu 22.04, macOS 13]
- - Version: [e.g. v1.2.2]
+ - Version: [e.g. v1.2.3]
  - Python Version: [e.g. 3.11.5]
  - Go Version: [e.g. 1.24]
 

@@ -9,6 +9,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.2.3] - 2026-01-31
+
+### 🐛 Bug Fixes
+
+**Gallery Creation Logic Fix**
+
+Fixed critical issues with IMX inline gallery creation in the Go sidecar.
+
+#### **1. IMX Login State Tracking**
+- **Problem**: IMX login was not being tracked across requests, causing gallery creation to fail
+- **Root Cause**: No persistent state for IMX login status
+- **Fix**: Added `imxState` struct with mutex-protected `isLoggedIn` flag
+  - Login state now persists across requests
+  - Prevents redundant login attempts
+
+#### **2. Correct Form Field Names**
+- **Problem**: IMX login was using incorrect form field names
+- **Root Cause**: Field names didn't match the actual login form
+- **Fix**: Updated to use correct field names: `usr_email`, `pwd`, `doLogin`, `remember`
+
+#### **3. URL Domain Fix**
+- **Problem**: Using `www.imx.to` caused certificate issues and cookie mismatches
+- **Root Cause**: Certificate is valid for `imx.to` but not `www.imx.to`
+- **Fix**: Updated all IMX URLs to use naked domain `https://imx.to/`
+  - Ensures cookies are properly shared between login and gallery operations
+  - Added proper `Referer` headers for security validation
+
+#### **4. Gallery ID Extraction**
+- **Problem**: Gallery ID extraction failed when redirect didn't include query params
+- **Fix**: Added fallback body parsing to find gallery ID in response HTML
+  - Looks for `manage?id=` links in the response
+  - Provides detailed debug logging for troubleshooting
+
+**Files Changed**:
+- `uploader.go`: Updated IMX login and gallery creation logic
+
+---
+
 ## [1.2.2] - 2026-01-22
 
 ### 🐛 Bug Fixes
