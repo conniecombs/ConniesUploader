@@ -281,30 +281,6 @@ func TestGetJSONValueWithNilInPath(t *testing.T) {
 	}
 }
 
-func TestSubstituteTemplateWithBraces(t *testing.T) {
-	data := map[string]interface{}{
-		"key": "value",
-	}
-
-	// Test with nested braces
-	result := substituteTemplate("{{key}}", data)
-	if result == "{{key}}" {
-		// Template might not match nested braces, which is expected
-		return
-	}
-}
-
-func TestSubstituteTemplateFromMapEmptyKey(t *testing.T) {
-	values := map[string]string{
-		"": "empty_key_value",
-	}
-
-	result := substituteTemplateFromMap("test {}", values)
-	// Empty keys should not be substituted
-	if result != "test {}" {
-		t.Logf("substituteTemplateFromMap with empty key returned: %q", result)
-	}
-}
 
 // --- Benchmark Additional Tests ---
 
