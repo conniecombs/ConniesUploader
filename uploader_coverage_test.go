@@ -547,6 +547,8 @@ func TestRateLimitMultipleServices(t *testing.T) {
 // --- HttpRequestSpec Processing Tests ---
 
 func TestProcessFileGenericWithSpec(t *testing.T) {
+	initHTTPClient()
+
 	job := JobRequest{
 		Action:  "http_upload",
 		Service: "test.service",

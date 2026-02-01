@@ -938,17 +938,27 @@ func executeHttpUpload(ctx context.Context, fp string, job *JobRequest) (string,
 		defer writer.Close()
 		for fieldName, field := range spec.MultipartFields {
 			if field.Type == "file" {
-				part, _ := writer.CreateFormFile(fieldName, filepath.Base(fp))
-				f, _ := os.Open(fp)
-				defer f.Close()
-				fi, _ := f.Stat()
+				part, err := writer.CreateFormFile(fieldName, filepath.Base(fp))
+				if err != nil {
+					continue
+				}
+				f, err := os.Open(fp)
+				if err != nil {
+					continue
+				}
+				fi, err := f.Stat()
+				if err != nil {
+					f.Close()
+					continue
+				}
 				progressWriter := NewProgressWriter(part, fi.Size(), fp)
-				io.Copy(progressWriter, f)
+				_, _ = io.Copy(progressWriter, f)
+				f.Close()
 			} else if field.Type == "text" {
-				writer.WriteField(fieldName, field.Value)
+				_ = writer.WriteField(fieldName, field.Value)
 			} else if field.Type == "dynamic" {
 				if val, ok := extractedValues[field.Value]; ok {
-					writer.WriteField(fieldName, val)
+					_ = writer.WriteField(fieldName, val)
 				}
 			}
 		}
@@ -1018,9 +1028,10 @@ func executePreRequest(ctx context.Context, spec *PreRequestSpec, service string
 	extracted := make(map[string]string)
 	if spec.ResponseType == "json" {
 		var data map[string]interface{}
-		json.Unmarshal(bodyBytes, &data)
-		for k, path := range spec.ExtractFields {
-			extracted[k] = getJSONValue(data, path)
+		if err := json.Unmarshal(bodyBytes, &data); err == nil {
+			for k, path := range spec.ExtractFields {
+				extracted[k] = getJSONValue(data, path)
+			}
 		}
 	} else if spec.ResponseType == "html" {
 		doc, _ := goquery.NewDocumentFromReader(bytes.NewReader(bodyBytes))
@@ -1062,10 +1073,29 @@ func getJSONValue(data map[string]interface{}, path string) string {
 			return ""
 		}
 	}
-	if s, ok := current.(string); ok {
-		return s
+	if current == nil {
+		return ""
 	}
-	return ""
+	switch v := current.(type) {
+	case string:
+		return v
+	case float64:
+		if v == float64(int64(v)) {
+			return fmt.Sprintf("%d", int64(v))
+		}
+		return fmt.Sprintf("%.0f", v)
+	case bool:
+		return fmt.Sprintf("%t", v)
+	case int:
+		return fmt.Sprintf("%d", v)
+	case int64:
+		return fmt.Sprintf("%d", v)
+	case map[string]interface{}, []interface{}:
+		// Return empty for complex types
+		return ""
+	default:
+		return ""
+	}
 }
 
 // --- Upload Implementations ---
@@ -1193,22 +1223,28 @@ func uploadImx(ctx context.Context, fp string, job *JobRequest) (string, string,
 	go func() {
 		defer pw.Close()
 		defer writer.Close()
-		part, _ := writer.CreateFormFile("image", filepath.Base(fp))
-		f, _ := os.Open(fp)
+		part, err := writer.CreateFormFile("image", filepath.Base(fp))
+		if err != nil {
+			return
+		}
+		f, err := os.Open(fp)
+		if err != nil {
+			return
+		}
 		defer f.Close()
-		io.Copy(part, f)
-		writer.WriteField("format", "json")
-		writer.WriteField("adult", "1")
-		writer.WriteField("upload_type", "file")
-		writer.WriteField("simple_upload", "Upload")
-		
+		_, _ = io.Copy(part, f)
+		_ = writer.WriteField("format", "json")
+		_ = writer.WriteField("adult", "1")
+		_ = writer.WriteField("upload_type", "file")
+		_ = writer.WriteField("simple_upload", "Upload")
+
 		sizeId := getImxSizeId(job.Config["imx_thumb_id"])
-		writer.WriteField("thumbnail_size", sizeId)
-		writer.WriteField("thumb_size_container", sizeId)
-		writer.WriteField("thumbnail_format", getImxFormatId(job.Config["imx_format_id"]))
-		
+		_ = writer.WriteField("thumbnail_size", sizeId)
+		_ = writer.WriteField("thumb_size_container", sizeId)
+		_ = writer.WriteField("thumbnail_format", getImxFormatId(job.Config["imx_format_id"]))
+
 		if gid := job.Config["gallery_id"]; gid != "" {
-			writer.WriteField("gallery_id", gid)
+			_ = writer.WriteField("gallery_id", gid)
 		}
 	}()
 
@@ -1230,7 +1266,9 @@ func uploadImx(ctx context.Context, fp string, job *JobRequest) (string, string,
 			Thumb string `json:"thumbnail_url"`
 		} `json:"data"`
 	}
-	json.Unmarshal(raw, &res)
+	if err := json.Unmarshal(raw, &res); err != nil {
+		return "", "", fmt.Errorf("failed to parse response: %w", err)
+	}
 	if res.Status != "success" {
 		return "", "", fmt.Errorf("upload failed")
 	}
@@ -1246,14 +1284,20 @@ func uploadPixhost(ctx context.Context, fp string, job *JobRequest) (string, str
 	go func() {
 		defer pw.Close()
 		defer writer.Close()
-		part, _ := writer.CreateFormFile("img", filepath.Base(fp))
-		f, _ := os.Open(fp)
+		part, err := writer.CreateFormFile("img", filepath.Base(fp))
+		if err != nil {
+			return
+		}
+		f, err := os.Open(fp)
+		if err != nil {
+			return
+		}
 		defer f.Close()
-		io.Copy(part, f)
-		writer.WriteField("content_type", job.Config["pix_content"])
-		writer.WriteField("max_th_size", job.Config["pix_thumb"])
+		_, _ = io.Copy(part, f)
+		_ = writer.WriteField("content_type", job.Config["pix_content"])
+		_ = writer.WriteField("max_th_size", job.Config["pix_thumb"])
 		if h := job.Config["gallery_hash"]; h != "" {
-			writer.WriteField("gallery_hash", h)
+			_ = writer.WriteField("gallery_hash", h)
 		}
 	}()
 
@@ -1270,7 +1314,9 @@ func uploadPixhost(ctx context.Context, fp string, job *JobRequest) (string, str
 		Show string `json:"show_url"`
 		Th   string `json:"th_url"`
 	}
-	json.Unmarshal(raw, &res)
+	if err := json.Unmarshal(raw, &res); err != nil {
+		return "", "", fmt.Errorf("failed to parse response: %w", err)
+	}
 	if res.Show == "" {
 		return "", "", fmt.Errorf("failed")
 	}
@@ -1303,17 +1349,21 @@ func uploadVipr(ctx context.Context, fp string, job *JobRequest) (string, string
 		defer writer.Close()
 		safeName := strings.ReplaceAll(filepath.Base(fp), " ", "_")
 		part, err := writer.CreateFormFile("file_0", safeName)
-		if err != nil { return }
+		if err != nil {
+			return
+		}
 		f, err := os.Open(fp)
-		if err != nil { return }
+		if err != nil {
+			return
+		}
 		defer f.Close()
-		io.Copy(part, f)
-		writer.WriteField("upload_type", "file")
-		writer.WriteField("sess_id", sessId)
-		writer.WriteField("thumb_size", job.Config["vipr_thumb"])
-		writer.WriteField("fld_id", job.Config["vipr_gal_id"])
-		writer.WriteField("tos", "1")
-		writer.WriteField("submit_btn", "Upload")
+		_, _ = io.Copy(part, f)
+		_ = writer.WriteField("upload_type", "file")
+		_ = writer.WriteField("sess_id", sessId)
+		_ = writer.WriteField("thumb_size", job.Config["vipr_thumb"])
+		_ = writer.WriteField("fld_id", job.Config["vipr_gal_id"])
+		_ = writer.WriteField("tos", "1")
+		_ = writer.WriteField("submit_btn", "Upload")
 	}()
 	u := upUrl + "?upload_id=" + randomString(12) + "&js_on=1&utype=reg&upload_type=file"
 	resp, err := doRequest(ctx, "POST", u, pr, writer.FormDataContentType())
@@ -1366,22 +1416,30 @@ func uploadTurbo(ctx context.Context, fp string, job *JobRequest) (string, strin
 		h := make(textproto.MIMEHeader)
 		h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="qqfile"; filename="%s"`, quoteEscape(filepath.Base(fp))))
 		h.Set("Content-Type", "application/octet-stream")
-		part, _ := writer.CreatePart(h)
-		f, _ := os.Open(fp)
+		part, err := writer.CreatePart(h)
+		if err != nil {
+			return
+		}
+		f, err := os.Open(fp)
+		if err != nil {
+			return
+		}
 		defer f.Close()
-		io.Copy(part, f)
-		writer.WriteField("qquuid", randomString(32))
-		writer.WriteField("qqfilename", filepath.Base(fp))
-		writer.WriteField("qqtotalfilesize", fmt.Sprintf("%d", fi.Size()))
-		writer.WriteField("imcontent", job.Config["turbo_content"])
-		writer.WriteField("thumb_size", job.Config["turbo_thumb"])
+		_, _ = io.Copy(part, f)
+		_ = writer.WriteField("qquuid", randomString(32))
+		_ = writer.WriteField("qqfilename", filepath.Base(fp))
+		_ = writer.WriteField("qqtotalfilesize", fmt.Sprintf("%d", fi.Size()))
+		_ = writer.WriteField("imcontent", job.Config["turbo_content"])
+		_ = writer.WriteField("thumb_size", job.Config["turbo_thumb"])
 	}()
 	resp, err := doRequest(ctx, "POST", endp, pr, writer.FormDataContentType())
 	if err != nil { return "", "", err }
 	raw, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
 	var res struct { Success bool `json:"success"`; NewUrl string `json:"newUrl"`; Id string `json:"id"` }
-	json.Unmarshal(raw, &res)
+	if err := json.Unmarshal(raw, &res); err != nil {
+		return "", "", fmt.Errorf("failed to parse response: %w", err)
+	}
 	if res.Success {
 		if res.NewUrl != "" { return scrapeBBCode(res.NewUrl) }
 		if res.Id != "" { u := fmt.Sprintf("https://www.turboimagehost.com/p/%s/%s.html", res.Id, filepath.Base(fp)); return u, u, nil }
@@ -1408,12 +1466,18 @@ func uploadImageBam(ctx context.Context, fp string, job *JobRequest) (string, st
 	go func() {
 		defer pw.Close()
 		defer writer.Close()
-		part, _ := writer.CreateFormFile("files[0]", filepath.Base(fp))
-		f, _ := os.Open(fp)
+		part, err := writer.CreateFormFile("files[0]", filepath.Base(fp))
+		if err != nil {
+			return
+		}
+		f, err := os.Open(fp)
+		if err != nil {
+			return
+		}
 		defer f.Close()
-		io.Copy(part, f)
-		writer.WriteField("_token", csrf)
-		writer.WriteField("data", token)
+		_, _ = io.Copy(part, f)
+		_ = writer.WriteField("_token", csrf)
+		_ = writer.WriteField("data", token)
 	}()
 	req, _ := http.NewRequestWithContext(ctx, "POST", "https://www.imagebam.com/upload", pr)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
@@ -1425,7 +1489,9 @@ func uploadImageBam(ctx context.Context, fp string, job *JobRequest) (string, st
 	if err != nil { return "", "", err }
 	defer resp.Body.Close()
 	var res struct { Status string `json:"status"`; Data []struct { Url, Thumb string } `json:"data"` }
-	json.NewDecoder(resp.Body).Decode(&res)
+	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+		return "", "", fmt.Errorf("failed to parse response: %w", err)
+	}
 	if res.Status == "success" && len(res.Data) > 0 { return res.Data[0].Url, res.Data[0].Thumb, nil }
 	return "", "", fmt.Errorf("imagebam failed")
 }
@@ -1568,7 +1634,9 @@ func createPixhostGallery(name string) (map[string]string, error) {
 	if err != nil { return nil, err }
 	defer resp.Body.Close()
 	var result struct { GalleryHash string `json:"gallery_hash"`; GalleryUploadHash string `json:"gallery_upload_hash"` }
-	json.NewDecoder(resp.Body).Decode(&result)
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
 	if result.GalleryHash == "" { return nil, fmt.Errorf("gallery creation failed") }
 	return map[string]string{"gallery_hash": result.GalleryHash, "gallery_upload_hash": result.GalleryUploadHash}, nil
 }
