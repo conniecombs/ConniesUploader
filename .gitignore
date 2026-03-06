@@ -59,6 +59,7 @@ ConniesUploader.exe
 ConniesUploader
 python_installer.exe
 go_installer.msi
+GolangVersion
 
 # Output and temporary files
 Output/
