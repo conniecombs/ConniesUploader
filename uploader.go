@@ -939,9 +939,17 @@ func executeHttpUpload(ctx context.Context, fp string, job *JobRequest) (string,
 		for fieldName, field := range spec.MultipartFields {
 			if field.Type == "file" {
 				part, _ := writer.CreateFormFile(fieldName, filepath.Base(fp))
-				f, _ := os.Open(fp)
+				f, err := os.Open(fp)
+				if err != nil {
+					pw.CloseWithError(err)
+					return
+				}
 				defer f.Close()
-				fi, _ := f.Stat()
+				fi, err := f.Stat()
+				if err != nil {
+					pw.CloseWithError(err)
+					return
+				}
 				progressWriter := NewProgressWriter(part, fi.Size(), fp)
 				io.Copy(progressWriter, f)
 			} else if field.Type == "text" {
@@ -963,11 +971,14 @@ func executeHttpUpload(ctx context.Context, fp string, job *JobRequest) (string,
 
 	var resp *http.Response
 	var err error
+	httpClient := client
 	if sessionClient != nil {
-		resp, err = sessionClient.Do(req)
-	} else {
-		resp, err = client.Do(req)
+		httpClient = sessionClient
 	}
+	if httpClient == nil {
+		return "", "", fmt.Errorf("http client not initialized")
+	}
+	resp, err = httpClient.Do(req)
 	if err != nil {
 		return "", "", err
 	}
@@ -1062,10 +1073,19 @@ func getJSONValue(data map[string]interface{}, path string) string {
 			return ""
 		}
 	}
-	if s, ok := current.(string); ok {
-		return s
+	switch v := current.(type) {
+	case string:
+		return v
+	case float64:
+		return fmt.Sprintf("%.0f", v)
+	case bool:
+		if v {
+			return "true"
+		}
+		return "false"
+	default:
+		return ""
 	}
-	return ""
 }
 
 // --- Upload Implementations ---

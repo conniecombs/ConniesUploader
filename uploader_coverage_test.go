@@ -719,11 +719,17 @@ func TestRateLimitStress(t *testing.T) {
 	}
 
 	service := "stress.test"
-	limiter := rate.NewLimiter(rate.Limit(10.0), 20)
+	// Use a high rate limit so the stress test completes quickly (tests concurrency safety, not rate accuracy)
+	limiter := rate.NewLimiter(rate.Limit(10000.0), 10000)
 
 	rateLimiterMutex.Lock()
 	rateLimiters[service] = limiter
 	rateLimiterMutex.Unlock()
+
+	// Override the global rate limiter for the duration of this test
+	originalGlobal := globalRateLimiter
+	globalRateLimiter = rate.NewLimiter(rate.Limit(100000.0), 100000)
+	defer func() { globalRateLimiter = originalGlobal }()
 
 	concurrency := 50
 	iterations := 100
