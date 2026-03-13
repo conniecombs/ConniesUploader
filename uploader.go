@@ -938,10 +938,22 @@ func executeHttpUpload(ctx context.Context, fp string, job *JobRequest) (string,
 		defer writer.Close()
 		for fieldName, field := range spec.MultipartFields {
 			if field.Type == "file" {
-				part, _ := writer.CreateFormFile(fieldName, filepath.Base(fp))
-				f, _ := os.Open(fp)
+				part, err := writer.CreateFormFile(fieldName, filepath.Base(fp))
+				if err != nil {
+					pw.CloseWithError(err)
+					return
+				}
+				f, err := os.Open(fp)
+				if err != nil {
+					pw.CloseWithError(err)
+					return
+				}
 				defer f.Close()
-				fi, _ := f.Stat()
+				fi, err := f.Stat()
+				if err != nil {
+					pw.CloseWithError(err)
+					return
+				}
 				progressWriter := NewProgressWriter(part, fi.Size(), fp)
 				io.Copy(progressWriter, f)
 			} else if field.Type == "text" {
@@ -954,7 +966,10 @@ func executeHttpUpload(ctx context.Context, fp string, job *JobRequest) (string,
 		}
 	}()
 
-	req, _ := http.NewRequestWithContext(ctx, spec.Method, spec.URL, pr)
+	req, err := http.NewRequestWithContext(ctx, spec.Method, spec.URL, pr)
+	if err != nil {
+		return "", "", err
+	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req.Header.Set("User-Agent", DefaultUserAgent)
 	for k, v := range spec.Headers {
@@ -962,7 +977,6 @@ func executeHttpUpload(ctx context.Context, fp string, job *JobRequest) (string,
 	}
 
 	var resp *http.Response
-	var err error
 	if sessionClient != nil {
 		resp, err = sessionClient.Do(req)
 	} else {
@@ -1062,8 +1076,13 @@ func getJSONValue(data map[string]interface{}, path string) string {
 			return ""
 		}
 	}
-	if s, ok := current.(string); ok {
-		return s
+	switch v := current.(type) {
+	case string:
+		return v
+	case float64:
+		return fmt.Sprintf("%.0f", v)
+	case bool:
+		return fmt.Sprintf("%v", v)
 	}
 	return ""
 }

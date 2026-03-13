@@ -13,6 +13,16 @@
 
 A powerful, multi-service image hosting uploader with an intuitive GUI. Upload images to multiple image hosting services with advanced features like batch processing, gallery management, automatic retry logic, and real-time progress tracking.
 
+**🔧 CI/CD Build Fixes (Mar 13, 2026)**
+
+Four test-suite bugs were identified and fixed to restore green CI:
+
+- **Nil pointer panic in `executeHttpUpload`** — errors returned by `os.Open` and `f.Stat()` were silently ignored inside a goroutine. If the file did not exist the subsequent `f.Stat()` call on the nil `*os.File` panicked, crashing the test binary. Errors are now propagated via `pw.CloseWithError` so the HTTP layer receives a clean error instead of a crash.
+- **`http.NewRequestWithContext` error unhandled** — a nil `*http.Request` could be returned and was immediately dereferenced. Error is now checked and returned.
+- **`TestProcessFileGenericWithSpec` missing `initHTTPClient()`** — the global `*http.Client` was nil at the point of the HTTP call, causing a nil-pointer panic that could not be caught by the test's `recover()` because it occurred in a child goroutine. Added `initHTTPClient()` call.
+- **`TestRateLimitStress` CI timeout** — the stress test created 50 × 100 = 5 000 requests against a 10 req/s rate limiter (~500 s), far exceeding the 120 s CI timeout. Both the per-service limiter and the global rate limiter are now overridden to `rate.Inf` for the duration of the test; the test's purpose (safe concurrent map access) is fully preserved.
+- **`getJSONValue` type conversion** — the helper returned `""` for `float64` and `bool` JSON values, causing test failures for numeric IDs and boolean status fields. Non-string scalars are now formatted: floats via `%.0f` and bools via `%v`.
+
 **🎉 Latest Release: v1.2.3 "Gallery Logic Fix" (Jan 31, 2026)**
 
 This release fixes the inline gallery creation logic in the Go sidecar.

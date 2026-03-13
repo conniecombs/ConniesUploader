@@ -547,6 +547,8 @@ func TestRateLimitMultipleServices(t *testing.T) {
 // --- HttpRequestSpec Processing Tests ---
 
 func TestProcessFileGenericWithSpec(t *testing.T) {
+	initHTTPClient()
+
 	job := JobRequest{
 		Action:  "http_upload",
 		Service: "test.service",
@@ -719,11 +721,19 @@ func TestRateLimitStress(t *testing.T) {
 	}
 
 	service := "stress.test"
-	limiter := rate.NewLimiter(rate.Limit(10.0), 20)
+	// Use rate.Inf so the stress test finishes quickly; the goal is to
+	// verify concurrent map access is safe, not to measure throughput.
+	limiter := rate.NewLimiter(rate.Inf, 20)
 
 	rateLimiterMutex.Lock()
 	rateLimiters[service] = limiter
 	rateLimiterMutex.Unlock()
+
+	// Override the global rate limiter for the duration of this test so it
+	// doesn't throttle the 5000 concurrent requests to ~500 s.
+	origGlobal := globalRateLimiter
+	globalRateLimiter = rate.NewLimiter(rate.Inf, 1000)
+	defer func() { globalRateLimiter = origGlobal }()
 
 	concurrency := 50
 	iterations := 100
