@@ -6,7 +6,7 @@
 ![Production readiness status at 92 percent](https://img.shields.io/badge/production%20ready-92%25-brightgreen.svg)
 ![Continuous integration build and test status](https://github.com/conniecombs/conniesuploader/workflows/CI%20-%20Build%20and%20Test/badge.svg)
 ![Security scanning workflow status](https://github.com/conniecombs/conniesuploader/workflows/Security%20Scanning/badge.svg)
-![Go programming language version 1.24](https://img.shields.io/badge/Go-1.24-00ADD8.svg)
+![Go programming language version 1.25](https://img.shields.io/badge/Go-1.25-00ADD8.svg)
 ![Python version 3.11 or higher required](https://img.shields.io/badge/Python-3.11+-3776AB.svg)
 ![Test coverage at 30.0 percent](https://img.shields.io/badge/coverage-30.0%25-yellow.svg)
 ![Code quality grade A minus](https://img.shields.io/badge/grade-A--success.svg)
@@ -184,7 +184,7 @@ The Makefile automatically detects your platform (Windows/Linux/macOS) and handl
 - **Linux/macOS**: Run `./build.sh` (with color output and progress indicators)
 
 All build scripts will:
-1. Check/install dependencies (Python 3.11+, Go 1.24+)
+1. Check/install dependencies (Python 3.11+, Go 1.25+)
 2. Build the Go backend (uploader.exe/uploader)
 3. Create a Python virtual environment
 4. Install all Python dependencies
@@ -198,7 +198,7 @@ The final executable will be in the `dist` folder.
 
 **Prerequisites:**
 - Python 3.11+
-- Go 1.24+ (**required** - goquery v1.11.0 dependency)
+- Go 1.25+ (**required** - goquery v1.11.0 dependency)
 
 **Steps:**
 
@@ -421,7 +421,7 @@ Every commit is automatically:
 **Zero Known Vulnerabilities** - All dependencies are up-to-date and scanned daily:
 
 **Go Dependencies:**
-- **Go 1.24** (toolchain 1.24.7) - Latest stable
+- **Go 1.25** - Latest stable (fixes stdlib vulns GO-2026-4602 and GO-2026-4601)
 - **goquery v1.11.0** - HTML parsing (requires Go 1.24+)
 - **imaging v1.6.2** - Image processing
 - **logrus v1.9.3** - Structured logging
@@ -600,7 +600,7 @@ See **[REMAINING_ISSUES.md](REMAINING_ISSUES.md)** for complete implementation d
 - Verify Python 3.11+ is installed
 
 **Build errors:**
-- **Go version**: Ensure Go 1.24+ is installed (`go version`)
+- **Go version**: Ensure Go 1.25+ is installed (`go version`)
 - **Python version**: Ensure Python 3.11+ is installed (`python --version`)
 - Check internet connection for dependency downloads
 - Run `go mod download` to verify Go dependencies
