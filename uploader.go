@@ -937,9 +937,10 @@ func executeHttpUpload(ctx context.Context, fp string, job *JobRequest) (string,
 		defer pw.Close()
 		defer writer.Close()
 		for fieldName, field := range spec.MultipartFields {
-			if field.Type == "file" {
+			switch field.Type {
+			case "file":
 				part, _ := writer.CreateFormFile(fieldName, filepath.Base(fp))
-				f, err := os.Open(fp)
+				f, err := os.Open(fp) // #nosec G304
 				if err != nil {
 					return
 				}
@@ -950,9 +951,9 @@ func executeHttpUpload(ctx context.Context, fp string, job *JobRequest) (string,
 				}
 				progressWriter := NewProgressWriter(part, fi.Size(), fp)
 				_, _ = io.Copy(progressWriter, f)
-			} else if field.Type == "text" {
+			case "text":
 				_ = writer.WriteField(fieldName, field.Value)
-			} else if field.Type == "dynamic" {
+			case "dynamic":
 				if val, ok := extractedValues[field.Value]; ok {
 					_ = writer.WriteField(fieldName, val)
 				}
@@ -1022,13 +1023,14 @@ func executePreRequest(ctx context.Context, spec *PreRequestSpec, service string
 	bodyBytes, _ := io.ReadAll(resp.Body)
 
 	extracted := make(map[string]string)
-	if spec.ResponseType == "json" {
+	switch spec.ResponseType {
+	case "json":
 		var data map[string]interface{}
 		_ = json.Unmarshal(bodyBytes, &data)
 		for k, path := range spec.ExtractFields {
 			extracted[k] = getJSONValue(data, path)
 		}
-	} else if spec.ResponseType == "html" {
+	case "html":
 		doc, _ := goquery.NewDocumentFromReader(bytes.NewReader(bodyBytes))
 		for k, sel := range spec.ExtractFields {
 			val := doc.Find(sel).AttrOr("value", "")
