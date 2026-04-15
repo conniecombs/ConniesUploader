@@ -135,10 +135,13 @@ class PixhostPlugin(ImageHostPlugin):
         Build HTTP request specification for Pixhost.to upload.
         """
         # Map content type to Pixhost API value
-        content_type = "1" if config.get("content_type") == "Adult" else "0"
+        # Support both schema key ("content_type") and UI key ("pix_content")
+        raw_content = config.get("content_type") or config.get("pix_content", "Safe")
+        content_type = "1" if raw_content == "Adult" else "0"
 
         # Get thumbnail size with type coercion (UI may pass int or str)
-        thumb_size = str(config.get("thumbnail_size", "200"))
+        # Support both schema key ("thumbnail_size") and UI key ("pix_thumb")
+        thumb_size = str(config.get("thumbnail_size") or config.get("pix_thumb", "200"))
 
         # Build multipart fields
         multipart_fields = {

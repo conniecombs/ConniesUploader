@@ -105,6 +105,12 @@ class UploadManager:
                 group_cfg['gallery_hash'] = gid      # For Pixhost compatibility
                 group_cfg['pix_gallery_hash'] = gid  # Legacy key safety
                 logger.info(f"Group '{group_obj.title}' attached to Gallery ID: {gid}")
+            elif not group_cfg.get('gallery_hash'):
+                # Fall back to manual gallery hash entered by the user
+                manual_hash = (group_cfg.get('gallery_id', '') or group_cfg.get('pix_gallery_hash', '')).strip()
+                if manual_hash:
+                    group_cfg['gallery_hash'] = manual_hash
+                    logger.info(f"Group '{group_obj.title}' using manual gallery hash: {manual_hash}")
 
             # Determine configured cover count
             svc = group_cfg.get("service", "")
@@ -142,6 +148,9 @@ class UploadManager:
                 cover_cfg["turbo_thumb"] = "600"
                 cover_cfg["vipr_thumb"] = "800x800"
                 cover_cfg["imagebam_thumb"] = "300"
+                # Also set schema-standard key so build_http_request picks it up
+                if "pix" in svc:
+                    cover_cfg["thumbnail_size"] = "500"
                 self._send_job(covers, cover_cfg, creds)
 
             # 2. Send Standard Job
