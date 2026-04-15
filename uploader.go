@@ -614,15 +614,22 @@ func handleFinalizeGallery(job JobRequest) {
 		return
 	}
 	if service == "pixhost.to" {
-		finalizeURL := fmt.Sprintf("https://api.pixhost.to/galleries/%s/%s", galleryHash, uploadHash)
-		req, _ := http.NewRequest("PATCH", finalizeURL, nil)
+		// POST https://api.pixhost.to/galleries/{gallery_hash}/finalize
+		// with body: gallery_upload_hash=<upload_hash>
+		finalizeURL := fmt.Sprintf("https://api.pixhost.to/galleries/%s/finalize", galleryHash)
+		body := url.Values{}
+		body.Set("gallery_upload_hash", uploadHash)
+		req, _ := http.NewRequest("POST", finalizeURL, strings.NewReader(body.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Accept", "application/json")
 		req.Header.Set("User-Agent", getUserAgent(job.Config))
 		if resp, err := client.Do(req); err == nil {
 			defer resp.Body.Close()
 			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 				sendJSON(OutputEvent{Type: "result", Status: "success", Msg: "Gallery Finalized"})
 			} else {
-				sendJSON(OutputEvent{Type: "result", Status: "success", Msg: "Gallery upload complete (finalize pending)"})
+				body, _ := io.ReadAll(resp.Body)
+				sendJSON(OutputEvent{Type: "result", Status: "failed", Msg: fmt.Sprintf("Finalize failed: HTTP %d: %s", resp.StatusCode, string(body))})
 			}
 		} else {
 			sendJSON(OutputEvent{Type: "error", Msg: fmt.Sprintf("Finalize failed: %v", err)})

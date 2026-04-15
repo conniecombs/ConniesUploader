@@ -1128,6 +1128,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
     def finish_upload(self) -> None:
         if not self.is_uploading:
             return
+        self.is_uploading = False  # Block re-entry before background thread starts
         self.lbl_eta.configure(text="Finalizing...")
 
         def _fin():
