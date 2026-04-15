@@ -939,9 +939,15 @@ func executeHttpUpload(ctx context.Context, fp string, job *JobRequest) (string,
 		for fieldName, field := range spec.MultipartFields {
 			if field.Type == "file" {
 				part, _ := writer.CreateFormFile(fieldName, filepath.Base(fp))
-				f, _ := os.Open(fp)
+				f, err := os.Open(fp)
+				if err != nil {
+					return
+				}
 				defer f.Close()
-				fi, _ := f.Stat()
+				fi, err := f.Stat()
+				if err != nil {
+					return
+				}
 				progressWriter := NewProgressWriter(part, fi.Size(), fp)
 				_, _ = io.Copy(progressWriter, f)
 			} else if field.Type == "text" {
