@@ -1068,8 +1068,16 @@ func getJSONValue(data map[string]interface{}, path string) string {
 			return ""
 		}
 	}
-	if s, ok := current.(string); ok {
-		return s
+	switch v := current.(type) {
+	case string:
+		return v
+	case float64:
+		return fmt.Sprintf("%.0f", v)
+	case bool:
+		if v {
+			return "true"
+		}
+		return "false"
 	}
 	return ""
 }
