@@ -107,7 +107,7 @@ class UploadManager:
                 logger.info(f"Group '{group_obj.title}' attached to Gallery ID: {gid}")
             elif not group_cfg.get('gallery_hash'):
                 # Fall back to manual gallery hash entered by the user
-                manual_hash = group_cfg.get('pix_gallery_hash', '').strip()
+                manual_hash = (group_cfg.get('gallery_id', '') or group_cfg.get('pix_gallery_hash', '')).strip()
                 if manual_hash:
                     group_cfg['gallery_hash'] = manual_hash
                     logger.info(f"Group '{group_obj.title}' using manual gallery hash: {manual_hash}")
