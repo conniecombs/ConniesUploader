@@ -963,7 +963,7 @@ func executeHttpUpload(ctx context.Context, fp string, job *JobRequest) (string,
 				}
 			} else if field.Type == "text" {
 				_ = writer.WriteField(fieldName, field.Value)
-			} else if field.Type == "dynamic" {
+			case "dynamic":
 				if val, ok := extractedValues[field.Value]; ok {
 					_ = writer.WriteField(fieldName, val)
 				}
