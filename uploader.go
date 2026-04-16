@@ -614,15 +614,22 @@ func handleFinalizeGallery(job JobRequest) {
 		return
 	}
 	if service == "pixhost.to" {
-		finalizeURL := fmt.Sprintf("https://api.pixhost.to/galleries/%s/%s", galleryHash, uploadHash)
-		req, _ := http.NewRequest("PATCH", finalizeURL, nil)
+		// POST https://api.pixhost.to/galleries/{gallery_hash}/finalize
+		// with body: gallery_upload_hash=<upload_hash>
+		finalizeURL := fmt.Sprintf("https://api.pixhost.to/galleries/%s/finalize", galleryHash)
+		body := url.Values{}
+		body.Set("gallery_upload_hash", uploadHash)
+		req, _ := http.NewRequest("POST", finalizeURL, strings.NewReader(body.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Accept", "application/json")
 		req.Header.Set("User-Agent", getUserAgent(job.Config))
 		if resp, err := client.Do(req); err == nil {
 			defer resp.Body.Close()
 			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 				sendJSON(OutputEvent{Type: "result", Status: "success", Msg: "Gallery Finalized"})
 			} else {
-				sendJSON(OutputEvent{Type: "result", Status: "success", Msg: "Gallery upload complete (finalize pending)"})
+				body, _ := io.ReadAll(resp.Body)
+				sendJSON(OutputEvent{Type: "result", Status: "failed", Msg: fmt.Sprintf("Finalize failed: HTTP %d: %s", resp.StatusCode, string(body))})
 			}
 		} else {
 			sendJSON(OutputEvent{Type: "error", Msg: fmt.Sprintf("Finalize failed: %v", err)})
@@ -937,11 +944,18 @@ func executeHttpUpload(ctx context.Context, fp string, job *JobRequest) (string,
 		defer pw.Close()
 		defer writer.Close()
 		for fieldName, field := range spec.MultipartFields {
-			if field.Type == "file" {
+			switch field.Type {
+			case "file":
 				part, _ := writer.CreateFormFile(fieldName, filepath.Base(fp))
-				f, _ := os.Open(fp)
+				f, err := os.Open(fp) // #nosec G304
+				if err != nil {
+					return
+				}
 				defer f.Close()
-				fi, _ := f.Stat()
+				fi, err := f.Stat()
+				if err != nil {
+					return
+				}
 				progressWriter := NewProgressWriter(part, fi.Size(), fp)
 				_, _ = io.Copy(progressWriter, f)
 			} else if field.Type == "text" {
@@ -1016,13 +1030,14 @@ func executePreRequest(ctx context.Context, spec *PreRequestSpec, service string
 	bodyBytes, _ := io.ReadAll(resp.Body)
 
 	extracted := make(map[string]string)
-	if spec.ResponseType == "json" {
+	switch spec.ResponseType {
+	case "json":
 		var data map[string]interface{}
 		_ = json.Unmarshal(bodyBytes, &data)
 		for k, path := range spec.ExtractFields {
 			extracted[k] = getJSONValue(data, path)
 		}
-	} else if spec.ResponseType == "html" {
+	case "html":
 		doc, _ := goquery.NewDocumentFromReader(bytes.NewReader(bodyBytes))
 		for k, sel := range spec.ExtractFields {
 			val := doc.Find(sel).AttrOr("value", "")
@@ -1062,8 +1077,16 @@ func getJSONValue(data map[string]interface{}, path string) string {
 			return ""
 		}
 	}
-	if s, ok := current.(string); ok {
-		return s
+	switch v := current.(type) {
+	case string:
+		return v
+	case float64:
+		return fmt.Sprintf("%.0f", v)
+	case bool:
+		if v {
+			return "true"
+		}
+		return "false"
 	}
 	return ""
 }

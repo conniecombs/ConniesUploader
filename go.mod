@@ -1,16 +1,16 @@
 module github.com/conniecombs/GolangVersion
 
-go 1.25.0
+go 1.25.9
 
 require (
+	github.com/PuerkitoBio/goquery v1.11.0
 	github.com/disintegration/imaging v1.6.2
+	github.com/sirupsen/logrus v1.9.4
 	golang.org/x/time v0.14.0
 )
 
 require (
-	github.com/PuerkitoBio/goquery v1.11.0 // indirect
 	github.com/andybalholm/cascadia v1.3.3 // indirect
-	github.com/sirupsen/logrus v1.9.4 // indirect
 	golang.org/x/image v0.38.0 // indirect
 	golang.org/x/net v0.47.0 // indirect
 	golang.org/x/sys v0.38.0 // indirect

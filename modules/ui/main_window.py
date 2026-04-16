@@ -1128,9 +1128,19 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
     def finish_upload(self) -> None:
         if not self.is_uploading:
             return
+        self.is_uploading = False  # Block re-entry before background thread starts
         self.lbl_eta.configure(text="Finalizing...")
 
         def _fin():
+            if self.pix_galleries_to_finalize:
+                for gal in self.pix_galleries_to_finalize:
+                    try:
+                        api.finalize_pixhost_gallery(
+                            gal.get("gallery_upload_hash", ""),
+                            gal.get("gallery_hash", ""),
+                        )
+                    except Exception as e:
+                        logger.error(f"Pixhost finalize error: {e}")
             self.after(0, self._on_upload_complete)
 
         threading.Thread(target=_fin, daemon=True).start()
