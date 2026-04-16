@@ -957,10 +957,13 @@ func executeHttpUpload(ctx context.Context, fp string, job *JobRequest) (string,
 					return
 				}
 				progressWriter := NewProgressWriter(part, fi.Size(), fp)
-				_, _ = io.Copy(progressWriter, f)
-			case "text":
+				if _, err := io.Copy(progressWriter, f); err != nil {
+					pw.CloseWithError(err)
+					return
+				}
+			} else if field.Type == "text" {
 				_ = writer.WriteField(fieldName, field.Value)
-			case "dynamic":
+			} else if field.Type == "dynamic" {
 				if val, ok := extractedValues[field.Value]; ok {
 					_ = writer.WriteField(fieldName, val)
 				}
