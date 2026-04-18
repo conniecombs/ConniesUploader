@@ -87,8 +87,8 @@ check_go() {
 build_go_sidecar() {
     print_step "3/5" "Building Go sidecar..."
 
-    if [ ! -f "uploader.go" ]; then
-        print_error "uploader.go not found!"
+    if [ ! -f "main.go" ]; then
+        print_error "main.go not found!"
         exit 1
     fi
 
@@ -96,7 +96,7 @@ build_go_sidecar() {
     go mod tidy
 
     echo "  - Compiling optimized binary..."
-    go build -ldflags="-s -w" -o uploader uploader.go
+    go build -ldflags="-s -w" -o uploader .
 
     if [ ! -f "uploader" ]; then
         print_error "Failed to build uploader binary!"
