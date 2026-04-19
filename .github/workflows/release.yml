@@ -80,7 +80,7 @@ jobs:
     - name: Build Go sidecar
       run: |
         go mod download
-        go build -v -ldflags="-s -w" -o uploader.exe uploader.go
+        go build -v -ldflags="-s -w" -o uploader.exe .
 
     - name: Verify Go sidecar
       run: |
@@ -177,7 +177,7 @@ jobs:
     - name: Build Go sidecar
       run: |
         go mod download
-        go build -v -ldflags="-s -w" -o uploader uploader.go
+        go build -v -ldflags="-s -w" -o uploader .
 
     - name: Install Python dependencies
       run: |
@@ -260,7 +260,7 @@ jobs:
     - name: Build Go sidecar
       run: |
         go mod download
-        go build -v -ldflags="-s -w" -o uploader uploader.go
+        go build -v -ldflags="-s -w" -o uploader .
 
     - name: Install Python dependencies
       run: |

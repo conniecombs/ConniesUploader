@@ -64,7 +64,7 @@ build-go:
 	@echo "  - Running go mod tidy..."
 	go mod tidy
 	@echo "  - Compiling optimized binary..."
-	go build $(GO_FLAGS) -o $(GO_OUTPUT) uploader.go
+	go build $(GO_FLAGS) -o $(GO_OUTPUT) .
 	@echo "Go sidecar built: $(GO_OUTPUT)"
 
 # Build Python application with PyInstaller

@@ -9,7 +9,6 @@ import (
 	"image/color"
 	"io"
 	"net/http"
-	"net/http/cookiejar"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
@@ -285,17 +284,6 @@ func TestHandleGenerateThumb(t *testing.T) {
 }
 
 // --- Helper Functions for Tests ---
-
-// initHTTPClient initializes the global HTTP client (needed for tests)
-func initHTTPClient() {
-	if client == nil {
-		client = &http.Client{
-			Timeout: 120 * 1000000000, // 120 seconds in nanoseconds
-		}
-		jar, _ := cookiejar.New(nil)
-		client.Jar = jar
-	}
-}
 
 // createTestImage creates a simple 100x100 white JPEG image for testing
 func createTestImage(path string) error {

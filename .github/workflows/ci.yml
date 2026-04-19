@@ -68,7 +68,7 @@ jobs:
       shell: bash
 
     - name: Build uploader
-      run: go build -v -ldflags="-s -w" -o uploader${{ runner.os == 'Windows' && '.exe' || '' }} uploader.go
+      run: go build -v -ldflags="-s -w" -o uploader${{ runner.os == 'Windows' && '.exe' || '' }} .
 
     - name: Test uploader binary
       run: |
