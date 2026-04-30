@@ -2,17 +2,18 @@ name: CI - Build and Test
 
 on:
   push:
-    branches: [ main, master, develop, claude/** ]
+    branches: [ main, master, develop, claude/**, codex/** ]
   pull_request:
     branches: [ main, master, develop ]
+
+permissions:
+  contents: read
 
 jobs:
   # Go sidecar build and test
   go-build:
     name: Build Go Sidecar
     runs-on: ${{ matrix.os }}
-    permissions:
-      contents: write
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
@@ -40,17 +41,10 @@ jobs:
     - name: Download dependencies
       run: go mod download
 
-    - name: Tidy go.sum
+    - name: Check go.mod and go.sum are tidy
       run: |
         go mod tidy
-        if ! git diff --quiet go.sum; then
-          echo "go.sum was updated by go mod tidy"
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add go.sum
-          git commit -m "Auto-update go.sum checksums"
-          git push
-        fi
+        git diff --exit-code go.mod go.sum
       shell: bash
 
     - name: Verify dependencies
@@ -136,8 +130,7 @@ jobs:
       run: python -c "import customtkinter; import requests; import loguru; print('All imports OK')"
 
     - name: Run Python tests
-      run: pytest tests/ -v --tb=short || echo "Tests not critical for CI (some may require display)"
-      continue-on-error: true
+      run: pytest tests/ -v --tb=short
 
     - name: Check Python syntax
       run: |
@@ -176,16 +169,14 @@ jobs:
         if ($size -lt 40000000) {
           Write-Warning "⚠️ Build size is ${sizeMB} MB (expected 40-50 MB)"
           Write-Warning "This suggests the Go sidecar may not be properly bundled"
-          Write-Warning "Checking if uploader.exe exists in current directory..."
           if (Test-Path "uploader.exe") {
             $goSize = (Get-Item "uploader.exe").length
             $goSizeMB = [math]::Round($goSize / 1MB, 2)
             Write-Warning "uploader.exe found: $goSizeMB MB"
           } else {
             Write-Error "uploader.exe NOT found in build directory!"
+            exit 1
           }
-          # Make this non-fatal for now to allow debugging
-          Write-Warning "Continuing despite size warning..."
         } else {
           Write-Output "✅ Build size OK ($sizeMB MB) - sidecar appears to be bundled"
         }
@@ -227,7 +218,7 @@ jobs:
       run: pip install safety
 
     - name: Check Python dependencies
-      run: safety check --file requirements.txt --json || true
+      run: safety check --file requirements.txt
 
   # Code quality checks
   code-quality:
@@ -258,9 +249,7 @@ jobs:
       run: pip install flake8
 
     - name: Run flake8
-      run: |
-        # Recursively check all Python files
-        flake8 main.py modules/ --max-line-length=120 --ignore=E501,W503 --exclude=__pycache__ || true
+      run: flake8 main.py modules/ --max-line-length=120 --ignore=E501,W503 --exclude=__pycache__
 
   # Summary job
   ci-success:
