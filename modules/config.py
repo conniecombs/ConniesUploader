@@ -64,6 +64,7 @@ SIDECAR_MAX_RESTARTS = 5  # Maximum restart attempts before giving up
 # File Size Limits (in bytes)
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 MAX_FILENAME_LENGTH = 255
+MAX_SCAN_FILES = 1000  # Maximum images accepted from a single scan/batch
 
 # UI Update Intervals
 UI_UPDATE_INTERVAL_MS = 10
@@ -96,7 +97,9 @@ logger.add(
     retention="10 days",
     level="DEBUG",
     backtrace=True,
-    diagnose=True,
+    # Keep diagnose disabled so exception logs do not leak local variables such
+    # as credentials, tokens, API keys, or file-system paths in production logs.
+    diagnose=False,
 )
 
 
