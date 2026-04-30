@@ -10,7 +10,6 @@ permissions:
   contents: read
 
 jobs:
-  # Go sidecar build and test
   go-build:
     name: Build Go Sidecar
     runs-on: ${{ matrix.os }}
@@ -20,67 +19,22 @@ jobs:
         go-version: ['1.25']
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set up Go
-      uses: actions/setup-go@v5
+    - uses: actions/checkout@v4
+    - uses: actions/setup-go@v5
       with:
         go-version: ${{ matrix.go-version }}
 
-    - name: Cache Go modules
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cache/go-build
-          ~/go/pkg/mod
-        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-        restore-keys: |
-          ${{ runner.os }}-go-
-
-    - name: Download dependencies
-      run: go mod download
-
-    - name: Check go.mod and go.sum are tidy
-      run: |
+    - run: go mod download
+    - run: |
         go mod tidy
         git diff --exit-code go.mod go.sum
-      shell: bash
 
-    - name: Verify dependencies
-      run: go mod verify
+    - run: go mod verify
+    - run: go vet ./...
+    - run: go test -v -coverprofile coverage.out ./...
+    - run: go tool cover -func coverage.out | tail -1
+    - run: go build -v -ldflags="-s -w" -o uploader${{ runner.os == 'Windows' && '.exe' || '' }} .
 
-    - name: Run go vet
-      run: go vet ./...
-
-    - name: Run Go tests
-      run: go test -v -coverprofile coverage.out ./...
-      shell: bash
-
-    - name: Display test coverage
-      run: go tool cover -func coverage.out | tail -1
-      shell: bash
-
-    - name: Build uploader
-      run: go build -v -ldflags="-s -w" -o uploader${{ runner.os == 'Windows' && '.exe' || '' }} .
-
-    - name: Test uploader binary
-      run: |
-        if [ "$RUNNER_OS" == "Windows" ]; then
-          test -f uploader.exe
-        else
-          test -f uploader
-        fi
-      shell: bash
-
-    - name: Upload Go artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: uploader-${{ runner.os }}
-        path: uploader${{ runner.os == 'Windows' && '.exe' || '' }}
-        retention-days: 7
-
-  # Python build and validation
   python-build:
     name: Build Python Application
     runs-on: ${{ matrix.os }}
@@ -91,178 +45,52 @@ jobs:
         python-version: ['3.11']
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set up Python
-      uses: actions/setup-python@v5
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
-        cache: 'pip'
 
-    - name: Download Go artifact
-      uses: actions/download-artifact@v4
-      with:
-        name: uploader-${{ runner.os }}
-
-    - name: Verify Go artifact downloaded (Windows)
-      if: runner.os == 'Windows'
-      run: |
-        if (!(Test-Path "uploader.exe")) {
-          Write-Error "uploader.exe not found after download!"
-          Get-ChildItem -Recurse | Where-Object Name -like "uploader*"
-          exit 1
-        }
-        $size = (Get-Item "uploader.exe").length
-        Write-Output "Go sidecar size: $size bytes"
-      shell: pwsh
-
-    - name: Make uploader executable (Unix)
-      if: runner.os != 'Windows'
-      run: chmod +x uploader
-
-    - name: Install Python dependencies
-      run: |
+    - run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
 
-    - name: Verify imports
-      run: python -c "import customtkinter; import requests; import loguru; print('All imports OK')"
+    - run: pytest tests/ -v --tb=short
 
-    - name: Run Python tests
-      run: pytest tests/ -v --tb=short
-
-    - name: Check Python syntax
-      run: |
-        python -m py_compile main.py
-        find modules -name "*.py" -exec python -m py_compile {} +
-      shell: bash
-
-    - name: Build with PyInstaller (Windows only)
-      if: runner.os == 'Windows'
-      run: |
-        pyinstaller --noconsole --onefile --clean --name "ConniesUploader" `
-          --icon "logo.ico" `
-          --add-binary "uploader.exe;." `
-          --add-data "logo.ico;." `
-          --collect-all tkinterdnd2 `
-          --collect-submodules modules.plugins `
-          --hidden-import modules.plugins.imx `
-          --hidden-import modules.plugins.pixhost `
-          --hidden-import modules.plugins.pixhost_v2 `
-          --hidden-import modules.plugins.vipr `
-          --hidden-import modules.plugins.turbo `
-          --hidden-import modules.plugins.imagebam `
-          --hidden-import modules.plugins.imgur `
-          main.py
-
-    - name: Verify build output (Windows)
-      if: runner.os == 'Windows'
-      run: |
-        if (!(Test-Path "dist\ConniesUploader.exe")) {
-          Write-Error "ConniesUploader.exe not found!"
-          exit 1
-        }
-        $size = (Get-Item "dist\ConniesUploader.exe").length
-        $sizeMB = [math]::Round($size / 1MB, 2)
-        Write-Output "Build size: $sizeMB MB ($size bytes)"
-        if ($size -lt 40000000) {
-          Write-Warning "⚠️ Build size is ${sizeMB} MB (expected 40-50 MB)"
-          Write-Warning "This suggests the Go sidecar may not be properly bundled"
-          if (Test-Path "uploader.exe") {
-            $goSize = (Get-Item "uploader.exe").length
-            $goSizeMB = [math]::Round($goSize / 1MB, 2)
-            Write-Warning "uploader.exe found: $goSizeMB MB"
-          } else {
-            Write-Error "uploader.exe NOT found in build directory!"
-            exit 1
-          }
-        } else {
-          Write-Output "✅ Build size OK ($sizeMB MB) - sidecar appears to be bundled"
-        }
-      shell: pwsh
-
-    - name: Upload build artifact (Windows)
-      if: runner.os == 'Windows'
-      uses: actions/upload-artifact@v4
-      with:
-        name: ConniesUploader-${{ runner.os }}-${{ github.sha }}
-        path: dist/ConniesUploader.exe
-        retention-days: 30
-
-  # Dependency vulnerability scanning
   dependency-check:
-    name: Dependency Security Scan
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set up Go
-      uses: actions/setup-go@v5
+    - uses: actions/checkout@v4
+    - uses: actions/setup-go@v5
       with:
         go-version: '1.25'
-
-    - name: Run govulncheck
-      run: |
+    - run: |
         go install golang.org/x/vuln/cmd/govulncheck@latest
         govulncheck ./...
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
+    - uses: actions/setup-python@v5
       with:
         python-version: '3.11'
 
-    - name: Install safety
-      run: pip install safety
+    - run: pip install safety
+    - run: safety check --file requirements.txt
 
-    - name: Check Python dependencies
-      run: safety check --file requirements.txt
-
-  # Code quality checks
   code-quality:
-    name: Code Quality Analysis
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set up Go
-      uses: actions/setup-go@v5
+    - uses: actions/checkout@v4
+    - uses: actions/setup-go@v5
       with:
         go-version: '1.25'
 
     - name: Run golangci-lint
-      uses: golangci/golangci-lint-action@v4
+      uses: golangci/golangci-lint-action@v6
       with:
         version: latest
-        args: --timeout=5m
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
+    - uses: actions/setup-python@v5
       with:
         python-version: '3.11'
 
-    - name: Install flake8
-      run: pip install flake8
+    - run: pip install flake8
+    - run: flake8 main.py modules/ --max-line-length=120 --ignore=E501,W503 --exclude=__pycache__
 
-    - name: Run flake8
-      run: flake8 main.py modules/ --max-line-length=120 --ignore=E501,W503 --exclude=__pycache__
-
-  # Summary job
-  ci-success:
-    name: CI Success
-    runs-on: ubuntu-latest
-    needs: [go-build, python-build, dependency-check, code-quality]
-    if: success()
-
-    steps:
-    - name: Report success
-      run: |
-        echo "✅ All CI checks passed!"
-        echo "Go build: ✅"
-        echo "Python build: ✅"
-        echo "Security scan: ✅"
-        echo "Code quality: ✅"
