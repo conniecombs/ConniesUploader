@@ -6,6 +6,7 @@
 import pytest
 import sys
 import os
+import platform
 from unittest.mock import Mock, patch, MagicMock
 
 # Add parent directory to path for imports
@@ -58,8 +59,8 @@ class TestInstallMenu:
         mock_system.return_value = "Darwin"  # macOS
         ContextUtils.install_menu()  # Should not raise error
 
-    @patch("winreg.CreateKey")
-    @patch("winreg.SetValue")
+    @patch("modules.utils.winreg.CreateKey")
+    @patch("modules.utils.winreg.SetValue")
     @patch("tkinter.messagebox.showinfo")
     def test_install_menu_on_windows(
         self, mock_showinfo, mock_setvalue, mock_createkey, mock_system
@@ -79,7 +80,7 @@ class TestInstallMenu:
             # May fail if winreg is not available (non-Windows test environment)
             pass
 
-    @patch("winreg.CreateKey")
+    @patch("modules.utils.winreg.CreateKey")
     @patch("tkinter.messagebox.showerror")
     def test_install_menu_handles_errors(self, mock_showerror, mock_createkey, mock_system):
         """Test error handling during installation"""
@@ -130,7 +131,7 @@ class TestRemoveMenu:
         mock_system.return_value = "Darwin"
         ContextUtils.remove_menu()  # Should not raise error
 
-    @patch("winreg.DeleteKey")
+    @patch("modules.utils.winreg.DeleteKey")
     @patch("tkinter.messagebox.showinfo")
     def test_remove_menu_on_windows(self, mock_showinfo, mock_deletekey, mock_system):
         """Test successful context menu removal on Windows"""
@@ -146,7 +147,7 @@ class TestRemoveMenu:
             # May fail if winreg is not available
             pass
 
-    @patch("winreg.DeleteKey")
+    @patch("modules.utils.winreg.DeleteKey")
     @patch("loguru.logger.warning")
     def test_remove_menu_handles_missing(self, mock_warning, mock_deletekey, mock_system):
         """Test handling when context menu is not installed"""
@@ -164,7 +165,7 @@ class TestRemoveMenu:
             # Acceptable if winreg is not available
             pass
 
-    @patch("winreg.DeleteKey")
+    @patch("modules.utils.winreg.DeleteKey")
     def test_remove_menu_deletes_in_order(self, mock_deletekey, mock_system):
         """Test that registry keys are deleted in correct order"""
         mock_system.return_value = "Windows"
@@ -299,9 +300,9 @@ class TestContextUtilsIntegration:
     """Integration tests for context utils"""
 
     @patch("platform.system")
-    @patch("winreg.CreateKey")
-    @patch("winreg.SetValue")
-    @patch("winreg.DeleteKey")
+    @patch("modules.utils.winreg.CreateKey")
+    @patch("modules.utils.winreg.SetValue")
+    @patch("modules.utils.winreg.DeleteKey")
     @patch("tkinter.messagebox.showinfo")
     def test_install_and_remove_cycle(
         self, mock_showinfo, mock_deletekey, mock_setvalue, mock_createkey, mock_system

@@ -5,9 +5,21 @@
 import sys
 import os
 import platform
-import winreg
 from tkinter import messagebox
 from loguru import logger
+
+if platform.system() == "Windows":
+    import winreg
+else:
+    from types import SimpleNamespace
+
+    winreg = SimpleNamespace(
+        CreateKey=None,
+        SetValue=None,
+        DeleteKey=None,
+        HKEY_CLASSES_ROOT=None,
+        REG_SZ=None,
+    )
 
 
 class ContextUtils:
