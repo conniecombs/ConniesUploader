@@ -23,6 +23,12 @@ import (
 	"github.com/conniecombs/GolangVersion/services/vipergirls"
 )
 
+const (
+	defaultThumbWidth = 100
+	minThumbWidth     = 1
+	maxThumbWidth     = 512
+)
+
 func handleJob(job JobRequest) {
 	ensureInitialized()
 	defer func() {
@@ -60,6 +66,8 @@ func handleJob(job JobRequest) {
 		handleViperPost(job)
 	case "generate_thumb":
 		handleGenerateThumb(job)
+	default:
+		sendJSON(OutputEvent{Type: "error", Msg: fmt.Sprintf("Unsupported action: %s", job.Action)})
 	}
 }
 
@@ -333,12 +341,19 @@ func handleGenerateThumb(job JobRequest) {
 		sendJSON(OutputEvent{Type: "error", Msg: "No file provided"})
 		return
 	}
-	w, _ := strconv.Atoi(job.Config["width"])
-	if w == 0 {
-		w = 100
+	w, err := strconv.Atoi(job.Config["width"])
+	if err != nil || w <= 0 {
+		w = defaultThumbWidth
 	}
+	if w < minThumbWidth {
+		w = minThumbWidth
+	}
+	if w > maxThumbWidth {
+		w = maxThumbWidth
+	}
+
 	fp := job.Files[0]
-	f, err := os.Open(fp) // #nosec G304
+	f, err := os.Open(fp) // #nosec G304 -- path is validated before this action is issued.
 	if err != nil {
 		sendJSON(OutputEvent{Type: "error", Msg: "File not found"})
 		return

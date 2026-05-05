@@ -30,6 +30,11 @@ import (
 	"github.com/conniecombs/GolangVersion/services/vipergirls"
 )
 
+const (
+	minSidecarWorkers = 1
+	maxSidecarWorkers = 16
+)
+
 // ---------------------------------------------------------------------------
 // Package-level types — aliased from core so existing test files compile
 // unchanged.
@@ -61,8 +66,21 @@ var client *http.Client
 // registry holds all registered service modules.
 var registry *services.Registry
 
+func clampSidecarWorkers(workers int) int {
+	if workers < minSidecarWorkers {
+		return minSidecarWorkers
+	}
+	if workers > maxSidecarWorkers {
+		return maxSidecarWorkers
+	}
+	return workers
+}
+
 func initHTTPClient() {
-	jar, _ := cookiejar.New(nil)
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		log.WithError(err).Warn("failed to initialize cookie jar; continuing without persistent cookies")
+	}
 	client = &http.Client{
 		Timeout: core.ClientTimeout,
 		Jar:     jar,
@@ -234,9 +252,16 @@ func init() {
 func main() {
 	workerCount := flag.Int("workers", 8, "Number of worker goroutines")
 	flag.Parse()
+	clampedWorkerCount := clampSidecarWorkers(*workerCount)
+	if clampedWorkerCount != *workerCount {
+		log.WithFields(log.Fields{
+			"requested": *workerCount,
+			"effective":  clampedWorkerCount,
+		}).Warn("sidecar worker count clamped")
+	}
 
-	log.WithField("workers", *workerCount).Info("Go sidecar starting")
-	core.SendJSON(OutputEvent{Type: "log", Msg: fmt.Sprintf("=== GO SIDECAR STARTED - WORKERS: %d ===", *workerCount)})
+	log.WithField("workers", clampedWorkerCount).Info("Go sidecar starting")
+	core.SendJSON(OutputEvent{Type: "log", Msg: fmt.Sprintf("=== GO SIDECAR STARTED - WORKERS: %d ===", clampedWorkerCount)})
 
 	initHTTPClient()
 	initRegistry()
@@ -248,7 +273,7 @@ func main() {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
-	for i := 0; i < *workerCount; i++ {
+	for i := 0; i < clampedWorkerCount; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
