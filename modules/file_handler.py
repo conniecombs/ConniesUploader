@@ -145,7 +145,7 @@ def get_files_from_directory(directory: str, validate_size: bool = True) -> List
                 file_path = Path(root) / filename
                 try:
                     resolved = file_path.resolve()
-                    if not str(resolved).startswith(str(base_dir)):
+                    if not resolved.is_relative_to(base_dir):
                         logger.warning(f"Skipping path outside selected directory: {file_path}")
                         continue
                     _append_valid_file(files, str(resolved), validate_size)
