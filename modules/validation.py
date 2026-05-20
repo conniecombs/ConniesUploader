@@ -68,7 +68,7 @@ def validate_directory_path(dirpath: str) -> Optional[str]:
         return None
 
 
-def sanitize_filename(filename: str, max_length: int = config.MAX_FILENAME_LENGTH) -> str:
+def sanitize_filename(filename: str, max_length: int = 255) -> str:
     """Sanitize a filename for safe filesystem operations."""
     sanitized = str(filename).replace("\x00", "")
     sanitized = sanitized.replace("..", "")
@@ -82,7 +82,7 @@ def sanitize_filename(filename: str, max_length: int = config.MAX_FILENAME_LENGT
     sanitized = re.sub(r"_+", "_", sanitized).strip("._ ")
 
     if not sanitized:
-        sanitized = "untitled"
+        sanitized = "unnamed_file"
 
     reserved_names = {
         "CON",
@@ -134,16 +134,8 @@ def validate_service_name(service: str, plugin_manager=None) -> bool:
     return True
 
 
-def validate_thread_count(
-    count: int, min_val: int = config.MIN_THREAD_COUNT, max_val: int = config.MAX_THREAD_COUNT
-) -> int:
+def validate_thread_count(count: int, min_val: int = 1, max_val: int = 20) -> int:
     """Validate and clamp thread count to safe range."""
-    try:
-        count = int(count)
-    except (TypeError, ValueError):
-        logger.warning(f"Invalid thread count {count!r}, using default {config.DEFAULT_THREAD_COUNT}")
-        count = config.DEFAULT_THREAD_COUNT
-
     if count < min_val:
         logger.warning(f"Thread count {count} below minimum {min_val}, using minimum")
         return min_val

@@ -17,10 +17,10 @@ cd "$SCRIPT_DIR"
 
 # Configuration
 PYTHON_CMD="python3"
-GO_VERSION_MIN="1.25"
+GO_VERSION_MIN="1.24"
 PYTHON_VERSION_MIN="3.11"
 APP_NAME="ConniesUploader"
-VERSION="1.2.4"
+VERSION="1.2.3"
 
 # Functions
 print_header() {
@@ -56,7 +56,7 @@ check_python() {
 
     if ! check_command "$PYTHON_CMD"; then
         print_error "Python 3 not found!"
-        echo "Please install Python $PYTHON_VERSION_MIN or higher:"
+        echo "Please install Python 3.11 or higher:"
         echo "  - Ubuntu/Debian: sudo apt install python3 python3-venv python3-pip"
         echo "  - macOS: brew install python@3.11"
         echo "  - Fedora: sudo dnf install python3"
@@ -72,7 +72,7 @@ check_go() {
 
     if ! check_command "go"; then
         print_error "Go not found!"
-        echo "Please install Go $GO_VERSION_MIN or higher:"
+        echo "Please install Go 1.24 or higher:"
         echo "  - Ubuntu/Debian: sudo snap install go --classic"
         echo "  - macOS: brew install go"
         echo "  - Fedora: sudo dnf install golang"
@@ -158,7 +158,7 @@ build_executable() {
         --collect-submodules modules.plugins \
         --hidden-import modules.plugins.imx \
         --hidden-import modules.plugins.pixhost \
-        --hidden-import modules.plugins.pixhost_v2_legacy \
+        --hidden-import modules.plugins.pixhost_v2 \
         --hidden-import modules.plugins.vipr \
         --hidden-import modules.plugins.turbo \
         --hidden-import modules.plugins.imagebam \

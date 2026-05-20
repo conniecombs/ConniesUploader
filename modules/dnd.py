@@ -23,7 +23,7 @@ class DragDropMixin:
 
     def drop_files(self, event):
         """Handle external file/folder drops from the file system."""
-        logger.info("DROP EVENT RECEIVED!")
+        logger.info(f"🎯 DROP EVENT RECEIVED!")
         logger.info(f"   Raw event.data: {event.data}")
         logger.info(f"   Event coordinates: ({event.x_root}, {event.y_root})")
 
@@ -57,12 +57,12 @@ class DragDropMixin:
             if target_group:
                 logger.info(f"   Target group: {target_group.title}")
             else:
-                logger.info("   No specific group targeted, will create new group(s)")
+                logger.info(f"   No specific group targeted, will create new group(s)")
 
         except AttributeError as e:
             logger.warning(f"   Could not find target group for drop: {e}")
 
-        logger.info("   Calling _process_files()...")
+        logger.info(f"   Calling _process_files()...")
         self._process_files(files, target_group)
 
     def _clear_highlights(self, event=None):

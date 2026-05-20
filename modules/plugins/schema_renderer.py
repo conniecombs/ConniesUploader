@@ -9,7 +9,7 @@ This module provides automatic UI generation from declarative schemas,
 eliminating the need for manual widget creation in plugins.
 """
 
-from typing import Dict, List, Any, Tuple
+from typing import Dict, List, Any, Optional, Tuple
 import customtkinter as ctk
 import tkinter as tk
 from loguru import logger

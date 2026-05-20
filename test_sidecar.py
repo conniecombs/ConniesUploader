@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+er: MIT
 # Copyright (c) 2025 conniecombs
 
 """
@@ -77,7 +77,7 @@ def test_sidecar_location():
         print("✗ FAILURE: uploader.exe NOT found!")
         print()
         print("Troubleshooting:")
-        print("1. Ensure you built uploader.exe with: go build -o uploader.exe .")
+        print("1. Ensure you built uploader.exe with: go build uploader.go")
         print("2. Check PyInstaller command includes: --add-data 'uploader.exe;.'")
         print("3. Verify uploader.exe exists in project root before building")
         print("4. Try deleting dist/ and build/ folders and rebuilding")

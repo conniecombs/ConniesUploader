@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-**Product Version:** v1.2.4
+**Product Version:** v1.2.3
 **Architecture Version:** v2.4.0 (Complete Migration - 100% Plugin-Driven)
 
 **Status:** The application is now **fully refactored** with a plugin-driven architecture. The split-brain problem has been RESOLVED by making Go a "dumb HTTP runner" that executes requests defined by Python plugins. ALL services (stateless APIs and session-based) now use the generic HTTP runner!
@@ -10,15 +10,6 @@
 **Migration Progress:** 5/5 services (100%) using generic HTTP runner - **MIGRATION COMPLETE!**
 
 ## Recent Fixes (v2.4.0)
-
-### ✅ RESOLVED: Go Sidecar Source Split
-- **Problem:** Root-level Go code mixed startup, runtime initialization, compatibility shims, upload handling, gallery handling, forum posting, and thumbnail generation.
-- **Solution:** Split the root Go package into focused files:
-  - `main.go` / `sidecar.go` for process startup, worker pool setup, and stdin JSON decoding
-  - `client_registry.go` for HTTP client construction and service registration
-  - `upload_handlers.go`, `gallery_handlers.go`, `forum_handlers.go`, and `thumbnail_handler.go` for action-specific behavior
-  - `aliases.go`, `compatibility.go`, and `service_compatibility.go` for legacy test/API compatibility
-- **Impact:** The sidecar is easier to navigate without changing the JSON protocol or legacy test-facing function names.
 
 ### ✅ RESOLVED: Complete Migration to Generic HTTP Runner (100%)
 - **Problem:** TurboImageHost and ImageBam still used hardcoded Go logic. ImageBam had complex 4-step login requiring template substitution in headers/form fields.
@@ -301,7 +292,7 @@ def build_http_request(self, file_path, config, creds):
 **Current Bottlenecks:**
 1. ~~Global state mutex~~ ✅ FIXED
 2. ~~Aggressive timeouts~~ ✅ FIXED
-3. ~~Worker pool size hardcoded to 8~~ ✅ FIXED (sidecar workers are clamped to 1-16; per-job upload workers are also bounded)
+3. Worker pool size hardcoded to 8 (should be configurable)
 
 **Scalability:**
 - Handles ~100-200 files/batch reliably

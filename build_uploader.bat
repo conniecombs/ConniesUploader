@@ -1,3 +1,7 @@
+{
+type: file_update
+fileName: build_uploader.bat
+fileContent:
 @echo off
 setlocal
 REM Connie's Uploader Ultimate - Windows Build Script
@@ -7,7 +11,7 @@ cd /d "%~dp0"
 title Connie's Uploader - Build Tool
 
 echo ========================================================
-echo       Connie's Uploader Ultimate - Build v1.2.4
+echo       Connie's Uploader Ultimate - Build v1.2.3
 echo ========================================================
 echo.
 
@@ -55,7 +59,7 @@ if not exist go.mod (
 
 go mod tidy
 if "%ARCH%"=="32" (set GOARCH=386) else (set GOARCH=amd64)
-go build -ldflags="-s -w" -o "%~dp0uploader.exe" .
+go build -ldflags="-s -w" -o "%~dp0uploader.exe" "%~dp0uploader.go"
 
 if not exist "%~dp0uploader.exe" (
     echo [ERROR] Go build failed!
@@ -104,7 +108,7 @@ pyinstaller --noconsole --onefile --clean --name "ConniesUploader" ^
     --collect-submodules modules.plugins ^
     --hidden-import modules.plugins.imx ^
     --hidden-import modules.plugins.pixhost ^
-    --hidden-import modules.plugins.pixhost_v2_legacy ^
+    --hidden-import modules.plugins.pixhost_v2 ^
     --hidden-import modules.plugins.vipr ^
     --hidden-import modules.plugins.turbo ^
     --hidden-import modules.plugins.imagebam ^
@@ -177,17 +181,17 @@ exit /b 0
 
 :install_go
 REM ==================================================================================
-REM Updated with correct SHA256 checksums for Go 1.25.9
+REM Updated with correct SHA256 checksums for Go 1.24.0
 REM ==================================================================================
 if "%ARCH%"=="64" (
-    set "GO_URL=https://go.dev/dl/go1.25.9.windows-amd64.msi"
-    set "GO_SHA256=207e998936913ad4e7e0c79c0c7e038ba8726cdcbb885b66071ed097a31ac458"
+    set "GO_URL=https://go.dev/dl/go1.24.0.windows-amd64.msi"
+    set "GO_SHA256=4e78016d889431eb16aa0f87868cf52479b90059791c94a4ff45872d0573089e"
 ) else (
-    set "GO_URL=https://go.dev/dl/go1.25.9.windows-386.msi"
-    set "GO_SHA256=02a9199011c255a80778d9602d11df7bfb90c858258ec8317a57f202dedcf9e3"
+    set "GO_URL=https://go.dev/dl/go1.24.0.windows-386.msi"
+    set "GO_SHA256=f07677013cd7861c5e16067b0a82144c23c4bf72c139c762e142440f4c926f61"
 )
 
-echo       - Downloading Go 1.25.9...
+echo       - Downloading Go 1.24.0...
 curl -L -o "%~dp0go_installer.msi" "%GO_URL%"
 if not exist "%~dp0go_installer.msi" (
     echo [ERROR] Download failed!
@@ -229,3 +233,4 @@ if /i not "%ACTUAL_HASH%"=="%EXPECTED_HASH%" (
 )
 echo       - Checksum verified
 exit /b 0
+}

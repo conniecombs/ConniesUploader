@@ -9,9 +9,12 @@ Go-based upload plugin (upload handled by Go sidecar).
 Python side manages UI, configuration validation, and optional authentication.
 """
 
+import os
 from typing import Dict, Any, List
 from .base import ImageHostPlugin
 from . import helpers
+from .. import api
+from loguru import logger
 
 
 class TurboPlugin(ImageHostPlugin):
@@ -137,8 +140,16 @@ class TurboPlugin(ImageHostPlugin):
         1. Optional POST to /login (if credentials provided)
         2. GET / to extract upload endpoint from JavaScript
         """
+        import os
         import random
         import string
+
+        # Get file size for query parameters
+        try:
+            file_size = os.path.getsize(file_path)
+        except OSError as e:
+            logger.warning(f"Could not get file size for {file_path}: {e}")
+            file_size = 0
 
         # Generate random upload ID
         upload_id = "".join(random.choices(string.ascii_letters + string.digits, k=12))

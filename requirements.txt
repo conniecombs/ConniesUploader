@@ -5,10 +5,10 @@
 customtkinter==5.2.2
 
 # Drag and Drop Support
-tkinterdnd2==0.4.3
+tkinterdnd2==0.3.0
 
 # Image Processing
-Pillow==12.2.0
+Pillow==12.1.1
 
 # HTML Parsing
 beautifulsoup4==4.12.3
@@ -26,7 +26,7 @@ keyring==25.5.0
 pyperclip==1.9.0
 
 # Build Tools (for creating executable)
-pyinstaller==6.20.0
+pyinstaller==6.11.1
 
 # Configuration Validation
 jsonschema==4.23.0

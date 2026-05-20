@@ -9,8 +9,12 @@ Go-based upload plugin (upload handled by Go sidecar).
 Python side manages UI, configuration validation, and API key handling.
 """
 
+import os
 from typing import Dict, Any, List
 from .base import ImageHostPlugin
+from . import helpers
+from .. import api
+from loguru import logger
 
 
 class ImgurPlugin(ImageHostPlugin):

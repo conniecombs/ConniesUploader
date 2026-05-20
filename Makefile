@@ -22,7 +22,7 @@ endif
 GO_FLAGS := -ldflags="-s -w"
 PYINSTALLER_FLAGS := --noconsole --onefile --clean
 APP_NAME := ConniesUploader
-VERSION := 1.2.4
+VERSION := 1.2.3
 
 # Default target
 all: build
@@ -79,7 +79,7 @@ build-python: build-go
 		--collect-submodules modules.plugins \
 		--hidden-import modules.plugins.imx \
 		--hidden-import modules.plugins.pixhost \
-		--hidden-import modules.plugins.pixhost_v2_legacy \
+		--hidden-import modules.plugins.pixhost_v2 \
 		--hidden-import modules.plugins.vipr \
 		--hidden-import modules.plugins.turbo \
 		--hidden-import modules.plugins.imagebam \

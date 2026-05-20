@@ -6,7 +6,7 @@
 import keyring
 import customtkinter as ctk
 from tkinter import messagebox
-from typing import Dict, Callable, Optional
+from typing import Dict, List, Callable, Optional
 from modules import config
 
 

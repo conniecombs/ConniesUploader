@@ -79,7 +79,6 @@ func TestWaitForRateLimitTimeout(t *testing.T) {
 // --- Gallery Creation Tests ---
 
 func TestCreatePixhostGallery(t *testing.T) {
-	skipNetworkInShort(t)
 	// Create mock server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Verify it's a POST request
@@ -127,7 +126,6 @@ func TestCreatePixhostGallery(t *testing.T) {
 }
 
 func TestCreatePixhostGalleryEmptyTitle(t *testing.T) {
-	skipNetworkInShort(t)
 	// Initialize client
 	initHTTPClient()
 
@@ -139,7 +137,6 @@ func TestCreatePixhostGalleryEmptyTitle(t *testing.T) {
 }
 
 func TestCreateImxGallery(t *testing.T) {
-	skipNetworkInShort(t)
 	initHTTPClient()
 
 	creds := map[string]string{
@@ -155,7 +152,6 @@ func TestCreateImxGallery(t *testing.T) {
 }
 
 func TestCreateViprGallery(t *testing.T) {
-	skipNetworkInShort(t)
 	initHTTPClient()
 
 	// This will fail in real execution but tests error handling
@@ -168,7 +164,6 @@ func TestCreateViprGallery(t *testing.T) {
 // --- Gallery Finalization Tests ---
 
 func TestHandleFinalizeGalleryPixhost(t *testing.T) {
-	skipNetworkInShort(t)
 	job := JobRequest{
 		Action:  "finalize_gallery",
 		Service: "pixhost.to",
@@ -225,7 +220,6 @@ func TestHandleFinalizeGalleryOtherService(t *testing.T) {
 // --- Gallery Handling Tests ---
 
 func TestHandleCreateGalleryPixhost(t *testing.T) {
-	skipNetworkInShort(t)
 	job := JobRequest{
 		Action:  "create_gallery",
 		Service: "pixhost.to",
@@ -244,7 +238,6 @@ func TestHandleCreateGalleryPixhost(t *testing.T) {
 }
 
 func TestHandleCreateGalleryImx(t *testing.T) {
-	skipNetworkInShort(t)
 	job := JobRequest{
 		Action:  "create_gallery",
 		Service: "imx.to",
@@ -267,7 +260,6 @@ func TestHandleCreateGalleryImx(t *testing.T) {
 }
 
 func TestHandleCreateGalleryVipr(t *testing.T) {
-	skipNetworkInShort(t)
 	job := JobRequest{
 		Action:  "create_gallery",
 		Service: "vipr.im",
@@ -360,7 +352,6 @@ func TestHandleLoginVerifyDefault(t *testing.T) {
 // --- List Galleries Tests ---
 
 func TestHandleListGalleriesImx(t *testing.T) {
-	skipNetworkInShort(t)
 	job := JobRequest{
 		Action:  "list_galleries",
 		Service: "imx.to",
@@ -380,7 +371,6 @@ func TestHandleListGalleriesImx(t *testing.T) {
 }
 
 func TestHandleListGalleriesVipr(t *testing.T) {
-	skipNetworkInShort(t)
 	job := JobRequest{
 		Action:  "list_galleries",
 		Service: "vipr.im",

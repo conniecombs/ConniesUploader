@@ -680,10 +680,10 @@ Choose the right parser type:
 
 ### 7. Rate Limiting
 
-Rate limiting is handled automatically by the Go sidecar. Defaults live in `core/ratelimit.go`, and plugins can send `rate_limits` in the job payload for dynamic overrides:
+Rate limiting is handled automatically by the Go sidecar. Configure in `uploader.go`:
 
 ```go
-var RateLimiters = map[string]*rate.Limiter{
+var rateLimiters = map[string]*rate.Limiter{
     "yourservice.com": rate.NewLimiter(rate.Limit(2.0), 5),  // 2 req/s
 }
 ```

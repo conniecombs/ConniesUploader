@@ -10,7 +10,7 @@ import pyperclip
 import platform
 import subprocess
 from datetime import datetime
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Tuple, Optional, Any
 from loguru import logger
 
 from . import api, config, viper_api
