@@ -17,7 +17,7 @@ import unittest
 import sys
 import os
 from typing import Dict, Any
-from unittest.mock import Mock, MagicMock
+from unittest.mock import Mock, MagicMock, patch
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -232,6 +232,90 @@ class TestPluginSchemas(unittest.TestCase):
                     self.assertIn(
                         key, standard_keys, f"Plugin {instance.name} uses non-standard key: {key}"
                     )
+
+
+class TestPixhostGalleryIntegration(unittest.TestCase):
+    """Test Pixhost gallery metadata plumbing."""
+
+    def test_build_http_request_includes_gallery_upload_hash(self):
+        from modules.plugins.pixhost import PixhostPlugin
+
+        plugin = PixhostPlugin()
+        request = plugin.build_http_request(
+            "/tmp/image.jpg",
+            {
+                "content_type": "Safe",
+                "thumbnail_size": "200",
+                "gallery_hash": "abc123",
+                "gallery_upload_hash": "upload456",
+            },
+            {},
+        )
+
+        fields = request["multipart_fields"]
+        self.assertEqual(request["headers"]["Accept"], "application/json")
+        self.assertEqual(fields["gallery_hash"]["value"], "abc123")
+        self.assertEqual(fields["gallery_upload_hash"]["value"], "upload456")
+
+    def test_prepare_group_stores_upload_hash_for_later_uploads(self):
+        from modules.plugins.pixhost import PixhostPlugin
+
+        plugin = PixhostPlugin()
+        group = Mock()
+        group.title = "[Test Gallery]"
+        config = {"auto_gallery": True}
+        context = {}
+        new_gallery = {
+            "gallery_hash": "abc123",
+            "gallery_upload_hash": "upload456",
+            "gallery_url": "https://pixhost.to/gallery/abc123",
+        }
+
+        with patch("modules.plugins.pixhost.api.create_pixhost_gallery", return_value=new_gallery):
+            plugin.prepare_group(group, config, context, {})
+
+        self.assertEqual(group.gallery_id, "abc123")
+        self.assertEqual(config["gallery_hash"], "abc123")
+        self.assertEqual(config["gallery_upload_hash"], "upload456")
+        self.assertEqual(context["created_galleries"], [new_gallery])
+
+    def test_upload_manager_preserves_created_gallery_upload_hash(self):
+        import queue
+        import threading
+
+        from modules.upload_manager import UploadManager
+
+        class Group:
+            title = "Test Gallery"
+            files = ["image.jpg"]
+
+        class FakePixhostPlugin:
+            def prepare_group(self, group, config, context, creds):
+                gallery = {
+                    "gallery_hash": "abc123",
+                    "gallery_upload_hash": "upload456",
+                }
+                group.gallery_id = gallery["gallery_hash"]
+                group.pix_data = gallery
+                context["created_galleries"] = [gallery]
+
+        sent_configs = []
+        manager = UploadManager.__new__(UploadManager)
+        manager.cancel_event = threading.Event()
+        manager.progress_queue = queue.Queue()
+        manager.plugin_manager = Mock()
+        manager.plugin_manager.get_plugin.return_value = FakePixhostPlugin()
+        manager._send_job = lambda files, cfg, creds: sent_configs.append(cfg.copy())
+
+        group = Group()
+        manager._dispatch_jobs(
+            {group: ["image.jpg"]},
+            {"service": "pixhost.to", "auto_gallery": True},
+            {},
+        )
+
+        self.assertEqual(sent_configs[0]["gallery_hash"], "abc123")
+        self.assertEqual(sent_configs[0]["gallery_upload_hash"], "upload456")
 
 
 class TestPluginMetadata(unittest.TestCase):

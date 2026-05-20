@@ -103,6 +103,12 @@ class UploadManager:
 
                 group_cfg = cfg.copy()
 
+                pix_data = getattr(group_obj, "pix_data", None)
+                if isinstance(pix_data, dict):
+                    gallery_upload_hash = pix_data.get("gallery_upload_hash")
+                    if gallery_upload_hash:
+                        group_cfg["gallery_upload_hash"] = gallery_upload_hash
+
                 if hasattr(group_obj, "gallery_id") and group_obj.gallery_id:
                     gid = group_obj.gallery_id
                     group_cfg["gallery_id"] = gid

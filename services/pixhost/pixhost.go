@@ -21,6 +21,8 @@ import (
 
 const ServiceID = "pixhost.to"
 
+const pixhostAPIBase = "https://api.pixhost.to"
+
 // Module is the self-contained Pixhost.to service plugin.
 // Pixhost is stateless — no login required.
 type Module struct {
@@ -63,10 +65,14 @@ func (m *Module) Upload(ctx context.Context, fp string, job *core.JobRequest) (s
 		if h := job.Config["gallery_hash"]; h != "" {
 			_ = writer.WriteField("gallery_hash", h)
 		}
+		if h := job.Config["gallery_upload_hash"]; h != "" {
+			_ = writer.WriteField("gallery_upload_hash", h)
+		}
 	}()
 
-	req, _ := http.NewRequestWithContext(ctx, "POST", "https://api.pixhost.to/images", pr)
+	req, _ := http.NewRequestWithContext(ctx, "POST", pixhostAPIBase+"/images", pr)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", core.DefaultUserAgent)
 
 	resp, err := m.client.Do(req)
@@ -76,13 +82,18 @@ func (m *Module) Upload(ctx context.Context, fp string, job *core.JobRequest) (s
 	defer resp.Body.Close()
 
 	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", "", pixhostHTTPError("pixhost upload", resp.StatusCode, raw)
+	}
 	var res struct {
 		Show string `json:"show_url"`
 		Th   string `json:"th_url"`
 	}
-	_ = json.Unmarshal(raw, &res)
+	if err := json.Unmarshal(raw, &res); err != nil {
+		return "", "", fmt.Errorf("pixhost upload returned invalid JSON: %w", err)
+	}
 	if res.Show == "" {
-		return "", "", fmt.Errorf("pixhost upload failed")
+		return "", "", fmt.Errorf("pixhost upload failed: %s", strings.TrimSpace(string(raw)))
 	}
 	return res.Show, res.Th, nil
 }
@@ -104,12 +115,12 @@ func (m *Module) FinalizeGallery(config map[string]string) error {
 		return fmt.Errorf("missing gallery hashes")
 	}
 
-	finalizeURL := fmt.Sprintf("https://api.pixhost.to/galleries/%s/finalize", galleryHash)
+	finalizeURL := fmt.Sprintf("%s/galleries/%s/finalize", pixhostAPIBase, galleryHash)
 	body := url.Values{}
 	body.Set("gallery_upload_hash", uploadHash)
 
 	req, _ := http.NewRequest("POST", finalizeURL, strings.NewReader(body.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded; charset=utf-8")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", core.DefaultUserAgent)
 
@@ -121,17 +132,23 @@ func (m *Module) FinalizeGallery(config map[string]string) error {
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		b, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("finalize failed HTTP %d: %s", resp.StatusCode, string(b))
+		return pixhostHTTPError("pixhost finalize", resp.StatusCode, b)
 	}
 	return nil
 }
 
 func (m *Module) createGallery(name string) (map[string]string, error) {
-	v := url.Values{}
-	v.Set("title", name)
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, fmt.Errorf("pixhost gallery name is required")
+	}
 
-	req, _ := http.NewRequest("POST", "https://api.pixhost.to/galleries", strings.NewReader(v.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	v := url.Values{}
+	v.Set("gallery_name", name)
+
+	req, _ := http.NewRequest("POST", pixhostAPIBase+"/galleries", strings.NewReader(v.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded; charset=utf-8")
+	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", core.DefaultUserAgent)
 
 	resp, err := m.client.Do(req)
@@ -140,16 +157,35 @@ func (m *Module) createGallery(name string) (map[string]string, error) {
 	}
 	defer resp.Body.Close()
 
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, pixhostHTTPError("pixhost gallery creation", resp.StatusCode, raw)
+	}
+
 	var result struct {
+		GalleryName       string `json:"gallery_name"`
 		GalleryHash       string `json:"gallery_hash"`
+		GalleryURL        string `json:"gallery_url"`
 		GalleryUploadHash string `json:"gallery_upload_hash"`
 	}
-	_ = json.NewDecoder(resp.Body).Decode(&result)
-	if result.GalleryHash == "" {
-		return nil, fmt.Errorf("pixhost gallery creation failed")
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return nil, fmt.Errorf("pixhost gallery creation returned invalid JSON: %w", err)
+	}
+	if result.GalleryHash == "" || result.GalleryUploadHash == "" {
+		return nil, fmt.Errorf("pixhost gallery creation failed: %s", strings.TrimSpace(string(raw)))
 	}
 	return map[string]string{
+		"gallery_name":        result.GalleryName,
 		"gallery_hash":        result.GalleryHash,
+		"gallery_url":         result.GalleryURL,
 		"gallery_upload_hash": result.GalleryUploadHash,
 	}, nil
+}
+
+func pixhostHTTPError(action string, statusCode int, body []byte) error {
+	bodyText := strings.TrimSpace(string(body))
+	if bodyText == "" {
+		return fmt.Errorf("%s failed HTTP %d", action, statusCode)
+	}
+	return fmt.Errorf("%s failed HTTP %d: %s", action, statusCode, bodyText)
 }

@@ -154,10 +154,17 @@ class PixhostPlugin(ImageHostPlugin):
         if gallery_hash:
             multipart_fields["gallery_hash"] = {"type": "text", "value": gallery_hash}
 
+        gallery_upload_hash = config.get("gallery_upload_hash", "").strip()
+        if gallery_upload_hash:
+            multipart_fields["gallery_upload_hash"] = {
+                "type": "text",
+                "value": gallery_upload_hash,
+            }
+
         return {
             "url": "https://api.pixhost.to/images",
             "method": "POST",
-            "headers": {},  # No special headers needed
+            "headers": {"Accept": "application/json"},
             "multipart_fields": multipart_fields,
             "response_parser": {
                 "type": "json",
@@ -191,6 +198,7 @@ class PixhostPlugin(ImageHostPlugin):
 
                 # Store gallery_hash in config so it's used for uploads
                 config["gallery_hash"] = group.gallery_id
+                config["gallery_upload_hash"] = new_data.get("gallery_upload_hash", "")
 
                 # Add to context for finalization by UploadManager
                 if "created_galleries" not in context:

@@ -237,7 +237,10 @@ class GalleryManager(ctk.CTkToplevel):
         }
         resp = self.bridge.request_sync(payload, timeout=20)
         if resp.get("status") == "success":
-            return resp.get("data")
+            data = resp.get("data")
+            if service == "pixhost.to" and isinstance(data, dict):
+                return data.get("gallery_hash")
+            return resp.get("msg") or data
         if service == "pixhost.to":
             try:
                 client = api.create_resilient_client()
