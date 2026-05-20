@@ -251,6 +251,7 @@ func TestInitHTTPClientMultipleTimes(t *testing.T) {
 // --- Gallery Function Tests ---
 
 func TestHandleCreateGalleryEmptyName(t *testing.T) {
+	skipNetworkInShort(t)
 	job := JobRequest{
 		Action:  "create_gallery",
 		Service: "pixhost.to",
@@ -287,6 +288,7 @@ func TestHandleFinalizeGalleryEmptyConfig(t *testing.T) {
 // --- Additional Action Tests ---
 
 func TestHandleLoginVerifyVipr(t *testing.T) {
+	skipNetworkInShort(t)
 	job := JobRequest{
 		Action:  "login",
 		Service: "vipr.im",
@@ -306,6 +308,7 @@ func TestHandleLoginVerifyVipr(t *testing.T) {
 }
 
 func TestHandleLoginVerifyImageBam(t *testing.T) {
+	skipNetworkInShort(t)
 	job := JobRequest{
 		Action:  "login",
 		Service: "imagebam.com",
@@ -325,6 +328,7 @@ func TestHandleLoginVerifyImageBam(t *testing.T) {
 }
 
 func TestHandleLoginVerifyTurbo(t *testing.T) {
+	skipNetworkInShort(t)
 	job := JobRequest{
 		Action:  "login",
 		Service: "turboimagehost",

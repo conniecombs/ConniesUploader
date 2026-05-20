@@ -2,15 +2,14 @@
 # Copyright (c) 2025 conniecombs
 
 import customtkinter as ctk
-from tkinter import messagebox, simpledialog
+from tkinter import messagebox
 import threading
 import requests
 import re
-import urllib.parse
 from modules.sidecar import SidecarBridge
-from .widgets import MouseWheelComboBox
 from . import api
 from . import config
+from loguru import logger
 
 
 class GalleryManager(ctk.CTkToplevel):

@@ -2,7 +2,6 @@
 # Copyright (c) 2025 conniecombs
 
 import customtkinter as ctk
-import tkinter as tk
 from tkinter import ttk
 
 

@@ -251,7 +251,7 @@ Searched in the following locations:
   2. FALLBACK: C:\...\uploader.exe ❌ Not found
 
 💡 Troubleshooting:
-  1. Ensure 'uploader.exe' was built: go build uploader.go
+  1. Ensure 'uploader.exe' was built: go build -o uploader.exe .
   2. Download pre-built binaries from releases page
 ```
 

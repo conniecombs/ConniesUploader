@@ -1,0 +1,11 @@
+{
+    "BBCode": "[center]\n[if gallery_link][url=#gallery_link#]Click here for Gallery[/url]\n\n[/if]#all_images#\n[/center]",
+    "Markdown": "[if gallery_link][Click here for Gallery](#gallery_link#)\n\n[/if]#all_images#",
+    "HTML": "[if gallery_link]<center><a href=\"#gallery_link#\">Click here for Gallery</a></center><br><br>[/if]#all_images#",
+    "Basic List": "#all_images#",
+    "Vipr Forum (Center)": "[center][url=#gallery_link#][b]\ud83d\udcc2 Open Full Gallery[/b][/url][/center]\n\n#all_images#",
+    "Vipr Forum (Simple)": "[b]Gallery:[/b] [url=#gallery_link#]#gallery_name#[/url]\n\n#all_images#",
+    "Reddit Markdown": "[\ud83d\udcc2 View Gallery](#gallery_link#)\n\n#all_images#",
+    "HTML Page Wrapper": "<html>\n<body>\n<h3><a href='#gallery_link#'>View Gallery</a></h3>\n<hr>\n#all_images#\n</body>\n</html>",
+    "Cover + Gallery ID": "[center][img]#cover_url#[/img]\n\n[b]Gallery ID:[/b] #gallery_id#\n[url=#gallery_link#]Click to View Gallery[/url][/center]\n\n#all_images#"
+}

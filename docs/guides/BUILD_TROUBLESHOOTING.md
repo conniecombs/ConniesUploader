@@ -17,7 +17,7 @@ Before running the build script, ensure `uploader.exe` exists in the project roo
 
 ```bash
 # Build Go sidecar manually if needed
-go build -ldflags="-s -w" -o uploader.exe uploader.go
+go build -ldflags="-s -w" -o uploader.exe .
 
 # Verify it was created
 ls -l uploader.exe
@@ -71,7 +71,7 @@ If the automatic build fails, try building manually:
 
 ```batch
 # 1. Build Go sidecar
-go build -ldflags="-s -w" -o uploader.exe uploader.go
+go build -ldflags="-s -w" -o uploader.exe .
 
 # 2. Verify it exists
 dir uploader.exe

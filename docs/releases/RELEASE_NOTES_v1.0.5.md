@@ -363,7 +363,7 @@ jitter := (randFloat * 0.4) - 0.2
 
 2. **Rebuild Go Binary:**
    ```bash
-   go build -o uploader.exe uploader.go
+   go build -o uploader.exe .
    ```
 
 3. **No Python Changes Required** (unless using new plugin versioning API)
@@ -663,7 +663,10 @@ Thank you for using ConnieUploader! We're excited to see how these new features 
 
 ```
 conniesuploader/
-├── uploader.go                      # Main Go sidecar (enhanced)
+├── main.go                          # Go sidecar entry point
+├── sidecar.go                       # Go sidecar worker loop
+├── core/                            # Generic HTTP, retry, rate limit, validation helpers
+├── services/                        # Service-specific legacy modules
 ├── modules/
 │   ├── plugin_manager.py            # Plugin manager (version support added)
 │   └── plugins/

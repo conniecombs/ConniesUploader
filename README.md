@@ -1,6 +1,6 @@
 # Connie's Uploader Ultimate
 
-![Project version badge showing v1.2.3](https://img.shields.io/badge/version-1.2.3-blue.svg)
+![Project version badge showing v1.2.4](https://img.shields.io/badge/version-1.2.4-blue.svg)
 ![MIT License badge](https://img.shields.io/badge/license-MIT-green.svg)
 ![Supported platforms: Windows, Linux, and macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)
 ![Production readiness status at 92 percent](https://img.shields.io/badge/production%20ready-92%25-brightgreen.svg)
@@ -13,16 +13,26 @@
 
 A powerful, multi-service image hosting uploader with an intuitive GUI. Upload images to multiple image hosting services with advanced features like batch processing, gallery management, automatic retry logic, and real-time progress tracking.
 
-**🎉 Latest Release: v1.2.3 "Gallery Logic Fix" (Jan 31, 2026)**
+**Latest Release: v1.2.4 "Python 3.14 Packaging Fix" (May 20, 2026)**
 
-This release fixes the inline gallery creation logic in the Go sidecar.
+This release fixes the packaged executable startup crash on Python 3.14 by updating the drag-and-drop dependency.
 
 ### Highlights
-- 🔧 **IMX Gallery Fix** - Corrected inline gallery creation logic with proper login state tracking
-- 🔐 **IMX Login Improvements** - Added persistent session state and proper form field names
-- 🛠️ **URL Domain Fix** - Fixed IMX URLs to use naked domain (imx.to) for proper cookie handling
+- **Python 3.14 Compatibility** - Updated `tkinterdnd2` to avoid the removed `tkinter.tix` module
+- **Packaged App Startup** - Rebuilt and smoke-tested the PyInstaller executable
+- **Release Sync** - Updated version strings, release notes, and `v1.2.4` tag references
 
 ## ✨ Recent Improvements
+
+**v1.2.4 Release - "Python 3.14 Packaging Fix" (May 20, 2026):**
+- **Drag-and-drop dependency fix** - Updated `tkinterdnd2` from `0.3.0` to `0.4.3`
+- **Executable startup fix** - Packaged app no longer crashes on missing `tkinter.tix`
+- **Release metadata sync** - App, build scripts, docs, and tag references now point to `v1.2.4`
+
+**Go Sidecar Refactor (May 20, 2026):**
+- **Focused Go files** - Split sidecar startup, runtime wiring, upload handlers, gallery handlers, forum handlers, thumbnail generation, and compatibility wrappers into separate files
+- **Build script cleanup** - Windows and manual build paths now compile the module with `go build ... .`
+- **Bounded upload workers** - Per-job upload worker counts are clamped to prevent accidental goroutine spikes
 
 **Phase 9 - "Technical Excellence" (Jan 19, 2026):**
 - 🎉 **100% Issue Resolution** - ALL 45 technical debt issues resolved (High: 6/6, Medium: 17/17, Low: 12/12)
@@ -135,12 +145,12 @@ This release fixes the inline gallery creation logic in the Go sidecar.
 
 **Download the latest release for your platform:**
 
-👉 **[Download v1.2.3](https://github.com/conniecombs/conniesuploader/releases/tag/v1.2.3)**
+👉 **[Download v1.2.4](https://github.com/conniecombs/conniesuploader/releases/tag/v1.2.4)**
 
 Available builds:
-- **Windows**: `ConniesUploader-windows.zip` (includes `.exe` + SHA256 checksum)
-- **Linux**: `ConniesUploader-linux.tar.gz` (includes binary + SHA256 checksum)
-- **macOS**: `ConniesUploader-macos.zip` (includes binary + SHA256 checksum)
+- **Windows**: `ConniesUploader-v1.2.4-windows-x64.zip` (includes `.exe` + SHA256 checksum)
+- **Linux**: `ConniesUploader-v1.2.4-linux-x64.tar.gz` (includes binary + SHA256 checksum)
+- **macOS**: `ConniesUploader-v1.2.4-macos-x64.zip` (includes binary + SHA256 checksum)
 
 All releases are:
 - ✅ Automatically built and tested via GitHub Actions CI/CD
@@ -211,7 +221,7 @@ cd conniesuploader
 2. **Build Go backend:**
 ```bash
 go mod download  # Download dependencies
-go build -ldflags="-s -w" -o uploader.exe uploader.go
+go build -ldflags="-s -w" -o uploader.exe .
 ```
 
 3. **Set up Python environment:**
@@ -372,7 +382,16 @@ The application uses a modern hybrid architecture:
 ```
 conniesuploader/
 ├── main.py                    # Entry point (23 lines)
-├── uploader.go                # Go backend (2,477 lines with retry, progress, validation)
+├── main.go                    # Go sidecar entry point
+├── sidecar.go                 # Sidecar worker pool and JSON stdin loop
+├── client_registry.go         # HTTP client and service registry wiring
+├── upload_handlers.go         # Legacy and generic upload action handlers
+├── gallery_handlers.go        # Login and gallery action handlers
+├── forum_handlers.go          # ViperGirls forum action handlers
+├── thumbnail_handler.go       # Thumbnail generation action handler
+├── compatibility.go           # Legacy test/API compatibility wrappers
+├── core/                      # Generic HTTP, retry, rate limit, validation helpers
+├── services/                  # Service-specific legacy upload modules
 ├── modules/
 │   ├── ui/                    # UI components
 │   │   ├── main_window.py     # Main application window
@@ -380,7 +399,7 @@ conniesuploader/
 │   ├── plugins/               # Auto-discovered plugins
 │   │   ├── imx.py
 │   │   ├── pixhost.py
-│   │   ├── pixhost_v2.py
+│   │   ├── pixhost_v2_legacy.py
 │   │   ├── vipr.py
 │   │   ├── imagebam.py
 │   │   └── turbo.py
@@ -476,8 +495,8 @@ Releases are fully automated using modern GitHub Actions:
 1. Update CHANGELOG.md with new version
 2. Create and push a git tag:
    ```bash
-   git tag -a v1.0.1 -m "Release v1.0.1"
-   git push origin v1.0.1
+   git tag -a v1.2.4 -m "Release v1.2.4"
+   git push origin v1.2.4
    ```
 3. Watch the automated workflow create the release!
 
@@ -584,7 +603,7 @@ See **[REMAINING_ISSUES.md](REMAINING_ISSUES.md)** for complete implementation d
 ### Common Issues
 
 **"uploader.exe not found" error:**
-- Ensure the Go backend was built successfully: `go build -o uploader.exe uploader.go`
+- Ensure the Go backend was built successfully: `go build -o uploader.exe .`
 - The `uploader.exe` (or `uploader` on Linux/macOS) must be in the same directory as `main.py`
 - Check sidecar logs in the execution log window
 
@@ -674,7 +693,12 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Version History
 
-**Latest Release: v1.2.3 - "Gallery Logic Fix"** (Jan 31, 2026)
+**Latest Release: v1.2.4 - "Python 3.14 Packaging Fix"** (May 20, 2026)
+
+**v1.2.4 - "Python 3.14 Packaging Fix"** (May 20, 2026):
+- **Python 3.14 compatibility** - Updated `tkinterdnd2` to `0.4.3`
+- **Executable startup fix** - Removed the dependency path that imported missing `tkinter.tix`
+- **Build verification** - Rebuilt and smoke-tested the packaged app startup
 
 **v1.2.3 - "Gallery Logic Fix"** (Jan 31, 2026):
 - 🔧 **IMX Gallery Fix** - Corrected inline gallery creation logic with proper login state tracking

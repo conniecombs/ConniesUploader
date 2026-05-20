@@ -55,7 +55,7 @@ build_uploader.bat --clean
 git pull origin claude/prepare-release-zyKT5
 
 # 2. Rebuild Go sidecar
-go build -ldflags="-s -w" -o uploader.exe uploader.go
+go build -ldflags="-s -w" -o uploader.exe .
 
 # 3. Reinstall Python dependencies
 pip install -r requirements.txt
@@ -205,7 +205,7 @@ sha256sum -c ConniesUploader.sha256
 **Problem:** "uploader.exe not found"  
 **Solution:** 
 ```batch
-go build -ldflags="-s -w" -o uploader.exe uploader.go
+go build -ldflags="-s -w" -o uploader.exe .
 build_uploader.bat
 ```
 
@@ -266,11 +266,11 @@ For more help, see [BUILD_TROUBLESHOOTING.md](BUILD_TROUBLESHOOTING.md)
 
 **Python Packages:**
 - customtkinter==5.2.2
-- Pillow==10.4.0
+- Pillow==12.2.0
 - requests==2.32.3 ⬆️ UPDATED
 - loguru==0.7.2
 - keyring==25.5.0
-- pyinstaller==6.11.1
+- pyinstaller==6.20.0
 
 ### Build Requirements
 

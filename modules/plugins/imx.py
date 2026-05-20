@@ -164,7 +164,7 @@ class ImxPlugin(ImageHostPlugin):
                 logger.warning(
                     "IMX credentials (username/password) not set - cannot create auto-gallery"
                 )
-        
+
         # 2. Handle Manual Gallery (if not using auto-gallery)
         # Ensure config has 'gallery_id' set if it was manually provided
         elif config.get("gallery_id"):

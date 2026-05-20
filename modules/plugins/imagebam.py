@@ -9,12 +9,8 @@ Go-based upload plugin (upload handled by Go sidecar).
 Python side manages UI and configuration validation.
 """
 
-import os
 from typing import Dict, Any, List
 from .base import ImageHostPlugin
-from . import helpers
-from .. import api
-from loguru import logger
 
 
 class ImageBamPlugin(ImageHostPlugin):

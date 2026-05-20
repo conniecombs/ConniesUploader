@@ -166,7 +166,8 @@ class TestRemoveMenu:
             pass
 
     @patch("modules.utils.winreg.DeleteKey")
-    def test_remove_menu_deletes_in_order(self, mock_deletekey, mock_system):
+    @patch("tkinter.messagebox.showinfo")
+    def test_remove_menu_deletes_in_order(self, mock_showinfo, mock_deletekey, mock_system):
         """Test that registry keys are deleted in correct order"""
         mock_system.return_value = "Windows"
 

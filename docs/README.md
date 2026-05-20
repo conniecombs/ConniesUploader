@@ -21,7 +21,7 @@ Start here if you're new to the project:
 
 1. **[README.md](../README.md)** - Overview, features, installation, and quick start
 2. **[Build Troubleshooting](guides/BUILD_TROUBLESHOOTING.md)** - Common build issues and solutions
-3. **[Latest Release Notes](releases/RELEASE_NOTES_v1.1.0.md)** - What's new in v1.1.0 (latest detailed notes)
+3. **[Latest Release Notes](releases/RELEASE_NOTES_v1.2.4.md)** - Latest detailed release notes
 
 ### For Contributors
 Development and contribution guides:
@@ -52,6 +52,8 @@ docs/
 │   └── BUILD_TROUBLESHOOTING.md
 ├── releases/                    # Release documentation
 │   ├── RELEASE_NOTES.md
+│   ├── RELEASE_NOTES_v1.2.4.md
+│   ├── RELEASE_NOTES_v1.2.2.md
 │   ├── RELEASE_NOTES_v1.1.0.md
 │   ├── RELEASE_NOTES_v1.0.5.md
 │   ├── release_notes_v1.0.4.md
@@ -159,12 +161,24 @@ Common build issues and solutions:
 
 ## 🚀 Release Documentation (docs/releases/)
 
+### [RELEASE_NOTES_v1.2.4.md](releases/RELEASE_NOTES_v1.2.4.md)
+Latest release - "Python 3.14 Packaging Fix" (May 20, 2026):
+- Updated `tkinterdnd2` to `0.4.3`
+- Fixed packaged executable startup under Python 3.14
+- Synced release docs and tag references to `v1.2.4`
+
+### [RELEASE_NOTES_v1.2.2.md](releases/RELEASE_NOTES_v1.2.2.md)
+"Batch Upload Stability" release (Jan 22, 2026):
+- Worker count settings correctly apply via sidecar restart
+- Large batches process without UI stalls
+- Progress and output-folder handling fixes
+
 ### [RELEASE_NOTES_v1.1.0.md](releases/RELEASE_NOTES_v1.1.0.md) (15KB)
-Latest release - "Performance & Polish" (Jan 15-16, 2026):
-- 🧪 Comprehensive Python test suite (2,200+ lines)
-- ⚡ 20-30% faster uploads (HTTP connection pooling)
-- ✅ ALL HIGH PRIORITY ISSUES RESOLVED (6/6)
-- 🐛 30 bug fixes and enhancements
+"Performance & Polish" release (Jan 15-16, 2026):
+- Comprehensive Python test suite (2,200+ lines)
+- 20-30% faster uploads (HTTP connection pooling)
+- ALL HIGH PRIORITY ISSUES RESOLVED (6/6)
+- 30 bug fixes and enhancements
 
 ### [RELEASE_NOTES_v1.0.5.md](releases/RELEASE_NOTES_v1.0.5.md) (19KB)
 "Resilience & Intelligence" release (Jan 13, 2026):
@@ -260,13 +274,18 @@ Archive of implementation notes, phase summaries, and technical analyses from th
 |----------|-------|------------|
 | **Root Documentation** | 5 files | ~107 KB |
 | **Developer Guides** | 3 files | ~48 KB |
-| **Release Documentation** | 5 files | ~55 KB |
+| **Release Documentation** | 7 files | ~60 KB |
 | **Historical Documentation** | 26 files | ~200+ KB |
-| **Total** | **39 files** | **~410 KB** |
+| **Total** | **41 files** | **~415 KB** |
 
 ---
 
 ## 🔄 Recent Documentation Updates
+
+**2026-05-20**: v1.2.4 Release
+- Published RELEASE_NOTES_v1.2.4.md
+- Updated current release links, version badge, and tag examples
+- Synced project version references to v1.2.4
 
 **2026-01-16**: Documentation reorganization (Issue #24)
 - Moved 8 files to `docs/history/` (analysis and status docs)
@@ -298,6 +317,6 @@ Archive of implementation notes, phase summaries, and technical analyses from th
 
 ---
 
-**Last Updated**: 2026-01-16
-**Documentation Version**: 2.0
-**Project Version**: v1.1.0
+**Last Updated**: 2026-05-20
+**Documentation Version**: 2.1
+**Project Version**: v1.2.4

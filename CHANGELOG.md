@@ -9,6 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.2.4] - 2026-05-20
+
+### Fixed
+
+**Python 3.14 Drag-and-Drop Packaging Fix**
+
+Fixed the executable startup crash caused by `tkinterdnd2==0.3.0` importing the removed `tkinter.tix` module under Python 3.14.
+
+#### **1. Updated Drag-and-Drop Dependency**
+- **Problem**: The packaged executable crashed during startup with `ImportError: cannot import name 'tix' from 'tkinter'`
+- **Root Cause**: `tkinterdnd2==0.3.0` imports `tkinter.tix`, which is not available in Python 3.14
+- **Fix**: Updated `tkinterdnd2` to `0.4.3`, which removes the `tix` import and supports the current Tkinter runtime
+
+#### **2. Release Version Sync**
+- Bumped the application version to `1.2.4`
+- Updated build scripts and release documentation to use the `v1.2.4` tag
+- Added release notes for the packaging fix
+
+**Files Changed**:
+- `requirements.txt`: Updated `tkinterdnd2` from `0.3.0` to `0.4.3`
+- `modules/config.py`: Updated `APP_VERSION` to `1.2.4`
+- `build_uploader.bat`, `build.sh`, `Makefile`: Updated build version strings
+- `README.md`, `ARCHITECTURE.md`, `REMAINING_ISSUES.md`, `docs/README.md`: Updated current release references
+
+---
+
 ## [1.2.3] - 2026-01-31
 
 ### 🐛 Bug Fixes

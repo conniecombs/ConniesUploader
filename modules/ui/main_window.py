@@ -16,12 +16,10 @@ import threading
 import queue
 import os
 import sys
-import keyring
 import pyperclip
 import subprocess
 import platform
 import time
-import re
 from datetime import datetime
 from typing import Dict, Any
 from concurrent.futures import ThreadPoolExecutor
@@ -42,7 +40,6 @@ from modules.dnd import DragDropMixin
 from modules.credentials_manager import CredentialsManager
 from modules.auto_poster import AutoPoster
 from modules.plugin_manager import PluginManager
-from .safe_scrollable_frame import SafeScrollableFrame
 from loguru import logger
 
 
@@ -807,7 +804,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
 
                 # Show loading message for large batches
                 if file_count > 100:
-                    status_msg += f" - Loading thumbnails..."
+                    status_msg += " - Loading thumbnails..."
                     logger.info(f"Loading thumbnails for {file_count} files (this may take a moment)...")
 
                 self.lbl_eta.configure(text=status_msg)
@@ -1063,8 +1060,8 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             img_widget = ctk.CTkImage(
                 light_image=pil_image, dark_image=pil_image, size=config.UI_THUMB_SIZE
             )
-            l = ctk.CTkLabel(row, image=img_widget, text="")
-            l.pack(side="left", padx=5)
+            image_label = ctk.CTkLabel(row, image=img_widget, text="")
+            image_label.pack(side="left", padx=5)
             self.image_refs.add(img_widget)
         else:
             ctk.CTkLabel(row, text="[Img]", width=40).pack(side="left")

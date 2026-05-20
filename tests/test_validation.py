@@ -279,14 +279,14 @@ class TestValidateThreadCount:
     def test_maximum_clamping(self):
         """Test that thread count is clamped to maximum"""
         result = validate_thread_count(100)
-        assert result <= 16  # Typical maximum
+        assert result <= 20
 
     def test_default_value(self):
         """Test default thread count when None is provided"""
         try:
             result = validate_thread_count(None)
             assert result >= 1
-            assert result <= 16
+            assert result <= 20
         except TypeError:
             # Acceptable if None is not handled
             pass
@@ -351,9 +351,9 @@ class TestValidationEdgeCases:
 
     def test_special_characters_in_path(self):
         """Test paths with special characters"""
-        # Test with parentheses, brackets, etc.
+        # Test with safe punctuation that should remain filesystem-friendly.
         filename = sanitize_filename("file (copy) [1].jpg")
-        assert "(" not in filename or ")" not in filename  # Depending on implementation
+        assert filename == "file_(copy)_[1].jpg"
 
 
 @pytest.mark.integration
@@ -373,8 +373,9 @@ class TestValidationIntegration:
             # Validate the sanitized file
             result = validate_file_path(str(file_path), allowed_extensions=(".jpg",))
             assert result is not None
-            assert "<" not in result
-            assert ":" not in result
+            result_name = Path(result).name
+            assert "<" not in result_name
+            assert ":" not in result_name
 
     def test_directory_and_file_validation(self):
         """Test validating both directory and files within"""

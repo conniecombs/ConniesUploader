@@ -38,6 +38,7 @@ func TestHandleJobGenerateThumb(t *testing.T) {
 }
 
 func TestHandleJobViperLogin(t *testing.T) {
+	skipNetworkInShort(t)
 	initHTTPClient()
 
 	job := JobRequest{
@@ -54,6 +55,7 @@ func TestHandleJobViperLogin(t *testing.T) {
 }
 
 func TestHandleJobViperPost(t *testing.T) {
+	skipNetworkInShort(t)
 	initHTTPClient()
 
 	job := JobRequest{
@@ -280,7 +282,6 @@ func TestGetJSONValueWithNilInPath(t *testing.T) {
 		t.Errorf("getJSONValue() with nil in path = %q, want empty string", result)
 	}
 }
-
 
 // --- Benchmark Additional Tests ---
 
