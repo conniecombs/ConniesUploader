@@ -373,8 +373,9 @@ class TestValidationIntegration:
             # Validate the sanitized file
             result = validate_file_path(str(file_path), allowed_extensions=(".jpg",))
             assert result is not None
-            assert "<" not in result
-            assert ":" not in result
+            result_name = os.path.basename(result)
+            assert "<" not in result_name
+            assert ":" not in result_name
 
     def test_directory_and_file_validation(self):
         """Test validating both directory and files within"""

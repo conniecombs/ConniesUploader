@@ -75,14 +75,14 @@ def sanitize_filename(filename: str, max_length: int = 255) -> str:
     sanitized = sanitized.replace("/", "_").replace("\\", "_")
     sanitized = sanitized.replace(" ", "_")
 
-    dangerous_chars = '<>:"|?*'
+    dangerous_chars = '<>:"|?*()[]{}'
     for char in dangerous_chars:
         sanitized = sanitized.replace(char, "_")
 
     sanitized = re.sub(r"_+", "_", sanitized).strip("._ ")
 
     if not sanitized:
-        sanitized = "unnamed_file"
+        sanitized = "untitled"
 
     reserved_names = {
         "CON",
@@ -134,8 +134,14 @@ def validate_service_name(service: str, plugin_manager=None) -> bool:
     return True
 
 
-def validate_thread_count(count: int, min_val: int = 1, max_val: int = 20) -> int:
+def validate_thread_count(count: int, min_val: int = 1, max_val: int = 16) -> int:
     """Validate and clamp thread count to safe range."""
+    try:
+        count = int(count)
+    except (TypeError, ValueError) as e:
+        logger.warning(f"Invalid thread count {count!r}: {e}, using minimum {min_val}")
+        return min_val
+
     if count < min_val:
         logger.warning(f"Thread count {count} below minimum {min_val}, using minimum")
         return min_val

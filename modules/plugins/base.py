@@ -5,7 +5,6 @@
 import abc
 from typing import Dict, Any, Tuple, Optional, List
 import customtkinter as ctk
-from loguru import logger
 
 
 class ImageHostPlugin(abc.ABC):

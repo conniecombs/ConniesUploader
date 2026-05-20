@@ -122,7 +122,7 @@ jobs:
 
   # Python dependency vulnerability check
   safety:
-    name: Python Dependency Check (Safety)
+    name: Python Dependency Check (pip-audit)
     runs-on: ubuntu-latest
 
     steps:
@@ -134,20 +134,20 @@ jobs:
       with:
         python-version: '3.11'
 
-    - name: Install Safety
-      run: pip install safety
+    - name: Install pip-audit
+      run: python -m pip install pip-audit==2.10.0
 
     - name: Check dependencies
       run: |
-        safety check --file requirements.txt --json --output safety-report.json || true
-        echo "Safety scan complete. Review safety-report.json for details."
+        pip-audit -r requirements.txt -f json -o pip-audit-report.json || true
+        echo "pip-audit scan complete. Review pip-audit-report.json for details."
       continue-on-error: true
 
-    - name: Upload Safety report
+    - name: Upload pip-audit report
       uses: actions/upload-artifact@v4
       with:
-        name: safety-report
-        path: safety-report.json
+        name: pip-audit-report
+        path: pip-audit-report.json
         retention-days: 30
 
   # Dependency review (PRs only)
@@ -207,7 +207,7 @@ jobs:
         echo "| gosec | ${{ needs.gosec.result }} |" >> $GITHUB_STEP_SUMMARY
         echo "| govulncheck | ${{ needs.govulncheck.result }} |" >> $GITHUB_STEP_SUMMARY
         echo "| Bandit | ${{ needs.bandit.result }} |" >> $GITHUB_STEP_SUMMARY
-        echo "| Safety | ${{ needs.safety.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| pip-audit | ${{ needs.safety.result }} |" >> $GITHUB_STEP_SUMMARY
         echo "| TruffleHog | ${{ needs.trufflehog.result }} |" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "Scan completed at: $(date -u)" >> $GITHUB_STEP_SUMMARY

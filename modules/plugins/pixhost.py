@@ -9,7 +9,6 @@ Go-based upload plugin (upload handled by Go sidecar).
 Python side manages UI, configuration validation, and gallery coordination.
 """
 
-import os
 from typing import Dict, Any, List
 from .base import ImageHostPlugin
 from . import helpers
@@ -189,15 +188,15 @@ class PixhostPlugin(ImageHostPlugin):
                 # Store gallery info on the group object
                 group.pix_data = new_data
                 group.gallery_id = new_data.get("gallery_hash", "")
-                
+
                 # Store gallery_hash in config so it's used for uploads
                 config["gallery_hash"] = group.gallery_id
-                
+
                 # Add to context for finalization by UploadManager
                 if "created_galleries" not in context:
                     context["created_galleries"] = []
                 context["created_galleries"].append(new_data)
-                
+
                 logger.info(f"Created Pixhost gallery: {clean_title}")
             else:
                 logger.warning(f"Failed to create gallery for: {group.title}")

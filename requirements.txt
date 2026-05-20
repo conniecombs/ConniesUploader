@@ -5,7 +5,7 @@
 customtkinter==5.2.2
 
 # Drag and Drop Support
-tkinterdnd2==0.3.0
+tkinterdnd2==0.4.3
 
 # Image Processing
 Pillow==12.1.1
