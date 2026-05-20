@@ -9,6 +9,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.2.4] - 2026-05-20
+
+### Fixed
+
+**Packaged Executable Startup**
+
+- Updated `tkinterdnd2` to `0.4.3` so PyInstaller builds no longer crash while importing the removed legacy `tkinter.tix` module path.
+- Kept drag-and-drop support bundled through the existing PyInstaller `--collect-all tkinterdnd2` flow.
+
+**Cross-Platform Test Reliability**
+
+- Normalized Windows short-path and macOS `/private/var` path assertions in the Python test suite.
+- Mocked GUI success dialogs in menu removal tests so headless Windows/macOS CI runs do not stall.
+- Aligned validation expectations for safe filename fallbacks, dangerous characters, and thread-count limits.
+
+### Security
+
+- Updated Pillow to `12.2.0` for the latest image-processing security fixes.
+- Replaced Safety dependency scanning with `pip-audit==2.10.0` in CI and security workflows.
+
+### Changed
+
+- Pinned `flake8==7.1.1` for stable lint output in CI.
+- Refreshed release documentation, download links, and tag examples for `v1.2.4`.
+
+---
+
 ## [1.2.3] - 2026-01-31
 
 ### 🐛 Bug Fixes
@@ -266,7 +293,7 @@ This is a maintenance release with no functional changes. All features and funct
   - Visual indicators: ❌ for not found locations
   - Separated sections: Search Locations, Environment Info, Troubleshooting
 - **Actionable Troubleshooting**:
-  - Specific build command: `go build uploader.go`
+  - Specific build command: `go build -o uploader.exe .`
   - PyInstaller configuration hint
   - Clear next steps
 - **Impact**: Users can quickly diagnose missing uploader.exe without support

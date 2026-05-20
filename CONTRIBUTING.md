@@ -14,8 +14,8 @@ Thank you for your interest in contributing! This document provides guidelines a
 
 1. **Fork and clone the repository:**
 ```bash
-git clone https://github.com/YOUR_USERNAME/GolangVersion.git
-cd GolangVersion
+git clone https://github.com/YOUR_USERNAME/ConniesUploader.git
+cd ConniesUploader
 ```
 
 2. **Set up Go development environment:**
@@ -32,7 +32,7 @@ pip install -r requirements.txt
 
 4. **Build the Go backend:**
 ```bash
-go build -o uploader uploader.go  # On Windows: uploader.exe
+go build -o uploader .  # On Windows: uploader.exe
 ```
 
 5. **Run the application:**
@@ -43,7 +43,7 @@ python main.py
 ## Project Structure
 
 ```
-GolangVersion/
+ConniesUploader/
 ├── main.py                 # Main application entry point
 ├── uploader.go            # Go backend for uploads
 ├── modules/               # Python modules
@@ -76,7 +76,7 @@ GolangVersion/
 
 ### Reporting Bugs
 
-1. Check if the bug has already been reported in [Issues](https://github.com/conniecombs/GolangVersion/issues)
+1. Check if the bug has already been reported in [Issues](https://github.com/conniecombs/conniesuploader/issues)
 2. If not, create a new issue with:
    - Clear title and description
    - Steps to reproduce
@@ -87,7 +87,7 @@ GolangVersion/
 
 ### Suggesting Features
 
-1. Check existing [Issues](https://github.com/conniecombs/GolangVersion/issues) for similar suggestions
+1. Check existing [Issues](https://github.com/conniecombs/conniesuploader/issues) for similar suggestions
 2. Create a new issue with:
    - Clear description of the feature
    - Use case / motivation
@@ -215,7 +215,7 @@ build_uploader.bat
 **Manual build:**
 ```bash
 # Build Go backend
-go build -ldflags="-s -w" -o uploader.exe uploader.go
+go build -ldflags="-s -w" -o uploader.exe .
 
 # Build Python executable
 pyinstaller --noconsole --onefile --clean --name "ConniesUploader" \

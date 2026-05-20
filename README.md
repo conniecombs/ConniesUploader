@@ -1,6 +1,6 @@
 # Connie's Uploader Ultimate
 
-![Project version badge showing v1.2.3](https://img.shields.io/badge/version-1.2.3-blue.svg)
+![Project version badge showing v1.2.4](https://img.shields.io/badge/version-1.2.4-blue.svg)
 ![MIT License badge](https://img.shields.io/badge/license-MIT-green.svg)
 ![Supported platforms: Windows, Linux, and macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)
 ![Production readiness status at 92 percent](https://img.shields.io/badge/production%20ready-92%25-brightgreen.svg)
@@ -13,16 +13,22 @@
 
 A powerful, multi-service image hosting uploader with an intuitive GUI. Upload images to multiple image hosting services with advanced features like batch processing, gallery management, automatic retry logic, and real-time progress tracking.
 
-**🎉 Latest Release: v1.2.3 "Gallery Logic Fix" (Jan 31, 2026)**
+**Latest Release: v1.2.4 "CI & Packaging Reliability" (May 20, 2026)**
 
-This release fixes the inline gallery creation logic in the Go sidecar.
+This patch release fixes packaged executable startup, refreshes dependency security checks, and hardens the cross-platform CI test suite.
 
 ### Highlights
-- 🔧 **IMX Gallery Fix** - Corrected inline gallery creation logic with proper login state tracking
-- 🔐 **IMX Login Improvements** - Added persistent session state and proper form field names
-- 🛠️ **URL Domain Fix** - Fixed IMX URLs to use naked domain (imx.to) for proper cookie handling
+- **Packaged executable startup** - `tkinterdnd2==0.4.3` avoids the legacy `tkinter.tix` import crash
+- **Security audit cleanup** - `Pillow==12.2.0` and `pip-audit==2.10.0` keep dependency checks current
+- **CI reliability** - Windows/macOS path handling and headless dialog tests now pass consistently
 
 ## ✨ Recent Improvements
+
+**v1.2.4 Release - "CI & Packaging Reliability" (May 20, 2026):**
+- **Executable startup fix** - Updated `tkinterdnd2` so PyInstaller builds no longer crash on missing `tkinter.tix`
+- **Dependency security update** - Updated Pillow and switched Python dependency checks to `pip-audit`
+- **Cross-platform CI hardening** - Normalized Windows/macOS path assertions and mocked GUI message boxes in tests
+- **Validation consistency** - Aligned filename sanitization and thread-count validation behavior with the current test suite
 
 **Phase 9 - "Technical Excellence" (Jan 19, 2026):**
 - 🎉 **100% Issue Resolution** - ALL 45 technical debt issues resolved (High: 6/6, Medium: 17/17, Low: 12/12)
@@ -135,12 +141,12 @@ This release fixes the inline gallery creation logic in the Go sidecar.
 
 **Download the latest release for your platform:**
 
-👉 **[Download v1.2.3](https://github.com/conniecombs/conniesuploader/releases/tag/v1.2.3)**
+**[Download v1.2.4](https://github.com/conniecombs/conniesuploader/releases/tag/v1.2.4)**
 
 Available builds:
-- **Windows**: `ConniesUploader-windows.zip` (includes `.exe` + SHA256 checksum)
-- **Linux**: `ConniesUploader-linux.tar.gz` (includes binary + SHA256 checksum)
-- **macOS**: `ConniesUploader-macos.zip` (includes binary + SHA256 checksum)
+- **Windows**: `ConniesUploader-v1.2.4-windows-x64.zip` (includes `.exe` + SHA256 checksum)
+- **Linux**: `ConniesUploader-v1.2.4-linux-x64.tar.gz` (includes binary + SHA256 checksum)
+- **macOS**: `ConniesUploader-v1.2.4-macos-x64.zip` (includes binary + SHA256 checksum)
 
 All releases are:
 - ✅ Automatically built and tested via GitHub Actions CI/CD
@@ -211,7 +217,7 @@ cd conniesuploader
 2. **Build Go backend:**
 ```bash
 go mod download  # Download dependencies
-go build -ldflags="-s -w" -o uploader.exe uploader.go
+go build -ldflags="-s -w" -o uploader.exe .
 ```
 
 3. **Set up Python environment:**
@@ -389,7 +395,7 @@ conniesuploader/
 │   ├── sidecar.py             # Go backend manager
 │   ├── upload_manager.py      # Upload orchestration
 │   └── ...
-└── tests/                     # Test suite (58 tests)
+└── tests/                     # Test suite (229+ Python tests)
 ```
 
 ## CI/CD & Automation
@@ -398,9 +404,9 @@ conniesuploader/
 
 Every commit is automatically:
 - ✅ **Built** on Windows, Linux, and macOS (parallel jobs)
-- ✅ **Tested** with go vet and full test suite (16 Go + 42 Python tests)
+- ✅ **Tested** with go vet and full test suite (16 Go + 229+ Python tests)
 - ✅ **Linted** with golangci-lint (errcheck, staticcheck, etc.) and flake8
-- ✅ **Security scanned** with 6 tools (CodeQL, gosec, govulncheck, Bandit, Safety, TruffleHog)
+- ✅ **Security scanned** with 6 tools (CodeQL, gosec, govulncheck, Bandit, pip-audit, TruffleHog)
 - ✅ **Dependency checked** for known vulnerabilities (daily scans)
 
 **GitHub Actions Workflows:**
@@ -412,7 +418,7 @@ Every commit is automatically:
 
 **Current Coverage:**
 - **Go**: 12.5% (16 tests covering utilities, protocols, HTTP mocking)
-- **Python**: 42 tests (exceptions, file handling, plugins)
+- **Python**: 229+ tests (exceptions, file handling, plugins, validation, UI utilities)
 
 **Coverage Target**: 30%+ Go, 40%+ Python (see [Development Roadmap](#development-roadmap))
 
@@ -424,23 +430,23 @@ Every commit is automatically:
 - **Go 1.25** - Latest stable (fixes stdlib vulns GO-2026-4602 and GO-2026-4601)
 - **goquery v1.11.0** - HTML parsing (requires Go 1.24+)
 - **imaging v1.6.2** - Image processing
-- **logrus v1.9.3** - Structured logging
-- **golang.org/x/image v0.23.0** - Image codecs (4 TIFF CVE fixes)
-- **golang.org/x/net v0.48.0** - HTTP/2 rapid reset protection
+- **logrus v1.9.4** - Structured logging
+- **golang.org/x/image v0.38.0** - Image codecs
+- **golang.org/x/net v0.47.0** - HTTP/2 networking support
 
 **Python Dependencies:**
 - **customtkinter 5.2.2** - Modern UI framework
-- **Pillow 10.4.0** - Image processing (security patches)
-- **requests 2.32.3** - HTTP library (latest)
+- **Pillow 12.2.0** - Image processing (security patches)
+- **requests 2.33.1** - HTTP library
 - **keyring 25.5.0** - Secure credential storage
-- **pytest 8.3.4** - Testing framework
+- **pytest 9.0.3** - Testing framework
 
 **Security Tools (6 scanners):**
 1. **CodeQL** - Semantic code analysis (Go & Python)
 2. **gosec** - Go security linter
 3. **govulncheck** - Go CVE database scanner
 4. **Bandit** - Python security linter
-5. **Safety** - Python dependency vulnerability scanner
+5. **pip-audit** - Python dependency vulnerability scanner
 6. **TruffleHog** - Secret detection in commits
 
 **Security Features:**
@@ -476,12 +482,12 @@ Releases are fully automated using modern GitHub Actions:
 1. Update CHANGELOG.md with new version
 2. Create and push a git tag:
    ```bash
-   git tag -a v1.0.1 -m "Release v1.0.1"
-   git push origin v1.0.1
+   git tag -a v1.2.4 -m "Release v1.2.4"
+   git push origin v1.2.4
    ```
 3. Watch the automated workflow create the release!
 
-For detailed instructions, see **[RELEASE_PROCESS.md](RELEASE_PROCESS.md)**
+For detailed instructions, see **[RELEASE_PROCESS.md](docs/releases/RELEASE_PROCESS.md)**
 
 ### Code Quality & Organization
 
@@ -584,7 +590,7 @@ See **[REMAINING_ISSUES.md](REMAINING_ISSUES.md)** for complete implementation d
 ### Common Issues
 
 **"uploader.exe not found" error:**
-- Ensure the Go backend was built successfully: `go build -o uploader.exe uploader.go`
+- Ensure the Go backend was built successfully: `go build -o uploader.exe .`
 - The `uploader.exe` (or `uploader` on Linux/macOS) must be in the same directory as `main.py`
 - Check sidecar logs in the execution log window
 
@@ -632,6 +638,8 @@ See **[REMAINING_ISSUES.md](REMAINING_ISSUES.md)** for complete implementation d
 
 ### Release Documentation
 - **[Release Notes](docs/releases/)** - Detailed release notes for all versions
+  - [v1.2.4 Release Notes](docs/releases/RELEASE_NOTES_v1.2.4.md) - CI & Packaging Reliability
+  - [v1.2.2 Release Notes](docs/releases/RELEASE_NOTES_v1.2.2.md) - Batch Upload Stability
   - [v1.1.0 Release Notes](docs/releases/RELEASE_NOTES_v1.1.0.md) - Performance & Polish
   - [v1.0.5 Release Notes](docs/releases/RELEASE_NOTES_v1.0.5.md) - Resilience & Intelligence
   - [Release Process](docs/releases/RELEASE_PROCESS.md) - How to create a new release
@@ -674,7 +682,12 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Version History
 
-**Latest Release: v1.2.3 - "Gallery Logic Fix"** (Jan 31, 2026)
+**Latest Release: v1.2.4 - "CI & Packaging Reliability"** (May 20, 2026)
+
+**v1.2.4 - "CI & Packaging Reliability"** (May 20, 2026):
+- **Packaged executable startup fix** - Updated `tkinterdnd2` to avoid the missing `tkinter.tix` import path
+- **Security dependency refresh** - Updated Pillow to `12.2.0` and CI dependency checks to `pip-audit`
+- **CI reliability** - Hardened Windows/macOS path assertions and headless GUI tests
 
 **v1.2.3 - "Gallery Logic Fix"** (Jan 31, 2026):
 - 🔧 **IMX Gallery Fix** - Corrected inline gallery creation logic with proper login state tracking

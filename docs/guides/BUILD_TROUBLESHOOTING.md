@@ -17,7 +17,7 @@ Before running the build script, ensure `uploader.exe` exists in the project roo
 
 ```bash
 # Build Go sidecar manually if needed
-go build -ldflags="-s -w" -o uploader.exe uploader.go
+go build -ldflags="-s -w" -o uploader.exe .
 
 # Verify it was created
 ls -l uploader.exe
@@ -71,7 +71,7 @@ If the automatic build fails, try building manually:
 
 ```batch
 # 1. Build Go sidecar
-go build -ldflags="-s -w" -o uploader.exe uploader.go
+go build -ldflags="-s -w" -o uploader.exe .
 
 # 2. Verify it exists
 dir uploader.exe
@@ -101,6 +101,29 @@ Install Go from https://go.dev/dl/ or let the build script install it automatica
 
 ### Solution
 Install Python 3.11+ from https://www.python.org/downloads/ or let the build script install it.
+
+## Issue: EXE Crashes Importing `tkinter.tix`
+
+### Symptoms
+- The build succeeds, but the executable crashes during startup.
+- The traceback mentions `tkinterdnd2`, `TkinterDnD.py`, and `ImportError: cannot import name 'tix' from 'tkinter'`.
+
+### Root Cause
+Older `tkinterdnd2` versions import the legacy `tkinter.tix` module path, which is not available in current Python/Tkinter runtimes.
+
+### Solution
+Install the current pinned dependency and rebuild cleanly:
+
+```batch
+pip install -r requirements.txt
+build_uploader.bat --clean
+```
+
+`requirements.txt` should include:
+
+```text
+tkinterdnd2==0.4.3
+```
 
 ## Issue: PyInstaller Fails with "module not found"
 

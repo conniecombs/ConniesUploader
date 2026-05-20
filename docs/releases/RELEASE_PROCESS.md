@@ -43,24 +43,21 @@ This is the primary method for creating releases.
 Add a new version section at the top of `CHANGELOG.md`:
 
 ```markdown
-## [1.0.1] - 2025-01-15
-
-### Added
-- New feature X
-- Enhancement Y
+## [1.2.4] - 2026-05-20
 
 ### Fixed
-- Bug fix Z
+- Packaged executable startup crash
+- Cross-platform CI path assertions
 
-### Changed
-- Improvement W
+### Security
+- Python dependency audit updates
 ```
 
 **Step 2: Commit Changes**
 
 ```bash
-git add CHANGELOG.md
-git commit -m "Prepare release v1.0.1"
+git add CHANGELOG.md README.md ARCHITECTURE.md REMAINING_ISSUES.md CONTRIBUTING.md docs/README.md docs/guides/BUILD_TROUBLESHOOTING.md docs/guides/PLUGIN_CREATION_GUIDE.md docs/releases/RELEASE_NOTES.md docs/releases/RELEASE_NOTES_v1.2.4.md docs/releases/RELEASE_PROCESS.md
+git commit -m "Prepare release v1.2.4"
 git push origin main
 ```
 
@@ -68,17 +65,17 @@ git push origin main
 
 ```bash
 # Create an annotated tag
-git tag -a v1.0.1 -m "Release v1.0.1"
+git tag -a v1.2.4 -m "Release v1.2.4"
 
 # Push the tag to trigger the release workflow
-git push origin v1.0.1
+git push origin v1.2.4
 ```
 
 **Step 4: Monitor the Release**
 
-1. Go to the [Actions tab](https://github.com/conniecombs/GolangVersion/actions)
+1. Go to the [Actions tab](https://github.com/conniecombs/conniesuploader/actions)
 2. Watch the "Release - Build and Publish" workflow
-3. Once complete, check the [Releases page](https://github.com/conniecombs/GolangVersion/releases)
+3. Once complete, check the [Releases page](https://github.com/conniecombs/conniesuploader/releases)
 
 ### Manual Release (Workflow Dispatch)
 
@@ -86,7 +83,7 @@ You can also trigger a release manually from the GitHub UI:
 
 1. Go to **Actions** → **Release - Build and Publish**
 2. Click **Run workflow**
-3. Enter the version (e.g., `v1.0.1`)
+3. Enter the version (e.g., `v1.2.4`)
 4. Click **Run workflow**
 
 This is useful for:
@@ -117,7 +114,7 @@ Use this checklist when creating a new release:
 
 ### Post-Release
 
-- [ ] Verify release appears on [Releases page](https://github.com/conniecombs/GolangVersion/releases)
+- [ ] Verify release appears on [Releases page](https://github.com/conniecombs/conniesuploader/releases)
 - [ ] Download and test artifacts on each platform
 - [ ] Verify SHA256 checksums match
 - [ ] Update documentation/website if applicable
@@ -227,7 +224,7 @@ If a release has critical issues:
 
 If no one has downloaded the release yet:
 
-1. Go to [Releases page](https://github.com/conniecombs/GolangVersion/releases)
+1. Go to [Releases page](https://github.com/conniecombs/conniesuploader/releases)
 2. Click **Delete** on the problematic release
 3. Delete the git tag:
    ```bash
@@ -309,11 +306,11 @@ The workflow uses caching for faster builds:
 
 If you have questions about the release process:
 
-1. Check existing [GitHub Issues](https://github.com/conniecombs/GolangVersion/issues)
-2. Review [GitHub Discussions](https://github.com/conniecombs/GolangVersion/discussions)
+1. Check existing [GitHub Issues](https://github.com/conniecombs/conniesuploader/issues)
+2. Review [GitHub Discussions](https://github.com/conniecombs/conniesuploader/discussions)
 3. Create a new issue with the `question` label
 
 ---
 
-**Last Updated:** 2025-01-01
+**Last Updated:** 2026-05-20
 **Maintained By:** conniecombs

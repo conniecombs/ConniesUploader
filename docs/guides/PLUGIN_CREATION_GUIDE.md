@@ -810,7 +810,7 @@ Create a test script:
 ```python
 # test_plugin.py
 import sys
-sys.path.insert(0, '/path/to/GolangVersion')
+sys.path.insert(0, '/path/to/ConniesUploader')
 
 from modules.plugins.yourservice import YourServicePlugin
 

@@ -9,6 +9,7 @@ Complete guide to all documentation for Connie's Uploader Ultimate.
 | **README** | Main project documentation | [Root](../README.md) |
 | **Architecture** | System design and architecture | [Root](../ARCHITECTURE.md) |
 | **Contributing** | How to contribute | [Root](../CONTRIBUTING.md) |
+| **Code of Conduct** | Community standards | [Root](../CODE_OF_CONDUCT.md) |
 | **Changelog** | Version history | [Root](../CHANGELOG.md) |
 | **Remaining Issues** | Technical debt tracker | [Root](../REMAINING_ISSUES.md) |
 
@@ -21,7 +22,7 @@ Start here if you're new to the project:
 
 1. **[README.md](../README.md)** - Overview, features, installation, and quick start
 2. **[Build Troubleshooting](guides/BUILD_TROUBLESHOOTING.md)** - Common build issues and solutions
-3. **[Latest Release Notes](releases/RELEASE_NOTES_v1.1.0.md)** - What's new in v1.1.0 (latest detailed notes)
+3. **[Latest Release Notes](releases/RELEASE_NOTES_v1.2.4.md)** - Latest detailed release notes
 
 ### For Contributors
 Development and contribution guides:
@@ -35,7 +36,7 @@ Development and contribution guides:
 ### For Maintainers
 Project management and planning:
 
-1. **[REMAINING_ISSUES.md](../REMAINING_ISSUES.md)** - Technical debt and roadmap (39 issues completed!)
+1. **[REMAINING_ISSUES.md](../REMAINING_ISSUES.md)** - Technical debt and roadmap (45 issues completed)
 2. **[CHANGELOG.md](../CHANGELOG.md)** - Detailed version history
 3. **[Release Process](releases/RELEASE_PROCESS.md)** - Release workflow and checklist
 
@@ -52,6 +53,8 @@ docs/
 │   └── BUILD_TROUBLESHOOTING.md
 ├── releases/                    # Release documentation
 │   ├── RELEASE_NOTES.md
+│   ├── RELEASE_NOTES_v1.2.4.md
+│   ├── RELEASE_NOTES_v1.2.2.md
 │   ├── RELEASE_NOTES_v1.1.0.md
 │   ├── RELEASE_NOTES_v1.0.5.md
 │   ├── release_notes_v1.0.4.md
@@ -114,17 +117,17 @@ Contribution guidelines:
 
 ### [CHANGELOG.md](../CHANGELOG.md) (22KB)
 Detailed version history:
-- All releases from v1.0.0 to v1.1.0
+- All releases from v1.0.0 to v1.2.4
 - Feature additions
 - Bug fixes
 - Breaking changes
 
 ### [REMAINING_ISSUES.md](../REMAINING_ISSUES.md) (39KB)
 Technical debt tracker and roadmap:
-- **Status**: 39 issues completed, 6 low-priority remaining
+- **Status**: 45 issues completed, optional future enhancements only
 - **High Priority**: ✅ 100% complete (6/6)
 - **Medium Priority**: ✅ 100% complete (17/17)
-- **Low Priority**: 🟢 50% complete (6/12)
+- **Low Priority**: 100% complete (12/12)
 - Implementation notes for completed phases
 
 ---
@@ -159,12 +162,24 @@ Common build issues and solutions:
 
 ## 🚀 Release Documentation (docs/releases/)
 
+### [RELEASE_NOTES_v1.2.4.md](releases/RELEASE_NOTES_v1.2.4.md)
+Latest release - "CI & Packaging Reliability" (May 20, 2026):
+- Packaged executable startup fix for the `tkinter.tix` import crash
+- Pillow `12.2.0` security update and `pip-audit` dependency scanning
+- Cross-platform CI test hardening for Windows and macOS
+
+### [RELEASE_NOTES_v1.2.2.md](releases/RELEASE_NOTES_v1.2.2.md)
+"Batch Upload Stability" release (Jan 22, 2026):
+- Worker count settings correctly apply via sidecar restart
+- Large batches process without UI stalls
+- Progress and output-folder handling fixes
+
 ### [RELEASE_NOTES_v1.1.0.md](releases/RELEASE_NOTES_v1.1.0.md) (15KB)
-Latest release - "Performance & Polish" (Jan 15-16, 2026):
-- 🧪 Comprehensive Python test suite (2,200+ lines)
-- ⚡ 20-30% faster uploads (HTTP connection pooling)
-- ✅ ALL HIGH PRIORITY ISSUES RESOLVED (6/6)
-- 🐛 30 bug fixes and enhancements
+"Performance & Polish" release (Jan 15-16, 2026):
+- Comprehensive Python test suite (2,200+ lines)
+- 20-30% faster uploads (HTTP connection pooling)
+- ALL HIGH PRIORITY ISSUES RESOLVED (6/6)
+- 30 bug fixes and enhancements
 
 ### [RELEASE_NOTES_v1.0.5.md](releases/RELEASE_NOTES_v1.0.5.md) (19KB)
 "Resilience & Intelligence" release (Jan 13, 2026):
@@ -173,7 +188,7 @@ Latest release - "Performance & Polish" (Jan 15-16, 2026):
 - 🔒 Enhanced security validation
 - ⚡ Configurable rate limiting
 
-### [RELEASE_NOTES.md](releases/RELEASE_NOTES.md) (9KB)
+### [RELEASE_NOTES.md](releases/RELEASE_NOTES.md) (2KB)
 General release notes and summary of all versions.
 
 ### [RELEASE_PROCESS.md](releases/RELEASE_PROCESS.md) (9KB)
@@ -258,15 +273,21 @@ Archive of implementation notes, phase summaries, and technical analyses from th
 
 | Category | Count | Total Size |
 |----------|-------|------------|
-| **Root Documentation** | 5 files | ~107 KB |
+| **Root Documentation** | 6 files | ~110 KB |
 | **Developer Guides** | 3 files | ~48 KB |
-| **Release Documentation** | 5 files | ~55 KB |
+| **Release Documentation** | 7 files | ~65 KB |
 | **Historical Documentation** | 26 files | ~200+ KB |
-| **Total** | **39 files** | **~410 KB** |
+| **Additional Markdown** | 3 files | ~15 KB |
+| **Total** | **45 files** | **~438 KB** |
 
 ---
 
 ## 🔄 Recent Documentation Updates
+
+**2026-05-20**: v1.2.4 Release
+- Published RELEASE_NOTES_v1.2.4.md
+- Updated current release links, dependency security notes, and tag examples
+- Synced project version references to v1.2.4
 
 **2026-01-16**: Documentation reorganization (Issue #24)
 - Moved 8 files to `docs/history/` (analysis and status docs)
@@ -298,6 +319,6 @@ Archive of implementation notes, phase summaries, and technical analyses from th
 
 ---
 
-**Last Updated**: 2026-01-16
-**Documentation Version**: 2.0
-**Project Version**: v1.1.0
+**Last Updated**: 2026-05-20
+**Documentation Version**: 2.1
+**Project Version**: v1.2.4
