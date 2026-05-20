@@ -21,6 +21,10 @@ from modules.file_handler import (
 )
 
 
+def _realpaths(paths):
+    return {os.path.realpath(path) for path in paths}
+
+
 class TestSanitizeFilename:
     """Test suite for sanitize_filename function"""
 
@@ -131,9 +135,10 @@ class TestScanInputs:
             result = scan_inputs(temp_dir)
 
             assert len(result) == 2  # Only jpg and png
-            assert str(jpg_file) in result
-            assert str(png_file) in result
-            assert str(txt_file) not in result
+            result_paths = _realpaths(result)
+            assert os.path.realpath(str(jpg_file)) in result_paths
+            assert os.path.realpath(str(png_file)) in result_paths
+            assert os.path.realpath(str(txt_file)) not in result_paths
 
     def test_multiple_inputs(self):
         """Test scanning multiple files"""
@@ -181,8 +186,9 @@ class TestGetFilesFromDirectory:
 
             result = get_files_from_directory(temp_dir)
             assert len(result) == 2
-            assert str(file1) in result
-            assert str(file2) in result
+            result_paths = _realpaths(result)
+            assert os.path.realpath(str(file1)) in result_paths
+            assert os.path.realpath(str(file2)) in result_paths
 
     def test_mixed_files(self):
         """Test directory with valid and invalid files"""
@@ -197,9 +203,10 @@ class TestGetFilesFromDirectory:
 
             result = get_files_from_directory(temp_dir)
             assert len(result) == 2  # jpg and gif only
-            assert str(jpg_file) in result
-            assert str(gif_file) in result
-            assert str(txt_file) not in result
+            result_paths = _realpaths(result)
+            assert os.path.realpath(str(jpg_file)) in result_paths
+            assert os.path.realpath(str(gif_file)) in result_paths
+            assert os.path.realpath(str(txt_file)) not in result_paths
 
 
 class TestValidExtensions:
