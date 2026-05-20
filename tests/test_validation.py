@@ -22,6 +22,10 @@ from modules.validation import (
 )
 
 
+def _canonical_path(path):
+    return os.path.normcase(os.path.realpath(path))
+
+
 @pytest.mark.unit
 class TestValidateFilePath:
     """Test file path validation"""
@@ -390,7 +394,7 @@ class TestValidationIntegration:
 
             file_result = validate_file_path(str(file_path))
             assert file_result is not None
-            assert temp_dir in file_result
+            assert os.path.dirname(_canonical_path(file_result)) == _canonical_path(dir_result)
 
 
 if __name__ == "__main__":
