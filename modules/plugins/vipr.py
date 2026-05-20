@@ -17,7 +17,6 @@ from . import helpers
 from .. import api
 from ..widgets import MouseWheelComboBox
 from loguru import logger
-import keyring
 
 
 class ViprPlugin(ImageHostPlugin):
@@ -205,6 +204,8 @@ class ViprPlugin(ImageHostPlugin):
 
         This is the custom functionality that can't be expressed in schema.
         """
+        import keyring
+
         u = keyring.get_password("ImageUploader:vipr_user", "user")
         p = keyring.get_password("ImageUploader:vipr_pass", "pass")
 
