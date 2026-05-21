@@ -247,6 +247,7 @@ verify_build() {
 
     local archive_list
     archive_list="$(mktemp)"
+    trap "rm -f '$archive_list'" EXIT
 
     if [ ! -x "$PYI_ARCHIVE_VIEWER" ]; then
         print_error "pyi-archive_viewer not found in virtual environment."
