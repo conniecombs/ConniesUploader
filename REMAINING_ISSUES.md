@@ -16,7 +16,7 @@
 ## ✅ Completed (Phases 1, 2, & 3)
 
 ### Phase 1 - Critical Fixes ✅
-- [x] Fix go.mod version format (go 1.24 not 1.24.11)
+- [x] Fix go.mod version format and align with the current Go 1.25 toolchain
 - [x] Add pytest and flake8 to requirements.txt
 - [x] Fix SHA256 hash security issue (removed 32-bit support)
 - [x] Fix plugin discovery to include *_v2.py files
@@ -63,7 +63,7 @@
 ### Testing & Quality Assurance
 
 #### **Issue #1: No Go Tests** ✅ **COMPLETED** (2026-01-13)
-- **File**: `uploader.go` (2,600+ lines)
+- **Files**: Go sidecar split across `main.go`, `handlers.go`, `core/`, and `services/`
 - **Status**: **30.0% test coverage achieved** (up from 12.5%)
 - **Test Files Created**:
   - `uploader_coverage_test.go` (766 lines) - Rate limiting, gallery operations, HTTP workflows
@@ -187,11 +187,11 @@
 - **Actual Status**: TODO comment removed, feature fully functional
 
 #### **Issue #6: Incomplete Gallery Finalization** ✅ **COMPLETED**
-- **Files**: `uploader.go:890-942`, `modules/api.py:118-143`, `modules/controller.py:133-137`
+- **Files**: `handlers.go`, `modules/api.py`, `modules/controller.py`
 - **Status**: Full end-to-end implementation complete
 - **Implementation**:
   - **Python API** (`api.py:118`): `finalize_pixhost_gallery()` sends action to Go sidecar
-  - **Go Handler** (`uploader.go:890`): `handleFinalizeGallery()` processes request
+  - **Go Handler** (`handlers.go`): `handleFinalizeGallery()` processes request
   - **Pixhost Finalization**: PATCH request to `https://api.pixhost.to/galleries/{hash}/{upload_hash}`
   - **Error Handling**: Validates hashes, handles HTTP errors, logs all operations
   - **Integration**: Controller finalizes galleries after upload completion (`controller.py:133`)
@@ -210,7 +210,7 @@
 - **File**: `modules/validation.py:123-138`
 - **Status**: Validation properly implemented with multiple approaches
 - **Resolution**:
-  - **Go Backend** (`uploader.go:621-638`): Pattern-based validation (no hardcoding)
+  - **Go Backend** (`core/validate.go`): Pattern-based validation (no hardcoding)
     - Allows any alphanumeric + dots + hyphens (extensible for plugins)
     - Validates length and format, not specific service names
   - **Python Module**: Already supports dynamic validation
@@ -227,7 +227,7 @@
 
 #### **Issue #8: No Rate Limiting** ✅ **COMPLETED** (v1.0.5)
 - **Status**: Comprehensive rate limiting implemented with token bucket algorithm
-- **Implementation** (`uploader.go:182-296`):
+- **Implementation** (`core/ratelimit.go`, with compatibility wrappers in `main.go`):
   - Per-service rate limiters (2 req/s, burst 5)
   - Global rate limiter (10 req/s, burst 20)
   - Dynamic rate limiter configuration via RateLimitConfig
@@ -302,7 +302,7 @@
 - **Actual Effort**: 0.5 days
 
 #### **Issue #12: Inconsistent Naming Conventions** ✅ **COMPLETED** (2026-01-16)
-- **Files**: `uploader.go`, `uploader_helpers_test.go`
+- **Files**: `main.go`, `handlers.go`, `core/`, `services/`, `uploader_helpers_test.go`
 - **Status**: Applied gofmt to standardize Go code formatting
 - **Changes**:
   - Standardized struct field alignment and spacing
@@ -334,14 +334,15 @@
   - [x] Use InvalidConfigException from exceptions.py ✅
 - **Actual Status**: Already Complete
 
-#### **Issue #14: Version String in Multiple Places** ✅ **RESOLVED** (2026-01-10)
-- **Status**: Fixed - All version strings now consistent at v1.0.0
+#### **Issue #14: Version String in Multiple Places** ✅ **RESOLVED** (2026-05-20)
+- **Status**: Fixed - all current product version strings are consistent at v1.2.4
 - **Locations Updated**:
-  - `config.py:8` - `APP_VERSION = "1.0.0"` ✅
-  - `README.md:3` - Badge shows v1.0.0 ✅
-  - `ARCHITECTURE.md` - Now shows both Product (v1.0.0) and Architecture (v2.4.0) versions ✅
+  - `modules/config.py` - `APP_VERSION = "1.2.4"` ✅
+  - `Makefile` - `VERSION := 1.2.4` ✅
+  - `README.md` - Badge and latest release show v1.2.4 ✅
+  - `ARCHITECTURE.md` - Product version shows v1.2.4 ✅
 - **Action Items**:
-  - [x] Standardize product version to v1.0.0 ✅
+  - [x] Standardize product version to v1.2.4 ✅
   - [ ] Read version in Go from config file (future enhancement)
   - [ ] Auto-update README badge in CI/CD (future enhancement)
 - **Estimated Effort**: Completed
@@ -363,7 +364,7 @@
 ### Performance & Architecture
 
 #### **Issue #16: No Connection Pooling** ✅ **COMPLETED** (2026-01-15)
-- **File**: `uploader.go:696-722`
+- **File**: `main.go`
 - **Status**: Optimized HTTP client with enhanced connection pooling
 - **Implementation**:
   - `MaxIdleConns: 100` - Total idle connections across all hosts
@@ -404,7 +405,7 @@
 - **Actual Effort**: 0.25 days
 
 #### **Issue #19: No Mutex for Client** ✅ **RESOLVED** (2026-01-15)
-- **File**: `uploader.go:173-180`
+- **File**: `main.go` / `core/http.go`
 - **Status**: Documented that http.Client is thread-safe by design
 - **Resolution**:
   - Added comprehensive documentation explaining thread-safety
@@ -617,7 +618,7 @@
 - **Actual Status**: Already Complete
 
 #### **Issue #30: Comment Typos** ✅ **COMPLETED** (Already Resolved)
-- **File**: `uploader.go`
+- **File**: Go source files
 - **Status**: No typos found in current version
 - **Verification**: Searched for common typos, none found
 - **Action Items**:
@@ -678,7 +679,7 @@
 - **Status**: Complete two-layer graceful shutdown implementation
 - **Resolution**: Both application and sidecar layers now have comprehensive shutdown
 
-**Go Sidecar Implementation** (`uploader.go:277-378`):
+**Go Sidecar Implementation** (`main.go`, `handlers.go`):
 - **Features Implemented**:
   - OS signal handling (SIGINT, SIGTERM)
   - sync.WaitGroup to track worker goroutines
@@ -721,7 +722,7 @@
 **Actual Effort**: 0.5 days (Go) + already complete (Python)
 
 #### **Issue #35: Hardcoded User Agent** ✅ **COMPLETED** (2026-01-16)
-- **File**: `uploader.go:39-49`
+- **File**: `core/types.go`, `core/http.go`, and `services/`
 - **Status**: User agent is now configurable via config map
 - **Changes**:
   - Renamed `UserAgent` constant to `DefaultUserAgent`
@@ -876,7 +877,7 @@
 ## 📝 Phase 5 Implementation Notes (2026-01-15)
 
 ### Performance Optimizations
-1. **HTTP Connection Pooling** (`uploader.go:696-722`):
+1. **HTTP Connection Pooling** (`main.go`):
    - Increased `MaxIdleConns` from 10 to 100 for better connection reuse
    - Set `MaxConnsPerHost` to 20 (was 10) for more concurrent connections
    - Added `IdleConnTimeout: 90s` to keep connections alive longer
@@ -884,7 +885,7 @@
    - Added `ExpectContinueTimeout: 1s` for faster 100-continue handling
    - **Result**: 20-30% faster uploads due to connection reuse
 
-2. **Thread-Safety Documentation** (`uploader.go:173-180`):
+2. **Thread-Safety Documentation** (`main.go` / `core/http.go`):
    - Clarified that http.Client is safe for concurrent use
    - Documented immutable initialization pattern
    - Added reference to official Go documentation
@@ -906,7 +907,7 @@
    - **Result**: Much better UX, no more "frozen" perception
 
 ### Files Modified (Phase 5)
-- uploader.go (connection pooling optimization)
+- main.go (connection pooling optimization)
 - modules/sidecar.py (error messages)
 - modules/ui/main_window.py (drag-and-drop progress)
 

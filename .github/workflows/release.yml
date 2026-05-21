@@ -68,7 +68,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.24'
+        go-version: '1.25'
         cache: true
 
     - name: Set up Python
@@ -106,7 +106,6 @@ jobs:
           --collect-submodules modules.plugins `
           --hidden-import modules.plugins.imx `
           --hidden-import modules.plugins.pixhost `
-          --hidden-import modules.plugins.pixhost_v2 `
           --hidden-import modules.plugins.vipr `
           --hidden-import modules.plugins.turbo `
           --hidden-import modules.plugins.imagebam `
@@ -165,7 +164,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.24'
+        go-version: '1.25'
         cache: true
 
     - name: Set up Python
@@ -193,7 +192,6 @@ jobs:
           --collect-submodules modules.plugins \
           --hidden-import modules.plugins.imx \
           --hidden-import modules.plugins.pixhost \
-          --hidden-import modules.plugins.pixhost_v2 \
           --hidden-import modules.plugins.vipr \
           --hidden-import modules.plugins.turbo \
           --hidden-import modules.plugins.imagebam \
@@ -248,7 +246,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.24'
+        go-version: '1.25'
         cache: true
 
     - name: Set up Python
@@ -276,7 +274,6 @@ jobs:
           --collect-submodules modules.plugins \
           --hidden-import modules.plugins.imx \
           --hidden-import modules.plugins.pixhost \
-          --hidden-import modules.plugins.pixhost_v2 \
           --hidden-import modules.plugins.vipr \
           --hidden-import modules.plugins.turbo \
           --hidden-import modules.plugins.imagebam \

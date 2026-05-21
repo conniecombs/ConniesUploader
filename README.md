@@ -4,8 +4,9 @@
 ![MIT License badge](https://img.shields.io/badge/license-MIT-green.svg)
 ![Supported platforms: Windows, Linux, and macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)
 ![Production readiness status at 92 percent](https://img.shields.io/badge/production%20ready-92%25-brightgreen.svg)
-![Continuous integration build and test status](https://github.com/conniecombs/conniesuploader/workflows/CI%20-%20Build%20and%20Test/badge.svg?branch=main)
-![Security scanning workflow status](https://github.com/conniecombs/conniesuploader/workflows/Security%20Scanning/badge.svg?branch=main)
+![Continuous integration workflow status: passing](https://github.com/conniecombs/ConniesUploader/actions/workflows/ci.yml/badge.svg?branch=main)
+![Continuous delivery release workflow status: passing](https://github.com/conniecombs/ConniesUploader/actions/workflows/release.yml/badge.svg)
+![Security scanning workflow status: passing](https://github.com/conniecombs/ConniesUploader/actions/workflows/security.yml/badge.svg?branch=main)
 ![Go programming language version 1.25](https://img.shields.io/badge/Go-1.25-00ADD8.svg)
 ![Python version 3.11 or higher required](https://img.shields.io/badge/Python-3.11+-3776AB.svg)
 ![Test coverage at 30.0 percent](https://img.shields.io/badge/coverage-30.0%25-yellow.svg)
@@ -21,6 +22,16 @@ This patch release fixes packaged executable startup, refreshes dependency secur
 - **Packaged executable startup** - `tkinterdnd2==0.4.3` avoids the legacy `tkinter.tix` import crash
 - **Security audit cleanup** - `Pillow==12.2.0` and `pip-audit==2.10.0` keep dependency checks current
 - **CI reliability** - Windows/macOS path handling and headless dialog tests now pass consistently
+
+## Screenshots
+
+| Main dashboard | Batch upload queue |
+| --- | --- |
+| ![Connie's Uploader main dashboard with Pixhost settings selected](docs/assets/screenshots/main-dashboard.png) | ![Connie's Uploader batch upload queue with grouped images and progress states](docs/assets/screenshots/upload-queue.png) |
+
+| Gallery manager | Template editor |
+| --- | --- |
+| ![Gallery manager showing Pixhost galleries and gallery creation controls](docs/assets/screenshots/gallery-manager.png) | ![Template editor with BBCode formatting toolbar and placeholder controls](docs/assets/screenshots/template-editor.png) |
 
 ## ✨ Recent Improvements
 
@@ -377,8 +388,11 @@ The application uses a modern hybrid architecture:
 ### Module Structure
 ```
 conniesuploader/
-├── main.py                    # Entry point (23 lines)
-├── uploader.go                # Go backend (2,477 lines with retry, progress, validation)
+├── main.py                    # Python GUI entry point
+├── main.go                    # Go sidecar entry point
+├── handlers.go                # Go request handlers
+├── core/                      # Go retry, rate-limit, validation, HTTP, and output utilities
+├── services/                  # Go service integrations
 ├── modules/
 │   ├── ui/                    # UI components
 │   │   ├── main_window.py     # Main application window
@@ -386,7 +400,7 @@ conniesuploader/
 │   ├── plugins/               # Auto-discovered plugins
 │   │   ├── imx.py
 │   │   ├── pixhost.py
-│   │   ├── pixhost_v2.py
+│   │   ├── imgur.py
 │   │   ├── vipr.py
 │   │   ├── imagebam.py
 │   │   └── turbo.py
@@ -428,7 +442,7 @@ Every commit is automatically:
 
 **Go Dependencies:**
 - **Go 1.25** - Latest stable (fixes stdlib vulns GO-2026-4602 and GO-2026-4601)
-- **goquery v1.11.0** - HTML parsing (requires Go 1.24+)
+- **goquery v1.11.0** - HTML parsing (project targets Go 1.25+)
 - **imaging v1.6.2** - Image processing
 - **logrus v1.9.4** - Structured logging
 - **golang.org/x/image v0.38.0** - Image codecs
@@ -573,7 +587,7 @@ For detailed instructions, see **[RELEASE_PROCESS.md](docs/releases/RELEASE_PROC
 - Performance metrics dashboard
 - Effort: 2-3 days
 
-### Long-Term Vision (Future - v1.2.0+)
+### Long-Term Vision (Future - v1.2.5+)
 
 - Circuit breaker pattern for failing services
 - Adaptive rate limiting based on service responses
