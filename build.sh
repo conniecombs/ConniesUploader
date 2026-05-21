@@ -255,7 +255,7 @@ verify_build() {
         exit 1
     fi
 
-    "$PYI_ARCHIVE_VIEWER" "$DIST_EXE" </dev/null >"$archive_list" 2>/dev/null
+    echo "l" | "$PYI_ARCHIVE_VIEWER" "$DIST_EXE" >"$archive_list" 2>/dev/null
 
     if ! grep -Fq "$SIDECAR_NAME" "$archive_list"; then
         print_error "uploader sidecar was not bundled into $APP_NAME."
