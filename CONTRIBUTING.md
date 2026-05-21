@@ -44,8 +44,11 @@ python main.py
 
 ```
 ConniesUploader/
-├── main.py                 # Main application entry point
-├── uploader.go            # Go backend for uploads
+├── main.py                # Python GUI entry point
+├── main.go                # Go sidecar entry point
+├── handlers.go            # Go request handlers
+├── core/                  # Go retry, rate-limit, validation, HTTP, and output utilities
+├── services/              # Go service integrations
 ├── modules/               # Python modules
 │   ├── api.py            # API interactions with Go backend
 │   ├── config.py         # Application configuration
@@ -63,6 +66,7 @@ ConniesUploader/
 │       ├── base.py
 │       ├── imx.py
 │       ├── imagebam.py
+│       ├── imgur.py
 │       ├── pixhost.py
 │       ├── turbo.py
 │       └── vipr.py
@@ -170,10 +174,10 @@ class YourServicePlugin(BasePlugin):
         pass
 ```
 
-2. **Add Go backend support** in `uploader.go`:
-   - Add new case in `handleUpload()`
-   - Implement `uploadYourService()` function
-   - Add any required login/authentication functions
+2. **Add Go sidecar support** only when the generic HTTP runner cannot cover the service:
+   - Prefer defining upload request specs in the Python plugin
+   - Add service-specific Go code under `services/<service>/` when needed
+   - Register new Go services through the sidecar entry point and handlers
 
 3. **Add UI components** in `modules/widgets.py`:
    - Create settings frame

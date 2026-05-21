@@ -680,10 +680,10 @@ Choose the right parser type:
 
 ### 7. Rate Limiting
 
-Rate limiting is handled automatically by the Go sidecar. Configure in `uploader.go`:
+Rate limiting is handled automatically by the Go sidecar. Configure defaults in `core/ratelimit.go`:
 
 ```go
-var rateLimiters = map[string]*rate.Limiter{
+var RateLimiters = map[string]*rate.Limiter{
     "yourservice.com": rate.NewLimiter(rate.Limit(2.0), 5),  // 2 req/s
 }
 ```

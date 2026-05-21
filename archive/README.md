@@ -26,7 +26,7 @@ These files were early plugin implementations that have been superseded by newer
 The current active plugins are:
 - `modules/plugins/imagebam.py` - Active ImageBam plugin
 - `modules/plugins/imx.py` - Active IMX plugin
-- `modules/plugins/pixhost_v2.py` - Active Pixhost plugin (v2)
+- `modules/plugins/pixhost.py` - Active Pixhost plugin
 - `modules/plugins/turbo.py` - Active Turbo plugin
 - `modules/plugins/vipr.py` - Active Vipr plugin
 

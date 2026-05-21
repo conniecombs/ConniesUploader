@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025 conniecombs
 
-# modules/plugins/pixhost_v2.py
+# modules/plugins/pixhost_v2_legacy.py
 """
 Pixhost.to plugin - Schema-based version (Phase 1 implementation).
 
