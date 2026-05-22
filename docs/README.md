@@ -21,8 +21,9 @@ Complete guide to all documentation for Connie's Uploader Ultimate.
 Start here if you're new to the project:
 
 1. **[README.md](../README.md)** - Overview, features, installation, and quick start
-2. **[Build Troubleshooting](guides/BUILD_TROUBLESHOOTING.md)** - Common build issues and solutions
-3. **[Latest Release Notes](releases/RELEASE_NOTES_v1.2.4.md)** - Latest detailed release notes
+2. **[User Tutorial](guides/USER_TUTORIAL.md)** - Complete walkthrough of uploads, settings, galleries, templates, and output
+3. **[Build Troubleshooting](guides/BUILD_TROUBLESHOOTING.md)** - Common build issues and solutions
+4. **[Latest Release Notes](releases/RELEASE_NOTES_v1.2.4.md)** - Latest detailed release notes
 
 ### For Contributors
 Development and contribution guides:
@@ -50,7 +51,8 @@ docs/
 ├── guides/                      # Developer and user guides
 │   ├── PLUGIN_CREATION_GUIDE.md
 │   ├── SCHEMA_PLUGIN_GUIDE.md
-│   └── BUILD_TROUBLESHOOTING.md
+│   ├── BUILD_TROUBLESHOOTING.md
+│   └── USER_TUTORIAL.md
 ├── releases/                    # Release documentation
 │   ├── RELEASE_NOTES.md
 │   ├── RELEASE_NOTES_v1.2.4.md
@@ -157,6 +159,13 @@ Common build issues and solutions:
 - Python dependency issues
 - Platform-specific problems
 - Cross-platform build guide
+
+### [USER_TUTORIAL.md](guides/USER_TUTORIAL.md)
+Complete end-user walkthrough:
+- Basic upload workflow
+- All visible app settings
+- Service-specific upload options
+- Gallery Manager, Template Editor, ViperGirls posting, output files, and troubleshooting
 
 ---
 
@@ -274,15 +283,19 @@ Archive of implementation notes, phase summaries, and technical analyses from th
 | Category | Count | Total Size |
 |----------|-------|------------|
 | **Root Documentation** | 6 files | ~110 KB |
-| **Developer Guides** | 3 files | ~48 KB |
+| **Developer Guides** | 4 files | ~67 KB |
 | **Release Documentation** | 7 files | ~65 KB |
 | **Historical Documentation** | 26 files | ~200+ KB |
 | **Additional Markdown** | 3 files | ~15 KB |
-| **Total** | **45 files** | **~438 KB** |
+| **Total** | **46 files** | **~457 KB** |
 
 ---
 
 ## 🔄 Recent Documentation Updates
+
+**2026-05-22**: User Tutorial
+- Added a complete user tutorial covering upload flow, all visible settings, templates, galleries, ViperGirls posting, and troubleshooting
+- Added fresh main window, upload queue, and template editor screenshots
 
 **2026-05-20**: v1.2.4 Release
 - Published RELEASE_NOTES_v1.2.4.md
