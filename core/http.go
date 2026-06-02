@@ -509,7 +509,7 @@ func applyResponseTemplate(template string, data map[string]interface{}, fp stri
 	stem := strings.TrimSuffix(base, filepath.Ext(base))
 
 	return templateTokenPattern.ReplaceAllStringFunc(template, func(token string) string {
-		key := strings.Trim(token, "{}")
+\t\tkey := strings.TrimSpace(strings.Trim(token, "{}"))
 		switch key {
 		case "filename":
 			return base
