@@ -16,6 +16,16 @@ from .plugin_manager import PluginManager
 from .sidecar import SidecarBridge
 
 
+SERVICE_THREAD_KEYS = {
+    "imx.to": "imx_threads",
+    "pixhost.to": "pix_threads",
+    "turboimagehost": "turbo_threads",
+    "vipr.im": "vipr_threads",
+    "imagebam.com": "imagebam_threads",
+    "imgur.com": "imgur_threads",
+}
+
+
 class UploadManager:
     def __init__(
         self,
@@ -178,7 +188,8 @@ class UploadManager:
 
     def _send_job(self, file_list: List[str], cfg: Dict[str, Any], creds: Dict[str, str]) -> None:
         service_id = cfg["service"]
-        str_config = {k: str(v) for k, v in cfg.items()}
+        job_cfg = self._normalize_job_config(cfg)
+        str_config = {k: str(v) for k, v in job_cfg.items()}
 
         logger.info(f"_send_job for {service_id}: thumbnail_size={cfg.get('thumbnail_size')!r}")
 
@@ -218,6 +229,24 @@ class UploadManager:
             "config": str_config,
         }
         self.bridge.send_cmd(job_data)
+
+    @staticmethod
+    def _normalize_job_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
+        """Return a sidecar-ready config with service thread controls normalized."""
+        normalized = cfg.copy()
+        service_id = str(normalized.get("service", ""))
+        thread_key = SERVICE_THREAD_KEYS.get(service_id)
+
+        if thread_key and normalized.get(thread_key) not in (None, ""):
+            normalized["threads"] = normalized[thread_key]
+
+        try:
+            threads = int(normalized.get("threads", 2))
+        except (TypeError, ValueError):
+            threads = 2
+
+        normalized["threads"] = max(1, threads)
+        return normalized
 
     def _process_events(self) -> None:
         """Read events from the bridge and update UI-facing queues."""

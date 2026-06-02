@@ -2,14 +2,21 @@
 
 ## Executive Summary
 
-**Product Version:** v1.2.4
-**Architecture Version:** v2.4.0 (Complete Migration - 100% Plugin-Driven)
+**Product Version:** v1.3.0
+**Architecture Version:** v2.5.0 (Protocol Hardening - Correlated Sidecar Workflows)
 
 **Status:** The application is now **fully refactored** with a plugin-driven architecture. The split-brain problem has been RESOLVED by making Go a "dumb HTTP runner" that executes requests defined by Python plugins. ALL services (stateless APIs and session-based) now use the generic HTTP runner!
 
 **Migration Progress:** 5/5 services (100%) using generic HTTP runner - **MIGRATION COMPLETE!**
 
-## Recent Fixes (v2.4.0)
+## Recent Fixes (v2.5.0)
+
+### ✅ RESOLVED: Protocol Hardening and Sidecar Event Correlation
+- **Problem:** The generic HTTP runner needed stronger support for multi-step upload flows, and Python needed to avoid accepting stale sidecar output events when multiple uploads were active.
+- **Solution:** Enhanced the runner protocol with chained prerequests, shared cookie sessions, relative endpoint resolution, template substitution, JSON array paths, regex/HTML extraction, response templates, and request IDs.
+- **Impact:** Plugins can describe more complex upload workflows while the sidecar keeps request/response events correlated and safe under concurrency.
+
+## Previous Fixes (v2.4.0)
 
 ### ✅ RESOLVED: Complete Migration to Generic HTTP Runner (100%)
 - **Problem:** TurboImageHost and ImageBam still used hardcoded Go logic. ImageBam had complex 4-step login requiring template substitution in headers/form fields.

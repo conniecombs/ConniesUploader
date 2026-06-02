@@ -105,7 +105,7 @@ func (m *Module) Upload(ctx context.Context, fp string, job *core.JobRequest) (s
 		return "", "", err
 	}
 	raw, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	var res struct {
 		Success bool   `json:"success"`
@@ -137,7 +137,7 @@ func (m *Module) doLogin(creds map[string]string) bool {
 			"login":    {"Login"},
 		}
 		if r, err := m.doRequest(context.Background(), "POST", "https://www.turboimagehost.com/login", strings.NewReader(v.Encode()), "application/x-www-form-urlencoded"); err == nil {
-			r.Body.Close()
+			_ = r.Body.Close()
 		}
 	}
 

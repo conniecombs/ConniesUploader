@@ -43,21 +43,21 @@ This is the primary method for creating releases.
 Add a new version section at the top of `CHANGELOG.md`:
 
 ```markdown
-## [1.2.4] - 2026-05-20
+## [1.3.0] - 2026-06-02
 
-### Fixed
-- Packaged executable startup crash
-- Cross-platform CI path assertions
+### Added
+- Generic HTTP runner protocol hardening
+- Sidecar request IDs for correlated upload responses
 
 ### Security
-- Python dependency audit updates
+- Go and Python dependency audit hardening
 ```
 
 **Step 2: Commit Changes**
 
 ```bash
-git add CHANGELOG.md README.md ARCHITECTURE.md REMAINING_ISSUES.md CONTRIBUTING.md docs/README.md docs/guides/BUILD_TROUBLESHOOTING.md docs/guides/PLUGIN_CREATION_GUIDE.md docs/releases/RELEASE_NOTES.md docs/releases/RELEASE_NOTES_v1.2.4.md docs/releases/RELEASE_PROCESS.md
-git commit -m "Prepare release v1.2.4"
+git add CHANGELOG.md README.md ARCHITECTURE.md REMAINING_ISSUES.md CONTRIBUTING.md docs/README.md docs/guides/BUILD_TROUBLESHOOTING.md docs/guides/PLUGIN_CREATION_GUIDE.md docs/releases/RELEASE_NOTES.md docs/releases/RELEASE_NOTES_v1.3.0.md docs/releases/RELEASE_PROCESS.md
+git commit -m "Prepare release v1.3.0"
 git push origin main
 ```
 
@@ -65,10 +65,10 @@ git push origin main
 
 ```bash
 # Create an annotated tag
-git tag -a v1.2.4 -m "Release v1.2.4"
+git tag -a v1.3.0 -m "Release v1.3.0"
 
 # Push the tag to trigger the release workflow
-git push origin v1.2.4
+git push origin v1.3.0
 ```
 
 **Step 4: Monitor the Release**
@@ -83,7 +83,7 @@ You can also trigger a release manually from the GitHub UI:
 
 1. Go to **Actions** → **Release - Build and Publish**
 2. Click **Run workflow**
-3. Enter the version (e.g., `v1.2.4`)
+3. Enter the version (e.g., `v1.3.0`)
 4. Click **Run workflow**
 
 This is useful for:

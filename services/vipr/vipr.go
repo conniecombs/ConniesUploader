@@ -158,7 +158,7 @@ func (m *Module) ListGalleries(creds map[string]string) []map[string]string {
 func (m *Module) CreateGallery(_ map[string]string, name string) (string, interface{}, error) {
 	v := url.Values{"op": {"my_files"}, "add_folder": {name}}
 	if r, err := m.doRequest(context.Background(), "GET", "https://vipr.im/?"+v.Encode(), nil, ""); err == nil {
-		r.Body.Close()
+		_ = r.Body.Close()
 	}
 	return "0", "0", nil
 }
@@ -172,7 +172,7 @@ func (m *Module) doLogin(creds map[string]string) bool {
 		"password": {creds["vipr_pass"]},
 	}
 	if r, err := m.doRequest(context.Background(), "POST", "https://vipr.im/login.html", strings.NewReader(v.Encode()), "application/x-www-form-urlencoded"); err == nil {
-		r.Body.Close()
+		_ = r.Body.Close()
 	}
 
 	resp, err := m.doRequest(context.Background(), "GET", "https://vipr.im/", nil, "")

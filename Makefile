@@ -22,7 +22,7 @@ endif
 GO_FLAGS := -ldflags="-s -w"
 PYINSTALLER_FLAGS := --noconsole --onefile --clean
 APP_NAME := ConniesUploader
-VERSION := 1.2.4
+VERSION := 1.3.0
 
 # Default target
 all: build

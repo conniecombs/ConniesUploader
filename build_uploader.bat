@@ -9,7 +9,7 @@ cd /d "%SCRIPT_DIR%" || exit /b 1
 title Connie's Uploader - Build Tool
 
 set "APP_NAME=ConniesUploader"
-set "VERSION=1.2.4"
+set "VERSION=1.3.0"
 
 REM requirements.txt pins pyinstaller==6.11.1, which supports Python <3.14.
 set "PYTHON_MIN_MINOR=11"
@@ -137,9 +137,9 @@ if not exist "%SCRIPT_DIR%main.go" (
     exit /b 1
 )
 
-go mod tidy
+go mod download
 if errorlevel 1 (
-    echo [ERROR] go mod tidy failed!
+    echo [ERROR] go mod download failed!
     exit /b 1
 )
 

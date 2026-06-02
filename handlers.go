@@ -33,11 +33,11 @@ func handleJob(job JobRequest) {
 	ensureInitialized()
 	defer func() {
 		if r := recover(); r != nil {
-			sendJSON(OutputEvent{Type: "error", Msg: fmt.Sprintf("Panic: %v", r)})
+			sendJobEvent(&job, OutputEvent{Type: "error", Msg: fmt.Sprintf("Panic: %v", r)})
 		}
 	}()
 	if err := core.ValidateJobRequest(&job); err != nil {
-		sendJSON(OutputEvent{Type: "error", Msg: fmt.Sprintf("Invalid job: %v", err)})
+		sendJobEvent(&job, OutputEvent{Type: "error", Msg: fmt.Sprintf("Invalid job: %v", err)})
 		return
 	}
 	if job.RateLimits != nil {
@@ -67,7 +67,7 @@ func handleJob(job JobRequest) {
 	case "generate_thumb":
 		handleGenerateThumb(job)
 	default:
-		sendJSON(OutputEvent{Type: "error", Msg: fmt.Sprintf("Unsupported action: %s", job.Action)})
+		sendJobEvent(&job, OutputEvent{Type: "error", Msg: fmt.Sprintf("Unsupported action: %s", job.Action)})
 	}
 }
 
@@ -93,12 +93,12 @@ func handleUpload(job JobRequest) {
 	}
 	close(filesChan)
 	wg.Wait()
-	sendJSON(OutputEvent{Type: "batch_complete", Status: "done"})
+	sendJobEvent(&job, OutputEvent{Type: "batch_complete", Status: "done"})
 }
 
 func handleHttpUpload(job JobRequest) {
 	if job.HttpSpec == nil {
-		sendJSON(OutputEvent{Type: "error", Msg: "http_upload requires http_spec field"})
+		sendJobEvent(&job, OutputEvent{Type: "error", Msg: "http_upload requires http_spec field"})
 		return
 	}
 	filesChan := make(chan string, len(job.Files))
@@ -118,7 +118,7 @@ func handleHttpUpload(job JobRequest) {
 	}
 	close(filesChan)
 	wg.Wait()
-	sendJSON(OutputEvent{Type: "batch_complete", Status: "done"})
+	sendJobEvent(&job, OutputEvent{Type: "batch_complete", Status: "done"})
 }
 
 func processFile(fp string, job *JobRequest) {
@@ -126,11 +126,14 @@ func processFile(fp string, job *JobRequest) {
 	ctx, cancel := context.WithTimeout(context.Background(), core.ClientTimeout)
 	defer cancel()
 
-	type result struct{ url, thumb string; err error }
+	type result struct {
+		url, thumb string
+		err        error
+	}
 	resultChan := make(chan result, 1)
 
 	go func() {
-		sendJSON(OutputEvent{Type: "status", FilePath: fp, Status: "Uploading"})
+		sendJobEvent(job, OutputEvent{Type: "status", FilePath: fp, Status: "Uploading"})
 		cfg := job.RetryConfig
 		if cfg == nil {
 			cfg = getDefaultRetryConfig()
@@ -159,15 +162,15 @@ func processFile(fp string, job *JobRequest) {
 	select {
 	case res := <-resultChan:
 		if res.err != nil {
-			sendJSON(OutputEvent{Type: "status", FilePath: fp, Status: "Failed"})
-			sendJSON(OutputEvent{Type: "error", FilePath: fp, Msg: res.err.Error()})
+			sendJobEvent(job, OutputEvent{Type: "status", FilePath: fp, Status: "Failed"})
+			sendJobEvent(job, OutputEvent{Type: "error", FilePath: fp, Msg: res.err.Error()})
 		} else {
-			sendJSON(OutputEvent{Type: "result", FilePath: fp, Url: res.url, Thumb: res.thumb})
-			sendJSON(OutputEvent{Type: "status", FilePath: fp, Status: "Done"})
+			sendJobEvent(job, OutputEvent{Type: "result", FilePath: fp, Url: res.url, Thumb: res.thumb})
+			sendJobEvent(job, OutputEvent{Type: "status", FilePath: fp, Status: "Done"})
 		}
 	case <-ctx.Done():
-		sendJSON(OutputEvent{Type: "status", FilePath: fp, Status: "Timeout"})
-		sendJSON(OutputEvent{Type: "error", FilePath: fp, Msg: "Upload timed out"})
+		sendJobEvent(job, OutputEvent{Type: "status", FilePath: fp, Status: "Timeout"})
+		sendJobEvent(job, OutputEvent{Type: "error", FilePath: fp, Msg: "Upload timed out"})
 	}
 }
 
@@ -175,24 +178,18 @@ func processFileGeneric(fp string, job *JobRequest) {
 	ctx, cancel := context.WithTimeout(context.Background(), core.ClientTimeout)
 	defer cancel()
 
-	type result struct{ url, thumb string; err error }
+	type result struct {
+		url, thumb string
+		err        error
+	}
 	resultChan := make(chan result, 1)
 
 	go func() {
-		sendJSON(OutputEvent{Type: "status", FilePath: fp, Status: "Uploading"})
-		cfg := job.RetryConfig
-		if cfg == nil {
-			cfg = getDefaultRetryConfig()
-		}
-
-		type ur struct{ url, thumb string }
-		res, err := retryWithBackoff(ctx, cfg, func() (ur, int, error) {
-			imgURL, thumb, err := executeHttpUpload(ctx, fp, job)
-			return ur{imgURL, thumb}, extractStatusCode(err), err
-		}, log.WithField("file", filepath.Base(fp)))
+		sendJobEvent(job, OutputEvent{Type: "status", FilePath: fp, Status: "Uploading"})
+		imgURL, thumb, err := executeHttpUpload(ctx, fp, job)
 
 		select {
-		case resultChan <- result{res.url, res.thumb, err}:
+		case resultChan <- result{imgURL, thumb, err}:
 		case <-ctx.Done():
 		}
 	}()
@@ -200,15 +197,15 @@ func processFileGeneric(fp string, job *JobRequest) {
 	select {
 	case res := <-resultChan:
 		if res.err != nil {
-			sendJSON(OutputEvent{Type: "status", FilePath: fp, Status: "Failed"})
-			sendJSON(OutputEvent{Type: "error", FilePath: fp, Msg: res.err.Error()})
+			sendJobEvent(job, OutputEvent{Type: "status", FilePath: fp, Status: "Failed"})
+			sendJobEvent(job, OutputEvent{Type: "error", FilePath: fp, Msg: res.err.Error()})
 		} else {
-			sendJSON(OutputEvent{Type: "result", FilePath: fp, Url: res.url, Thumb: res.thumb})
-			sendJSON(OutputEvent{Type: "status", FilePath: fp, Status: "Done"})
+			sendJobEvent(job, OutputEvent{Type: "result", FilePath: fp, Url: res.url, Thumb: res.thumb})
+			sendJobEvent(job, OutputEvent{Type: "status", FilePath: fp, Status: "Done"})
 		}
 	case <-ctx.Done():
-		sendJSON(OutputEvent{Type: "status", FilePath: fp, Status: "Timeout"})
-		sendJSON(OutputEvent{Type: "error", FilePath: fp, Msg: "Upload timed out"})
+		sendJobEvent(job, OutputEvent{Type: "status", FilePath: fp, Status: "Timeout"})
+		sendJobEvent(job, OutputEvent{Type: "error", FilePath: fp, Msg: "Upload timed out"})
 	}
 }
 
@@ -220,18 +217,18 @@ func handleLoginVerify(job JobRequest) {
 	ensureInitialized()
 	svc, ok := registry.Get(job.Service)
 	if !ok {
-		sendJSON(OutputEvent{Type: "result", Status: "success", Msg: "No login required"})
+		sendJobEvent(&job, OutputEvent{Type: "result", Status: "success", Msg: "No login required"})
 		return
 	}
 	auth, ok := svc.(services.Authenticator)
 	if !ok {
-		sendJSON(OutputEvent{Type: "result", Status: "success", Msg: "No login required"})
+		sendJobEvent(&job, OutputEvent{Type: "result", Status: "success", Msg: "No login required"})
 		return
 	}
 	if auth.Login(job.Creds) {
-		sendJSON(OutputEvent{Type: "result", Status: "success", Msg: "Login verified"})
+		sendJobEvent(&job, OutputEvent{Type: "result", Status: "success", Msg: "Login verified"})
 	} else {
-		sendJSON(OutputEvent{Type: "result", Status: "failed", Msg: "Login failed"})
+		sendJobEvent(&job, OutputEvent{Type: "result", Status: "failed", Msg: "Login failed"})
 	}
 }
 
@@ -243,7 +240,7 @@ func handleListGalleries(job JobRequest) {
 			galleries = lister.ListGalleries(job.Creds)
 		}
 	}
-	sendJSON(OutputEvent{Type: "data", Data: galleries, Status: "success"})
+	sendJobEvent(&job, OutputEvent{Type: "data", Data: galleries, Status: "success"})
 }
 
 func handleCreateGallery(job JobRequest) {
@@ -251,19 +248,19 @@ func handleCreateGallery(job JobRequest) {
 	name := job.Config["gallery_name"]
 	svc, ok := registry.Get(job.Service)
 	if !ok {
-		sendJSON(OutputEvent{Type: "result", Status: "failed", Msg: "service not supported"})
+		sendJobEvent(&job, OutputEvent{Type: "result", Status: "failed", Msg: "service not supported"})
 		return
 	}
 	creator, ok := svc.(services.GalleryCreator)
 	if !ok {
-		sendJSON(OutputEvent{Type: "result", Status: "failed", Msg: "service does not support gallery creation"})
+		sendJobEvent(&job, OutputEvent{Type: "result", Status: "failed", Msg: "service does not support gallery creation"})
 		return
 	}
 	id, data, err := creator.CreateGallery(job.Creds, name)
 	if err != nil {
-		sendJSON(OutputEvent{Type: "result", Status: "failed", Msg: err.Error()})
+		sendJobEvent(&job, OutputEvent{Type: "result", Status: "failed", Msg: err.Error()})
 	} else {
-		sendJSON(OutputEvent{Type: "result", Status: "success", Msg: id, Data: data})
+		sendJobEvent(&job, OutputEvent{Type: "result", Status: "success", Msg: id, Data: data})
 	}
 }
 
@@ -272,7 +269,7 @@ func handleFinalizeGallery(job JobRequest) {
 	uploadHash := job.Config["gallery_upload_hash"]
 	galleryHash := job.Config["gallery_hash"]
 	if uploadHash == "" || galleryHash == "" {
-		sendJSON(OutputEvent{Type: "error", Msg: "Missing gallery hashes"})
+		sendJobEvent(&job, OutputEvent{Type: "error", Msg: "Missing gallery hashes"})
 		return
 	}
 
@@ -280,12 +277,12 @@ func handleFinalizeGallery(job JobRequest) {
 	if ok {
 		if finalizer, ok := svc.(services.GalleryFinalizer); ok {
 			if err := finalizer.FinalizeGallery(job.Config); err != nil {
-				sendJSON(OutputEvent{Type: "result", Status: "failed", Msg: err.Error()})
+				sendJobEvent(&job, OutputEvent{Type: "result", Status: "failed", Msg: err.Error()})
 				return
 			}
 		}
 	}
-	sendJSON(OutputEvent{Type: "result", Status: "success", Msg: "Gallery finalized"})
+	sendJobEvent(&job, OutputEvent{Type: "result", Status: "success", Msg: "Gallery finalized"})
 }
 
 // ---------------------------------------------------------------------------
@@ -296,12 +293,12 @@ func handleViperLogin(job JobRequest) {
 	ensureInitialized()
 	svc, ok := registry.Get(vipergirls.ServiceID)
 	if !ok {
-		sendJSON(OutputEvent{Type: "result", Status: "failed", Msg: "vipergirls module not registered"})
+		sendJobEvent(&job, OutputEvent{Type: "result", Status: "failed", Msg: "vipergirls module not registered"})
 		return
 	}
 	forum, ok := svc.(services.ForumService)
 	if !ok {
-		sendJSON(OutputEvent{Type: "result", Status: "failed", Msg: "vipergirls does not implement ForumService"})
+		sendJobEvent(&job, OutputEvent{Type: "result", Status: "failed", Msg: "vipergirls does not implement ForumService"})
 		return
 	}
 	success, msg := forum.LoginForum(job.Creds)
@@ -309,19 +306,19 @@ func handleViperLogin(job JobRequest) {
 	if success {
 		status = "success"
 	}
-	sendJSON(OutputEvent{Type: "result", Status: status, Msg: msg})
+	sendJobEvent(&job, OutputEvent{Type: "result", Status: status, Msg: msg})
 }
 
 func handleViperPost(job JobRequest) {
 	ensureInitialized()
 	svc, ok := registry.Get(vipergirls.ServiceID)
 	if !ok {
-		sendJSON(OutputEvent{Type: "result", Status: "failed", Msg: "vipergirls module not registered"})
+		sendJobEvent(&job, OutputEvent{Type: "result", Status: "failed", Msg: "vipergirls module not registered"})
 		return
 	}
 	forum, ok := svc.(services.ForumService)
 	if !ok {
-		sendJSON(OutputEvent{Type: "result", Status: "failed", Msg: "vipergirls does not implement ForumService"})
+		sendJobEvent(&job, OutputEvent{Type: "result", Status: "failed", Msg: "vipergirls does not implement ForumService"})
 		return
 	}
 	success, msg := forum.Post(job.Config)
@@ -329,7 +326,7 @@ func handleViperPost(job JobRequest) {
 	if success {
 		status = "success"
 	}
-	sendJSON(OutputEvent{Type: "result", Status: status, Msg: msg})
+	sendJobEvent(&job, OutputEvent{Type: "result", Status: status, Msg: msg})
 }
 
 // ---------------------------------------------------------------------------
@@ -338,7 +335,7 @@ func handleViperPost(job JobRequest) {
 
 func handleGenerateThumb(job JobRequest) {
 	if len(job.Files) == 0 {
-		sendJSON(OutputEvent{Type: "error", Msg: "No file provided"})
+		sendJobEvent(&job, OutputEvent{Type: "error", Msg: "No file provided"})
 		return
 	}
 	w, err := strconv.Atoi(job.Config["width"])
@@ -355,23 +352,23 @@ func handleGenerateThumb(job JobRequest) {
 	fp := job.Files[0]
 	f, err := os.Open(fp) // #nosec G304 -- path is validated before this action is issued.
 	if err != nil {
-		sendJSON(OutputEvent{Type: "error", Msg: "File not found"})
+		sendJobEvent(&job, OutputEvent{Type: "error", Msg: "File not found"})
 		return
 	}
 	defer f.Close()
 
 	img, _, err := image.Decode(f)
 	if err != nil {
-		sendJSON(OutputEvent{Type: "error", Msg: "Decode failed"})
+		sendJobEvent(&job, OutputEvent{Type: "error", Msg: "Decode failed"})
 		return
 	}
 	thumb := imaging.Resize(img, w, 0, imaging.Lanczos)
 	var buf bytes.Buffer
 	if err := jpeg.Encode(&buf, thumb, &jpeg.Options{Quality: 70}); err != nil {
-		sendJSON(OutputEvent{Type: "error", Msg: "Encode failed"})
+		sendJobEvent(&job, OutputEvent{Type: "error", Msg: "Encode failed"})
 		return
 	}
-	sendJSON(OutputEvent{
+	sendJobEvent(&job, OutputEvent{
 		Type:     "data",
 		Data:     base64.StdEncoding.EncodeToString(buf.Bytes()),
 		Status:   "success",
@@ -390,3 +387,9 @@ func workerLimit(config map[string]string) int {
 	return 2
 }
 
+func sendJobEvent(job *JobRequest, event OutputEvent) {
+	if event.ID == "" && job != nil {
+		event.ID = job.ID
+	}
+	sendJSON(event)
+}

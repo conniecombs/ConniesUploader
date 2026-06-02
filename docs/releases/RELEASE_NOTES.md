@@ -4,24 +4,25 @@ This directory contains release notes and publishing guidance for Connie's Uploa
 
 ## Latest Release
 
-**v1.2.4 - "CI & Packaging Reliability"**
-Release date: May 20, 2026
-Tag: `v1.2.4`
+**v1.3.0 - "Protocol Hardening & Release Reliability"**
+Release date: June 2, 2026
+Tag: `v1.3.0`
 
-Read the full notes: [RELEASE_NOTES_v1.2.4.md](RELEASE_NOTES_v1.2.4.md)
+Read the full notes: [RELEASE_NOTES_v1.3.0.md](RELEASE_NOTES_v1.3.0.md)
 
 ### Summary
 
-- Fixed packaged executable startup by updating `tkinterdnd2` to avoid the legacy `tkinter.tix` import path.
-- Updated Pillow to `12.2.0` for current image-processing security fixes.
-- Replaced Safety dependency checks with `pip-audit==2.10.0`.
-- Hardened Windows and macOS CI path assertions.
-- Mocked GUI dialogs that could stall headless CI.
+- Expanded the generic Go HTTP runner with chained prerequests, cookie sessions, template substitution, and richer extraction support.
+- Added sidecar request IDs to keep concurrent upload responses correlated.
+- Added Imgur request-building support for the shared sidecar workflow.
+- Updated Go security-sensitive dependencies and pinned strict Python audit tools.
+- Tightened release/security gates around `govulncheck`, gosec, `pip-audit`, and Bandit.
 
 ## Release History
 
 | Version | Date | Focus | Notes |
 |---------|------|-------|-------|
+| v1.3.0 | 2026-06-02 | Protocol Hardening & Release Reliability | [Notes](RELEASE_NOTES_v1.3.0.md) |
 | v1.2.4 | 2026-05-20 | CI & Packaging Reliability | [Notes](RELEASE_NOTES_v1.2.4.md) |
 | v1.2.3 | 2026-01-31 | Gallery Logic Fix | See [CHANGELOG.md](../../CHANGELOG.md) |
 | v1.2.2 | 2026-01-22 | Batch Upload Stability | [Notes](RELEASE_NOTES_v1.2.2.md) |
@@ -33,11 +34,11 @@ Read the full notes: [RELEASE_NOTES_v1.2.4.md](RELEASE_NOTES_v1.2.4.md)
 
 ## Publishing
 
-The release workflow is tag-based. For v1.2.4, use:
+The release workflow is tag-based. For v1.3.0, use:
 
 ```bash
-git tag -a v1.2.4 -m "Release v1.2.4"
-git push origin v1.2.4
+git tag -a v1.3.0 -m "Release v1.3.0"
+git push origin v1.3.0
 ```
 
 See [RELEASE_PROCESS.md](RELEASE_PROCESS.md) for the full checklist.

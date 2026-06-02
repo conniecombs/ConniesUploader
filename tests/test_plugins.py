@@ -318,6 +318,55 @@ class TestPixhostGalleryIntegration(unittest.TestCase):
         self.assertEqual(sent_configs[0]["gallery_upload_hash"], "upload456")
 
 
+class TestUploadManagerJobConfig(unittest.TestCase):
+    """Test sidecar job config normalization."""
+
+    def test_service_threads_are_mapped_to_sidecar_threads(self):
+        from modules.upload_manager import UploadManager
+
+        config = UploadManager._normalize_job_config(
+            {"service": "pixhost.to", "pix_threads": 7, "threads": 2}
+        )
+
+        self.assertEqual(config["threads"], 7)
+
+    def test_invalid_threads_fall_back_to_safe_default(self):
+        from modules.upload_manager import UploadManager
+
+        config = UploadManager._normalize_job_config(
+            {"service": "vipr.im", "vipr_threads": "not-a-number"}
+        )
+
+        self.assertEqual(config["threads"], 2)
+
+
+class TestImgurHttpSpec(unittest.TestCase):
+    """Test Imgur generic HTTP runner specification."""
+
+    def test_build_http_request_uses_client_id_authorization(self):
+        from modules.plugins.imgur import ImgurPlugin
+
+        plugin = ImgurPlugin()
+        request = plugin.build_http_request(
+            "/tmp/image.jpg",
+            {"album_id": "album123", "title": "Test Image"},
+            {"imgur_client_id": "client123"},
+        )
+
+        self.assertEqual(request["url"], "https://api.imgur.com/3/image")
+        self.assertEqual(request["headers"]["Authorization"], "Client-ID client123")
+        self.assertEqual(request["multipart_fields"]["album"]["value"], "album123")
+        self.assertEqual(request["response_parser"]["url_path"], "data.link")
+
+    def test_build_http_request_requires_imgur_credentials(self):
+        from modules.plugins.imgur import ImgurPlugin
+
+        plugin = ImgurPlugin()
+
+        with self.assertRaises(ValueError):
+            plugin.build_http_request("/tmp/image.jpg", {}, {})
+
+
 class TestPluginMetadata(unittest.TestCase):
     """Test plugin metadata completeness."""
 

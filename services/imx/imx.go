@@ -178,7 +178,7 @@ func (m *Module) doLogin(creds map[string]string) bool {
 
 	loginURL := "https://imx.to/login.php"
 	if r, err := m.doRequest(context.Background(), "GET", loginURL, nil, ""); err == nil {
-		r.Body.Close()
+		_ = r.Body.Close()
 	} else {
 		core.SendJSON(core.OutputEvent{Type: "error", Msg: fmt.Sprintf("IMX pre-login failed: %v", err)})
 		return false

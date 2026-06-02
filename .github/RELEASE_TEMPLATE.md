@@ -85,7 +85,7 @@ The automated release workflow will extract this content for the GitHub Release
 
 **Download the latest release:**
 
-👉 **[Download vVERSION](https://github.com/conniecombs/GolangVersion/releases/tag/vVERSION)**
+👉 **[Download vVERSION](https://github.com/conniecombs/ConniesUploader/releases/tag/vVERSION)**
 
 **Available builds:**
 - Windows: `ConniesUploader-vVERSION-windows-x64.zip`
@@ -115,7 +115,7 @@ sha256sum ConniesUploader  # or shasum -a 256 on macOS
 
 <!-- Additional information for this release -->
 
-- **Go Version:** 1.24.11+ required
+- **Go Version:** 1.25+ required
 - **Python Version:** 3.11+ required
 - **Tested On:** Windows 11, Ubuntu 22.04, macOS 13+
 
@@ -141,9 +141,9 @@ Special thanks to:
 
 ### 🔗 Links
 
-- [Full Changelog](https://github.com/conniecombs/GolangVersion/compare/vPREVIOUS...vVERSION)
-- [Documentation](https://github.com/conniecombs/GolangVersion#readme)
-- [Report Issues](https://github.com/conniecombs/GolangVersion/issues)
+- [Full Changelog](https://github.com/conniecombs/ConniesUploader/compare/vPREVIOUS...vVERSION)
+- [Documentation](https://github.com/conniecombs/ConniesUploader#readme)
+- [Report Issues](https://github.com/conniecombs/ConniesUploader/issues)
 
 ---
 

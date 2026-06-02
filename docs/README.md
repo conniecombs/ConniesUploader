@@ -55,6 +55,7 @@ docs/
 │   └── USER_TUTORIAL.md
 ├── releases/                    # Release documentation
 │   ├── RELEASE_NOTES.md
+│   ├── RELEASE_NOTES_v1.3.0.md
 │   ├── RELEASE_NOTES_v1.2.4.md
 │   ├── RELEASE_NOTES_v1.2.2.md
 │   ├── RELEASE_NOTES_v1.1.0.md
@@ -119,7 +120,7 @@ Contribution guidelines:
 
 ### [CHANGELOG.md](../CHANGELOG.md) (22KB)
 Detailed version history:
-- All releases from v1.0.0 to v1.2.4
+- All releases from v1.0.0 to v1.3.0
 - Feature additions
 - Bug fixes
 - Breaking changes
@@ -171,8 +172,14 @@ Complete end-user walkthrough:
 
 ## 🚀 Release Documentation (docs/releases/)
 
+### [RELEASE_NOTES_v1.3.0.md](releases/RELEASE_NOTES_v1.3.0.md)
+Latest release - "Protocol Hardening & Release Reliability" (June 2, 2026):
+- Generic HTTP runner support for chained prerequests, cookie sessions, template substitution, and richer extraction
+- Sidecar request IDs that keep concurrent upload responses correlated
+- Security workflow hardening for Go and Python dependency scans
+
 ### [RELEASE_NOTES_v1.2.4.md](releases/RELEASE_NOTES_v1.2.4.md)
-Latest release - "CI & Packaging Reliability" (May 20, 2026):
+"CI & Packaging Reliability" release (May 20, 2026):
 - Packaged executable startup fix for the `tkinter.tix` import crash
 - Pillow `12.2.0` security update and `pip-audit` dependency scanning
 - Cross-platform CI test hardening for Windows and macOS
@@ -332,6 +339,6 @@ Archive of implementation notes, phase summaries, and technical analyses from th
 
 ---
 
-**Last Updated**: 2026-05-20
+**Last Updated**: 2026-06-02
 **Documentation Version**: 2.1
-**Project Version**: v1.2.4
+**Project Version**: v1.3.0

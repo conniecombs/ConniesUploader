@@ -229,6 +229,36 @@ class TestSidecarRequestParsing:
         default_timeout = 5
         assert default_timeout > 0
 
+    def test_request_sync_ignores_uncorrelated_terminal_events(self):
+        """request_sync should only return a response carrying its request id."""
+        bridge = SidecarBridge.__new__(SidecarBridge)
+        bridge.listeners = []
+        bridge.listeners_lock = threading.RLock()
+
+        def fake_send_cmd(payload):
+            assert payload["id"]
+            with bridge.listeners_lock:
+                listeners = list(bridge.listeners)
+            for listener in listeners:
+                listener.put({"type": "result", "status": "success", "msg": "wrong response"})
+                listener.put(
+                    {
+                        "id": payload["id"],
+                        "type": "result",
+                        "status": "success",
+                        "msg": "right response",
+                    }
+                )
+            return True
+
+        bridge.send_cmd = fake_send_cmd
+
+        response = bridge.request_sync({"action": "verify", "service": "imx.to"}, timeout=1)
+
+        assert response["status"] == "success"
+        assert response["msg"] == "right response"
+        assert response["id"]
+
 
 @pytest.mark.unit
 class TestSidecarErrorHandling:

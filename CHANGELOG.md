@@ -9,6 +9,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.3.0] - 2026-06-02
+
+### Added
+
+**HTTP Runner Protocol Hardening**
+
+- Expanded the Go generic HTTP runner to support chained prerequests, shared cookie sessions, relative endpoint resolution, and header/form/body template substitution.
+- Added richer extraction support for JSON arrays, nested paths, HTML selectors, regex selectors, attribute extraction, response templates, and URL templates.
+- Added sidecar request IDs so Python only resolves upload responses from the matching Go event instead of accepting stale or unrelated output.
+
+**Imgur Sidecar Integration**
+
+- Added an Imgur HTTP request builder so Imgur uploads can use the same validated Python-to-Go sidecar workflow as the other active services.
+- Added tests for missing Imgur credentials and generated request shape.
+
+### Changed
+
+- Normalized per-service worker counts so configured thread values are consistently clamped and forwarded into upload jobs.
+- Moved Python coverage settings into `.coveragerc` and kept pytest configuration focused on test discovery and runtime behavior.
+- Updated Windows and Unix build scripts to rely on `go mod download` for reproducible builds without rewriting module metadata.
+- Refreshed release metadata, build banners, documentation links, and download artifact names for `v1.3.0`.
+
+### Security
+
+- Updated Go security-sensitive dependencies, including `golang.org/x/image`, `golang.org/x/net`, and `golang.org/x/sys`.
+- Tightened GitHub security scanning by making `govulncheck`, gosec, `pip-audit`, and medium-or-higher Bandit findings fail the workflow.
+- Added `pip-audit==2.10.0` and `bandit[sarif]==1.9.4` to the pinned Python dependency set.
+- Documented the ViperGirls legacy MD5 value as a protocol-required compatibility hash, not a security credential.
+
+### Fixed
+
+- Ensured sidecar response correlation does not cross wires when multiple uploads are active.
+- Ensured HTTP response bodies are closed explicitly in service code and test paths.
+- Preserved compatibility helpers while silencing false-positive unused warnings in strict Go linting.
+
+---
+
 ## [1.2.4] - 2026-05-20
 
 ### Fixed

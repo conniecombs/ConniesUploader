@@ -30,6 +30,7 @@ const (
 )
 
 type JobRequest struct {
+	ID          string            `json:"id,omitempty"`
 	Action      string            `json:"action"`
 	Service     string            `json:"service"`
 	Files       []string          `json:"files"`
@@ -85,6 +86,7 @@ type ResponseParserSpec struct {
 }
 
 type OutputEvent struct {
+	ID       string      `json:"id,omitempty"`
 	Type     string      `json:"type"`
 	FilePath string      `json:"file,omitempty"`
 	Status   string      `json:"status,omitempty"`

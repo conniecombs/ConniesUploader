@@ -13,7 +13,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 APP_NAME="ConniesUploader"
-VERSION="1.2.4"
+VERSION="1.3.0"
 PYTHON_MIN_MINOR=11
 PYTHON_MAX_MINOR=13
 GO_VERSION_MIN="1.25.9"
@@ -162,8 +162,8 @@ build_go_sidecar() {
         exit 1
     fi
 
-    echo "  - Running go mod tidy..."
-    go mod tidy
+    echo "  - Downloading Go modules..."
+    go mod download
 
     echo "  - Compiling optimized binary..."
     go build -ldflags="-s -w" -o "$SIDECAR_NAME" .

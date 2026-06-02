@@ -143,7 +143,7 @@ func (m *Module) doLogin(creds map[string]string) bool {
 		"&password=" + creds["imagebam_pass"] +
 		"&remember=on")
 	if r, err := m.doRequest(context.Background(), "POST", "https://www.imagebam.com/auth/login", v, "application/x-www-form-urlencoded"); err == nil {
-		r.Body.Close()
+		_ = r.Body.Close()
 	}
 
 	resp2, err := m.doRequest(context.Background(), "GET", "https://www.imagebam.com/", nil, "")

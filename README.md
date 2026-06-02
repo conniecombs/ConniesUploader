@@ -1,6 +1,6 @@
 # Connie's Uploader Ultimate
 
-![Project version badge showing v1.2.4](https://img.shields.io/badge/version-1.2.4-blue.svg)
+![Project version badge showing v1.3.0](https://img.shields.io/badge/version-1.3.0-blue.svg)
 ![MIT License badge](https://img.shields.io/badge/license-MIT-green.svg)
 ![Supported platforms: Windows, Linux, and macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)
 ![Continuous integration workflow status: passing](https://github.com/conniecombs/ConniesUploader/actions/workflows/ci.yml/badge.svg?branch=main)
@@ -11,7 +11,7 @@
 
 Connie's Uploader Ultimate is a desktop image-uploading tool with a CustomTkinter GUI and a Go sidecar for concurrent uploads. It supports batch uploads, gallery workflows, custom output templates, drag and drop, secure credential storage, and automated release builds for Windows, Linux, and macOS.
 
-**Latest release:** v1.2.4 "CI & Packaging Reliability" (May 20, 2026)
+**Latest release:** v1.3.0 "Protocol Hardening & Release Reliability" (June 2, 2026)
 
 ## Screenshots
 
@@ -48,27 +48,31 @@ The active upload plugins are:
 
 ## Latest Changelog
 
-### v1.2.4 - CI & Packaging Reliability
+### v1.3.0 - Protocol Hardening & Release Reliability
 
-Released May 20, 2026.
+Released June 2, 2026.
 
-**Fixed**
+**Added**
 
-- Updated `tkinterdnd2` to `0.4.3` so PyInstaller builds no longer crash while importing the removed legacy `tkinter.tix` module path.
-- Kept drag-and-drop support bundled through the existing PyInstaller `--collect-all tkinterdnd2` flow.
-- Normalized Windows short-path and macOS `/private/var` path assertions in the Python test suite.
-- Mocked GUI success dialogs in menu removal tests so headless Windows/macOS CI runs do not stall.
-- Aligned validation expectations for safe filename fallbacks, dangerous characters, and thread-count limits.
-
-**Security**
-
-- Updated `Pillow` to `12.2.0` for current image-processing security fixes.
-- Replaced Safety dependency scanning with `pip-audit==2.10.0` in CI and security workflows.
+- Expanded the Go generic HTTP runner with chained prerequests, cookie sessions, template substitution, richer JSON/HTML extraction, response templates, and relative endpoint resolution.
+- Added sidecar request IDs so Python only accepts correlated Go upload responses.
+- Added Imgur request-building support for the shared sidecar upload workflow.
 
 **Changed**
 
-- Pinned `flake8==7.1.1` for stable lint output in CI.
-- Refreshed release documentation, download links, and tag examples for `v1.2.4`.
+- Normalized per-service worker counts before upload jobs are sent to the sidecar.
+- Switched build scripts to `go mod download` for repeatable builds that do not rewrite module files.
+- Moved coverage configuration into `.coveragerc`.
+
+**Security**
+
+- Updated Go security-sensitive dependencies including `golang.org/x/image`, `golang.org/x/net`, and `golang.org/x/sys`.
+- Tightened GitHub security scanning around `govulncheck`, gosec, `pip-audit`, and medium-or-higher Bandit findings.
+
+**Fixed**
+
+- Prevented sidecar response mixups during concurrent uploads.
+- Ensured HTTP response bodies are closed explicitly in service paths.
 
 Full history is available in [CHANGELOG.md](CHANGELOG.md).
 
@@ -76,13 +80,13 @@ Full history is available in [CHANGELOG.md](CHANGELOG.md).
 
 ### Download a Release
 
-Download the latest release from [GitHub Releases](https://github.com/conniecombs/ConniesUploader/releases/tag/v1.2.4).
+Download the latest release from [GitHub Releases](https://github.com/conniecombs/ConniesUploader/releases/tag/v1.3.0).
 
 Expected release artifacts:
 
-- `ConniesUploader-v1.2.4-windows-x64.zip`
-- `ConniesUploader-v1.2.4-linux-x64.tar.gz`
-- `ConniesUploader-v1.2.4-macos-x64.zip`
+- `ConniesUploader-v1.3.0-windows-x64.zip`
+- `ConniesUploader-v1.3.0-linux-x64.tar.gz`
+- `ConniesUploader-v1.3.0-macos-x64.zip`
 
 Each release artifact includes a SHA256 checksum.
 

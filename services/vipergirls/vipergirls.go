@@ -7,7 +7,7 @@ package vipergirls
 
 import (
 	"context"
-	"crypto/md5"
+	"crypto/md5" // #nosec G501 -- legacy vBulletin login requires a client-side MD5 password hash.
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -45,20 +45,20 @@ func (m *Module) LoginForum(creds map[string]string) (bool, string) {
 
 	// Seed cookies.
 	if r, err := m.doRequest(context.Background(), "GET", "https://vipergirls.to/login.php?do=login", nil, ""); err == nil {
-		r.Body.Close()
+		_ = r.Body.Close()
 	}
 
-	hasher := md5.New()
+	hasher := md5.New() // #nosec G401 -- legacy vBulletin login requires this non-cryptographic protocol hash.
 	hasher.Write([]byte(pass))
 	md5Pass := hex.EncodeToString(hasher.Sum(nil))
 
 	v := url.Values{
-		"vb_login_username":      {user},
-		"vb_login_md5password":   {md5Pass},
+		"vb_login_username":        {user},
+		"vb_login_md5password":     {md5Pass},
 		"vb_login_md5password_utf": {md5Pass},
-		"cookieuser":             {"1"},
-		"do":                     {"login"},
-		"securitytoken":          {"guest"},
+		"cookieuser":               {"1"},
+		"do":                       {"login"},
+		"securitytoken":            {"guest"},
 	}
 	resp, err := m.doRequest(context.Background(), "POST", "https://vipergirls.to/login.php?do=login",
 		strings.NewReader(v.Encode()), "application/x-www-form-urlencoded")
@@ -66,7 +66,7 @@ func (m *Module) LoginForum(creds map[string]string) (bool, string) {
 		return false, fmt.Sprintf("login request failed: %v", err)
 	}
 	b, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	body := string(b)
 
 	if strings.Contains(body, "Thank you for logging in") {
@@ -91,7 +91,7 @@ func (m *Module) Post(config map[string]string) (bool, string) {
 	if needsRefresh {
 		if resp, err := m.doRequest(context.Background(), "GET", "https://vipergirls.to/forum.php", nil, ""); err == nil {
 			b, _ := io.ReadAll(resp.Body)
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			if matches := regexp.MustCompile(`SECURITYTOKEN\s*=\s*"([^"]+)"`).FindStringSubmatch(string(b)); len(matches) > 1 {
 				m.mu.Lock()
 				m.securityToken = matches[1]
