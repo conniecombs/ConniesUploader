@@ -87,6 +87,8 @@ class UploadController:
     def stop_upload(self) -> None:
         """Signal all upload threads to stop gracefully."""
         self.cancel_event.set()
+        with self.post_condition:
+            self.post_condition.notify_all()
 
     def handle_upload_result(self, fp: str, img: str, thumb: str) -> bool:
         self.results.append((fp, img, thumb))
@@ -106,7 +108,9 @@ class UploadController:
                     logger.error(f"Pixhost finalize error: {e}")
             client.close()
 
-        self.is_uploading = False
+        with self.post_condition:
+            self.is_uploading = False
+            self.post_condition.notify_all()
 
         # Copy to clipboard if needed
         if self.settings.get("auto_copy") and self.clipboard_buffer:
@@ -258,28 +262,39 @@ class UploadController:
             logger.error("Auto-Post Queue: Login Failed.")
             return
 
-        with self.post_condition:
-            while self.is_uploading or len(self.post_holding_pen) > 0:
+        while True:
+            with self.post_condition:
                 if self.cancel_event.is_set():
                     break
 
+                if not self.is_uploading and len(self.post_holding_pen) == 0:
+                    break
+
                 if self.next_post_index in self.post_holding_pen:
+                    batch_index = self.next_post_index
                     content = self.post_holding_pen.pop(self.next_post_index)
-                    self.post_condition.release()  # Release lock during network IO
-
-                    logger.info(f"Auto-Post Queue: Posting Batch #{self.next_post_index}...")
-
-                    if vg.post_reply(tid, content):
-                        logger.info(f"Auto-Post Queue: Batch #{self.next_post_index} SUCCESS.")
-                    else:
-                        logger.error(f"Auto-Post Queue: Batch #{self.next_post_index} FAILED.")
-
-                    self.next_post_index += 1
-                    time.sleep(config.POST_COOLDOWN_SECONDS)
-
-                    self.post_condition.acquire()  # Re-acquire lock
                 else:
                     self.post_condition.wait(timeout=1.0)
+                    continue
+
+            logger.info(f"Auto-Post Queue: Posting Batch #{batch_index}...")
+            try:
+                posted = vg.post_reply(tid, content)
+            except Exception as e:
+                logger.exception(f"Auto-Post Queue: Batch #{batch_index} failed unexpectedly: {e}")
+                posted = False
+
+            if posted:
+                logger.info(f"Auto-Post Queue: Batch #{batch_index} SUCCESS.")
+            else:
+                logger.error(f"Auto-Post Queue: Batch #{batch_index} FAILED.")
+
+            with self.post_condition:
+                if self.next_post_index == batch_index:
+                    self.next_post_index += 1
+
+            time.sleep(config.POST_COOLDOWN_SECONDS)
+
         logger.info("Auto-Post Queue: Finished.")
 
     def open_output_folder(self) -> None:

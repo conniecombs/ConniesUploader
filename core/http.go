@@ -121,40 +121,51 @@ func ExecuteHttpUpload(ctx context.Context, client *http.Client, fp string, job 
 
 	res, err := RetryWithBackoff(ctx, retryConfig, func() (uploadResult, int, error) {
 		pr, pw := io.Pipe()
+		defer pr.Close()
 		writer := multipart.NewWriter(pw)
 		go func() {
-			defer pw.Close()
-			defer writer.Close()
-			for fieldName, field := range spec.MultipartFields {
-				switch field.Type {
-				case "file":
-					part, _ := writer.CreateFormFile(fieldName, filepath.Base(fp))
-					f, err := os.Open(fp) // #nosec G304
-					if err != nil {
-						pw.CloseWithError(err)
-						return
-					}
-					defer f.Close()
-					fi, err := f.Stat()
-					if err != nil {
-						pw.CloseWithError(err)
-						return
-					}
-					pw2 := NewProgressWriter(part, fi.Size(), fp)
-					if _, err := io.Copy(pw2, f); err != nil {
-						pw.CloseWithError(err)
-						return
-					}
-				case "text":
-					_ = writer.WriteField(fieldName, substituteValues(field.Value, extractedValues))
-				case "dynamic":
-					if val, ok := extractedValues[field.Value]; ok {
-						_ = writer.WriteField(fieldName, val)
-					} else {
-						_ = writer.WriteField(fieldName, substituteValues(field.Value, extractedValues))
+			closeErr := func() error {
+				for fieldName, field := range spec.MultipartFields {
+					switch field.Type {
+					case "file":
+						part, err := writer.CreateFormFile(fieldName, filepath.Base(fp))
+						if err != nil {
+							return err
+						}
+						f, err := os.Open(fp) // #nosec G304
+						if err != nil {
+							return err
+						}
+						defer func() { _ = f.Close() }()
+						fi, err := f.Stat()
+						if err != nil {
+							return err
+						}
+						pw2 := NewProgressWriter(part, fi.Size(), fp)
+						if _, err := io.Copy(pw2, f); err != nil {
+							return err
+						}
+					case "text":
+						if err := writer.WriteField(fieldName, substituteValues(field.Value, extractedValues)); err != nil {
+							return err
+						}
+					case "dynamic":
+						value := substituteValues(field.Value, extractedValues)
+						if val, ok := extractedValues[field.Value]; ok {
+							value = val
+						}
+						if err := writer.WriteField(fieldName, value); err != nil {
+							return err
+						}
 					}
 				}
+				return writer.Close()
+			}()
+			if closeErr != nil {
+				_ = pw.CloseWithError(closeErr)
+				return
 			}
+			_ = pw.Close()
 		}()
 
 		method := spec.Method

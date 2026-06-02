@@ -10,8 +10,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/conniecombs/GolangVersion/core"
 )
@@ -133,6 +135,45 @@ func TestExecuteHttpUploadSupportsChainedPreRequests(t *testing.T) {
 	if thumbStr != "https://cdn.example/thumb.jpg" {
 		t.Fatalf("thumb = %q", thumbStr)
 	}
+}
+
+func TestExecuteHttpUploadClosesPipeReaderWhenRequestCreationFails(t *testing.T) {
+	tmpDir := t.TempDir()
+	imagePath := tmpDir + "/upload.jpg"
+	if err := createTestImage(imagePath); err != nil {
+		t.Fatalf("Failed to create test image: %v", err)
+	}
+
+	before := runtime.NumGoroutine()
+	job := &JobRequest{
+		Action:  "http_upload",
+		Service: "test.service",
+		Files:   []string{imagePath},
+		HttpSpec: &HttpRequestSpec{
+			URL:    "://bad-url",
+			Method: "POST",
+			MultipartFields: map[string]MultipartField{
+				"image": {Type: "file", Value: imagePath},
+			},
+			ResponseParser: ResponseParserSpec{Type: "json"},
+		},
+	}
+
+	for i := 0; i < 20; i++ {
+		if _, _, err := core.ExecuteHttpUpload(context.Background(), http.DefaultClient, imagePath, job); err == nil {
+			t.Fatal("ExecuteHttpUpload succeeded with an invalid URL")
+		}
+	}
+
+	deadline := time.Now().Add(1 * time.Second)
+	for time.Now().Before(deadline) {
+		runtime.GC()
+		if runtime.NumGoroutine() <= before+4 {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("multipart pipe writer goroutines appear leaked: before=%d after=%d", before, runtime.NumGoroutine())
 }
 
 func TestParseHttpResponseSupportsHTMLAndTemplates(t *testing.T) {
