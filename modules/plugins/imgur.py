@@ -146,6 +146,53 @@ class ImgurPlugin(ImageHostPlugin):
 
     # --- Upload Implementation ---
 
+    def build_http_request(
+        self, file_path: str, config: Dict[str, Any], creds: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Build an Imgur API upload request for the Go generic HTTP runner."""
+        access_token = str(creds.get("imgur_access_token", "")).strip()
+        client_id = str(creds.get("imgur_client_id", "")).strip()
+
+        if access_token:
+            authorization = f"Bearer {access_token}"
+        elif client_id:
+            authorization = f"Client-ID {client_id}"
+        else:
+            raise ValueError(
+                "Imgur uploads require an imgur_client_id for anonymous uploads "
+                "or an imgur_access_token for authenticated uploads."
+            )
+
+        multipart_fields: Dict[str, Dict[str, str]] = {
+            "image": {"type": "file", "value": file_path},
+            "type": {"type": "text", "value": "file"},
+        }
+
+        album_id = str(config.get("album_id", "")).strip()
+        if album_id:
+            multipart_fields["album"] = {"type": "text", "value": album_id}
+
+        title = str(config.get("title", "")).strip()
+        if title:
+            multipart_fields["title"] = {"type": "text", "value": title}
+
+        return {
+            "url": "https://api.imgur.com/3/image",
+            "method": "POST",
+            "headers": {
+                "Authorization": authorization,
+                "Accept": "application/json",
+            },
+            "multipart_fields": multipart_fields,
+            "response_parser": {
+                "type": "json",
+                "url_path": "data.link",
+                "thumb_path": "data.link",
+                "status_path": "success",
+                "success_value": "true",
+            },
+        }
+
     def initialize_session(self, config: Dict[str, Any], creds: Dict[str, Any]) -> Dict[str, Any]:
         """Stub - Go sidecar handles session initialization."""
         return {}

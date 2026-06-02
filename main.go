@@ -26,8 +26,8 @@ import (
 	"github.com/conniecombs/GolangVersion/services/imx"
 	"github.com/conniecombs/GolangVersion/services/pixhost"
 	"github.com/conniecombs/GolangVersion/services/turbo"
-	"github.com/conniecombs/GolangVersion/services/vipr"
 	"github.com/conniecombs/GolangVersion/services/vipergirls"
+	"github.com/conniecombs/GolangVersion/services/vipr"
 )
 
 const (
@@ -139,7 +139,7 @@ func randomString(n int) string { return core.RandomString(n) }
 
 func quoteEscape(s string) string { return core.QuoteEscape(s) }
 
-func getImxSizeId(s string) string  { return imx.SizeID(s) }
+func getImxSizeId(s string) string   { return imx.SizeID(s) }
 func getImxFormatId(s string) string { return imx.FormatID(s) }
 
 func getDefaultRetryConfig() *core.RetryConfig { return core.GetDefaultRetryConfig() }
@@ -193,6 +193,7 @@ func createPixhostGallery(name string) (map[string]string, error) {
 	return nil, fmt.Errorf("unexpected data type from pixhost.CreateGallery")
 }
 
+//nolint:unused // Kept for backward-compatible test helpers and older integrations.
 func createImxGallery(creds map[string]string, name string) (string, error) {
 	ensureInitialized()
 	svc, ok := registry.Get(imx.ServiceID)
@@ -207,6 +208,7 @@ func createImxGallery(creds map[string]string, name string) (string, error) {
 	return id, err
 }
 
+//nolint:unused // Kept for backward-compatible test helpers and older integrations.
 func createViprGallery(name string) (string, error) {
 	ensureInitialized()
 	svc, ok := registry.Get(vipr.ServiceID)
@@ -224,7 +226,9 @@ func createViprGallery(name string) (string, error) {
 // rateLimiters and rateLimiterMutex mirror core's exported vars so stress
 // tests that reference them by name continue to compile.
 var (
-	rateLimiters    = core.RateLimiters
+	//nolint:unused // Kept for stress tests that reference package-level limiter state.
+	rateLimiters = core.RateLimiters
+	//nolint:unused // Kept for stress tests that reference package-level limiter state.
 	rateLimiterMutex = &core.RateLimiterMutex
 )
 
@@ -256,7 +260,7 @@ func main() {
 	if clampedWorkerCount != *workerCount {
 		log.WithFields(log.Fields{
 			"requested": *workerCount,
-			"effective":  clampedWorkerCount,
+			"effective": clampedWorkerCount,
 		}).Warn("sidecar worker count clamped")
 	}
 

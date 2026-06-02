@@ -11,7 +11,7 @@ require (
 
 require (
 	github.com/andybalholm/cascadia v1.3.3 // indirect
-	golang.org/x/image v0.38.0 // indirect
-	golang.org/x/net v0.47.0 // indirect
-	golang.org/x/sys v0.38.0 // indirect
+	golang.org/x/image v0.41.0 // indirect
+	golang.org/x/net v0.55.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
 )

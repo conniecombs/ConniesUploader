@@ -65,6 +65,8 @@ go_installer.msi
 Output/
 *.log
 crash_log.log
+.coverage
+htmlcov/
 
 # User settings and credentials
 user_settings.json

@@ -15,6 +15,8 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
@@ -61,7 +63,7 @@ func DoRequest(ctx context.Context, client *http.Client, method, urlStr string, 
 
 		for _, code := range retryConfig.RetryableHTTPCodes {
 			if resp.StatusCode == code {
-				resp.Body.Close()
+				_ = resp.Body.Close()
 				return nil, resp.StatusCode, fmt.Errorf("HTTP %d", resp.StatusCode)
 			}
 		}
@@ -83,20 +85,33 @@ func ExecuteHttpUpload(ctx context.Context, client *http.Client, fp string, job 
 	}
 
 	extractedValues := make(map[string]string)
+	for k, v := range job.Creds {
+		extractedValues[k] = v
+	}
+	for k, v := range job.Config {
+		extractedValues[k] = v
+	}
+
 	var sessionClient *http.Client
 	if spec.PreRequest != nil {
 		var err error
-		extractedValues, sessionClient, err = ExecutePreRequest(ctx, client, spec.PreRequest)
+		preValues, preClient, err := ExecutePreRequest(ctx, client, spec.PreRequest)
 		if err != nil {
 			return "", "", err
 		}
+		for k, v := range preValues {
+			extractedValues[k] = v
+		}
+		sessionClient = preClient
 	}
+
+	uploadURL := resolveUploadURL(spec.URL, extractedValues)
 
 	retryConfig := GetDefaultRetryConfig()
 	logger := log.WithFields(log.Fields{
 		"action": "upload",
 		"file":   filepath.Base(fp),
-		"url":    spec.URL,
+		"url":    uploadURL,
 	})
 
 	type uploadResult struct {
@@ -131,23 +146,30 @@ func ExecuteHttpUpload(ctx context.Context, client *http.Client, fp string, job 
 						return
 					}
 				case "text":
-					_ = writer.WriteField(fieldName, field.Value)
+					_ = writer.WriteField(fieldName, substituteValues(field.Value, extractedValues))
 				case "dynamic":
 					if val, ok := extractedValues[field.Value]; ok {
 						_ = writer.WriteField(fieldName, val)
+					} else {
+						_ = writer.WriteField(fieldName, substituteValues(field.Value, extractedValues))
 					}
 				}
 			}
 		}()
 
-		req, err := http.NewRequestWithContext(ctx, spec.Method, spec.URL, pr)
+		method := spec.Method
+		if method == "" {
+			method = http.MethodPost
+		}
+
+		req, err := http.NewRequestWithContext(ctx, method, uploadURL, pr)
 		if err != nil {
 			return uploadResult{}, 0, err
 		}
 		req.Header.Set("Content-Type", writer.FormDataContentType())
-		req.Header.Set("User-Agent", DefaultUserAgent)
+		req.Header.Set("User-Agent", GetUserAgent(job.Config))
 		for k, v := range spec.Headers {
-			req.Header.Set(k, v)
+			req.Header.Set(k, substituteValues(v, extractedValues))
 		}
 
 		useClient := client
@@ -178,17 +200,27 @@ func ExecuteHttpUpload(ctx context.Context, client *http.Client, fp string, job 
 
 // ExecutePreRequest handles optional pre-request (login/session) steps.
 func ExecutePreRequest(ctx context.Context, client *http.Client, spec *PreRequestSpec) (map[string]string, *http.Client, error) {
-	preClient := client
-	if spec.UseCookies {
-		jar, _ := cookiejar.New(nil)
-		preClient = &http.Client{
-			Timeout: PreRequestTimeout,
-			Jar:     jar,
-			Transport: &http.Transport{
-				MaxIdleConnsPerHost:   10,
-				ResponseHeaderTimeout: PreRequestHeaderTimeout,
-			},
-		}
+	values := make(map[string]string)
+	if spec == nil {
+		return values, client, nil
+	}
+	return executePreRequest(ctx, preRequestClient(client, spec.UseCookies), spec, values)
+}
+
+func executePreRequest(
+	ctx context.Context,
+	preClient *http.Client,
+	spec *PreRequestSpec,
+	values map[string]string,
+) (map[string]string, *http.Client, error) {
+	if spec == nil {
+		return values, preClient, nil
+	}
+	if preClient == nil {
+		preClient = &http.Client{Timeout: PreRequestTimeout}
+	}
+	if spec.UseCookies && preClient.Jar == nil {
+		preClient = preRequestClient(preClient, true)
 	}
 
 	retryConfig := GetDefaultRetryConfig()
@@ -208,13 +240,18 @@ func ExecutePreRequest(ctx context.Context, client *http.Client, spec *PreReques
 		if len(spec.FormFields) > 0 {
 			v := url.Values{}
 			for k, val := range spec.FormFields {
-				v.Set(k, val)
+				v.Set(k, substituteValues(val, values))
 			}
 			reqBody = strings.NewReader(v.Encode())
 			contentType = "application/x-www-form-urlencoded"
 		}
 
-		req, err := http.NewRequestWithContext(ctx, spec.Method, spec.URL, reqBody)
+		method := spec.Method
+		if method == "" {
+			method = http.MethodGet
+		}
+
+		req, err := http.NewRequestWithContext(ctx, method, substituteValues(spec.URL, values), reqBody)
 		if err != nil {
 			return preReqResult{}, 0, err
 		}
@@ -223,7 +260,7 @@ func ExecutePreRequest(ctx context.Context, client *http.Client, spec *PreReques
 			req.Header.Set("Content-Type", contentType)
 		}
 		for k, v := range spec.Headers {
-			req.Header.Set(k, v)
+			req.Header.Set(k, substituteValues(v, values))
 		}
 
 		resp, err := preClient.Do(req)
@@ -243,23 +280,9 @@ func ExecutePreRequest(ctx context.Context, client *http.Client, spec *PreReques
 			return preReqResult{}, resp.StatusCode, err
 		}
 
-		extracted := make(map[string]string)
-		switch spec.ResponseType {
-		case "json":
-			var data map[string]interface{}
-			_ = json.Unmarshal(bodyBytes, &data)
-			for k, path := range spec.ExtractFields {
-				extracted[k] = GetJSONValue(data, path)
-			}
-		case "html":
-			doc, _ := goquery.NewDocumentFromReader(bytes.NewReader(bodyBytes))
-			for k, sel := range spec.ExtractFields {
-				val := doc.Find(sel).AttrOr("value", "")
-				if val == "" {
-					val = doc.Find(sel).Text()
-				}
-				extracted[k] = strings.TrimSpace(val)
-			}
+		extracted, err := extractFields(bodyBytes, spec.ResponseType, spec.ExtractFields)
+		if err != nil {
+			return preReqResult{}, resp.StatusCode, err
 		}
 		return preReqResult{Extracted: extracted, Client: preClient}, resp.StatusCode, nil
 	}, logger)
@@ -267,45 +290,267 @@ func ExecutePreRequest(ctx context.Context, client *http.Client, spec *PreReques
 	if err != nil {
 		return nil, nil, err
 	}
-	return res.Extracted, res.Client, nil
+
+	for k, v := range res.Extracted {
+		values[k] = v
+	}
+	if spec.FollowUpRequest != nil {
+		return executePreRequest(ctx, res.Client, spec.FollowUpRequest, values)
+	}
+	return values, res.Client, nil
 }
 
 // ParseHttpResponse parses an upload response using the given parser spec.
-func ParseHttpResponse(resp *http.Response, parser *ResponseParserSpec, _ string) (string, string, error) {
-	bodyBytes, _ := io.ReadAll(resp.Body)
-	if parser.Type != "json" {
-		return "", "", fmt.Errorf("unsupported parser type: %s", parser.Type)
-	}
-	var data map[string]interface{}
-	if err := json.Unmarshal(bodyBytes, &data); err != nil {
+func ParseHttpResponse(resp *http.Response, parser *ResponseParserSpec, fp string) (string, string, error) {
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
 		return "", "", err
 	}
-	if parser.StatusPath != "" && GetJSONValue(data, parser.StatusPath) != parser.SuccessValue {
-		return "", "", fmt.Errorf("upload failed: status check did not match")
+
+	switch strings.ToLower(parser.Type) {
+	case "", "json":
+		var data map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &data); err != nil {
+			return "", "", err
+		}
+		if parser.StatusPath != "" && GetJSONValue(data, parser.StatusPath) != parser.SuccessValue {
+			return "", "", fmt.Errorf("upload failed: status check did not match")
+		}
+
+		urlStr := GetJSONValue(data, parser.URLPath)
+		if urlStr == "" && parser.URLTemplate != "" {
+			urlStr = applyResponseTemplate(parser.URLTemplate, data, fp)
+		}
+		thumbStr := GetJSONValue(data, parser.ThumbPath)
+		if thumbStr == "" && parser.ThumbTemplate != "" {
+			thumbStr = applyResponseTemplate(parser.ThumbTemplate, data, fp)
+		}
+		return urlStr, thumbStr, nil
+	case "html":
+		urlStr, err := extractHTMLField(bodyBytes, parser.URLPath)
+		if err != nil {
+			return "", "", err
+		}
+		thumbStr, err := extractHTMLField(bodyBytes, parser.ThumbPath)
+		if err != nil {
+			return "", "", err
+		}
+		if urlStr == "" && parser.URLTemplate != "" {
+			urlStr = applyResponseTemplate(parser.URLTemplate, nil, fp)
+		}
+		if thumbStr == "" && parser.ThumbTemplate != "" {
+			thumbStr = applyResponseTemplate(parser.ThumbTemplate, nil, fp)
+		}
+		return urlStr, thumbStr, nil
+	default:
+		return "", "", fmt.Errorf("unsupported parser type: %s", parser.Type)
 	}
-	return GetJSONValue(data, parser.URLPath), GetJSONValue(data, parser.ThumbPath), nil
 }
 
-// GetJSONValue extracts a value from a nested map using dot-notation path.
+// GetJSONValue extracts a scalar value from nested JSON using dot-notation.
+// Numeric path parts index arrays, e.g. files.0.sourceUrl.
 func GetJSONValue(data map[string]interface{}, path string) string {
+	if path == "" {
+		return ""
+	}
 	current := interface{}(data)
 	for _, part := range strings.Split(path, ".") {
-		m, ok := current.(map[string]interface{})
-		if !ok {
+		switch node := current.(type) {
+		case map[string]interface{}:
+			current = node[part]
+		case []interface{}:
+			index, err := strconv.Atoi(part)
+			if err != nil || index < 0 || index >= len(node) {
+				return ""
+			}
+			current = node[index]
+		default:
 			return ""
 		}
-		current = m[part]
 	}
+	return scalarToString(current)
+}
+
+func scalarToString(current interface{}) string {
 	switch v := current.(type) {
 	case string:
 		return v
 	case float64:
 		return fmt.Sprintf("%.0f", v)
+	case int:
+		return fmt.Sprintf("%d", v)
+	case int64:
+		return fmt.Sprintf("%d", v)
 	case bool:
 		if v {
 			return "true"
 		}
 		return "false"
+	}
+	return ""
+}
+
+func preRequestClient(base *http.Client, useCookies bool) *http.Client {
+	if !useCookies {
+		return base
+	}
+	jar, _ := cookiejar.New(nil)
+	return &http.Client{
+		Timeout: PreRequestTimeout,
+		Jar:     jar,
+		Transport: &http.Transport{
+			MaxIdleConnsPerHost:   10,
+			ResponseHeaderTimeout: PreRequestHeaderTimeout,
+		},
+	}
+}
+
+func extractFields(body []byte, responseType string, fields map[string]string) (map[string]string, error) {
+	extracted := make(map[string]string)
+	switch strings.ToLower(responseType) {
+	case "json":
+		var data map[string]interface{}
+		if err := json.Unmarshal(body, &data); err != nil {
+			return nil, err
+		}
+		for k, path := range fields {
+			extracted[k] = GetJSONValue(data, path)
+		}
+	case "", "html":
+		for k, selector := range fields {
+			val, err := extractHTMLField(body, selector)
+			if err != nil {
+				return nil, err
+			}
+			extracted[k] = val
+		}
+	default:
+		return nil, fmt.Errorf("unsupported pre-request response type: %s", responseType)
+	}
+	return extracted, nil
+}
+
+func extractHTMLField(body []byte, selector string) (string, error) {
+	if selector == "" {
+		return "", nil
+	}
+	if strings.HasPrefix(selector, "regex:") {
+		pattern := strings.TrimPrefix(selector, "regex:")
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			return "", err
+		}
+		matches := re.FindStringSubmatch(string(body))
+		if len(matches) > 1 {
+			return strings.TrimSpace(matches[1]), nil
+		}
+		if len(matches) == 1 {
+			return strings.TrimSpace(matches[0]), nil
+		}
+		return "", nil
+	}
+
+	doc, err := goquery.NewDocumentFromReader(bytes.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+	return selectionValue(doc.Find(selector).First()), nil
+}
+
+func selectionValue(sel *goquery.Selection) string {
+	if sel == nil || sel.Length() == 0 {
+		return ""
+	}
+	for _, attr := range []string{"value", "content", "action", "href", "src", "data-url"} {
+		if val, ok := sel.Attr(attr); ok && strings.TrimSpace(val) != "" {
+			return strings.TrimSpace(val)
+		}
+	}
+	return strings.TrimSpace(sel.Text())
+}
+
+func substituteValues(input string, values map[string]string) string {
+	if input == "" || len(values) == 0 {
+		return input
+	}
+	result := input
+	for key, val := range values {
+		result = strings.ReplaceAll(result, "{"+key+"}", val)
+	}
+	return result
+}
+
+func resolveUploadURL(specURL string, values map[string]string) string {
+	resolved := substituteValues(specURL, values)
+	endpoint := strings.TrimSpace(values["endpoint"])
+	if endpoint == "" || strings.Contains(specURL, "{endpoint}") {
+		return resolved
+	}
+
+	upload, err := url.Parse(resolved)
+	if err != nil {
+		return resolved
+	}
+	endpointURL, err := url.Parse(endpoint)
+	if err != nil {
+		return resolved
+	}
+	finalURL := upload.ResolveReference(endpointURL)
+	if finalURL.RawQuery == "" {
+		finalURL.RawQuery = upload.RawQuery
+	}
+	return finalURL.String()
+}
+
+var templateTokenPattern = regexp.MustCompile(`\{([^{}]+)\}`)
+
+func applyResponseTemplate(template string, data map[string]interface{}, fp string) string {
+	base := filepath.Base(fp)
+	ext := strings.TrimPrefix(filepath.Ext(base), ".")
+	stem := strings.TrimSuffix(base, filepath.Ext(base))
+
+	return templateTokenPattern.ReplaceAllStringFunc(template, func(token string) string {
+		key := strings.Trim(token, "{}")
+		switch key {
+		case "filename":
+			return base
+		case "basename":
+			return stem
+		case "ext", "extension":
+			return ext
+		case "dot_ext":
+			if ext == "" {
+				return ""
+			}
+			return "." + ext
+		}
+		if data == nil {
+			return ""
+		}
+		if val := GetJSONValue(data, key); val != "" {
+			return val
+		}
+		return findJSONScalar(data, key)
+	})
+}
+
+func findJSONScalar(value interface{}, key string) string {
+	switch node := value.(type) {
+	case map[string]interface{}:
+		if val, ok := node[key]; ok {
+			return scalarToString(val)
+		}
+		for _, child := range node {
+			if val := findJSONScalar(child, key); val != "" {
+				return val
+			}
+		}
+	case []interface{}:
+		for _, child := range node {
+			if val := findJSONScalar(child, key); val != "" {
+				return val
+			}
+		}
 	}
 	return ""
 }

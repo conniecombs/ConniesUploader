@@ -310,7 +310,6 @@ class SidecarBridge:
                 }
 
             deadline = time.monotonic() + timeout
-            terminal_types = {"result", "data", "error", "success"}
             while time.monotonic() < deadline:
                 try:
                     item = temp_q.get(timeout=max(0.0, deadline - time.monotonic()))
@@ -318,10 +317,6 @@ class SidecarBridge:
                     break
 
                 if item.get("id") == request_id:
-                    return item
-
-                # Compatibility with older sidecar responses that do not echo ids.
-                if "id" not in item and item.get("type") in terminal_types:
                     return item
 
             return {

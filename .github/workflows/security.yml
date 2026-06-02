@@ -64,10 +64,10 @@ jobs:
       uses: securego/gosec@master
       with:
         args: '-fmt sarif -out gosec-results.sarif ./...'
-      continue-on-error: true
 
     - name: Upload SARIF file
       uses: github/codeql-action/upload-sarif@v4
+      if: always()
       with:
         sarif_file: gosec-results.sarif
 
@@ -112,13 +112,13 @@ jobs:
       run: pip install bandit[sarif]
 
     - name: Run Bandit
-      run: bandit -r main.py modules/ -f sarif -o bandit-results.sarif || true
+      run: bandit -r main.py modules/ --severity-level medium -f sarif -o bandit-results.sarif
 
     - name: Upload SARIF file
       uses: github/codeql-action/upload-sarif@v4
+      if: always()
       with:
         sarif_file: bandit-results.sarif
-      continue-on-error: true
 
   # Python dependency vulnerability check
   safety:
@@ -138,13 +138,11 @@ jobs:
       run: python -m pip install pip-audit==2.10.0
 
     - name: Check dependencies
-      run: |
-        pip-audit -r requirements.txt -f json -o pip-audit-report.json || true
-        echo "pip-audit scan complete. Review pip-audit-report.json for details."
-      continue-on-error: true
+      run: pip-audit -r requirements.txt -f json -o pip-audit-report.json
 
     - name: Upload pip-audit report
       uses: actions/upload-artifact@v4
+      if: always()
       with:
         name: pip-audit-report
         path: pip-audit-report.json
@@ -167,7 +165,6 @@ jobs:
       uses: actions/dependency-review-action@v4
       with:
         fail-on-severity: moderate
-      continue-on-error: true
 
   # Secret scanning
   trufflehog:

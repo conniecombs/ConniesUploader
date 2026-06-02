@@ -22,7 +22,7 @@ Start here if you're new to the project:
 
 1. **[README.md](../README.md)** - Overview, features, installation, and quick start
 2. **[Build Troubleshooting](guides/BUILD_TROUBLESHOOTING.md)** - Common build issues and solutions
-3. **[Latest Release Notes](releases/RELEASE_NOTES_v1.2.4.md)** - Latest detailed release notes
+3. **[Latest Release Notes](releases/RELEASE_NOTES_v1.3.0.md)** - Latest detailed release notes
 
 ### For Contributors
 Development and contribution guides:
@@ -53,6 +53,7 @@ docs/
 │   └── BUILD_TROUBLESHOOTING.md
 ├── releases/                    # Release documentation
 │   ├── RELEASE_NOTES.md
+│   ├── RELEASE_NOTES_v1.3.0.md
 │   ├── RELEASE_NOTES_v1.2.4.md
 │   ├── RELEASE_NOTES_v1.2.2.md
 │   ├── RELEASE_NOTES_v1.1.0.md
@@ -117,7 +118,7 @@ Contribution guidelines:
 
 ### [CHANGELOG.md](../CHANGELOG.md) (22KB)
 Detailed version history:
-- All releases from v1.0.0 to v1.2.4
+- All releases from v1.0.0 to v1.3.0
 - Feature additions
 - Bug fixes
 - Breaking changes
@@ -162,8 +163,14 @@ Common build issues and solutions:
 
 ## 🚀 Release Documentation (docs/releases/)
 
+### [RELEASE_NOTES_v1.3.0.md](releases/RELEASE_NOTES_v1.3.0.md)
+Latest release - "Protocol Hardening & Release Reliability" (June 2, 2026):
+- Generic HTTP runner support for chained prerequests, cookie sessions, template substitution, and richer extraction
+- Sidecar request IDs that keep concurrent upload responses correlated
+- Security workflow hardening for Go and Python dependency scans
+
 ### [RELEASE_NOTES_v1.2.4.md](releases/RELEASE_NOTES_v1.2.4.md)
-Latest release - "CI & Packaging Reliability" (May 20, 2026):
+"CI & Packaging Reliability" release (May 20, 2026):
 - Packaged executable startup fix for the `tkinter.tix` import crash
 - Pillow `12.2.0` security update and `pip-audit` dependency scanning
 - Cross-platform CI test hardening for Windows and macOS
@@ -275,14 +282,19 @@ Archive of implementation notes, phase summaries, and technical analyses from th
 |----------|-------|------------|
 | **Root Documentation** | 6 files | ~110 KB |
 | **Developer Guides** | 3 files | ~48 KB |
-| **Release Documentation** | 7 files | ~65 KB |
+| **Release Documentation** | 8 files | ~70 KB |
 | **Historical Documentation** | 26 files | ~200+ KB |
 | **Additional Markdown** | 3 files | ~15 KB |
-| **Total** | **45 files** | **~438 KB** |
+| **Total** | **46 files** | **~443 KB** |
 
 ---
 
 ## 🔄 Recent Documentation Updates
+
+**2026-06-02**: v1.3.0 Release
+- Published RELEASE_NOTES_v1.3.0.md
+- Updated current release links, protocol hardening notes, and tag examples
+- Synced project version references to v1.3.0
 
 **2026-05-20**: v1.2.4 Release
 - Published RELEASE_NOTES_v1.2.4.md
@@ -319,6 +331,6 @@ Archive of implementation notes, phase summaries, and technical analyses from th
 
 ---
 
-**Last Updated**: 2026-05-20
+**Last Updated**: 2026-06-02
 **Documentation Version**: 2.1
-**Project Version**: v1.2.4
+**Project Version**: v1.3.0
