@@ -398,3 +398,52 @@ class TestTemplateManagerIntegration:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "-m", "unit"])
+
+@pytest.mark.unit
+class TestTemplateManagerAdvanced:
+    def test_template_manager_multiple_covers(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            templates_file = Path(temp_dir) / "templates.json"
+            mgr = TemplateManager(str(templates_file))
+            
+            template = "[img]#cover_url#[/img]\n[img]#cover_url#[/img]\n\n#all_images#"
+            mgr.set_template("Custom Covers", template)
+            
+            images = [
+                ("viewer1", "thumb1", "direct1"),
+                ("viewer2", "thumb2", "direct2"),
+                ("viewer3", "thumb3", "direct3"),
+                ("viewer4", "thumb4", "direct4"),
+            ]
+            
+            data = {
+                "cover_url": "thumb1",
+                "gallery_name": "Test"
+            }
+            
+            result = mgr.apply("Custom Covers", data, images)
+            
+            assert "[img]thumb1[/img]" in result
+            assert "[img]thumb2[/img]" in result
+            
+            assert "[url=viewer3][img]thumb3[/img][/url]" in result
+            assert "[url=viewer4][img]thumb4[/img][/url]" in result
+            
+            all_images_part = result.split("\n\n")[1] if "\n\n" in result else result
+            assert "thumb1" not in all_images_part
+            assert "thumb2" not in all_images_part
+
+    def test_process_conditionals(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            templates_file = Path(temp_dir) / "templates.json"
+            mgr = TemplateManager(str(templates_file))
+            template = "[if gallery_link][url=#gallery_link#]Gallery[/url][/if]#all_images#"
+            mgr.set_template("Cond Test", template)
+            
+            images = []
+            
+            result_no_link = mgr.apply("Cond Test", {"gallery_link": ""}, images)
+            assert "Gallery" not in result_no_link
+            
+            result_with_link = mgr.apply("Cond Test", {"gallery_link": "http://example.com"}, images)
+            assert "[url=http://example.com]Gallery[/url]" in result_with_link

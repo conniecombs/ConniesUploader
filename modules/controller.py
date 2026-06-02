@@ -18,38 +18,6 @@ from .upload_manager import UploadManager
 from .template_manager import TemplateManager
 
 
-class RenameWorker(threading.Thread):
-    def __init__(self, creds: Dict[str, Any]) -> None:
-        super().__init__(daemon=True)
-        self.creds = creds
-        self.queue: queue.Queue = queue.Queue(maxsize=200)
-        self.active: bool = True
-
-    def add_task(self, service: str, gallery_id: str, new_name: str) -> None:
-        self.queue.put((service, gallery_id, new_name))
-
-    def run(self) -> None:
-        while self.active:
-            try:
-                task = self.queue.get(timeout=1)
-                service, gid, name = task
-                if service == "imx.to":
-                    logger.info(f"RenameWorker: Renaming {gid} to {name}")
-                    try:
-                        client = api.create_resilient_client()
-                        # Add rename logic here if needed, or rely on API module
-                        # (The original code had the worker but empty logic in the try block,
-                        # keeping structure for future implementation)
-                        client.close()
-                    except Exception as e:
-                        logger.error(f"Rename failed: {e}")
-            except queue.Empty:
-                pass
-            except Exception as e:
-                logger.error(f"Rename worker error: {e}")
-
-    def stop(self) -> None:
-        self.active = False
 
 
 class UploadController:
@@ -76,22 +44,12 @@ class UploadController:
         # Auto-Post State
         self.post_holding_pen = {}
         self.next_post_index = 0
-        self.post_processing_lock = threading.Lock()
-
-        self.rename_worker = None
+        self.post_condition = threading.Condition()
         self.creds = {}
 
     def start_workers(self, creds: Dict[str, Any]) -> None:
-        """Start background workers (currently unused - RenameWorker disabled).
-
-        RenameWorker is not currently used as there are no enqueue() calls in the codebase.
-        Kept for potential future implementation of gallery renaming functionality.
-        """
+        """Start background workers (currently unused)."""
         self.creds = creds
-        # RenameWorker initialization disabled - no active usage found
-        # if not self.rename_worker or not self.rename_worker.is_alive():
-        #     self.rename_worker = RenameWorker(self.creds)
-        #     self.rename_worker.start()
 
     def start_upload(
         self,
@@ -244,10 +202,10 @@ class UploadController:
             if self.settings.get("auto_copy"):
                 self.clipboard_buffer.append(text)
 
-            # Auto-Post Handoff
             if self.settings.get("auto_post_enabled"):
-                with self.post_processing_lock:
+                with self.post_condition:
                     self.post_holding_pen[batch_index] = text
+                    self.post_condition.notify_all()
 
             # Links.txt generation
             need_links = False
@@ -266,8 +224,10 @@ class UploadController:
                 with open(links_name, "w", encoding="utf-8") as f:
                     f.write(raw_links)
 
+        except OSError as e:
+            logger.error(f"OS Error writing output: {e}")
         except Exception as e:
-            logger.error(f"Error writing output: {e}")
+            logger.error(f"Unexpected error writing output: {e}")
 
         return out_name
 
@@ -300,23 +260,28 @@ class UploadController:
             logger.error("Auto-Post Queue: Login Failed.")
             return
 
-        while self.is_uploading or len(self.post_holding_pen) > 0:
-            if self.cancel_event.is_set():
-                break
+        with self.post_condition:
+            while self.is_uploading or len(self.post_holding_pen) > 0:
+                if self.cancel_event.is_set():
+                    break
 
-            if self.next_post_index in self.post_holding_pen:
-                content = self.post_holding_pen.pop(self.next_post_index)
-                logger.info(f"Auto-Post Queue: Posting Batch #{self.next_post_index}...")
+                if self.next_post_index in self.post_holding_pen:
+                    content = self.post_holding_pen.pop(self.next_post_index)
+                    self.post_condition.release() # Release lock during network IO
 
-                if vg.post_reply(tid, content):
-                    logger.info(f"Auto-Post Queue: Batch #{self.next_post_index} SUCCESS.")
+                    logger.info(f"Auto-Post Queue: Posting Batch #{self.next_post_index}...")
+
+                    if vg.post_reply(tid, content):
+                        logger.info(f"Auto-Post Queue: Batch #{self.next_post_index} SUCCESS.")
+                    else:
+                        logger.error(f"Auto-Post Queue: Batch #{self.next_post_index} FAILED.")
+
+                    self.next_post_index += 1
+                    time.sleep(config.POST_COOLDOWN_SECONDS)
+                    
+                    self.post_condition.acquire() # Re-acquire lock
                 else:
-                    logger.error(f"Auto-Post Queue: Batch #{self.next_post_index} FAILED.")
-
-                self.next_post_index += 1
-                time.sleep(config.POST_COOLDOWN_SECONDS)
-            else:
-                time.sleep(0.5)
+                    self.post_condition.wait(timeout=1.0)
         logger.info("Auto-Post Queue: Finished.")
 
     def open_output_folder(self) -> None:
