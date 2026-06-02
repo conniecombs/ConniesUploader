@@ -125,7 +125,23 @@ class TemplateManager:
 
     def apply(self, format_mode: str, data: Dict[str, Any], images: List[Tuple[str, str, str]]) -> str:
         template = self.get_template(format_mode)
-        # Pre-process conditionals with dummy values for yet-to-be-populated keys\n        # to accurately determine the active cover count.\n        temp_data = data.copy()\n        temp_data.setdefault("all_images", "dummy")\n        temp_data.setdefault("all_full_images", "dummy")\n        active_template = self.process_conditionals(template, temp_data)\n        cover_count = active_template.count("#cover_url#")\n\n        covers_extracted = []\n        if cover_count > 0:\n            for img in images[:cover_count]:\n                viewer_url = img[0] if len(img) > 0 else ""\n                thumb_url = img[1] if len(img) > 1 else viewer_url\n                covers_extracted.append(thumb_url)\n            remaining_images = images[cover_count:]\n        else:\n            remaining_images = images
+        # Pre-process conditionals with dummy values for yet-to-be-populated keys
+        # to accurately determine the active cover count.
+        temp_data = data.copy()
+        temp_data.setdefault("all_images", "dummy")
+        temp_data.setdefault("all_full_images", "dummy")
+        active_template = self.process_conditionals(template, temp_data)
+        cover_count = active_template.count("#cover_url#")
+
+        covers_extracted = []
+        if cover_count > 0:
+            for img in images[:cover_count]:
+                viewer_url = img[0] if len(img) > 0 else ""
+                thumb_url = img[1] if len(img) > 1 else viewer_url
+                covers_extracted.append(thumb_url)
+            remaining_images = images[cover_count:]
+        else:
+            remaining_images = images
 
         filtered_images = []
         for img in remaining_images:

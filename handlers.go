@@ -186,19 +186,10 @@ func processFileGeneric(fp string, job *JobRequest) {
 
 	go func() {
 		sendJobEvent(job, OutputEvent{Type: "status", FilePath: fp, Status: "Uploading"})
-		cfg := job.RetryConfig
-		if cfg == nil {
-			cfg = getDefaultRetryConfig()
-		}
-
-		type ur struct{ url, thumb string }
-		res, err := retryWithBackoff(ctx, cfg, func() (ur, int, error) {
-			imgURL, thumb, err := executeHttpUpload(ctx, fp, job)
-			return ur{imgURL, thumb}, extractStatusCode(err), err
-		}, log.WithField("file", filepath.Base(fp)))
+		imgURL, thumb, err := executeHttpUpload(ctx, fp, job)
 
 		select {
-		case resultChan <- result{res.url, res.thumb, err}:
+		case resultChan <- result{imgURL, thumb, err}:
 		case <-ctx.Done():
 		}
 	}()

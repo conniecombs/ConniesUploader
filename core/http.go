@@ -92,10 +92,12 @@ func ExecuteHttpUpload(ctx context.Context, client *http.Client, fp string, job 
 		extractedValues[k] = v
 	}
 
+	retryConfig := retryConfigForJob(job)
+
 	var sessionClient *http.Client
 	if spec.PreRequest != nil {
 		var err error
-		preValues, preClient, err := ExecutePreRequest(ctx, client, spec.PreRequest)
+		preValues, preClient, err := executePreRequestWithRetryConfig(ctx, client, spec.PreRequest, retryConfig)
 		if err != nil {
 			return "", "", err
 		}
@@ -107,7 +109,6 @@ func ExecuteHttpUpload(ctx context.Context, client *http.Client, fp string, job 
 
 	uploadURL := resolveUploadURL(spec.URL, extractedValues)
 
-	retryConfig := GetDefaultRetryConfig()
 	logger := log.WithFields(log.Fields{
 		"action": "upload",
 		"file":   filepath.Base(fp),
@@ -132,7 +133,21 @@ func ExecuteHttpUpload(ctx context.Context, client *http.Client, fp string, job 
 						if err != nil {
 							return err
 						}
-\t\t\t\t\t\tf, err := os.Open(fp) // #nosec G304\n\t\t\t\t\t\tif err != nil {\n\t\t\t\t\t\t	return err\n\t\t\t\t\t\t}\n\t\t\t\t\t\tfi, err := f.Stat()\n\t\t\t\t\t\tif err != nil {\n\t\t\t\t\t\t	_ = f.Close()\n\t\t\t\t\t\t	return err\n\t\t\t\t\t\t}\n\t\t\t\t\t\tpw2 := NewProgressWriter(part, fi.Size(), fp)\n\t\t\t\t\t\t_, copyErr := io.Copy(pw2, f)\n\t\t\t\t\t\t_ = f.Close()\n\t\t\t\t\t\tif copyErr != nil {\n\t\t\t\t\t\t	return copyErr\n\t\t\t\t\t\t}
+						f, err := os.Open(fp) // #nosec G304
+						if err != nil {
+							return err
+						}
+						fi, err := f.Stat()
+						if err != nil {
+							_ = f.Close()
+							return err
+						}
+						pw2 := NewProgressWriter(part, fi.Size(), fp)
+						_, copyErr := io.Copy(pw2, f)
+						_ = f.Close()
+						if copyErr != nil {
+							return copyErr
+						}
 					case "text":
 						if err := writer.WriteField(fieldName, substituteValues(field.Value, extractedValues)); err != nil {
 							return err
@@ -197,13 +212,32 @@ func ExecuteHttpUpload(ctx context.Context, client *http.Client, fp string, job 
 	return res.URL, res.Thumb, nil
 }
 
+func retryConfigForJob(job *JobRequest) *RetryConfig {
+	if job != nil && job.RetryConfig != nil {
+		return job.RetryConfig
+	}
+	return GetDefaultRetryConfig()
+}
+
 // ExecutePreRequest handles optional pre-request (login/session) steps.
 func ExecutePreRequest(ctx context.Context, client *http.Client, spec *PreRequestSpec) (map[string]string, *http.Client, error) {
+	return executePreRequestWithRetryConfig(ctx, client, spec, GetDefaultRetryConfig())
+}
+
+func executePreRequestWithRetryConfig(
+	ctx context.Context,
+	client *http.Client,
+	spec *PreRequestSpec,
+	retryConfig *RetryConfig,
+) (map[string]string, *http.Client, error) {
 	values := make(map[string]string)
 	if spec == nil {
 		return values, client, nil
 	}
-	return executePreRequest(ctx, preRequestClient(client, spec.UseCookies), spec, values)
+	if retryConfig == nil {
+		retryConfig = GetDefaultRetryConfig()
+	}
+	return executePreRequest(ctx, preRequestClient(client, spec.UseCookies), spec, values, retryConfig)
 }
 
 func executePreRequest(
@@ -211,6 +245,7 @@ func executePreRequest(
 	preClient *http.Client,
 	spec *PreRequestSpec,
 	values map[string]string,
+	retryConfig *RetryConfig,
 ) (map[string]string, *http.Client, error) {
 	if spec == nil {
 		return values, preClient, nil
@@ -222,7 +257,6 @@ func executePreRequest(
 		preClient = preRequestClient(preClient, true)
 	}
 
-	retryConfig := GetDefaultRetryConfig()
 	logger := log.WithFields(log.Fields{
 		"action": "pre_request",
 		"url":    spec.URL,
@@ -294,7 +328,7 @@ func executePreRequest(
 		values[k] = v
 	}
 	if spec.FollowUpRequest != nil {
-		return executePreRequest(ctx, res.Client, spec.FollowUpRequest, values)
+		return executePreRequest(ctx, res.Client, spec.FollowUpRequest, values, retryConfig)
 	}
 	return values, res.Client, nil
 }
@@ -375,7 +409,7 @@ func scalarToString(current interface{}) string {
 	case string:
 		return v
 	case float64:
-		return fmt.Sprintf("%.0f", v)
+		return strconv.FormatFloat(v, 'f', -1, 64)
 	case int:
 		return fmt.Sprintf("%d", v)
 	case int64:
@@ -509,7 +543,7 @@ func applyResponseTemplate(template string, data map[string]interface{}, fp stri
 	stem := strings.TrimSuffix(base, filepath.Ext(base))
 
 	return templateTokenPattern.ReplaceAllStringFunc(template, func(token string) string {
-\t\tkey := strings.TrimSpace(strings.Trim(token, "{}"))
+		key := strings.TrimSpace(strings.Trim(token, "{}"))
 		switch key {
 		case "filename":
 			return base

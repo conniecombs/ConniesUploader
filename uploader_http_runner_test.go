@@ -12,6 +12,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -134,6 +135,54 @@ func TestExecuteHttpUploadSupportsChainedPreRequests(t *testing.T) {
 	}
 	if thumbStr != "https://cdn.example/thumb.jpg" {
 		t.Fatalf("thumb = %q", thumbStr)
+	}
+}
+
+func TestProcessFileGenericUsesSingleJobRetryPolicy(t *testing.T) {
+	tmpDir := t.TempDir()
+	imagePath := tmpDir + "/upload.jpg"
+	if err := createTestImage(imagePath); err != nil {
+		t.Fatalf("Failed to create test image: %v", err)
+	}
+
+	var attempts int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&attempts, 1)
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"success":false}`))
+	}))
+	defer server.Close()
+
+	oldClient := client
+	client = server.Client()
+	defer func() { client = oldClient }()
+
+	job := &JobRequest{
+		Action:  "http_upload",
+		Service: "retry-policy.test",
+		Files:   []string{imagePath},
+		RetryConfig: &RetryConfig{
+			MaxRetries:         1,
+			InitialBackoff:     time.Millisecond,
+			MaxBackoff:         time.Millisecond,
+			BackoffMultiplier:  1,
+			RetryableHTTPCodes: []int{http.StatusTooManyRequests},
+		},
+		HttpSpec: &HttpRequestSpec{
+			URL:    server.URL + "/upload",
+			Method: "POST",
+			MultipartFields: map[string]MultipartField{
+				"image": {Type: "file", Value: imagePath},
+			},
+			ResponseParser: ResponseParserSpec{Type: "json"},
+		},
+	}
+
+	processFileGeneric(imagePath, job)
+
+	if got := atomic.LoadInt32(&attempts); got != 2 {
+		t.Fatalf("upload attempts = %d, want 2 from one MaxRetries=1 policy", got)
 	}
 }
 

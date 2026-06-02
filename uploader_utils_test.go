@@ -90,7 +90,7 @@ func TestGetJSONValueTypeConversions(t *testing.T) {
 			"float",
 			map[string]interface{}{"price": float64(19.99)},
 			"price",
-			"20",
+			"19.99",
 		},
 		{
 			"boolean true",
@@ -152,7 +152,6 @@ func TestGetJSONValueEdgeCases(t *testing.T) {
 		t.Errorf("getJSONValue with deep nesting = %q, want %q", result, "deep_value")
 	}
 }
-
 
 // --- ResponseParserSpec Tests ---
 
@@ -221,7 +220,6 @@ func BenchmarkGetJSONValueNested(b *testing.B) {
 		getJSONValue(data, "level1.level2.level3")
 	}
 }
-
 
 // --- Additional HttpRequestSpec Tests ---
 
