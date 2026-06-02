@@ -18,20 +18,56 @@ import (
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
+	log "github.com/sirupsen/logrus"
 )
 
 // DoRequest performs a generic HTTP request with the given client.
 // Callers are responsible for setting service-specific headers (e.g. Referer).
 func DoRequest(ctx context.Context, client *http.Client, method, urlStr string, body io.Reader, contentType string) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, method, urlStr, body)
-	if err != nil {
-		return nil, err
+	var bodyBytes []byte
+	if body != nil {
+		var err error
+		bodyBytes, err = io.ReadAll(body)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read request body: %w", err)
+		}
 	}
-	req.Header.Set("User-Agent", DefaultUserAgent)
-	if contentType != "" {
-		req.Header.Set("Content-Type", contentType)
-	}
-	return client.Do(req)
+
+	retryConfig := GetDefaultRetryConfig()
+	logger := log.WithFields(log.Fields{
+		"method": method,
+		"url":    urlStr,
+	})
+
+	return RetryWithBackoff(ctx, retryConfig, func() (*http.Response, int, error) {
+		var reqBody io.Reader
+		if bodyBytes != nil {
+			reqBody = bytes.NewReader(bodyBytes)
+		}
+
+		req, err := http.NewRequestWithContext(ctx, method, urlStr, reqBody)
+		if err != nil {
+			return nil, 0, err
+		}
+		req.Header.Set("User-Agent", DefaultUserAgent)
+		if contentType != "" {
+			req.Header.Set("Content-Type", contentType)
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, 0, err
+		}
+
+		for _, code := range retryConfig.RetryableHTTPCodes {
+			if resp.StatusCode == code {
+				resp.Body.Close()
+				return nil, resp.StatusCode, fmt.Errorf("HTTP %d", resp.StatusCode)
+			}
+		}
+
+		return resp, resp.StatusCode, nil
+	}, logger)
 }
 
 // ExecuteHttpUpload runs a generic multipart upload described by job.HttpSpec.
@@ -56,58 +92,88 @@ func ExecuteHttpUpload(ctx context.Context, client *http.Client, fp string, job 
 		}
 	}
 
-	pr, pw := io.Pipe()
-	writer := multipart.NewWriter(pw)
-	go func() {
-		defer pw.Close()
-		defer writer.Close()
-		for fieldName, field := range spec.MultipartFields {
-			switch field.Type {
-			case "file":
-				part, _ := writer.CreateFormFile(fieldName, filepath.Base(fp))
-				f, err := os.Open(fp) // #nosec G304
-				if err != nil {
-					pw.CloseWithError(err)
-					return
-				}
-				defer f.Close()
-				fi, err := f.Stat()
-				if err != nil {
-					pw.CloseWithError(err)
-					return
-				}
-				pw2 := NewProgressWriter(part, fi.Size(), fp)
-				if _, err := io.Copy(pw2, f); err != nil {
-					pw.CloseWithError(err)
-					return
-				}
-			case "text":
-				_ = writer.WriteField(fieldName, field.Value)
-			case "dynamic":
-				if val, ok := extractedValues[field.Value]; ok {
-					_ = writer.WriteField(fieldName, val)
+	retryConfig := GetDefaultRetryConfig()
+	logger := log.WithFields(log.Fields{
+		"action": "upload",
+		"file":   filepath.Base(fp),
+		"url":    spec.URL,
+	})
+
+	type uploadResult struct {
+		URL   string
+		Thumb string
+	}
+
+	res, err := RetryWithBackoff(ctx, retryConfig, func() (uploadResult, int, error) {
+		pr, pw := io.Pipe()
+		writer := multipart.NewWriter(pw)
+		go func() {
+			defer pw.Close()
+			defer writer.Close()
+			for fieldName, field := range spec.MultipartFields {
+				switch field.Type {
+				case "file":
+					part, _ := writer.CreateFormFile(fieldName, filepath.Base(fp))
+					f, err := os.Open(fp) // #nosec G304
+					if err != nil {
+						pw.CloseWithError(err)
+						return
+					}
+					defer f.Close()
+					fi, err := f.Stat()
+					if err != nil {
+						pw.CloseWithError(err)
+						return
+					}
+					pw2 := NewProgressWriter(part, fi.Size(), fp)
+					if _, err := io.Copy(pw2, f); err != nil {
+						pw.CloseWithError(err)
+						return
+					}
+				case "text":
+					_ = writer.WriteField(fieldName, field.Value)
+				case "dynamic":
+					if val, ok := extractedValues[field.Value]; ok {
+						_ = writer.WriteField(fieldName, val)
+					}
 				}
 			}
+		}()
+
+		req, err := http.NewRequestWithContext(ctx, spec.Method, spec.URL, pr)
+		if err != nil {
+			return uploadResult{}, 0, err
 		}
-	}()
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+		req.Header.Set("User-Agent", DefaultUserAgent)
+		for k, v := range spec.Headers {
+			req.Header.Set(k, v)
+		}
 
-	req, _ := http.NewRequestWithContext(ctx, spec.Method, spec.URL, pr)
-	req.Header.Set("Content-Type", writer.FormDataContentType())
-	req.Header.Set("User-Agent", DefaultUserAgent)
-	for k, v := range spec.Headers {
-		req.Header.Set(k, v)
-	}
+		useClient := client
+		if sessionClient != nil {
+			useClient = sessionClient
+		}
+		resp, err := useClient.Do(req)
+		if err != nil {
+			return uploadResult{}, 0, err
+		}
+		defer resp.Body.Close()
 
-	useClient := client
-	if sessionClient != nil {
-		useClient = sessionClient
-	}
-	resp, err := useClient.Do(req)
+		for _, code := range retryConfig.RetryableHTTPCodes {
+			if resp.StatusCode == code {
+				return uploadResult{}, resp.StatusCode, fmt.Errorf("HTTP %d", resp.StatusCode)
+			}
+		}
+
+		urlStr, thumbStr, err := ParseHttpResponse(resp, &spec.ResponseParser, fp)
+		return uploadResult{URL: urlStr, Thumb: thumbStr}, resp.StatusCode, err
+	}, logger)
+
 	if err != nil {
 		return "", "", err
 	}
-	defer resp.Body.Close()
-	return ParseHttpResponse(resp, &spec.ResponseParser, fp)
+	return res.URL, res.Thumb, nil
 }
 
 // ExecutePreRequest handles optional pre-request (login/session) steps.
@@ -125,52 +191,83 @@ func ExecutePreRequest(ctx context.Context, client *http.Client, spec *PreReques
 		}
 	}
 
-	var reqBody io.Reader
-	contentType := ""
-	if len(spec.FormFields) > 0 {
-		v := url.Values{}
-		for k, val := range spec.FormFields {
-			v.Set(k, val)
+	retryConfig := GetDefaultRetryConfig()
+	logger := log.WithFields(log.Fields{
+		"action": "pre_request",
+		"url":    spec.URL,
+	})
+
+	type preReqResult struct {
+		Extracted map[string]string
+		Client    *http.Client
+	}
+
+	res, err := RetryWithBackoff(ctx, retryConfig, func() (preReqResult, int, error) {
+		var reqBody io.Reader
+		contentType := ""
+		if len(spec.FormFields) > 0 {
+			v := url.Values{}
+			for k, val := range spec.FormFields {
+				v.Set(k, val)
+			}
+			reqBody = strings.NewReader(v.Encode())
+			contentType = "application/x-www-form-urlencoded"
 		}
-		reqBody = strings.NewReader(v.Encode())
-		contentType = "application/x-www-form-urlencoded"
-	}
 
-	req, _ := http.NewRequestWithContext(ctx, spec.Method, spec.URL, reqBody)
-	req.Header.Set("User-Agent", DefaultUserAgent)
-	if contentType != "" {
-		req.Header.Set("Content-Type", contentType)
-	}
-	for k, v := range spec.Headers {
-		req.Header.Set(k, v)
-	}
+		req, err := http.NewRequestWithContext(ctx, spec.Method, spec.URL, reqBody)
+		if err != nil {
+			return preReqResult{}, 0, err
+		}
+		req.Header.Set("User-Agent", DefaultUserAgent)
+		if contentType != "" {
+			req.Header.Set("Content-Type", contentType)
+		}
+		for k, v := range spec.Headers {
+			req.Header.Set(k, v)
+		}
 
-	resp, err := preClient.Do(req)
+		resp, err := preClient.Do(req)
+		if err != nil {
+			return preReqResult{}, 0, err
+		}
+		defer resp.Body.Close()
+
+		for _, code := range retryConfig.RetryableHTTPCodes {
+			if resp.StatusCode == code {
+				return preReqResult{}, resp.StatusCode, fmt.Errorf("HTTP %d", resp.StatusCode)
+			}
+		}
+
+		bodyBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return preReqResult{}, resp.StatusCode, err
+		}
+
+		extracted := make(map[string]string)
+		switch spec.ResponseType {
+		case "json":
+			var data map[string]interface{}
+			_ = json.Unmarshal(bodyBytes, &data)
+			for k, path := range spec.ExtractFields {
+				extracted[k] = GetJSONValue(data, path)
+			}
+		case "html":
+			doc, _ := goquery.NewDocumentFromReader(bytes.NewReader(bodyBytes))
+			for k, sel := range spec.ExtractFields {
+				val := doc.Find(sel).AttrOr("value", "")
+				if val == "" {
+					val = doc.Find(sel).Text()
+				}
+				extracted[k] = strings.TrimSpace(val)
+			}
+		}
+		return preReqResult{Extracted: extracted, Client: preClient}, resp.StatusCode, nil
+	}, logger)
+
 	if err != nil {
 		return nil, nil, err
 	}
-	defer resp.Body.Close()
-	bodyBytes, _ := io.ReadAll(resp.Body)
-
-	extracted := make(map[string]string)
-	switch spec.ResponseType {
-	case "json":
-		var data map[string]interface{}
-		_ = json.Unmarshal(bodyBytes, &data)
-		for k, path := range spec.ExtractFields {
-			extracted[k] = GetJSONValue(data, path)
-		}
-	case "html":
-		doc, _ := goquery.NewDocumentFromReader(bytes.NewReader(bodyBytes))
-		for k, sel := range spec.ExtractFields {
-			val := doc.Find(sel).AttrOr("value", "")
-			if val == "" {
-				val = doc.Find(sel).Text()
-			}
-			extracted[k] = strings.TrimSpace(val)
-		}
-	}
-	return extracted, preClient, nil
+	return res.Extracted, res.Client, nil
 }
 
 // ParseHttpResponse parses an upload response using the given parser spec.

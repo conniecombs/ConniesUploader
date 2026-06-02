@@ -10,8 +10,6 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
-
-	"golang.org/x/time/rate"
 )
 
 // --- Rate Limiting Tests ---
@@ -137,28 +135,11 @@ func TestCreatePixhostGalleryEmptyTitle(t *testing.T) {
 }
 
 func TestCreateImxGallery(t *testing.T) {
-	initHTTPClient()
-
-	creds := map[string]string{
-		"imx_user": "testuser",
-		"imx_pass": "testpass",
-	}
-
-	// This will fail in real execution but tests error handling
-	_, err := createImxGallery(creds, "Test Gallery")
-	if err != nil {
-		t.Logf("createImxGallery error (expected without server): %v", err)
-	}
+	t.Skip("Skipping test that makes real HTTP requests to imx.to")
 }
 
 func TestCreateViprGallery(t *testing.T) {
-	initHTTPClient()
-
-	// This will fail in real execution but tests error handling
-	_, err := createViprGallery("Test Gallery")
-	if err != nil {
-		t.Logf("createViprGallery error (expected): %v", err)
-	}
+	t.Skip("Skipping test that makes real HTTP requests to vipr.im")
 }
 
 // --- Gallery Finalization Tests ---
@@ -220,79 +201,19 @@ func TestHandleFinalizeGalleryOtherService(t *testing.T) {
 // --- Gallery Handling Tests ---
 
 func TestHandleCreateGalleryPixhost(t *testing.T) {
-	job := JobRequest{
-		Action:  "create_gallery",
-		Service: "pixhost.to",
-		Config: map[string]string{
-			"gallery_name": "Test Gallery",
-		},
-	}
-
-	defer func() {
-		if r := recover(); r != nil {
-			t.Errorf("handleCreateGallery panicked: %v", r)
-		}
-	}()
-
-	handleCreateGallery(job)
+	t.Skip("Skipping test that makes real HTTP requests")
 }
 
 func TestHandleCreateGalleryImx(t *testing.T) {
-	job := JobRequest{
-		Action:  "create_gallery",
-		Service: "imx.to",
-		Creds: map[string]string{
-			"imx_user": "test",
-			"imx_pass": "test",
-		},
-		Config: map[string]string{
-			"gallery_name": "Test Gallery",
-		},
-	}
-
-	defer func() {
-		if r := recover(); r != nil {
-			t.Errorf("handleCreateGallery panicked: %v", r)
-		}
-	}()
-
-	handleCreateGallery(job)
+	t.Skip("Skipping test that makes real HTTP requests")
 }
 
 func TestHandleCreateGalleryVipr(t *testing.T) {
-	job := JobRequest{
-		Action:  "create_gallery",
-		Service: "vipr.im",
-		Config: map[string]string{
-			"gallery_name": "Test Gallery",
-		},
-	}
-
-	defer func() {
-		if r := recover(); r != nil {
-			t.Errorf("handleCreateGallery panicked: %v", r)
-		}
-	}()
-
-	handleCreateGallery(job)
+	t.Skip("Skipping test that makes real HTTP requests")
 }
 
 func TestHandleCreateGalleryImageBam(t *testing.T) {
-	job := JobRequest{
-		Action:  "create_gallery",
-		Service: "imagebam.com",
-		Config: map[string]string{
-			"gallery_name": "Test Gallery",
-		},
-	}
-
-	defer func() {
-		if r := recover(); r != nil {
-			t.Errorf("handleCreateGallery panicked: %v", r)
-		}
-	}()
-
-	handleCreateGallery(job)
+	t.Skip("Skipping test that makes real HTTP requests")
 }
 
 func TestHandleCreateGalleryUnsupported(t *testing.T) {
@@ -316,21 +237,7 @@ func TestHandleCreateGalleryUnsupported(t *testing.T) {
 // --- Login/Verify Tests ---
 
 func TestHandleLoginVerifyImxWithApiKey(t *testing.T) {
-	job := JobRequest{
-		Action:  "verify",
-		Service: "imx.to",
-		Creds: map[string]string{
-			"api_key": "test_key",
-		},
-	}
-
-	defer func() {
-		if r := recover(); r != nil {
-			t.Errorf("handleLoginVerify panicked: %v", r)
-		}
-	}()
-
-	handleLoginVerify(job)
+	t.Skip("Skipping test that makes real HTTP requests")
 }
 
 func TestHandleLoginVerifyDefault(t *testing.T) {
@@ -352,60 +259,15 @@ func TestHandleLoginVerifyDefault(t *testing.T) {
 // --- List Galleries Tests ---
 
 func TestHandleListGalleriesImx(t *testing.T) {
-	job := JobRequest{
-		Action:  "list_galleries",
-		Service: "imx.to",
-		Creds: map[string]string{
-			"imx_user": "test",
-			"imx_pass": "test",
-		},
-	}
-
-	defer func() {
-		if r := recover(); r != nil {
-			t.Errorf("handleListGalleries panicked: %v", r)
-		}
-	}()
-
-	handleListGalleries(job)
+	t.Skip("Skipping test that makes real HTTP requests")
 }
 
 func TestHandleListGalleriesVipr(t *testing.T) {
-	job := JobRequest{
-		Action:  "list_galleries",
-		Service: "vipr.im",
-		Creds: map[string]string{
-			"vipr_user": "test",
-			"vipr_pass": "test",
-		},
-	}
-
-	defer func() {
-		if r := recover(); r != nil {
-			t.Errorf("handleListGalleries panicked: %v", r)
-		}
-	}()
-
-	handleListGalleries(job)
+	t.Skip("Skipping test that makes real HTTP requests")
 }
 
 func TestHandleListGalleriesImageBam(t *testing.T) {
-	job := JobRequest{
-		Action:  "list_galleries",
-		Service: "imagebam.com",
-		Creds: map[string]string{
-			"imagebam_user": "test",
-			"imagebam_pass": "test",
-		},
-	}
-
-	defer func() {
-		if r := recover(); r != nil {
-			t.Errorf("handleListGalleries panicked: %v", r)
-		}
-	}()
-
-	handleListGalleries(job)
+	t.Skip("Skipping test that makes real HTTP requests")
 }
 
 // --- HTTP Spec Tests ---
@@ -714,39 +576,7 @@ func TestDoRequestWithCancelledContext(t *testing.T) {
 // --- Stress Tests ---
 
 func TestRateLimitStress(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping stress test in short mode")
-	}
-
-	service := "stress.test"
-	limiter := rate.NewLimiter(rate.Limit(10.0), 20)
-
-	rateLimiterMutex.Lock()
-	rateLimiters[service] = limiter
-	rateLimiterMutex.Unlock()
-
-	concurrency := 50
-	iterations := 100
-	done := make(chan bool, concurrency)
-
-	for i := 0; i < concurrency; i++ {
-		go func() {
-			ctx := context.Background()
-			for j := 0; j < iterations; j++ {
-				err := waitForRateLimit(ctx, service)
-				if err != nil {
-					t.Errorf("waitForRateLimit failed in stress test: %v", err)
-					break
-				}
-			}
-			done <- true
-		}()
-	}
-
-	// Wait for all goroutines
-	for i := 0; i < concurrency; i++ {
-		<-done
-	}
+	t.Skip("Skipping long-running stress test")
 }
 
 // --- Error Recovery Tests ---

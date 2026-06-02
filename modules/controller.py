@@ -18,8 +18,6 @@ from .upload_manager import UploadManager
 from .template_manager import TemplateManager
 
 
-
-
 class UploadController:
     def __init__(self) -> None:
         self.progress_queue = queue.Queue(maxsize=1000)
@@ -267,7 +265,7 @@ class UploadController:
 
                 if self.next_post_index in self.post_holding_pen:
                     content = self.post_holding_pen.pop(self.next_post_index)
-                    self.post_condition.release() # Release lock during network IO
+                    self.post_condition.release()  # Release lock during network IO
 
                     logger.info(f"Auto-Post Queue: Posting Batch #{self.next_post_index}...")
 
@@ -278,8 +276,8 @@ class UploadController:
 
                     self.next_post_index += 1
                     time.sleep(config.POST_COOLDOWN_SECONDS)
-                    
-                    self.post_condition.acquire() # Re-acquire lock
+
+                    self.post_condition.acquire()  # Re-acquire lock
                 else:
                     self.post_condition.wait(timeout=1.0)
         logger.info("Auto-Post Queue: Finished.")

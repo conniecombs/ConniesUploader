@@ -10,7 +10,7 @@ import tempfile
 import urllib.parse
 import webbrowser
 
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import customtkinter as ctk
 import tkinter as tk
@@ -126,7 +126,7 @@ class TemplateManager:
     def apply(self, format_mode: str, data: Dict[str, Any], images: List[Tuple[str, str, str]]) -> str:
         template = self.get_template(format_mode)
         cover_count = template.count("#cover_url#")
-        
+
         covers_extracted = []
         if cover_count > 0:
             for img in images[:cover_count]:
@@ -168,17 +168,19 @@ class TemplateManager:
         data["all_full_images"] = " ".join(processed_full)
 
         content = self.process_conditionals(template, data)
-        
+
         covers_to_use = covers_extracted.copy()
+
         def cover_repl(match):
             if covers_to_use:
                 return covers_to_use.pop(0)
             return data.get("cover_url", "")
-            
+
         content = re.sub(r"#cover_url#", cover_repl, content)
 
         for k, v in data.items():
-            if k == "cover_url": continue
+            if k == "cover_url":
+                continue
             content = content.replace(f"#{k}#", str(v))
         return content
 
