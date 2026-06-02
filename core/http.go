@@ -134,14 +134,16 @@ func ExecuteHttpUpload(ctx context.Context, client *http.Client, fp string, job 
 						pw.CloseWithError(err)
 						return
 					}
-					defer f.Close()
 					fi, err := f.Stat()
 					if err != nil {
+						_ = f.Close()
 						pw.CloseWithError(err)
 						return
 					}
 					pw2 := NewProgressWriter(part, fi.Size(), fp)
-					if _, err := io.Copy(pw2, f); err != nil {
+					_, err = io.Copy(pw2, f)
+					_ = f.Close()
+					if err != nil {
 						pw.CloseWithError(err)
 						return
 					}
