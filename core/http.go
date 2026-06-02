@@ -132,19 +132,7 @@ func ExecuteHttpUpload(ctx context.Context, client *http.Client, fp string, job 
 						if err != nil {
 							return err
 						}
-						f, err := os.Open(fp) // #nosec G304
-						if err != nil {
-							return err
-						}
-						defer func() { _ = f.Close() }()
-						fi, err := f.Stat()
-						if err != nil {
-							return err
-						}
-						pw2 := NewProgressWriter(part, fi.Size(), fp)
-						if _, err := io.Copy(pw2, f); err != nil {
-							return err
-						}
+\t\t\t\t\t\tf, err := os.Open(fp) // #nosec G304\n\t\t\t\t\t\tif err != nil {\n\t\t\t\t\t\t	return err\n\t\t\t\t\t\t}\n\t\t\t\t\t\tfi, err := f.Stat()\n\t\t\t\t\t\tif err != nil {\n\t\t\t\t\t\t	_ = f.Close()\n\t\t\t\t\t\t	return err\n\t\t\t\t\t\t}\n\t\t\t\t\t\tpw2 := NewProgressWriter(part, fi.Size(), fp)\n\t\t\t\t\t\t_, copyErr := io.Copy(pw2, f)\n\t\t\t\t\t\t_ = f.Close()\n\t\t\t\t\t\tif copyErr != nil {\n\t\t\t\t\t\t	return copyErr\n\t\t\t\t\t\t}
 					case "text":
 						if err := writer.WriteField(fieldName, substituteValues(field.Value, extractedValues)); err != nil {
 							return err
