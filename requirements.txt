@@ -29,7 +29,7 @@ pyperclip==1.9.0
 pyinstaller==6.11.1
 
 # Configuration Validation
-jsonschema==4.23.0
+jsonschema==4.26.0
 
 # Testing and Code Quality
 pytest==9.0.3
