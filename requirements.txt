@@ -23,7 +23,7 @@ loguru==0.7.2
 keyring==25.7.0
 
 # Clipboard Management
-pyperclip==1.9.0
+pyperclip==1.11.0
 
 # Build Tools (for creating executable)
 pyinstaller==6.11.1
