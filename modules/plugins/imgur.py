@@ -80,8 +80,8 @@ class ImgurPlugin(ImageHostPlugin):
         return [
             {
                 "type": "label",
-                "text": "ℹ️ Anonymous Upload Available (no credentials needed)",
-                "color": "green",
+                "text": "Client ID required for anonymous uploads; access token optional.",
+                "color": "orange",
             },
             {
                 "type": "dropdown",

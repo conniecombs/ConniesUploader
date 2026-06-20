@@ -334,6 +334,8 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             self.var_vipr_threads.set(n)
         if hasattr(self, "var_ib_threads"):
             self.var_ib_threads.set(n)
+        if hasattr(self, "var_imgur_threads"):
+            self.var_imgur_threads.set(n)
 
     def open_template_editor(self):
         def on_update(new_key):
@@ -356,7 +358,11 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         current_service = self.var_service.get()
         size = "200"
         try:
-            if current_service == "imx.to":
+            if hasattr(self, "settings_view"):
+                raw = self.settings_view.get_raw_config(current_service)
+                if raw.get("thumbnail_size"):
+                    size = str(raw["thumbnail_size"])
+            elif current_service == "imx.to":
                 size = self.var_imx_thumb.get()
             elif current_service == "pixhost.to":
                 size = self.var_pix_thumb.get()
@@ -367,19 +373,19 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
                 size = val.split("x")[0] if "x" in val else val
             elif current_service == "imagebam.com":
                 size = self.var_ib_thumb.get()
+            if "x" in size:
+                size = size.split("x")[0]
         except (AttributeError, tk.TclError) as e:
             logger.debug(f"Could not get thumbnail size for {current_service}: {e}")
         return grp.files, grp.title, size
 
     def on_gallery_created(self, service, gid):
         if service == "imx.to":
-            self.ent_imx_gal.delete(0, "end")
-            self.ent_imx_gal.insert(0, gid)
+            self.settings_view.set_value("imx.to", "gallery_id", gid)
             self.var_service.set("imx.to")
             self._swap_service_frame("imx.to")
         elif service == "pixhost.to":
-            self.ent_pix_hash.delete(0, "end")
-            self.ent_pix_hash.insert(0, gid)
+            self.settings_view.set_value("pixhost.to", "gallery_hash", gid)
             self.var_service.set("pixhost.to")
             self._swap_service_frame("pixhost.to")
         elif service == "vipr.im":
@@ -407,7 +413,23 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
                 if meta and meta.get("galleries"):
                     self.vipr_galleries_map = {g["name"]: g["id"] for g in meta["galleries"]}
                     gal_names = ["None"] + list(self.vipr_galleries_map.keys())
-                    self.after(0, lambda: self.cb_vipr_gallery.configure(values=gal_names))
+                    plugin = getattr(self, "service_plugins", {}).get("vipr.im")
+                    if plugin:
+                        plugin.vipr_galleries_map = dict(self.vipr_galleries_map)
+                    selected_name = next(
+                        (name for name, value in self.vipr_galleries_map.items() if value == select_id),
+                        None,
+                    )
+
+                    def _apply_galleries():
+                        if hasattr(self, "cb_vipr_gallery"):
+                            self.cb_vipr_gallery.configure(values=gal_names)
+                        if selected_name:
+                            self.settings_view.set_value(
+                                "vipr.im", "vipr_gallery_name", selected_name
+                            )
+
+                    self.after(0, _apply_galleries)
                     self.log(f"Vipr: Found {len(meta['galleries'])} galleries.")
                 else:
                     self.log("Vipr: No galleries found.")
@@ -459,9 +481,13 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             self.settings_frame_container, text="Select Image Host", font=("Segoe UI", 13, "bold")
         ).pack(pady=(15, 2), padx=10, anchor="w")
         # Dynamically get available plugins from PluginManager
-        plugin_manager = PluginManager()
-        available_services = plugin_manager.get_service_names()
-        default_service = available_services[0] if available_services else "imx.to"
+        self.plugin_manager = PluginManager()
+        available_services = self.plugin_manager.get_service_names()
+        default_service = (
+            "pixhost.to"
+            if "pixhost.to" in available_services
+            else (available_services[0] if available_services else "imx.to")
+        )
 
         self.var_service = ctk.StringVar(value=default_service)
         self.cb_service_select = ctk.CTkOptionMenu(
@@ -478,7 +504,9 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         self.service_settings_container.pack(fill="x", padx=5, pady=0)
 
         # --- REFACTOR: Delegate frame creation to ServiceSettingsView ---
-        self.settings_view = ServiceSettingsView(self.service_settings_container, self)
+        self.settings_view = ServiceSettingsView(
+            self.service_settings_container, self, plugin_manager=self.plugin_manager
+        )
 
         btn_frame = ctk.CTkFrame(self.settings_frame_container, fg_color="transparent")
         btn_frame.pack(fill="x", padx=10, pady=10)
@@ -526,41 +554,20 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
     def _apply_settings(self):
         s = self.settings
 
-        def get_count(key, old_bool_key):
-            val = s.get(key)
-            if val is not None:
-                return str(val)
-            return "1" if s.get(old_bool_key, False) else "0"
-
         self.var_global_worker_count.set(s.get("global_worker_count", 8))
 
-        self.var_imx_thumb.set(s.get("imx_thumb", "180"))
-        self.var_imx_format.set(s.get("imx_format", "Fixed Width"))
-        self.var_imx_cover_count.set(get_count("imx_cover_count", "imx_cover"))
-        self.var_imx_links.set(s.get("imx_links", False))
         self.var_imx_threads.set(s.get("imx_threads", 5))
         self.menu_thread_var.set(s.get("imx_threads", 5))
 
-        self.var_pix_content.set(s.get("pix_content", "Safe"))
-        self.var_pix_thumb.set(s.get("pix_thumb", "200"))
-        self.var_pix_cover_count.set(get_count("pix_cover_count", "pix_cover"))
-        self.var_pix_links.set(s.get("pix_links", False))
         self.var_pix_threads.set(s.get("pix_threads", 3))
 
-        self.var_turbo_content.set(s.get("turbo_content", "Safe"))
-        self.var_turbo_thumb.set(s.get("turbo_thumb", "180"))
-        self.var_turbo_cover_count.set(get_count("turbo_cover_count", "turbo_cover"))
-        self.var_turbo_links.set(s.get("turbo_links", False))
         self.var_turbo_threads.set(s.get("turbo_threads", 2))
 
-        self.var_vipr_thumb.set(s.get("vipr_thumb", "170x170"))
-        self.var_vipr_cover_count.set(get_count("vipr_cover_count", "vipr_cover"))
-        self.var_vipr_links.set(s.get("vipr_links", False))
         self.var_vipr_threads.set(s.get("vipr_threads", 1))
 
-        self.var_ib_content.set(s.get("imagebam_content", "Safe"))
-        self.var_ib_thumb.set(s.get("imagebam_thumb", "180"))
         self.var_ib_threads.set(s.get("imagebam_threads", 2))
+        if hasattr(self, "var_imgur_threads"):
+            self.var_imgur_threads.set(s.get("imgur_threads", 2))
 
         self.var_auto_copy.set(s.get("auto_copy", False))
         self.var_auto_gallery.set(s.get("auto_gallery", False))
@@ -571,13 +578,20 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         self.var_appearance_mode.set(mode)
         ctk.set_appearance_mode(mode)
 
-        saved_service = s.get("service", "imx.to")
+        available_services = list(getattr(self, "service_frames", {}).keys())
+        fallback_service = (
+            "pixhost.to"
+            if "pixhost.to" in available_services
+            else (available_services[0] if available_services else "imx.to")
+        )
+        saved_service = s.get("service", fallback_service)
+        if saved_service not in available_services:
+            logger.warning(
+                f"Saved service '{saved_service}' is not available; using '{fallback_service}'"
+            )
+            saved_service = fallback_service
         self.var_service.set(saved_service)
         self._swap_service_frame(saved_service)
-        self.ent_imx_gal.delete(0, "end")
-        self.ent_imx_gal.insert(0, s.get("gallery_id", ""))
-        self.ent_pix_hash.delete(0, "end")
-        self.ent_pix_hash.insert(0, s.get("pix_gallery_hash", ""))
 
     def _safe_int(self, value, default=2):
         try:
@@ -587,50 +601,37 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             return default
 
     def _gather_settings(self) -> Dict[str, Any]:
-        vipr_gal_name = self.cb_vipr_gallery.get()
-        vipr_id = self.vipr_galleries_map.get(vipr_gal_name, "0")
-
-        def get_c(var):
-            try:
-                return int(var.get())
-            except (ValueError, TypeError, AttributeError) as e:
-                logger.debug(f"Could not convert variable to int: {e}")
-                return 0
-
-        return {
-            "service": self.var_service.get(),
+        selected_service = self.var_service.get()
+        cfg = {
+            "service": selected_service,
             "global_worker_count": self._safe_int(self.var_global_worker_count.get(), 8),
-            "imx_thumb": self.var_imx_thumb.get(),
-            "imx_format": self.var_imx_format.get(),
-            "imx_cover_count": get_c(self.var_imx_cover_count),
-            "imx_links": self.var_imx_links.get(),
             "imx_threads": self._safe_int(self.var_imx_threads.get(), 5),
-            "pix_content": self.var_pix_content.get(),
-            "pix_thumb": self.var_pix_thumb.get(),
-            "pix_cover_count": get_c(self.var_pix_cover_count),
-            "pix_links": self.var_pix_links.get(),
             "pix_threads": self._safe_int(self.var_pix_threads.get(), 3),
-            "turbo_content": self.var_turbo_content.get(),
-            "turbo_thumb": self.var_turbo_thumb.get(),
-            "turbo_cover_count": get_c(self.var_turbo_cover_count),
-            "turbo_links": self.var_turbo_links.get(),
             "turbo_threads": self._safe_int(self.var_turbo_threads.get(), 2),
-            "vipr_thumb": self.var_vipr_thumb.get(),
-            "vipr_cover_count": get_c(self.var_vipr_cover_count),
-            "vipr_links": self.var_vipr_links.get(),
             "vipr_threads": self._safe_int(self.var_vipr_threads.get(), 1),
-            "vipr_gal_id": vipr_id,
-            "imagebam_content": self.var_ib_content.get(),
-            "imagebam_thumb": self.var_ib_thumb.get(),
             "imagebam_threads": self._safe_int(self.var_ib_threads.get(), 2),
+            "imgur_threads": self._safe_int(
+                self.var_imgur_threads.get() if hasattr(self, "var_imgur_threads") else 2, 2
+            ),
+            "output_format": self.settings.get("output_format", "BBCode"),
             "auto_copy": self.var_auto_copy.get(),
             "auto_gallery": self.var_auto_gallery.get(),
             "show_previews": self.var_show_previews.get(),
-            "gallery_id": self.ent_imx_gal.get(),
-            "pix_gallery_hash": self.ent_pix_hash.get(),
             "separate_batches": self.var_separate_batches.get(),
             "appearance_mode": self.var_appearance_mode.get(),
         }
+
+        if not hasattr(self, "settings_view"):
+            return cfg
+
+        for service_id, raw_config in self.settings_view.get_all_raw_configs().items():
+            cfg.update(self.settings_view.alias_config(service_id, raw_config))
+
+        selected_config = self.settings_view.get_validated_config(selected_service)
+        cfg.update(selected_config)
+        cfg.update(self.settings_view.alias_config(selected_service, selected_config))
+
+        return cfg
 
     def add_files(self):
         files = filedialog.askopenfilenames()
@@ -960,7 +961,11 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             self.upload_manager.start_batch(pending_by_group, cfg, self.creds)
 
         except Exception as e:
-            messagebox.showerror("Error starting upload", str(e))
+            if hasattr(e, "errors"):
+                message = "\n".join(str(error) for error in e.errors)
+                messagebox.showerror("Check Image Host Settings", message)
+            else:
+                messagebox.showerror("Error starting upload", str(e))
             self.btn_start.configure(state="normal")
 
     # _process_post_queue removed - now handled by AutoPoster class
@@ -1196,8 +1201,14 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             thumb_size = self.settings.get("pix_thumb", "200")
         elif svc == "turboimagehost":
             thumb_size = self.settings.get("turbo_thumb", "180")
+        elif svc == "vipr.im":
+            thumb_size = self.settings.get("vipr_thumb", "170x170")
+            if "x" in str(thumb_size):
+                thumb_size = str(thumb_size).split("x")[0]
         elif svc == "imagebam.com":
             thumb_size = self.settings.get("imagebam_thumb", "180")
+        elif svc == "imgur.com":
+            thumb_size = self.settings.get("imgur_thumb", self.settings.get("thumbnail_size", "m"))
 
         gal_link = ""
         if gal_id:
@@ -1248,7 +1259,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
                 except (OSError, pyperclip.PyperclipException) as e:
                     logger.warning(f"Could not copy to clipboard: {e}")
 
-            need_links_txt = False
+            need_links_txt = bool(self.settings.get("save_links", False))
             if svc == "imx.to" and self.var_imx_links.get():
                 need_links_txt = True
             elif svc == "pixhost.to" and self.var_pix_links.get():

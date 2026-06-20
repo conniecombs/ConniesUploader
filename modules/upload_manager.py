@@ -177,14 +177,20 @@ class UploadManager:
         elif "vipr" in service_id:
             key = "vipr_cover_count"
 
-        if key is None:
-            return 0
+        keys = ["cover_count", "cover_limit"]
+        if key is not None:
+            keys.insert(0, key)
 
-        try:
-            return max(0, int(cfg.get(key, 0)))
-        except (ValueError, TypeError) as exc:
-            logger.debug(f"Could not get cover count for {service_id}: {exc}")
-            return 0
+        for candidate in keys:
+            value = cfg.get(candidate)
+            if value in (None, ""):
+                continue
+            try:
+                return max(0, int(value))
+            except (ValueError, TypeError) as exc:
+                logger.debug(f"Could not get cover count for {service_id}: {exc}")
+
+        return 0
 
     def _send_job(self, file_list: List[str], cfg: Dict[str, Any], creds: Dict[str, str]) -> None:
         service_id = cfg["service"]

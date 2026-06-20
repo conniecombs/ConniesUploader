@@ -121,6 +121,26 @@ class CredentialsManager:
                 },
             ],
         },
+        "Imgur": {
+            "label": "Imgur",
+            "fields": [
+                {
+                    "key": "imgur_client_id",
+                    "label": "Client ID:",
+                    "keyring_service": config.KEYRING_SERVICE_IMGUR_CLIENT_ID,
+                    "keyring_username": "client_id",
+                    "section": "API",
+                },
+                {
+                    "key": "imgur_access_token",
+                    "label": "Access Token:",
+                    "keyring_service": config.KEYRING_SERVICE_IMGUR_ACCESS_TOKEN,
+                    "keyring_username": "access_token",
+                    "show": "*",
+                    "section": "API",
+                },
+            ],
+        },
     }
 
     @classmethod

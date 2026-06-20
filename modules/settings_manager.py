@@ -26,7 +26,7 @@ class SettingsManager:
         "properties": {
             "service": {
                 "type": "string",
-                "enum": ["imx.to", "pixhost.to", "turboimagehost", "vipr.im", "imagebam.com"],
+                "minLength": 1,
                 "description": "Selected image hosting service",
             },
             "global_worker_count": {
@@ -67,10 +67,19 @@ class SettingsManager:
             "imagebam_thumb": {"type": "string", "pattern": "^[0-9]+$"},
             "imagebam_cover_count": {"type": "integer", "minimum": 0, "maximum": 10},
             "imagebam_threads": {"type": "integer", "minimum": 1, "maximum": 20},
+            # Imgur settings
+            "imgur_content": {"type": "string"},
+            "imgur_thumb": {"type": "string"},
+            "imgur_links": {"type": "boolean"},
+            "imgur_album_id": {"type": "string"},
+            "imgur_title": {"type": "string"},
+            "imgur_threads": {"type": "integer", "minimum": 1, "maximum": 20},
             # Optional fields (for future expansion)
             "auto_gallery": {"type": "boolean"},
             "gallery_id": {"type": "string"},
+            "imx_gallery_id": {"type": "string"},
             "pix_gallery_hash": {"type": "string"},
+            "turbo_gallery_id": {"type": "string"},
         },
         "additionalProperties": True,  # Allow extra fields for forward compatibility
     }
@@ -110,6 +119,14 @@ class SettingsManager:
             # but we'll add the key for consistency if needed later.
             "imagebam_cover_count": 0,
             "imagebam_threads": 2,
+            "imgur_content": "Safe",
+            "imgur_thumb": "m",
+            "imgur_links": False,
+            "imgur_album_id": "",
+            "imgur_title": "",
+            "imgur_threads": 2,
+            "imx_gallery_id": "",
+            "turbo_gallery_id": "",
         }
 
     def validate_settings(self, data: Dict[str, Any]) -> List[str]:

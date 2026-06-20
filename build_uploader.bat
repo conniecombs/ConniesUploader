@@ -10,6 +10,8 @@ title Connie's Uploader - Build Tool
 
 set "APP_NAME=ConniesUploader"
 set "VERSION=1.3.0"
+set "TOOLS_DIR=%SCRIPT_DIR%.build-tools"
+set "LOCAL_GO=%TOOLS_DIR%\go\bin\go.exe"
 
 REM requirements.txt pins pyinstaller==6.11.1, which supports Python <3.14.
 set "PYTHON_MIN_MINOR=11"
@@ -20,8 +22,8 @@ set "PYTHON_URL=https://www.python.org/ftp/python/%PYTHON_INSTALL_VERSION%/%PYTH
 set "PYTHON_SHA256=5ee42c4eee1e6b4464bb23722f90b45303f79442df63083f05322f1785f5fdde"
 
 set "GO_INSTALL_VERSION=1.25.9"
-set "GO_AMD64_SHA256=207e998936913ad4e7e0c79c0c7e038ba8726cdcbb885b66071ed097a31ac458"
-set "GO_386_SHA256=02a9199011c255a80778d9602d11df7bfb90c858258ec8317a57f202dedcf9e3"
+set "GO_AMD64_SHA256=a7a710e225467b34e9e09fb432b829c86c9b2da5821ee5418f7eb2e8ae1a22cc"
+set "GO_386_SHA256=bf40515f5f4d834fa9ead31ff75581e61a38ac27bf49840b95c5c998d321c0f6"
 
 set "DO_CLEAN="
 set "CLEAN_ONLY="
@@ -91,7 +93,7 @@ if defined CLEAN_ONLY exit /b 0
 
 REM --- Cleanup files that can mask failed builds ---
 if exist "%SCRIPT_DIR%python_installer.exe" del /q "%SCRIPT_DIR%python_installer.exe"
-if exist "%SCRIPT_DIR%go_installer.msi" del /q "%SCRIPT_DIR%go_installer.msi"
+if exist "%SCRIPT_DIR%go_installer.zip" del /q "%SCRIPT_DIR%go_installer.zip"
 if exist "%SCRIPT_DIR%uploader.exe" del /q "%SCRIPT_DIR%uploader.exe"
 if exist "%SCRIPT_DIR%dist\%APP_NAME%.exe" del /q "%SCRIPT_DIR%dist\%APP_NAME%.exe"
 
@@ -116,14 +118,21 @@ echo.
 
 REM --- Check/Install Go ---
 echo [2/6] Checking Go...
-go version >nul 2>&1
+call :find_go
 if errorlevel 1 (
-    echo       - Go not found. Installing Go %GO_INSTALL_VERSION%...
+    echo       - No compatible Go found. Need Go %GO_INSTALL_VERSION% or newer.
+    echo       - Installing portable Go %GO_INSTALL_VERSION% for this build...
     call :install_go
     if errorlevel 1 exit /b 1
+
+    call :find_go
+    if errorlevel 1 (
+        echo [ERROR] Go install completed, but a compatible Go was not found.
+        exit /b 1
+    )
 )
-for /f "delims=" %%V in ('go version 2^>^&1') do set "GO_VERSION=%%V"
-echo       - Found %GO_VERSION%
+for /f "delims=" %%V in ('"%GO_EXE%" version 2^>^&1') do set "GO_VERSION=%%V"
+echo       - Found %GO_VERSION% at "%GO_EXE%"
 echo.
 
 REM --- Build Go Sidecar ---
@@ -137,7 +146,7 @@ if not exist "%SCRIPT_DIR%main.go" (
     exit /b 1
 )
 
-go mod download
+"%GO_EXE%" mod download
 if errorlevel 1 (
     echo [ERROR] go mod download failed!
     exit /b 1
@@ -150,7 +159,7 @@ if "%ARCH%"=="32" (
     set "GOARCH=amd64"
 )
 
-go build -ldflags="-s -w" -o "%SCRIPT_DIR%uploader.exe" .
+"%GO_EXE%" build -ldflags="-s -w" -o "%SCRIPT_DIR%uploader.exe" .
 if errorlevel 1 (
     echo [ERROR] Go build failed!
     exit /b 1
@@ -225,7 +234,7 @@ if not exist "%SCRIPT_DIR%uploader.exe" (
 )
 if exist "%SCRIPT_DIR%dist\%APP_NAME%.exe" del /q "%SCRIPT_DIR%dist\%APP_NAME%.exe"
 
-"%VENV_PYTHON%" -m PyInstaller --noconsole --onefile --clean --name "%APP_NAME%" ^
+"%VENV_PYTHON%" -m PyInstaller --noconsole --onefile --clean --noupx --name "%APP_NAME%" ^
     --icon "logo.ico" ^
     --add-data "uploader.exe;." ^
     --add-data "logo.ico;." ^
@@ -288,8 +297,8 @@ echo.
 echo Executable: dist\%APP_NAME%.exe
 echo Build completed: %date% %time%
 echo.
-if not defined NO_PAUSE pause
 if not defined NO_OPEN start "" "%SCRIPT_DIR%dist"
+if not defined NO_PAUSE pause
 exit /b 0
 
 REM ========================================================
@@ -316,6 +325,9 @@ echo   --ci           Build without pause or opening dist
 echo   --no-pause     Do not pause when the build finishes
 echo   --no-open      Do not open the dist folder when the build finishes
 echo   help, -h       Show this help message
+echo.
+echo Missing Python is installed for the current user. Missing or old Go is
+echo installed as a portable toolchain under .build-tools, without admin setup.
 exit /b 0
 
 :clean_build
@@ -327,6 +339,7 @@ if exist "%SCRIPT_DIR%__pycache__" rmdir /s /q "%SCRIPT_DIR%__pycache__"
 if exist "%SCRIPT_DIR%.pytest_cache" rmdir /s /q "%SCRIPT_DIR%.pytest_cache"
 if exist "%SCRIPT_DIR%%APP_NAME%.spec" del /q "%SCRIPT_DIR%%APP_NAME%.spec"
 if exist "%SCRIPT_DIR%uploader.exe" del /q "%SCRIPT_DIR%uploader.exe"
+if exist "%SCRIPT_DIR%go_installer.zip" del /q "%SCRIPT_DIR%go_installer.zip"
 echo [INFO] Clean complete.
 echo.
 exit /b 0
@@ -353,6 +366,30 @@ if not exist "%~1" exit /b 1
 for /f "delims=" %%P in ('"%~1" -c "import sys; v=sys.version_info; ok=v.major == 3 and %PYTHON_MIN_MINOR% <= v.minor <= %PYTHON_MAX_MINOR%; print(sys.executable) if ok else None; sys.exit(0 if ok else 1)" 2^>nul') do set "PYTHON_EXE=%%P"
 if defined PYTHON_EXE exit /b 0
 exit /b 1
+
+:find_go
+set "GO_EXE="
+call :try_go_exe "%LOCAL_GO%" && exit /b 0
+call :try_go_command "go" && exit /b 0
+exit /b 1
+
+:try_go_command
+set "GO_EXE="
+for /f "delims=" %%G in ('where %~1 2^>nul') do (
+    call :try_go_exe "%%G"
+    if not errorlevel 1 exit /b 0
+)
+exit /b 1
+
+:try_go_exe
+set "GO_EXE="
+set "CANDIDATE_GO_VERSION="
+if not exist "%~1" exit /b 1
+for /f "delims=" %%V in ('"%~1" version 2^>^&1') do set "CANDIDATE_GO_VERSION=%%V"
+"%PYTHON_EXE%" -c "import os,re,sys; need=tuple(map(int, os.environ['GO_INSTALL_VERSION'].split('.'))); s=os.environ.get('CANDIDATE_GO_VERSION',''); m=re.search(r'go(\d+)\.(\d+)(?:\.(\d+))?', s); got=(int(m.group(1)), int(m.group(2)), int(m.group(3) or 0)) if m else (0,0,0); sys.exit(0 if got >= need else 1)" >nul 2>&1
+if errorlevel 1 exit /b 1
+set "GO_EXE=%~1"
+exit /b 0
 
 :install_python
 if "%ARCH%"=="32" (
@@ -392,44 +429,52 @@ exit /b 0
 
 :install_go
 if "%ARCH%"=="64" (
-    set "GO_URL=https://go.dev/dl/go%GO_INSTALL_VERSION%.windows-amd64.msi"
+    set "GO_URL=https://go.dev/dl/go%GO_INSTALL_VERSION%.windows-amd64.zip"
     set "GO_SHA256=%GO_AMD64_SHA256%"
 ) else (
-    set "GO_URL=https://go.dev/dl/go%GO_INSTALL_VERSION%.windows-386.msi"
+    set "GO_URL=https://go.dev/dl/go%GO_INSTALL_VERSION%.windows-386.zip"
     set "GO_SHA256=%GO_386_SHA256%"
 )
 
 echo       - Downloading Go %GO_INSTALL_VERSION%...
-curl.exe -L -o "%SCRIPT_DIR%go_installer.msi" "%GO_URL%"
+curl.exe -L -o "%SCRIPT_DIR%go_installer.zip" "%GO_URL%"
 if errorlevel 1 (
     echo [ERROR] Go download failed!
     exit /b 1
 )
-if not exist "%SCRIPT_DIR%go_installer.msi" (
-    echo [ERROR] Go installer was not downloaded!
+if not exist "%SCRIPT_DIR%go_installer.zip" (
+    echo [ERROR] Go archive was not downloaded!
     exit /b 1
 )
 
 echo       - Verifying SHA256...
-call :verify_hash "%SCRIPT_DIR%go_installer.msi" "%GO_SHA256%"
+call :verify_hash "%SCRIPT_DIR%go_installer.zip" "%GO_SHA256%"
 if errorlevel 1 (
-    del /q "%SCRIPT_DIR%go_installer.msi"
+    del /q "%SCRIPT_DIR%go_installer.zip"
     exit /b 1
 )
 
-echo       - Installing...
-msiexec.exe /i "%SCRIPT_DIR%go_installer.msi" /quiet /norestart
-if errorlevel 1 (
-    echo [ERROR] Go installer failed!
-    del /q "%SCRIPT_DIR%go_installer.msi"
+echo       - Extracting portable Go toolchain...
+if not exist "%TOOLS_DIR%" mkdir "%TOOLS_DIR%"
+if exist "%TOOLS_DIR%\go" rmdir /s /q "%TOOLS_DIR%\go"
+if exist "%TOOLS_DIR%\go" (
+    echo [ERROR] Failed to replace existing portable Go directory.
+    del /q "%SCRIPT_DIR%go_installer.zip"
     exit /b 1
 )
-del /q "%SCRIPT_DIR%go_installer.msi"
-if "%ARCH%"=="64" (
-    set "PATH=%PATH%;%ProgramFiles%\Go\bin"
-) else (
-    set "PATH=%PATH%;%ProgramFiles(x86)%\Go\bin"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Expand-Archive -LiteralPath '%SCRIPT_DIR%go_installer.zip' -DestinationPath '%TOOLS_DIR%' -Force"
+if errorlevel 1 (
+    echo [ERROR] Go archive extraction failed!
+    del /q "%SCRIPT_DIR%go_installer.zip"
+    exit /b 1
 )
+del /q "%SCRIPT_DIR%go_installer.zip"
+if not exist "%LOCAL_GO%" (
+    echo [ERROR] Portable Go executable was not created.
+    exit /b 1
+)
+set "PATH=%TOOLS_DIR%\go\bin;%PATH%"
+set "GO_EXE=%LOCAL_GO%"
 exit /b 0
 
 :verify_hash

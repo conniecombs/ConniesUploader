@@ -124,7 +124,14 @@ def validate_service_name(service: str, plugin_manager=None) -> bool:
     if plugin_manager is not None:
         valid_services = {plugin.service_id for plugin in plugin_manager.get_all_plugins()}
     else:
-        valid_services = {"imx.to", "pixhost.to", "turboimagehost", "vipr.im", "imagebam.com"}
+        valid_services = {
+            "imx.to",
+            "pixhost.to",
+            "turboimagehost",
+            "vipr.im",
+            "imagebam.com",
+            "imgur.com",
+        }
         logger.debug("Using fallback service list (no plugin_manager provided)")
 
     if service not in valid_services:

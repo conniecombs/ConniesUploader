@@ -82,6 +82,8 @@ KEYRING_SERVICE_VIPR_USER = "ImageUploader:vipr_username"
 KEYRING_SERVICE_VIPR_PASS = "ImageUploader:vipr_password"
 KEYRING_SERVICE_IB_USER = "ImageUploader:imagebam_username"
 KEYRING_SERVICE_IB_PASS = "ImageUploader:imagebam_password"
+KEYRING_SERVICE_IMGUR_CLIENT_ID = "ImageUploader:imgur_client_id"
+KEYRING_SERVICE_IMGUR_ACCESS_TOKEN = "ImageUploader:imgur_access_token"
 # NEW: ViperGirls Forum Credentials
 KEYRING_SERVICE_VG_USER = "ImageUploader:vipergirls_username"
 KEYRING_SERVICE_VG_PASS = "ImageUploader:vipergirls_password"
