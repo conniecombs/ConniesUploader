@@ -216,7 +216,7 @@ class ServiceSettingsView:
         if not hasattr(self.app, "var_imgur_threads"):
             self.app.var_imgur_threads = ctk.IntVar(value=2)
 
-    def _create_cover_count_combo(self, parent, variable, label_text="Covers:"):
+    def _create_cover_count_combo(self, parent, variable, label_text="Auto Covers:"):
         f = ctk.CTkFrame(parent, fg_color="transparent")
         f.pack(fill="x", pady=5)
         ctk.CTkLabel(f, text=label_text, width=60).pack(side="left")
@@ -490,6 +490,7 @@ class CollapsibleGroupFrame(ctk.CTkFrame):
         thread_names=None,
         template_names=None,
         default_template="BBCode",
+        post_preview_callback=None,
     ):
         super().__init__(parent)
         self.parent = parent
@@ -497,8 +498,11 @@ class CollapsibleGroupFrame(ctk.CTkFrame):
         self.is_collapsed = False
         self.is_completed = False
         self.files = []
+        self.cover_files = []
+        self.cover_selection_manual = False
         self.selected_thread = "Do Not Post"
         self.selected_template = default_template
+        self.post_preview_callback = post_preview_callback
 
         self.header = ctk.CTkFrame(self, height=30, corner_radius=6)
         self.header.pack(fill="x", pady=(2, 0), ipadx=5, ipady=2)
@@ -531,6 +535,16 @@ class CollapsibleGroupFrame(ctk.CTkFrame):
         )
         self.thread_combo.pack(side="right", padx=5)
 
+        if post_preview_callback:
+            self.btn_post_preview = ctk.CTkButton(
+                self.header,
+                text="Preview Post",
+                width=95,
+                height=24,
+                command=lambda: self.post_preview_callback(self),
+            )
+            self.btn_post_preview.pack(side="right", padx=5)
+
         if template_names:
             val = (
                 default_template
@@ -554,6 +568,17 @@ class CollapsibleGroupFrame(ctk.CTkFrame):
     def _on_thread_change(self, choice):
         self.selected_thread = choice
 
+    def update_thread_names(self, thread_names=None):
+        vals = ["Do Not Post"]
+        if thread_names:
+            vals += sorted(thread_names)
+        self.thread_combo.configure(values=vals)
+        current = self.thread_var.get()
+        if current not in vals:
+            current = "Do Not Post"
+            self.thread_var.set(current)
+        self.selected_thread = current
+
     def _on_template_change(self, choice):
         self.selected_template = choice
 
@@ -574,7 +599,42 @@ class CollapsibleGroupFrame(ctk.CTkFrame):
     def remove_file(self, filepath):
         if filepath in self.files:
             self.files.remove(filepath)
+        if filepath in self.cover_files:
+            self.cover_files.remove(filepath)
             self.lbl_counts.configure(text=f"({len(self.files)} files)")
+
+    def is_cover_file(self, filepath):
+        return filepath in self.cover_files
+
+    def set_cover_file(self, filepath, is_cover=True, manual=True):
+        if filepath not in self.files:
+            return False
+
+        changed = False
+        if is_cover and filepath not in self.cover_files:
+            self.cover_files.append(filepath)
+            changed = True
+        elif not is_cover and filepath in self.cover_files:
+            self.cover_files.remove(filepath)
+            changed = True
+
+        if manual:
+            self.cover_selection_manual = True
+        return changed
+
+    def auto_select_covers(self, count):
+        if self.cover_selection_manual:
+            return
+
+        try:
+            count = max(0, min(10, int(count)))
+        except (TypeError, ValueError):
+            count = 0
+        self.cover_files = list(self.files[:count])
+
+    def cover_filepaths(self):
+        cover_set = set(self.cover_files)
+        return [filepath for filepath in self.files if filepath in cover_set]
 
     def mark_complete(self):
         self.is_completed = True

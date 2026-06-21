@@ -2,6 +2,8 @@
 # Copyright (c) 2025 conniecombs
 
 import json
+import queue
+import threading
 
 import pytest
 
@@ -74,6 +76,39 @@ def test_upload_manager_prefers_service_specific_cover_count():
     cfg = {"service": "pixhost.to", "pix_cover_count": 4, "cover_count": "1"}
 
     assert UploadManager._cover_count_for_service(cfg) == 4
+
+
+@pytest.mark.unit
+def test_upload_manager_uses_explicit_cover_files_before_legacy_count():
+    class Group:
+        title = "Manual Covers"
+        files = ["one.jpg", "two.jpg", "three.jpg"]
+
+        def cover_filepaths(self):
+            return ["three.jpg"]
+
+    sent_jobs = []
+    manager = UploadManager.__new__(UploadManager)
+    manager.cancel_event = threading.Event()
+    manager.progress_queue = queue.Queue()
+    manager.plugin_manager = type(
+        "PluginManager",
+        (),
+        {"get_plugin": lambda self, service_id: None},
+    )()
+    manager._send_job = lambda files, cfg, creds: sent_jobs.append((list(files), dict(cfg)))
+
+    group = Group()
+    manager._dispatch_jobs(
+        {group: list(group.files)},
+        {"service": "pixhost.to", "pix_cover_count": 1},
+        {},
+    )
+
+    assert sent_jobs[0][0] == ["three.jpg"]
+    assert sent_jobs[0][1]["pix_thumb"] == "500"
+    assert sent_jobs[0][1]["thumbnail_size"] == "500"
+    assert sent_jobs[1][0] == ["one.jpg", "two.jpg"]
 
 
 @pytest.mark.unit

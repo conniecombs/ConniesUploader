@@ -604,6 +604,8 @@ class DragDropMixin:
     def _move_file_to_group(self, fp, old_group, new_group, before_widget=None):
         if not self._queue_reorder_allowed():
             return False
+        is_cover_file = getattr(old_group, "is_cover_file", None)
+        was_cover = bool(is_cover_file(fp)) if callable(is_cover_file) else False
         old_group.remove_file(fp)
         self._remove_empty_group_if_needed(old_group)
         if before_widget:
@@ -622,6 +624,12 @@ class DragDropMixin:
         old_row.destroy()
 
         self._create_row(fp, None, new_group, preview_requested=self.var_show_previews.get())
+        if was_cover:
+            set_cover_file = getattr(new_group, "set_cover_file", None)
+            if callable(set_cover_file):
+                set_cover_file(fp, True, manual=True)
+            if hasattr(self, "_refresh_cover_buttons"):
+                self._refresh_cover_buttons(new_group)
         with self.lock:
             new_row = self.file_widgets[fp]["row"]
 
@@ -699,6 +707,26 @@ class DragDropMixin:
             command=lambda f=filepath: self._move_file_relative(f, "bottom"),
         )
         self.context_menu.add_separator()
+        selected_files = self._selected_files_for_action(filepath)
+        selected_label = "Selected Images" if len(selected_files) > 1 else "Image"
+        if hasattr(self, "_is_cover_file") and hasattr(self, "_set_cover_for_files"):
+            with self.lock:
+                group = self.file_widgets.get(filepath, {}).get("group")
+            all_selected_are_covers = all(
+                self._is_cover_file(selected_file, group)
+                for selected_file in selected_files
+            )
+            self.context_menu.add_command(
+                label=(
+                    f"Clear Cover for {selected_label}"
+                    if all_selected_are_covers
+                    else f"Mark {selected_label} as Cover"
+                ),
+                command=lambda files=selected_files, cover=not all_selected_are_covers: (
+                    self._set_cover_for_files(files, cover)
+                ),
+            )
+            self.context_menu.add_separator()
         with self.lock:
             state = self.file_widgets.get(filepath, {}).get("state")
         if state == "failed":

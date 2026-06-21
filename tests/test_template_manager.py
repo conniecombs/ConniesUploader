@@ -13,7 +13,8 @@ from pathlib import Path
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from modules.template_manager import TemplateManager
+from modules import template_manager  # noqa: E402
+from modules.template_manager import TemplateEditor, TemplateManager, TemplateValidationError  # noqa: E402
 
 
 @pytest.mark.unit
@@ -48,7 +49,7 @@ class TestTemplateManagerInstantiation:
             templates_file = Path(temp_dir) / "templates.json"
             assert not templates_file.exists()
 
-            tm = TemplateManager(str(templates_file))
+            TemplateManager(str(templates_file))
 
             # File should be created
             assert templates_file.exists()
@@ -72,6 +73,46 @@ class TestTemplateManagerInstantiation:
 
             assert "BBCode" in templates
             assert "HTML" in templates
+
+    def test_default_template_path_uses_user_data_dir(self, tmp_path, monkeypatch):
+        template_path = tmp_path / ".conniesuploader" / "templates.json"
+        legacy_path = tmp_path / "user_templates.json"
+        monkeypatch.setattr(template_manager, "DEFAULT_TEMPLATE_FILE", str(template_path))
+        monkeypatch.setattr(template_manager, "LEGACY_TEMPLATE_FILE", str(legacy_path))
+
+        tm = TemplateManager()
+
+        assert Path(tm.filepath) == template_path
+        assert template_path.exists()
+
+    def test_default_template_path_migrates_legacy_file(self, tmp_path, monkeypatch):
+        template_path = tmp_path / ".conniesuploader" / "templates.json"
+        legacy_path = tmp_path / "user_templates.json"
+        legacy_path.write_text(json.dumps({"Legacy": "#all_images#"}), encoding="utf-8")
+        monkeypatch.setattr(template_manager, "DEFAULT_TEMPLATE_FILE", str(template_path))
+        monkeypatch.setattr(template_manager, "LEGACY_TEMPLATE_FILE", str(legacy_path))
+
+        tm = TemplateManager()
+
+        assert tm.get_template("Legacy") == "#all_images#"
+        assert template_path.exists()
+        assert not legacy_path.exists()
+        assert list(tmp_path.glob("user_templates.json.migrated-*.bak"))
+
+    def test_default_template_path_does_not_migrate_when_new_file_exists(self, tmp_path, monkeypatch):
+        template_path = tmp_path / ".conniesuploader" / "templates.json"
+        legacy_path = tmp_path / "user_templates.json"
+        template_path.parent.mkdir()
+        template_path.write_text(json.dumps({"Current": "#all_images#"}), encoding="utf-8")
+        legacy_path.write_text(json.dumps({"Legacy": "#all_images#"}), encoding="utf-8")
+        monkeypatch.setattr(template_manager, "DEFAULT_TEMPLATE_FILE", str(template_path))
+        monkeypatch.setattr(template_manager, "LEGACY_TEMPLATE_FILE", str(legacy_path))
+
+        tm = TemplateManager()
+
+        assert tm.get_template("Current") == "#all_images#"
+        assert legacy_path.exists()
+        assert not list(tmp_path.glob("user_templates.json.migrated-*.bak"))
 
 
 @pytest.mark.unit
@@ -139,6 +180,96 @@ class TestTemplateOperations:
             tm.add_template("MyTemplate", updated)  # Update by adding again
             assert tm.get_template("MyTemplate") == updated
 
+    def test_filter_template_names_matches_name_and_content(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            templates_file = Path(temp_dir) / "templates.json"
+            tm = TemplateManager(str(templates_file))
+
+            tm.add_template("Gallery Layout", "[url=#gallery_link#]Gallery[/url] #all_images#")
+            tm.add_template("Plain Images", "#all_images#")
+
+            assert "Gallery Layout" in tm.filter_template_names("gallery")
+            assert "Gallery Layout" in tm.filter_template_names("gallery_link")
+            assert "Plain Images" not in tm.filter_template_names("gallery_link")
+
+    def test_import_export_templates_round_trip(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            export_path = Path(temp_dir) / "templates-export.json"
+            source_path = Path(temp_dir) / "source.json"
+            target_path = Path(temp_dir) / "target.json"
+            source = TemplateManager(str(source_path))
+            target = TemplateManager(str(target_path))
+
+            source.add_template("Exported", "#all_images#")
+            exported = source.export_templates_file(str(export_path), names=["Exported"])
+            imported, skipped, errors = target.import_templates_file(str(export_path))
+
+            assert exported == 1
+            assert imported == 1
+            assert skipped == 0
+            assert errors == []
+            assert target.get_template("Exported") == "#all_images#"
+
+    def test_export_templates_file_includes_version_timestamp_and_selected_templates(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            export_path = Path(temp_dir) / "templates-export.json"
+            templates_file = Path(temp_dir) / "templates.json"
+            tm = TemplateManager(str(templates_file))
+            tm.add_template("Exported", "#all_images#")
+
+            exported = tm.export_templates_file(str(export_path), names=["Exported"])
+            payload = json.loads(export_path.read_text(encoding="utf-8"))
+
+            assert exported == 1
+            assert payload["version"] == template_manager.TEMPLATE_EXPORT_VERSION
+            assert payload["exported_at"]
+            assert payload["templates"] == {"Exported": "#all_images#"}
+
+    def test_import_templates_respects_no_overwrite(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            import_path = Path(temp_dir) / "templates-import.json"
+            templates_file = Path(temp_dir) / "templates.json"
+            import_path.write_text(
+                json.dumps({"templates": {"Existing": "#all_images# imported"}}),
+                encoding="utf-8",
+            )
+            tm = TemplateManager(str(templates_file))
+            tm.add_template("Existing", "#all_images# original")
+
+            imported, skipped, errors = tm.import_templates_file(
+                str(import_path),
+                overwrite=False,
+            )
+
+            assert imported == 0
+            assert skipped == 1
+            assert errors == []
+            assert tm.get_template("Existing") == "#all_images# original"
+
+    def test_import_templates_skips_invalid_templates(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            import_path = Path(temp_dir) / "bad-import.json"
+            templates_file = Path(temp_dir) / "templates.json"
+            import_path.write_text(
+                json.dumps(
+                    {
+                        "templates": {
+                            "Good": "#all_images#",
+                            "Bad": "#not_a_real_placeholder#",
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            tm = TemplateManager(str(templates_file))
+
+            imported, skipped, errors = tm.import_templates_file(str(import_path))
+
+            assert imported == 1
+            assert skipped == 1
+            assert "Good" in tm.get_all_templates()
+            assert any("Bad:" in error for error in errors)
+
 
 @pytest.mark.unit
 class TestTemplatePlaceholders:
@@ -179,7 +310,7 @@ class TestTemplatePlaceholders:
         }
 
         try:
-            result = template.format(**values)
+            template.format(**values)
             pytest.fail("Should raise KeyError for missing placeholder")
         except KeyError:
             # Expected behavior
@@ -218,6 +349,18 @@ class TestTemplatePersistence:
                 saved_data = json.load(f)
 
             assert "Test" in saved_data
+
+    def test_templates_save_atomically(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            templates_file = Path(temp_dir) / "templates.json"
+            tm = TemplateManager(str(templates_file))
+
+            tm.add_template("Atomic", "#all_images#")
+
+            assert templates_file.exists()
+            assert not Path(f"{templates_file}.tmp").exists()
+            saved_data = json.loads(templates_file.read_text(encoding="utf-8"))
+            assert saved_data["Atomic"] == "#all_images#"
 
     def test_templates_persist_across_instances(self):
         """Test that templates persist when creating new instance"""
@@ -272,6 +415,19 @@ class TestTemplatePersistence:
             restored_data = json.loads(templates_file.read_text(encoding="utf-8"))
             assert restored_data["BBCode"] == tm.defaults["BBCode"]
 
+    def test_file_recovery_handles_valid_json_that_is_not_an_object(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            templates_file = Path(temp_dir) / "templates.json"
+            templates_file.write_text('["not", "a", "template", "object"]', encoding="utf-8")
+
+            tm = TemplateManager(str(templates_file))
+            issue = tm.get_recovery_issue()
+
+            assert issue is not None
+            assert "Template file must contain a JSON object" in issue["error"]
+            assert Path(issue["backup_path"]).exists()
+            assert json.loads(templates_file.read_text(encoding="utf-8"))["BBCode"] == tm.defaults["BBCode"]
+
 
 @pytest.mark.unit
 class TestDefaultTemplates:
@@ -298,7 +454,39 @@ class TestDefaultTemplates:
 
             # Common default template names
             has_bbcode = any(key.lower().find("bbcode") >= 0 for key in templates.keys())
-            # May or may not have default BBCode
+            assert has_bbcode
+
+    def test_builtin_template_categories_include_vipergirls_templates(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            templates_file = Path(temp_dir) / "templates.json"
+            tm = TemplateManager(str(templates_file))
+
+            categories = tm.get_category_names()
+            vipergirls_templates = tm.get_all_keys("ViperGirls")
+
+            assert categories[0] == "All"
+            assert "ViperGirls" in categories
+            assert tm.get_template_category("ViperGirls Gallery Post") == "ViperGirls"
+            assert "ViperGirls Gallery Post" in vipergirls_templates
+            assert "ViperGirls Compact Grid" in vipergirls_templates
+            assert "BBCode" not in vipergirls_templates
+
+    def test_template_filter_can_limit_by_category(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            templates_file = Path(temp_dir) / "templates.json"
+            tm = TemplateManager(str(templates_file))
+
+            filtered = tm.filter_template_names("gallery", category="ViperGirls")
+
+            assert "ViperGirls Gallery Post" in filtered
+            assert "Cover + Gallery ID" not in filtered
+
+    def test_all_builtin_templates_validate(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            templates_file = Path(temp_dir) / "templates.json"
+            tm = TemplateManager(str(templates_file))
+
+            assert tm.validate_all_templates() == {}
 
 
 @pytest.mark.unit
@@ -311,12 +499,8 @@ class TestTemplateValidation:
             templates_file = Path(temp_dir) / "templates.json"
             tm = TemplateManager(str(templates_file))
 
-            try:
+            with pytest.raises(TemplateValidationError):
                 tm.add_template("", "[img]{thumb}[/img]")
-                # Should either accept or reject empty names
-            except ValueError:
-                # Acceptable to raise error
-                pass
 
     def test_empty_template_content(self):
         """Test handling of empty template content"""
@@ -324,8 +508,48 @@ class TestTemplateValidation:
             templates_file = Path(temp_dir) / "templates.json"
             tm = TemplateManager(str(templates_file))
 
-            tm.add_template("Empty", "")
-            assert tm.get_template("Empty") == ""
+            with pytest.raises(TemplateValidationError):
+                tm.add_template("Empty", "")
+
+    def test_template_validation_reports_unknown_placeholders_and_unclosed_conditionals(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            templates_file = Path(temp_dir) / "templates.json"
+            tm = TemplateManager(str(templates_file))
+
+            errors = tm.validate_template("[if #bad_placeholder#]#all_images#")
+
+            assert "Unknown placeholder(s): #bad_placeholder#" in errors
+            assert "Template has an unclosed [if] block." in errors
+
+    def test_template_validation_requires_image_output_placeholder(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            templates_file = Path(temp_dir) / "templates.json"
+            tm = TemplateManager(str(templates_file))
+
+            errors = tm.validate_template("[url=#gallery_link#]Gallery[/url]")
+
+            assert any("image output placeholder" in error for error in errors)
+
+    def test_template_validation_reports_unmatched_else_and_duplicate_else(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            templates_file = Path(temp_dir) / "templates.json"
+            tm = TemplateManager(str(templates_file))
+
+            else_without_if = tm.validate_template("#all_images#[else]")
+            duplicate_else = tm.validate_template("[if gallery_link]A[else]B[else]C[/if]#all_images#")
+
+            assert "Template has an [else] without a matching [if]." in else_without_if
+            assert "Template has more than one [else] in an [if] block." in duplicate_else
+
+    def test_template_validation_reports_mismatched_nested_blocks(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            templates_file = Path(temp_dir) / "templates.json"
+            tm = TemplateManager(str(templates_file))
+
+            errors = tm.validate_template("[if gallery_link][for image]#image_url#[/if][/for]")
+
+            assert "Template has a closing [/if] without a matching [if]." in errors
+            assert "Template has an unclosed [if] block." in errors
 
     def test_very_long_template(self):
         """Test handling of very long templates"""
@@ -365,12 +589,12 @@ class TestTemplateEdgeCases:
             templates_file = Path(temp_dir) / "templates.json"
             tm = TemplateManager(str(templates_file))
 
-            tm.add_template("Duplicate", "Version 1")
-            tm.add_template("Duplicate", "Version 2")
+            tm.add_template("Duplicate", "#all_images# Version 1")
+            tm.add_template("Duplicate", "#all_images# Version 2")
 
             # Should overwrite or handle appropriately
             result = tm.get_template("Duplicate")
-            assert result in ["Version 1", "Version 2"]
+            assert result in ["#all_images# Version 1", "#all_images# Version 2"]
 
     def test_case_sensitivity(self):
         """Test case sensitivity of template names"""
@@ -378,12 +602,25 @@ class TestTemplateEdgeCases:
             templates_file = Path(temp_dir) / "templates.json"
             tm = TemplateManager(str(templates_file))
 
-            tm.add_template("MyTemplate", "lowercase")
-            tm.add_template("MYTEMPLATE", "uppercase")
+            tm.add_template("MyTemplate", "#all_images# lowercase")
+            tm.add_template("MYTEMPLATE", "#all_images# uppercase")
 
             # Behavior depends on implementation
             templates = tm.get_all_templates()
-            # May treat as same or different
+            assert "MyTemplate" in templates
+
+    def test_duplicate_and_rename_template_helpers(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            templates_file = Path(temp_dir) / "templates.json"
+            tm = TemplateManager(str(templates_file))
+
+            tm.add_template("Source", "#all_images#")
+            tm.duplicate_template("Source", "Copy")
+            tm.rename_template("Copy", "Renamed")
+
+            assert tm.get_template("Source") == "#all_images#"
+            assert "Copy" not in tm.get_all_templates()
+            assert tm.get_template("Renamed") == "#all_images#"
 
 
 @pytest.mark.integration
@@ -419,36 +656,37 @@ class TestTemplateManagerIntegration:
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "-m", "unit"])
 
+
 @pytest.mark.unit
 class TestTemplateManagerAdvanced:
     def test_template_manager_multiple_covers(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             templates_file = Path(temp_dir) / "templates.json"
             mgr = TemplateManager(str(templates_file))
-            
+
             template = "[img]#cover_url#[/img]\n[img]#cover_url#[/img]\n\n#all_images#"
             mgr.set_template("Custom Covers", template)
-            
+
             images = [
                 ("viewer1", "thumb1", "direct1"),
                 ("viewer2", "thumb2", "direct2"),
                 ("viewer3", "thumb3", "direct3"),
                 ("viewer4", "thumb4", "direct4"),
             ]
-            
+
             data = {
                 "cover_url": "thumb1",
                 "gallery_name": "Test"
             }
-            
+
             result = mgr.apply("Custom Covers", data, images)
-            
+
             assert "[img]thumb1[/img]" in result
             assert "[img]thumb2[/img]" in result
-            
+
             assert "[url=viewer3][img]thumb3[/img][/url]" in result
             assert "[url=viewer4][img]thumb4[/img][/url]" in result
-            
+
             all_images_part = result.split("\n\n")[1] if "\n\n" in result else result
             assert "thumb1" not in all_images_part
             assert "thumb2" not in all_images_part
@@ -459,11 +697,296 @@ class TestTemplateManagerAdvanced:
             mgr = TemplateManager(str(templates_file))
             template = "[if gallery_link][url=#gallery_link#]Gallery[/url][/if]#all_images#"
             mgr.set_template("Cond Test", template)
-            
+
             images = []
-            
+
             result_no_link = mgr.apply("Cond Test", {"gallery_link": ""}, images)
             assert "Gallery" not in result_no_link
-            
+
             result_with_link = mgr.apply("Cond Test", {"gallery_link": "http://example.com"}, images)
             assert "[url=http://example.com]Gallery[/url]" in result_with_link
+
+    def test_conditionals_support_forum_safe_placeholder_variants(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            templates_file = Path(temp_dir) / "templates.json"
+            mgr = TemplateManager(str(templates_file))
+            template = (
+                "[IF #gallery_link#][url=#gallery_link#]Gallery[/url][ELSE]No gallery[/IF]\n"
+                "[if #gallery_id#='PREV_123']Preview[/if]\n"
+                "#all_images#"
+            )
+            mgr.set_template("Forum Safe Conditionals", template)
+
+            result = mgr.apply(
+                "Forum Safe Conditionals",
+                {"gallery_link": "http://example.com", "gallery_id": "PREV_123"},
+                [],
+            )
+
+            assert "[url=http://example.com]Gallery[/url]" in result
+            assert "Preview" in result
+            assert "[IF" not in result
+            assert "[/IF" not in result
+            assert "[ELSE]" not in result
+
+    def test_nested_conditionals_render_reliably(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            templates_file = Path(temp_dir) / "templates.json"
+            mgr = TemplateManager(str(templates_file))
+            template = (
+                "[if gallery_link]"
+                "Gallery [if thread_id]Thread #thread_id#[else]No thread[/if]"
+                "[else]No gallery[/if] #all_images#"
+            )
+            mgr.set_template("Nested Conditionals", template)
+
+            with_thread = mgr.apply(
+                "Nested Conditionals",
+                {"gallery_link": "https://gallery", "thread_id": "123"},
+                [],
+            )
+            without_thread = mgr.apply(
+                "Nested Conditionals",
+                {"gallery_link": "https://gallery", "thread_id": ""},
+                [],
+            )
+            without_gallery = mgr.apply("Nested Conditionals", {"gallery_link": ""}, [])
+
+            assert "Gallery Thread 123" in with_thread
+            assert "No thread" in without_thread
+            assert "No gallery" in without_gallery
+            assert "[if" not in with_thread.lower()
+
+    def test_image_loop_renders_custom_body_with_blank_line_separator(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            templates_file = Path(temp_dir) / "templates.json"
+            mgr = TemplateManager(str(templates_file))
+            mgr.set_template(
+                "Loop",
+                "[for image separator=blankline]#image_url#|#thumb_url#|#direct_url#[/for]",
+            )
+
+            result = mgr.apply(
+                "Loop",
+                {},
+                [("viewer1", "thumb1", "direct1"), ("viewer2", "thumb2", "direct2")],
+            )
+
+            assert result == "viewer1|thumb1|direct1\n\nviewer2|thumb2|direct2"
+
+    def test_image_loop_supports_nested_conditionals_and_space_separator(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            templates_file = Path(temp_dir) / "templates.json"
+            mgr = TemplateManager(str(templates_file))
+            mgr.set_template(
+                "Loop Conditionals",
+                "[for image separator=space][if direct_url]#direct_url#[else]missing[/if][/for]",
+            )
+
+            result = mgr.apply(
+                "Loop Conditionals",
+                {},
+                [("viewer1", "thumb1", "direct1"), ("viewer2", "thumb2", "")],
+            )
+
+            assert result == "direct1 missing"
+
+    def test_image_loop_accepts_custom_separator(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            templates_file = Path(temp_dir) / "templates.json"
+            mgr = TemplateManager(str(templates_file))
+            mgr.set_template(
+                "Loop Custom Separator",
+                '[for image separator=", "]#image_url#[/for]',
+            )
+
+            result = mgr.apply(
+                "Loop Custom Separator",
+                {},
+                [("viewer1", "thumb1", "direct1"), ("viewer2", "thumb2", "direct2")],
+            )
+
+            assert result == "viewer1, viewer2"
+
+    def test_template_validation_reports_unclosed_image_loop(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            templates_file = Path(temp_dir) / "templates.json"
+            mgr = TemplateManager(str(templates_file))
+
+            errors = mgr.validate_template("[for image]#image_url#")
+
+            assert "Template has an unclosed [for image] block." in errors
+
+    def test_template_validation_reports_unmatched_image_loop_close(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            templates_file = Path(temp_dir) / "templates.json"
+            mgr = TemplateManager(str(templates_file))
+
+            errors = mgr.validate_template("#all_images#[/for]")
+
+            assert "Template has a closing [/for] without a matching [for image]." in errors
+
+    def test_metadata_placeholders_render_from_context(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            templates_file = Path(temp_dir) / "templates.json"
+            mgr = TemplateManager(str(templates_file))
+            mgr.set_template(
+                "Metadata",
+                (
+                    "#batch_name#|#service#|#upload_date#|#image_count#|"
+                    "#thread_name#|#thread_id#|#all_images#"
+                ),
+            )
+
+            result = mgr.apply(
+                "Metadata",
+                {
+                    "batch_name": "Batch Alpha",
+                    "service": "pixhost.to",
+                    "upload_date": "2026-06-21",
+                    "image_count": 2,
+                    "thread_name": "Thread Alpha",
+                    "thread_id": "98765",
+                },
+                [("viewer1", "thumb1", "direct1"), ("viewer2", "thumb2", "direct2")],
+            )
+
+            assert result.startswith(
+                "Batch Alpha|pixhost.to|2026-06-21|2|Thread Alpha|98765|"
+            )
+            assert "[url=viewer1][img]thumb1[/img][/url]" in result
+
+    def test_unresolved_conditionals_do_not_reach_output(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            templates_file = Path(temp_dir) / "templates.json"
+            mgr = TemplateManager(str(templates_file))
+            template = "Before [if gallery_link]Gallery[/if] [if broken]After"
+            mgr.set_template("No Raw Conditionals", template, validate=False)
+
+            result = mgr.apply("No Raw Conditionals", {"gallery_link": ""}, [])
+
+            assert "[if" not in result.lower()
+            assert "[/if" not in result.lower()
+            assert "[else]" not in result.lower()
+
+    def test_conditional_cleanup_does_not_strip_similar_bbcode_tags(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            templates_file = Path(temp_dir) / "templates.json"
+            mgr = TemplateManager(str(templates_file))
+            mgr.set_template("Similar Tags", "[iframe]https://example.com[/iframe]", validate=False)
+
+            result = mgr.apply("Similar Tags", {}, [])
+
+            assert "[iframe]https://example.com[/iframe]" in result
+
+    def test_preview_html_contains_rendered_and_raw_output(self):
+        preview = TemplateEditor.build_preview_html(
+            "[url=https://example.com][img]thumb.jpg[/img][/url]",
+            "BBCode",
+            "200",
+        )
+
+        assert "Rendered Preview" in preview
+        assert "Raw Generated Output" in preview
+        assert '<a href="https://example.com">' in preview
+        assert "[url=https://example.com]" in preview
+
+    def test_placeholder_categories_cover_all_supported_hash_placeholders(self):
+        categorized = {
+            value.strip("#")
+            for value in TemplateEditor.supported_placeholder_values()
+            if value.startswith("#") and value.endswith("#")
+        }
+
+        assert categorized == TemplateManager.ALLOWED_PLACEHOLDERS
+
+    def test_direct_image_placeholders_resolve_when_used_in_template_body(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            templates_file = Path(temp_dir) / "templates.json"
+            mgr = TemplateManager(str(templates_file))
+            mgr.set_template(
+                "Single Image",
+                "#image_url#|#thumb_url#|#direct_url#",
+            )
+
+            result = mgr.apply(
+                "Single Image",
+                {},
+                [("viewer1", "thumb1", "direct1"), ("viewer2", "thumb2", "direct2")],
+            )
+
+            assert result == "viewer1|thumb1|direct1"
+
+    def test_preview_output_uses_current_editor_template_and_preview_context(self, tmp_path, monkeypatch):
+        class FakeText:
+            def __init__(self, content):
+                self.content = content
+
+            def get(self, *_args):
+                return self.content
+
+        class FakeVar:
+            def __init__(self, value):
+                self.value = value
+
+            def get(self):
+                return self.value
+
+        errors = []
+        warnings = []
+        monkeypatch.setattr(
+            template_manager.messagebox,
+            "showerror",
+            lambda title, message: errors.append((title, message)),
+        )
+        monkeypatch.setattr(
+            template_manager.messagebox,
+            "showwarning",
+            lambda title, message: warnings.append((title, message)),
+        )
+
+        image_one = tmp_path / "first image.jpg"
+        image_two = tmp_path / "second.jpg"
+        image_one.write_bytes(b"one")
+        image_two.write_bytes(b"two")
+        mgr = TemplateManager(str(tmp_path / "templates.json"))
+        editor = TemplateEditor.__new__(TemplateEditor)
+        editor.mgr = mgr
+        editor.txt = FakeText(
+            (
+                "#batch_name#|#service#|#thread_name#|#thread_id#\n"
+                "[for image separator=space]#image_url#[/for]"
+            )
+        )
+        editor.fmt = FakeVar("Preview Custom")
+        editor.data_callback = lambda: (
+            [str(image_one), str(image_two)],
+            "Preview Batch",
+            "180",
+        )
+
+        preview = TemplateEditor._build_preview_output(editor)
+
+        assert errors == []
+        assert warnings == []
+        assert preview is not None
+        raw, fmt, size = preview
+        assert fmt == "Preview Custom"
+        assert size == "180"
+        assert raw.startswith("Preview Batch|preview|Preview Thread|PREV_THREAD")
+        assert "first%20image.jpg" in raw
+        assert "second.jpg" in raw
+
+    def test_preview_without_data_callback_reports_empty_state(self, monkeypatch):
+        warnings = []
+        monkeypatch.setattr(
+            template_manager.messagebox,
+            "showwarning",
+            lambda title, message: warnings.append((title, message)),
+        )
+        editor = TemplateEditor.__new__(TemplateEditor)
+        editor.data_callback = None
+
+        assert TemplateEditor._build_preview_output(editor) is None
+        assert warnings
+        assert "Preview needs files" in warnings[0][1]

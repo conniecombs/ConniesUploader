@@ -53,7 +53,7 @@ Completion summaries show uploaded and failed counts, generated output files, cl
 
 ### Customize Output Templates
 
-The Template Editor lets users build BBCode, Markdown, HTML, and custom output formats with formatting controls and one-click placeholders for images, galleries, covers, and IDs.
+The Template Editor lets users build BBCode, Markdown, HTML, ViperGirls posting, and custom output formats with built-in template categories, search, import/export, validation, duplicate/rename/delete actions, categorized placeholders, nested conditionals, custom `[for image]` loops, and previews that include rendered output plus raw generated text.
 
 ![Template Editor with BBCode formatting toolbar, gallery placeholders, editable template text, preview, restore, save, and save-as-new controls](docs/assets/screenshots/template-editor-v140.png)
 
@@ -61,13 +61,14 @@ The Template Editor lets users build BBCode, Markdown, HTML, and custom output f
 
 - Batch upload images by file or folder, with each folder represented as its own upload group.
 - Upload through the Go sidecar with worker pools, retry handling, rate limiting, and progress events.
+- Select one or more cover images per batch, with optional auto-cover defaults for newly added files.
 - Manage galleries for supported services and optionally create one gallery per folder.
 - Generate BBCode, HTML, Markdown, and custom output formats with the template editor.
 - Store credentials through the operating system keyring.
 - Save output files to `Output/` and keep history under `~/.conniesuploader/history/`.
 - Use dark, light, or system appearance modes.
 - Auto-copy completed output to the clipboard.
-- Integrate with ViperGirls forum posting workflows.
+- Integrate with ViperGirls forum posting workflows, including live thread-title names, target search, notes/tags, import/export, preview, confirmation, and posting history.
 
 ## Supported Services
 
@@ -184,7 +185,8 @@ Additional tools are available from the application menus:
 
 - `Tools > Manage Galleries`
 - `Tools > Template Editor`
-- `Tools > Viper Tools`
+- `Tools > ViperGirls Posting Targets`
+- `Tools > ViperGirls Posting History`
 - `Tools > Install Context Menu` on Windows
 - `View > Execution Log`
 
@@ -194,6 +196,9 @@ Additional tools are available from the application menus:
 - Credentials are stored through the system keyring.
 - Session output is written to `Output/`.
 - Persistent output history is written to `~/.conniesuploader/history/`.
+- Custom templates are written to `~/.conniesuploader/templates.json`; legacy `user_templates.json` files are migrated automatically.
+- Saved ViperGirls posting targets, including fetched thread titles, are written to `~/.conniesuploader/saved_threads.json`.
+- ViperGirls posting history is written to `~/.conniesuploader/posting_history.json`.
 - Runtime crash logs are written to `crash_log.log` when applicable.
 
 ## Architecture
@@ -261,6 +266,14 @@ Build the Go sidecar with `go build -ldflags="-s -w" -o uploader.exe .` on Windo
 **Uploads fail immediately**
 
 Check credentials, confirm the selected service settings, and open `View > Execution Log` for the sidecar error message.
+
+**ViperGirls posting is blocked before upload**
+
+Open `Tools > ViperGirls Posting Targets`, confirm the selected target still exists, and use `Validate` to check the thread ID. Upload Checks also offers direct buttons for credentials and target management when posting preflight fails.
+
+**ViperGirls post fails after upload**
+
+Open `Tools > ViperGirls Posting History` to copy the failed post text, copy the error, or open the target thread. Last-used timestamps update only after successful posts.
 
 **Build fails**
 

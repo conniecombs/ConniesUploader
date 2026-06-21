@@ -103,6 +103,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         self.preflight_action_files = []
         self.preflight_action_file_issue_texts = []
         self.preflight_action_folders = []
+        self.preflight_action_viper_targets = False
         self.import_check_issues = []
         self.image_refs = set()  # Using set for O(1) add/remove operations
         self.log_window_ref = None
@@ -272,7 +273,12 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         tools_menu.add_command(label="Set Credentials", command=self.open_creds_dialog)
         tools_menu.add_command(label="Manage Galleries", command=self.open_gallery_manager)
         tools_menu.add_separator()
-        tools_menu.add_command(label="Viper Tools", command=self.open_viper_tools)
+        tools_menu.add_command(
+            label="ViperGirls Posting Targets", command=self.open_viper_tools
+        )
+        tools_menu.add_command(
+            label="ViperGirls Posting History", command=self.open_vipergirls_history
+        )
 
         tools_menu.add_separator()
         tools_menu.add_command(label="Install Context Menu", command=ContextUtils.install_menu)
@@ -324,10 +330,17 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         self.saved_threads_data = viper_api.load_saved_threads()
         viper_api.ViperToolsWindow(self, creds=self.creds, callback=self.refresh_thread_data)
 
+    def open_vipergirls_history(self):
+        viper_api.PostingHistoryWindow(self)
+
     def refresh_thread_data(self):
         """Refresh saved thread data from disk and update AutoPoster."""
         self.saved_threads_data = viper_api.load_saved_threads()
         self.auto_poster.saved_threads_data = self.saved_threads_data
+        thread_names = list(self.saved_threads_data.keys()) if self.saved_threads_data else []
+        for group in getattr(self, "groups", []):
+            if hasattr(group, "update_thread_names"):
+                group.update_thread_names(thread_names)
 
     def set_global_threads(self, n):
         n = self._bounded_int(
@@ -597,6 +610,12 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             out_frame, text="One Gallery Per Folder", variable=self.var_auto_gallery
         ).pack(anchor="w", padx=5, pady=2)
         self.var_auto_gallery.trace_add("write", lambda *_: self._refresh_host_readiness())
+        self.var_confirm_before_posting = ctk.BooleanVar()
+        ctk.CTkCheckBox(
+            out_frame,
+            text="Confirm before ViperGirls posting",
+            variable=self.var_confirm_before_posting,
+        ).pack(anchor="w", padx=5, pady=2)
 
         self.btn_open = ctk.CTkButton(
             out_frame, text="Open Output Folder", command=self.open_output_folder, state="disabled"
@@ -924,6 +943,13 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             width=125,
             height=28,
         )
+        self.btn_upload_checks_viper_targets = ctk.CTkButton(
+            self.upload_checks_actions,
+            text="Manage ViperGirls Targets",
+            command=self.open_viper_tools,
+            width=175,
+            height=28,
+        )
         self.btn_upload_checks_remove_files = ctk.CTkButton(
             self.upload_checks_actions,
             text="Remove Invalid Files",
@@ -1006,10 +1032,19 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
 
     def _refresh_upload_check_actions(self, issues: List[str]) -> None:
         show_credentials = self._preflight_issues_need_credentials(issues)
+        show_viper_targets = bool(getattr(self, "preflight_action_viper_targets", False))
         show_remove_files = bool(self._preflight_action_files())
         show_open_folder = bool(self._preflight_action_folders())
         show_retry = bool(issues)
-        show_actions = show_credentials or show_remove_files or show_open_folder or show_retry
+        show_actions = any(
+            (
+                show_credentials,
+                show_viper_targets,
+                show_remove_files,
+                show_open_folder,
+                show_retry,
+            )
+        )
 
         if show_actions:
             if not self.upload_checks_actions.winfo_ismapped():
@@ -1022,6 +1057,12 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             show_credentials,
             side="left",
             padx=(0, 6),
+        )
+        self._set_upload_check_action_visible(
+            self.btn_upload_checks_viper_targets,
+            show_viper_targets,
+            side="left",
+            padx=6,
         )
         self._set_upload_check_action_visible(
             self.btn_upload_checks_remove_files,
@@ -1380,6 +1421,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         self.preflight_action_files = []
         self.preflight_action_file_issue_texts = []
         self.preflight_action_folders = []
+        self.preflight_action_viper_targets = False
 
     def _handle_preflight_issues(self, issues: List[str]) -> None:
         issue_count = len(issues)
@@ -1752,6 +1794,8 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             )
 
         self.var_auto_copy.set(s.get("auto_copy", False))
+        if hasattr(self, "var_confirm_before_posting"):
+            self.var_confirm_before_posting.set(s.get("confirm_before_posting", False))
         self.var_auto_gallery.set(s.get("auto_gallery", False))
         self.var_show_previews.set(s.get("show_previews", True))
         self.var_separate_batches.set(s.get("separate_batches", False))
@@ -1853,6 +1897,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             **service_thread_settings,
             "output_format": self.settings.get("output_format", "BBCode"),
             "auto_copy": self.var_auto_copy.get(),
+            "confirm_before_posting": self.var_confirm_before_posting.get(),
             "auto_gallery": self.var_auto_gallery.get(),
             "show_previews": self.var_show_previews.get(),
             "separate_batches": self.var_separate_batches.get(),
@@ -2090,6 +2135,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             thread_names=t_names,
             template_names=tpl_names,
             default_template=default_tpl,
+            post_preview_callback=self.preview_vipergirls_post,
         )
         group.pack(fill="x", pady=2, padx=2)
         group.batch_index = self.group_counter
@@ -2168,6 +2214,14 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             if preflight_issues:
                 self._handle_preflight_issues(preflight_issues)
                 return
+
+            if upload_cfg.get("confirm_before_posting") and self._selected_vipergirls_posting_targets(
+                pending_by_group
+            ):
+                if not self._confirm_vipergirls_posts(pending_by_group, upload_cfg):
+                    self.add_activity("Upload cancelled before ViperGirls posting.", "warning")
+                    self._refresh_start_button_state()
+                    return
 
             self._set_upload_checks([])
             self.settings = cfg
@@ -2277,6 +2331,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             self._preflight_check_files(plugin, pending_by_group, issues)
             self._preflight_check_sidecar(plugin, issues)
 
+        self._preflight_check_vipergirls_posting(pending_by_group, issues)
         self._preflight_check_output_locations(issues)
 
         if issues:
@@ -2393,6 +2448,495 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             issues.append(
                 "Upload engine is not running. Run build_uploader.bat to rebuild the bundled sidecar."
             )
+
+    def _selected_vipergirls_posting_targets(
+        self, pending_by_group: Dict[Any, List[str]]
+    ) -> List[Tuple[Any, str, str]]:
+        selections: List[Tuple[Any, str, str]] = []
+        for group in pending_by_group.keys():
+            target_name = str(getattr(group, "selected_thread", "") or "").strip()
+            if not target_name or target_name == "Do Not Post":
+                continue
+            selections.append((group, self._batch_display_name(group), target_name))
+        return selections
+
+    def _batch_display_name(self, group: Any) -> str:
+        title = str(getattr(group, "title", "") or "").strip()
+        if title:
+            return title
+
+        batch_index = getattr(group, "batch_index", None)
+        if isinstance(batch_index, int):
+            return f"Batch {batch_index + 1}"
+        return "Batch"
+
+    def _thread_id_from_vipergirls_record(self, record: Any) -> str:
+        if isinstance(record, dict):
+            thread_id = viper_api.extract_thread_id(str(record.get("thread_id") or ""))
+            if thread_id:
+                return thread_id
+            return viper_api.extract_thread_id(str(record.get("url") or "")) or ""
+
+        return viper_api.extract_thread_id(str(record or "")) or ""
+
+    def _thumbnail_size_for_service(
+        self, service_id: str, settings: Optional[Dict[str, Any]] = None
+    ) -> str:
+        settings = settings or self.settings
+        if service_id == "imx.to":
+            return str(settings.get("imx_thumb", "180"))
+        if service_id == "pixhost.to":
+            return str(settings.get("pix_thumb", "200"))
+        if service_id == "turboimagehost":
+            return str(settings.get("turbo_thumb", "180"))
+        if service_id == "vipr.im":
+            thumb_size = str(settings.get("vipr_thumb", "170x170"))
+            return thumb_size.split("x")[0] if "x" in thumb_size else thumb_size
+        if service_id == "imagebam.com":
+            return str(settings.get("imagebam_thumb", "180"))
+        if service_id == "imgur.com":
+            return str(settings.get("imgur_thumb", settings.get("thumbnail_size", "m")))
+        return "250"
+
+    def _auto_cover_count_for_current_service(self) -> int:
+        service_id = (
+            self.var_service.get()
+            if hasattr(self, "var_service")
+            else str(getattr(self, "settings", {}).get("service", ""))
+        )
+        settings_view = self.__dict__.get("settings_view")
+        if settings_view is not None:
+            raw_config = settings_view.get_raw_config(service_id)
+            if "cover_count" in raw_config:
+                return max(0, min(10, self._safe_int(raw_config.get("cover_count"), 0)))
+
+        variable_names = {
+            "imx.to": "var_imx_cover_count",
+            "pixhost.to": "var_pix_cover_count",
+            "turboimagehost": "var_turbo_cover_count",
+            "vipr.im": "var_vipr_cover_count",
+        }
+        variable = getattr(self, variable_names.get(service_id, ""), None)
+        if variable is None:
+            return 0
+        try:
+            value = variable.get()
+        except (tk.TclError, AttributeError):
+            value = 0
+        return max(0, min(10, self._safe_int(value, 0)))
+
+    def _apply_auto_covers_to_group(self, group: Any) -> None:
+        auto_select = getattr(group, "auto_select_covers", None)
+        if not callable(auto_select):
+            return
+        auto_select(self._auto_cover_count_for_current_service())
+        self._refresh_cover_buttons(group)
+
+    def _cover_files_for_group(self, group: Any) -> List[str]:
+        cover_filepaths = getattr(group, "cover_filepaths", None)
+        if callable(cover_filepaths):
+            return list(cover_filepaths())
+
+        cover_files = getattr(group, "cover_files", [])
+        cover_set = set(cover_files or [])
+        return [
+            filepath
+            for filepath in getattr(group, "files", [])
+            if filepath in cover_set
+        ]
+
+    def _ordered_group_files_for_output(self, group: Any) -> List[str]:
+        files = list(getattr(group, "files", []))
+        cover_files = self._cover_files_for_group(group)
+        if not cover_files:
+            return files
+
+        cover_set = set(cover_files)
+        return [filepath for filepath in files if filepath in cover_set] + [
+            filepath for filepath in files if filepath not in cover_set
+        ]
+
+    def _is_cover_file(self, filepath: str, group: Optional[Any] = None) -> bool:
+        group = group or self.file_widgets.get(filepath, {}).get("group")
+        is_cover_file = getattr(group, "is_cover_file", None)
+        if callable(is_cover_file):
+            return bool(is_cover_file(filepath))
+        return filepath in set(getattr(group, "cover_files", []) or [])
+
+    def _refresh_cover_button(self, filepath: str) -> None:
+        with self.lock:
+            row_data = self.file_widgets.get(filepath)
+        if not row_data:
+            return
+
+        group = row_data.get("group")
+        is_cover = self._is_cover_file(filepath, group)
+        row_data["is_cover"] = is_cover
+
+        button = row_data.get("cover")
+        if not button:
+            return
+
+        try:
+            if is_cover:
+                button.configure(
+                    text="Cover",
+                    fg_color="#1F6AA5",
+                    hover_color="#144870",
+                    text_color="white",
+                )
+            else:
+                button.configure(
+                    text="Set Cover",
+                    fg_color="gray",
+                    hover_color="#666666",
+                    text_color="white",
+                )
+        except (tk.TclError, AttributeError):
+            return
+
+    def _refresh_cover_buttons(self, group: Any) -> None:
+        for filepath in getattr(group, "files", []):
+            self._refresh_cover_button(filepath)
+
+    def _set_cover_for_files(self, filepaths: List[str], is_cover: bool) -> None:
+        if getattr(self, "is_uploading", False):
+            self.add_activity("Wait for the current upload to finish before changing covers.", "warning")
+            return
+
+        changed = 0
+        touched_groups = set()
+        for filepath in filepaths:
+            with self.lock:
+                row_data = self.file_widgets.get(filepath)
+            group = row_data.get("group") if row_data else None
+            setter = getattr(group, "set_cover_file", None)
+            if not callable(setter):
+                continue
+            if setter(filepath, is_cover, manual=True):
+                changed += 1
+            touched_groups.add(group)
+
+        for group in touched_groups:
+            self._refresh_cover_buttons(group)
+
+        if not filepaths:
+            return
+        if changed or len(filepaths) == 1:
+            action = "Marked" if is_cover else "Cleared cover mark for"
+            count_label = (
+                os.path.basename(filepaths[0])
+                if len(filepaths) == 1
+                else f"{len(filepaths)} images"
+            )
+            self.add_activity(f"{action} {count_label}.")
+
+    def _toggle_cover_file(self, filepath: str) -> None:
+        with self.lock:
+            row_data = self.file_widgets.get(filepath)
+        group = row_data.get("group") if row_data else None
+        self._set_cover_for_files([filepath], not self._is_cover_file(filepath, group))
+
+    def _preview_group_results(self, group: Any) -> List[Tuple[str, str, str]]:
+        results = []
+        for index, file_path in enumerate(self._ordered_group_files_for_output(group), start=1):
+            name = os.path.basename(file_path) or f"image-{index}"
+            safe_name = file_handler.sanitize_filename(os.path.splitext(name)[0]) or f"image-{index}"
+            base_url = f"https://preview.invalid/{safe_name}"
+            results.append(
+                (
+                    f"{base_url}/viewer",
+                    f"{base_url}/thumb",
+                    f"{base_url}/direct",
+                )
+            )
+        return results
+
+    def _vipergirls_post_preview_data(
+        self,
+        group: Any,
+        settings_override: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        settings = settings_override or self.settings
+        target_name = str(getattr(group, "selected_thread", "") or "Do Not Post")
+        try:
+            saved_threads = object.__getattribute__(self, "saved_threads_data")
+        except AttributeError:
+            saved_threads = {}
+        record = saved_threads.get(target_name, {})
+        thread_id = self._thread_id_from_vipergirls_record(record)
+        target_url = str(record.get("url") or "") if isinstance(record, dict) else ""
+        group_results = self._preview_group_results(group)
+        cover_url = group_results[0][1] if group_results else ""
+        service_id = settings.get("service", "")
+        gallery_id = str(getattr(group, "gallery_id", "") or "")
+        gallery_link = ""
+        if gallery_id:
+            if service_id == "pixhost.to":
+                gallery_link = f"https://pixhost.to/gallery/{gallery_id}"
+            elif service_id == "imx.to":
+                gallery_link = f"https://imx.to/g/{gallery_id}"
+            elif service_id == "vipr.im":
+                gallery_link = f"https://vipr.im/f/{gallery_id}"
+
+        ctx = {
+            "gallery_link": gallery_link,
+            "gallery_name": self._batch_display_name(group),
+            "gallery_id": gallery_id,
+            "cover_url": cover_url,
+            "thumb_size": self._thumbnail_size_for_service(service_id, settings),
+            "batch_name": self._batch_display_name(group),
+            "image_count": len(group_results),
+            "service": service_id,
+            "thread_name": target_name if target_name != "Do Not Post" else "",
+            "thread_id": thread_id,
+            "upload_date": datetime.now().strftime("%Y-%m-%d"),
+        }
+        content = ""
+        if group_results:
+            content = self.template_mgr.apply(
+                getattr(group, "selected_template", "BBCode"),
+                ctx,
+                group_results,
+            )
+
+        issues = []
+        if target_name == "Do Not Post":
+            issues.append("No ViperGirls target is selected for this batch.")
+        elif not record:
+            issues.append(f'Target "{target_name}" is not saved.')
+        elif not thread_id:
+            issues.append(f'Target "{target_name}" has no usable thread ID.')
+        if not group_results:
+            issues.append("This batch does not contain any files to preview.")
+
+        return {
+            "batch_name": self._batch_display_name(group),
+            "target_name": target_name,
+            "thread_id": thread_id,
+            "target_url": target_url,
+            "content": content,
+            "issues": issues,
+        }
+
+    def preview_vipergirls_post(self, group: Any) -> None:
+        self.saved_threads_data = viper_api.load_saved_threads()
+        try:
+            auto_poster = object.__getattribute__(self, "auto_poster")
+        except AttributeError:
+            auto_poster = None
+        if auto_poster:
+            auto_poster.saved_threads_data = self.saved_threads_data
+        preview = self._vipergirls_post_preview_data(group)
+        self._show_vipergirls_post_preview_dialog(preview)
+
+    def _show_vipergirls_post_preview_dialog(self, preview: Dict[str, Any]) -> None:
+        dlg = ctk.CTkToplevel(self)
+        dlg.title("ViperGirls Post Preview")
+        dlg.geometry("760x640")
+        dlg.minsize(640, 480)
+        dlg.resizable(True, True)
+        dlg.transient(self)
+        dlg.focus_force()
+
+        dlg.grid_columnconfigure(0, weight=1)
+        dlg.grid_rowconfigure(2, weight=1)
+
+        ctk.CTkLabel(
+            dlg,
+            text="ViperGirls Post Preview",
+            font=("Segoe UI", 18, "bold"),
+        ).grid(row=0, column=0, sticky="w", padx=18, pady=(16, 8))
+
+        details = ctk.CTkFrame(dlg, fg_color="transparent")
+        details.grid(row=1, column=0, sticky="ew", padx=18, pady=(0, 8))
+        details.grid_columnconfigure(1, weight=1)
+        detail_rows = (
+            ("Batch", preview.get("batch_name", "")),
+            ("Target", preview.get("target_name", "")),
+            ("Thread ID", preview.get("thread_id") or "Unavailable"),
+        )
+        for row_index, (label, value) in enumerate(detail_rows):
+            ctk.CTkLabel(details, text=f"{label}:", text_color="gray").grid(
+                row=row_index, column=0, sticky="w", padx=(0, 8), pady=2
+            )
+            ctk.CTkLabel(details, text=str(value), anchor="w").grid(
+                row=row_index, column=1, sticky="ew", pady=2
+            )
+
+        body = ctk.CTkTextbox(dlg, wrap="word")
+        body.grid(row=2, column=0, sticky="nsew", padx=18, pady=(0, 8))
+        content = preview.get("content") or "No generated content is available."
+        issues = preview.get("issues") or []
+        if issues:
+            body.insert("end", "Checks:\n")
+            for issue in issues:
+                body.insert("end", f"- {issue}\n")
+            body.insert("end", "\n")
+        body.insert("end", content)
+        body.configure(state="disabled")
+
+        actions = ctk.CTkFrame(dlg, fg_color="transparent")
+        actions.grid(row=3, column=0, sticky="ew", padx=18, pady=(4, 16))
+        ctk.CTkButton(
+            actions,
+            text="Copy Post Text",
+            command=lambda: self._copy_text_to_clipboard(
+                preview.get("content") or "", "Copied preview post text."
+            ),
+            width=130,
+        ).pack(side="left", padx=(0, 6))
+        ctk.CTkButton(
+            actions,
+            text="Open Target",
+            command=lambda: self._open_vipergirls_target(preview),
+            width=110,
+            state="normal" if preview.get("target_url") else "disabled",
+        ).pack(side="left", padx=6)
+        ctk.CTkButton(
+            actions,
+            text="Close",
+            command=dlg.destroy,
+            fg_color="gray",
+            hover_color="#666666",
+            width=90,
+        ).pack(side="right")
+
+    def _open_vipergirls_target(self, preview: Dict[str, Any]) -> None:
+        url = str(preview.get("target_url") or "")
+        if not url:
+            self.add_activity("No ViperGirls target URL is available.", "warning")
+            return
+        self._open_path(url)
+
+    def _copy_text_to_clipboard(self, text: str, success_message: str) -> bool:
+        if not text:
+            self.add_activity("No text is available to copy.", "warning")
+            return False
+        try:
+            pyperclip.copy(text)
+            self.add_activity(success_message, "success")
+            return True
+        except (OSError, pyperclip.PyperclipException) as exc:
+            logger.warning(f"Could not copy text to clipboard: {exc}")
+            self.add_activity("Could not copy text to clipboard.", "warning")
+            return False
+
+    def _confirm_vipergirls_posts(
+        self,
+        pending_by_group: Dict[Any, List[str]],
+        settings_override: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        previews = [
+            self._vipergirls_post_preview_data(group, settings_override)
+            for group, _batch_name, _target_name in self._selected_vipergirls_posting_targets(
+                pending_by_group
+            )
+        ]
+        if not previews:
+            return True
+
+        result = {"ok": False}
+        dlg = ctk.CTkToplevel(self)
+        dlg.title("Confirm ViperGirls Posting")
+        dlg.geometry("820x680")
+        dlg.minsize(680, 500)
+        dlg.resizable(True, True)
+        dlg.transient(self)
+        dlg.focus_force()
+        dlg.grab_set()
+        dlg.grid_columnconfigure(0, weight=1)
+        dlg.grid_rowconfigure(1, weight=1)
+
+        ctk.CTkLabel(
+            dlg,
+            text="Confirm ViperGirls Posting",
+            font=("Segoe UI", 18, "bold"),
+        ).grid(row=0, column=0, sticky="w", padx=18, pady=(16, 8))
+
+        body = ctk.CTkTextbox(dlg, wrap="word")
+        body.grid(row=1, column=0, sticky="nsew", padx=18, pady=(0, 8))
+        for index, preview in enumerate(previews, start=1):
+            if index > 1:
+                body.insert("end", "\n\n" + ("=" * 72) + "\n\n")
+            body.insert("end", f"Batch: {preview['batch_name']}\n")
+            body.insert("end", f"Selected thread: {preview['target_name']}\n")
+            body.insert("end", f"Thread ID: {preview.get('thread_id') or 'Unavailable'}\n\n")
+            body.insert("end", preview.get("content") or "No generated content is available.")
+        body.configure(state="disabled")
+
+        actions = ctk.CTkFrame(dlg, fg_color="transparent")
+        actions.grid(row=2, column=0, sticky="ew", padx=18, pady=(4, 16))
+
+        def approve() -> None:
+            result["ok"] = True
+            dlg.destroy()
+
+        ctk.CTkButton(
+            actions,
+            text="Start Upload and Post",
+            command=approve,
+            width=155,
+        ).pack(side="left", padx=(0, 6))
+        ctk.CTkButton(
+            actions,
+            text="Cancel",
+            command=dlg.destroy,
+            fg_color="gray",
+            hover_color="#666666",
+            width=90,
+        ).pack(side="right")
+        self.wait_window(dlg)
+        return result["ok"]
+
+    def _preflight_check_vipergirls_posting(
+        self,
+        pending_by_group: Dict[Any, List[str]],
+        issues: List[str],
+    ) -> None:
+        posting_targets = self._selected_vipergirls_posting_targets(pending_by_group)
+        if not posting_targets:
+            return
+
+        user = str(getattr(self, "creds", {}).get("vg_user", "") or "").strip()
+        password = str(getattr(self, "creds", {}).get("vg_pass", "") or "").strip()
+        if not user or not password:
+            issues.append(
+                "ViperGirls posting needs username and password. "
+                "Set them in Tools > Set Credentials."
+            )
+
+        try:
+            saved_threads = viper_api.load_saved_threads()
+        except Exception as exc:
+            self.preflight_action_viper_targets = True
+            issues.append(f"ViperGirls posting targets could not be loaded: {exc}")
+            return
+
+        self.saved_threads_data = saved_threads
+        try:
+            auto_poster = object.__getattribute__(self, "auto_poster")
+        except AttributeError:
+            auto_poster = None
+        if auto_poster:
+            auto_poster.saved_threads_data = saved_threads
+
+        for _group, batch_name, target_name in posting_targets:
+            record = saved_threads.get(target_name)
+            if record is None:
+                self.preflight_action_viper_targets = True
+                issues.append(
+                    f'ViperGirls target "{target_name}" selected for "{batch_name}" '
+                    "no longer exists."
+                )
+                continue
+
+            if not self._thread_id_from_vipergirls_record(record):
+                self.preflight_action_viper_targets = True
+                issues.append(
+                    f'ViperGirls target "{target_name}" selected for "{batch_name}" '
+                    "has no usable thread ID."
+                )
 
     def _preflight_check_output_locations(self, issues: List[str]) -> None:
         for folder, label in [
@@ -2591,7 +3135,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
 
         text_frame.bind("<Configure>", update_text_wrap)
 
-        row_actions = ctk.CTkFrame(row, fg_color="transparent", width=250, height=30)
+        row_actions = ctk.CTkFrame(row, fg_color="transparent", width=330, height=30)
         row_actions.pack(side="right", padx=(4, 5))
         row_actions.pack_propagate(False)
         btn_remove = ctk.CTkButton(
@@ -2604,6 +3148,16 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             hover_color="#666666",
         )
         btn_remove.pack(side="right", padx=(4, 0), pady=3)
+        btn_cover = ctk.CTkButton(
+            row_actions,
+            text="Set Cover",
+            width=76,
+            height=24,
+            command=lambda f=fp: self._toggle_cover_file(f),
+            fg_color="gray",
+            hover_color="#666666",
+        )
+        btn_cover.pack(side="right", padx=(4, 0), pady=3)
         retry_slot = ctk.CTkFrame(row_actions, fg_color="transparent", width=64, height=30)
         retry_slot.pack(side="right", padx=(4, 0))
         retry_slot.pack_propagate(False)
@@ -2634,11 +3188,13 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
                 "actions": row_actions,
                 "retry_slot": retry_slot,
                 "remove": btn_remove,
+                "cover": btn_cover,
                 "retry": btn_retry,
                 "drag_handle": drag_handle,
                 "error": "",
             }
             file_count = len(self.file_widgets)
+        self._apply_auto_covers_to_group(group_widget)
         self.lbl_eta.configure(text=f"Files: {file_count}")
         self._refresh_queue_state()
 
@@ -2649,7 +3205,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             w.bind("<Button-3>", lambda e, f=fp: self._show_row_context(e, f))
             w.bind("<Button-2>", lambda e, f=fp: self._show_row_context(e, f))
 
-        interactive_widgets = (row_actions, retry_slot, btn_remove, btn_retry, pr)
+        interactive_widgets = (row_actions, retry_slot, btn_remove, btn_cover, btn_retry, pr)
 
         def bind_row_tree(w):
             if w in interactive_widgets:
@@ -2903,7 +3459,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         group_results = []
         svc = self.settings.get("service", "")
 
-        for fp in group.files:
+        for fp in self._ordered_group_files_for_output(group):
             if fp in res_map:
                 val = res_map[fp]
                 viewer_url = val[0]
@@ -2948,12 +3504,27 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             elif svc == "vipr.im":
                 gal_link = f"https://vipr.im/f/{gal_id}"
 
+        target_name = str(getattr(group, "selected_thread", "") or "").strip()
+        try:
+            saved_threads = object.__getattribute__(self, "saved_threads_data")
+        except AttributeError:
+            saved_threads = {}
+        record = saved_threads.get(target_name, {}) if isinstance(saved_threads, dict) else {}
+        thread_id = self._thread_id_from_vipergirls_record(record)
+        batch_name = self._batch_display_name(group)
+
         ctx = {
             "gallery_link": gal_link,
-            "gallery_name": group.title,
+            "gallery_name": batch_name,
             "gallery_id": gal_id,
             "cover_url": cover_url,
             "thumb_size": thumb_size,
+            "batch_name": batch_name,
+            "image_count": len(group_results),
+            "service": svc,
+            "thread_name": target_name if target_name != "Do Not Post" else "",
+            "thread_id": thread_id,
+            "upload_date": datetime.now().strftime("%Y-%m-%d"),
         }
         text = self.template_mgr.apply(group.selected_template, ctx, group_results)
 
@@ -2974,8 +3545,14 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             # Queue for auto-posting if needed
             tgt_thread = group.selected_thread
             if tgt_thread and tgt_thread != "Do Not Post":
-                self.auto_poster.queue_post(group.batch_index, text, tgt_thread)
-                self.add_activity(f"Queued post for {tgt_thread}.")
+                self.auto_poster.queue_post(
+                    group.batch_index,
+                    text,
+                    tgt_thread,
+                    batch_name=self._batch_display_name(group),
+                )
+                message, level = self._vipergirls_queue_activity(group, tgt_thread)
+                self.add_activity(message, level)
 
             central_name = os.path.join(self.central_history_path, f"{safe_title}_{ts}.txt")
             with open(central_name, "w", encoding="utf-8") as f:
@@ -3013,6 +3590,27 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         except Exception as e:
             self.log(f"Error writing output: {e}")
             self.add_activity(f"Error writing output: {e}", "error")
+
+    def _vipergirls_queue_activity(self, group: Any, target_name: str) -> Tuple[str, str]:
+        batch_name = self._batch_display_name(group)
+        try:
+            saved_threads = object.__getattribute__(self, "saved_threads_data")
+        except AttributeError:
+            saved_threads = {}
+        record = saved_threads.get(target_name)
+        thread_id = self._thread_id_from_vipergirls_record(record)
+        if thread_id:
+            return (
+                f'Queued ViperGirls post for "{batch_name}" to "{target_name}" '
+                f"(thread {thread_id}).",
+                "info",
+            )
+
+        return (
+            f'Queued ViperGirls post for "{batch_name}" to "{target_name}" '
+            "(thread ID unavailable).",
+            "warning",
+        )
 
     def open_output_folder(self):
         if self.current_output_files:

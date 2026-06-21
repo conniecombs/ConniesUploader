@@ -80,7 +80,7 @@ class PixhostPlugin(ImageHostPlugin):
             {
                 "type": "inline_group",
                 "fields": [
-                    {"type": "label", "text": "Cover Images:", "width": 100},
+                    {"type": "label", "text": "Auto Covers:", "width": 100},
                     {
                         "type": "dropdown",
                         "key": "cover_count",

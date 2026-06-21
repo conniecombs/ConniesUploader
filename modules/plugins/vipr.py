@@ -15,6 +15,7 @@ import customtkinter as ctk
 from .base import ImageHostPlugin
 from . import helpers
 from .. import api
+from ..credentials_manager import CredentialsManager
 from ..widgets import MouseWheelComboBox
 from loguru import logger
 
@@ -98,7 +99,7 @@ class ViprPlugin(ImageHostPlugin):
             {
                 "type": "inline_group",
                 "fields": [
-                    {"type": "label", "text": "Cover Images:", "width": 100},
+                    {"type": "label", "text": "Auto Covers:", "width": 100},
                     {
                         "type": "dropdown",
                         "key": "cover_count",
@@ -200,25 +201,23 @@ class ViprPlugin(ImageHostPlugin):
 
         This is the custom functionality that can't be expressed in schema.
         """
-        import keyring
-
-        u = keyring.get_password("ImageUploader:vipr_user", "user")
-        p = keyring.get_password("ImageUploader:vipr_pass", "pass")
-
-        if not u:
+        creds = self._load_vipr_credentials()
+        if not creds["vipr_user"] or not creds["vipr_pass"]:
             logger.warning("Vipr credentials not found in keyring")
             return
 
         def _task():
             try:
                 # Use the API wrapper which now calls the Go Sidecar
-                creds = {"vipr_user": u, "vipr_pass": p}
                 meta = api.get_vipr_metadata(creds)
+                galleries = (meta.get("galleries") if meta else None) or []
+                self.vipr_galleries_map = {
+                    g["name"]: g["id"] for g in galleries if g.get("name") and g.get("id")
+                }
+                names = ["None"] + list(self.vipr_galleries_map.keys())
+                self._set_gallery_options(parent_widget, names)
 
-                if meta and meta.get("galleries"):
-                    self.vipr_galleries_map = {g["name"]: g["id"] for g in meta["galleries"]}
-                    names = ["None"] + list(self.vipr_galleries_map.keys())
-                    self.cb_gallery.configure(values=names)
+                if self.vipr_galleries_map:
                     logger.info(f"Loaded {len(self.vipr_galleries_map)} Vipr galleries")
                 else:
                     logger.warning("No galleries found or login failed")
@@ -227,6 +226,31 @@ class ViprPlugin(ImageHostPlugin):
 
         threading.Thread(target=_task, daemon=True).start()
 
+    @staticmethod
+    def _load_vipr_credentials() -> Dict[str, str]:
+        """Load Vipr credentials through the same keyring schema used by the dialog."""
+        creds = CredentialsManager.load_all_credentials()
+        return {
+            "vipr_user": (creds.get("vipr_user") or "").strip(),
+            "vipr_pass": (creds.get("vipr_pass") or "").strip(),
+        }
+
+    def _set_gallery_options(self, parent_widget, names: List[str]) -> None:
+        def _apply():
+            if self.cb_gallery is None:
+                return
+            self.cb_gallery.configure(values=names)
+            try:
+                if self.cb_gallery.get() not in names:
+                    self.cb_gallery.set("None")
+            except Exception as exc:
+                logger.debug(f"Could not normalize Vipr gallery selection: {exc}")
+
+        try:
+            parent_widget.after(0, _apply)
+        except Exception as exc:
+            logger.debug(f"Could not schedule Vipr gallery dropdown update: {exc}")
+
     # NEW: Generic HTTP request builder with session management (Phase 3)
     def build_http_request(
         self, file_path: str, config: Dict[str, Any], creds: Dict[str, Any]
@@ -234,7 +258,7 @@ class ViprPlugin(ImageHostPlugin):
         """
         Build HTTP request specification for Vipr.im upload with session management.
         Uses Phase 3 multi-step pre-request hooks:
-        1. POST to /login.html (sets cookies)
+        1. POST to / (sets cookies)
         2. GET / (extracts sess_id using cookies from step 1)
         """
         import random
@@ -253,7 +277,7 @@ class ViprPlugin(ImageHostPlugin):
             "headers": {},
             "pre_request": {
                 "action": "login_step1",
-                "url": "https://vipr.im/login.html",
+                "url": "https://vipr.im/",
                 "method": "POST",
                 "headers": {},
                 "form_fields": {

@@ -134,19 +134,25 @@ class UploadManager:
                         group_cfg["gallery_hash"] = manual_hash
                         logger.info(f"Group '{group_obj.title}' using manual gallery hash: {manual_hash}")
 
-                cover_cnt = self._cover_count_for_service(group_cfg)
-                covers: List[str] = []
-                standards: List[str] = []
+                explicit_covers = self._explicit_cover_files_for_group(group_obj, files)
+                if explicit_covers is None:
+                    cover_cnt = self._cover_count_for_service(group_cfg)
+                    covers = []
+                    standards = []
 
-                for file_path in files:
-                    try:
-                        idx = group_obj.files.index(file_path)
-                        if idx < cover_cnt:
-                            covers.append(file_path)
-                        else:
+                    for file_path in files:
+                        try:
+                            idx = group_obj.files.index(file_path)
+                            if idx < cover_cnt:
+                                covers.append(file_path)
+                            else:
+                                standards.append(file_path)
+                        except ValueError:
                             standards.append(file_path)
-                    except ValueError:
-                        standards.append(file_path)
+                else:
+                    cover_set = set(explicit_covers)
+                    covers = [file_path for file_path in files if file_path in cover_set]
+                    standards = [file_path for file_path in files if file_path not in cover_set]
 
                 if covers:
                     cover_cfg = group_cfg.copy()
@@ -192,6 +198,21 @@ class UploadManager:
                 logger.debug(f"Could not get cover count for {service_id}: {exc}")
 
         return 0
+
+    @staticmethod
+    def _explicit_cover_files_for_group(group_obj: Any, files: List[str]) -> List[str] | None:
+        """Return explicit cover selections for UI groups, or None for legacy count mode."""
+        cover_filepaths = getattr(group_obj, "cover_filepaths", None)
+        if callable(cover_filepaths):
+            cover_set = set(cover_filepaths())
+            return [file_path for file_path in files if file_path in cover_set]
+
+        cover_files = getattr(group_obj, "cover_files", None)
+        if cover_files is not None:
+            cover_set = set(cover_files)
+            return [file_path for file_path in files if file_path in cover_set]
+
+        return None
 
     def _send_job(self, file_list: List[str], cfg: Dict[str, Any], creds: Dict[str, str]) -> None:
         service_id = cfg["service"]

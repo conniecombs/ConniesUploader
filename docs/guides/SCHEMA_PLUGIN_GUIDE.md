@@ -184,7 +184,7 @@ class MyPlugin(ImageHostPlugin):
     "fields": [
         {
             "type": "label",
-            "text": "Covers:",
+            "text": "Auto Covers:",
             "width": 100
         },
         {
@@ -226,7 +226,7 @@ def render_settings(self, parent, settings):
 
     f = ctk.CTkFrame(parent, fg_color="transparent")
     f.pack(fill="x", pady=5)
-    ctk.CTkLabel(f, text="Covers:", width=60).pack(side="left")
+    ctk.CTkLabel(f, text="Auto Covers:", width=60).pack(side="left")
     MouseWheelComboBox(f, variable=vars['cover_count'], values=[str(i) for i in range(11)], width=80).pack(side="left", padx=5)
 
     ctk.CTkCheckBox(parent, text="Links.txt", variable=vars['links']).pack(anchor="w", pady=5)
@@ -270,7 +270,7 @@ def settings_schema(self) -> List[Dict[str, Any]]:
         {
             "type": "inline_group",
             "fields": [
-                {"type": "label", "text": "Cover Images:", "width": 100},
+                {"type": "label", "text": "Auto Covers:", "width": 100},
                 {
                     "type": "dropdown",
                     "key": "cover_count",
@@ -578,7 +578,7 @@ python main.py
 {
     "type": "inline_group",
     "fields": [
-        {"type": "label", "text": "Cover Images:", "width": 100},
+        {"type": "label", "text": "Auto Covers:", "width": 100},
         {
             "type": "dropdown",
             "key": "cover_count",

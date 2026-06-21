@@ -74,6 +74,7 @@ class SettingsManager:
             # Output settings
             "output_format": {"type": "string"},
             "auto_copy": {"type": "boolean"},
+            "confirm_before_posting": {"type": "boolean"},
             "separate_batches": {"type": "boolean"},
             "show_previews": {"type": "boolean"},
             # Vipr settings
@@ -138,6 +139,7 @@ class SettingsManager:
             "turbo_threads": 2,
             "output_format": "BBCode",
             "auto_copy": False,
+            "confirm_before_posting": False,
             "separate_batches": False,
             "show_previews": True,
             # Viper/ImageBam Defaults

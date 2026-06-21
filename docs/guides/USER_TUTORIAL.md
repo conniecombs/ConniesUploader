@@ -61,12 +61,14 @@ Each file row contains:
 - A thumbnail preview or `[Img]` placeholder.
 - A status label such as `Wait`, `Uploading`, `Done`, `Failed`, or `Timeout`.
 - The file name.
+- A `Set Cover` button that marks that image as a cover for templates and cover-size uploads.
 - A file progress bar.
 
 Queue actions:
 
 - Drag batch headers to reorder batches.
 - Drag file rows to reorder files or move them between batches.
+- Use `Set Cover` on one or more rows to choose cover images manually. Right-click selected rows to mark or clear covers in bulk.
 - Right-click a batch and choose `Delete Batch` to remove it.
 - Right-click a file and choose `Delete Image` to remove that file.
 - `Retry Failed` resets failed files to pending and starts another upload pass.
@@ -100,7 +102,7 @@ The service settings panel changes when you choose a host from `Select Image Hos
 | --- | --- | --- |
 | `Thumb Size` | `100`, `180`, `250`, `300`, `600` | Thumbnail width used by IMX output links. Larger values produce larger thumbnails in generated output. |
 | `Format` | `Fixed Width`, `Fixed Height`, `Proportional`, `Square` | Controls how IMX creates thumbnails. Use `Fixed Width` for most forum posts. Use `Square` when you need uniform grid thumbnails. |
-| `Covers` | `0` through `10` | Treats the first N files in each batch as cover images. Cover uploads use larger thumbnail settings. |
+| `Auto Covers` | `0` through `10` | Marks the first N files as covers when they are added. Manual row-level cover choices can override this per batch. Cover uploads use larger thumbnail settings. |
 | `Links.txt` | On/off | Also writes a raw link list file next to the formatted output file. |
 | `Gallery ID` | Text field | Existing IMX gallery ID. Leave blank unless you want the upload attached to a specific gallery. |
 
@@ -114,7 +116,7 @@ Pixhost does not require credentials.
 | --- | --- | --- |
 | `Content` | `Safe`, `Adult` | Marks the upload content type. Choose accurately for the host's rules. |
 | `Thumb Size` | `150`, `200`, `250`, `300`, `350`, `400`, `450`, `500` | Thumbnail size used by Pixhost output links. |
-| `Covers` | `0` through `10` | Treats the first N files in each batch as cover images. |
+| `Auto Covers` | `0` through `10` | Marks the first N files as covers when they are added. Manual row-level cover choices can override this per batch. |
 | `Links.txt` | On/off | Also writes a raw link list file next to the formatted output file. |
 | `Gallery Hash (Optional)` | Text field | Existing Pixhost gallery hash. Leave blank for no manual gallery. |
 
@@ -127,7 +129,7 @@ TurboImageHost login is optional.
 | Setting | Options | Explanation |
 | --- | --- | --- |
 | `Thumb Size` | `150`, `200`, `250`, `300`, `350`, `400`, `500`, `600` | Thumbnail size used by TurboImageHost output links. |
-| `Covers` | `0` through `10` | Treats the first N files in each batch as cover images. |
+| `Auto Covers` | `0` through `10` | Marks the first N files as covers when they are added. Manual row-level cover choices can override this per batch. |
 | `Links.txt` | On/off | Also writes a raw link list file next to the formatted output file. |
 | `Gallery ID` | Text field | Existing gallery ID, when applicable. |
 
@@ -140,7 +142,7 @@ Vipr requires credentials.
 | Setting | Options | Explanation |
 | --- | --- | --- |
 | `Thumb Size` | `100x100`, `170x170`, `250x250`, `300x300`, `350x350`, `500x500`, `800x800` | Thumbnail dimensions used by Vipr output links. |
-| `Covers` | `0` through `10` | Treats the first N files in each batch as cover images. |
+| `Auto Covers` | `0` through `10` | Marks the first N files as covers when they are added. Manual row-level cover choices can override this per batch. |
 | `Links.txt` | On/off | Also writes a raw link list file next to the formatted output file. |
 | `Refresh Galleries / Login` | Button | Logs in with saved Vipr credentials and loads your galleries into the dropdown. |
 | Gallery dropdown | `None` plus loaded gallery names | Selects the Vipr gallery to attach uploads to. |
@@ -216,37 +218,49 @@ Templates control the text files generated after upload. Each batch can choose a
 | Control | Explanation |
 | --- | --- |
 | `Edit Format` | Selects the template currently being edited. |
+| `Category` | Filters built-in and custom templates by category. |
+| `Search` | Filters template dropdowns by template name or content. |
 | `Saved Templates` | Selects an existing template to load into the editor. |
 | `Load` | Loads the chosen saved template. |
+| `Duplicate` | Copies the current template to a new name. |
+| `Rename` | Renames the current template while keeping its content. |
+| `Delete` | Deletes the current template after confirmation. |
+| `Import` | Imports templates from a JSON export file. |
+| `Export` | Exports saved templates to JSON. |
 | `B`, `I`, `U` | Inserts or wraps selected text with bold, italic, or underline formatting. |
 | `Color` | Chooses a color and inserts/wraps color markup. |
 | `Size` | Inserts/wraps size markup. |
 | `Font` | Inserts/wraps font markup. |
-| `Images` | Inserts `#all_images#`. |
-| `Full Imgs` | Inserts `#all_full_images#`. |
-| `Gal Link` | Inserts `#gallery_link#`. |
-| `Gal Name` | Inserts `#gallery_name#`. |
-| `Gal ID` | Inserts `#gallery_id#`. |
-| `Cover` | Inserts `[img]#cover_url#[/img]`. |
-| `Preview in Browser` | Opens a local browser preview using added local files. Add files to the queue before using this. |
+| `Placeholders` | Switches between Images, Gallery, Batch, Service, and ViperGirls placeholder groups, including image-loop snippets. |
+| `Preview in Browser` | Opens a local browser preview using added local files and shows both rendered output and raw generated text. Add files to the queue before using this. |
+| `Copy Preview Output` | Copies the raw generated preview text without opening the browser. |
 | `Save Current` | Saves changes to the currently selected template name. |
 | `Save As New...` | Creates a new named template. |
 
+The editor warns before switching templates or closing if the current template has unsaved changes. Templates are validated before saving so empty templates, unknown `#placeholder#` values, unclosed `[if]` or `[for image]` blocks, and templates without image output placeholders are blocked.
+
+If preview data is not available, the editor explains what is missing instead of failing silently. Add at least one image to the upload queue before using browser preview or copying preview output.
+
 ### Built-In Templates
 
-The app starts with these built-in templates:
+The app starts with built-in template categories:
 
-- `BBCode`
-- `Markdown`
-- `HTML`
-- `Basic List`
-- `Vipr Forum (Center)`
-- `Vipr Forum (Simple)`
-- `Reddit Markdown`
-- `HTML Page Wrapper`
-- `Cover + Gallery ID`
+| Category | Templates |
+| --- | --- |
+| `BBCode` | `BBCode`, `Basic List`, `Cover + Gallery ID` |
+| `Markdown` | `Markdown`, `Reddit Markdown` |
+| `HTML` | `HTML`, `HTML Page Wrapper` |
+| `Forum` | `Vipr Forum (Center)`, `Vipr Forum (Simple)` |
+| `ViperGirls` | `ViperGirls Gallery Post`, `ViperGirls Compact Grid`, `ViperGirls Full Image Post` |
+| `Custom` | Templates you create, duplicate, rename, or import. |
 
-Custom templates are saved in `user_templates.json`.
+The ViperGirls templates are designed for forum posting:
+
+- `ViperGirls Gallery Post`: batch title, optional gallery link, selected target/thread metadata, and clickable thumbnails.
+- `ViperGirls Compact Grid`: dense thumbnail grid using `[for image separator=space]`.
+- `ViperGirls Full Image Post`: full/direct image embeds separated by blank lines, with an optional gallery link.
+
+Custom templates are saved in `~/.conniesuploader/templates.json`. Existing `user_templates.json` files are migrated into that location the first time the updated app runs.
 
 ### Template Placeholders
 
@@ -254,16 +268,22 @@ Custom templates are saved in `user_templates.json`.
 | --- | --- |
 | `#all_images#` | All uploaded images formatted as clickable thumbnails for the selected template format. |
 | `#all_full_images#` | All uploaded images formatted as full/direct image embeds. |
-| `#image_url#` | Viewer page URL for a single image, used inside per-image formats. |
-| `#thumb_url#` | Thumbnail URL for a single image, used inside per-image formats. |
-| `#direct_url#` | Direct image URL when the service provides or derives one. |
+| `#image_url#` | Viewer page URL for the first image when used directly, and for each image inside per-image formats. |
+| `#thumb_url#` | Thumbnail URL for the first image when used directly, and for each image inside per-image formats. |
+| `#direct_url#` | Direct image URL for the first image when used directly, and for each image when the service provides or derives one. |
 | `#gallery_link#` | Gallery URL built from the selected or created gallery. |
 | `#gallery_name#` | Batch title. |
 | `#gallery_id#` | Gallery ID or hash. |
-| `#cover_url#` | Thumbnail URL of the first successful upload in the batch. |
+| `#cover_url#` | Thumbnail URL of the first selected cover image, or the first successful upload when no cover is selected. |
 | `#thumb_size#` | Thumbnail size used for the selected service. |
+| `#image_count#` | Number of images in the generated batch output. |
+| `#batch_name#` | Batch title. |
+| `#upload_date#` | Current preview/upload date. |
+| `#service#` | Selected service label or preview service. |
+| `#thread_name#` | Selected ViperGirls target name in preview/posting contexts. |
+| `#thread_id#` | Selected ViperGirls thread ID in preview/posting contexts. |
 
-If a template contains `#cover_url#`, the template engine treats that first/cover thumbnail specially and excludes it from `#all_images#` so the cover is not duplicated.
+If a template contains one or more `#cover_url#` placeholders, the template engine uses selected cover thumbnails first and excludes those cover images from `#all_images#` so they are not duplicated.
 
 ### Template Conditionals
 
@@ -272,6 +292,19 @@ Templates support simple conditional blocks:
 ```text
 [if gallery_link]
 [url=#gallery_link#]Open Gallery[/url]
+[/if]
+```
+
+These `[if]`, `[else]`, and `[/if]` tags are Connie's Uploader template syntax, not ViperGirls BBCode. The app resolves them before saving output or posting to ViperGirls, so raw conditional tags should not appear in forum posts.
+
+Conditionals can be nested:
+
+```text
+[if gallery_link]
+[url=#gallery_link#]Open Gallery[/url]
+[if thread_id]Posting to thread #thread_id#[/if]
+[else]
+No gallery created
 [/if]
 ```
 
@@ -285,6 +318,36 @@ Conditionals may include an else branch:
 
 ```text
 [if gallery_link]Gallery ready[else]No gallery[/if]
+```
+
+### Template Image Loops
+
+Use `[for image]...[/for]` when you want full control over each image instead of using `#all_images#` or `#all_full_images#`.
+
+```text
+[for image separator=newline]
+[url=#image_url#][img]#thumb_url#[/img][/url]
+[/for]
+```
+
+Inside an image loop, `#image_url#`, `#thumb_url#`, and `#direct_url#` refer to the current image. Other placeholders such as `#batch_name#`, `#service#`, `#thread_name#`, and `#thread_id#` remain available.
+
+Supported separators:
+
+| Separator | Output between image blocks |
+| --- | --- |
+| `separator=space` | One space. |
+| `separator=newline` | One line break. |
+| `separator=blankline` | A blank line. |
+| `separator=none` | No separator. |
+| `separator=", "` | A custom quoted separator. |
+
+Conditionals also work inside loops:
+
+```text
+[for image separator=blankline]
+[if direct_url][img]#direct_url#[/img][else][url=#image_url#]#image_url#[/url][/if]
+[/for]
 ```
 
 ## Output Files
@@ -325,15 +388,25 @@ Setup:
 
 1. Open `Tools > Set Credentials`.
 2. Add ViperGirls username and password.
-3. Open `Tools > Viper Tools`.
-4. Add saved threads by name and URL or thread ID.
+3. Open `Tools > ViperGirls Posting Targets`.
+4. Add saved threads by URL or thread ID. The saved name is fetched from the live ViperGirls thread title when available; optional tags and notes can help organize frequent targets.
 5. Add files to the main queue.
 6. For each batch, choose a saved thread from the thread dropdown.
-7. Start the upload.
+7. Choose a ViperGirls template such as `ViperGirls Gallery Post`, `ViperGirls Compact Grid`, or `ViperGirls Full Image Post`.
+8. Use `Preview Post` on a batch if you want to review the generated BBCode shape before uploading.
+9. Start the upload.
 
 If the batch thread dropdown remains `Do Not Post`, no forum post is queued.
 
-Posting happens in batch order. The auto-poster waits briefly between posts to reduce rate-limit problems. Saved thread data is stored under:
+Enable `Confirm before ViperGirls posting` in Settings to review the batch name, selected thread, thread ID, and generated post preview before uploads begin.
+
+The targets manager supports search, sorting by name, last used time, or thread ID, and per-target validation. Use `Refresh Names` to update existing saved targets from the current ViperGirls thread titles. Use the checkboxes to bulk export or delete selected targets. `Import` and `Export All` move saved targets between installs using JSON files.
+
+Posting happens in batch order. The auto-poster waits briefly between posts to reduce rate-limit problems. A target's `Last used` value updates after a successful post. Successful and failed posting attempts are saved in `Tools > ViperGirls Posting History`, where you can copy post text, copy an error, open the target thread, or clear the history.
+
+If no posting targets exist, the targets manager shows an empty state with import/add guidance. If a search has no matches, clear or change the search text to return to the full list.
+
+Saved thread data is stored under:
 
 ```text
 ~/.conniesuploader/saved_threads.json
@@ -356,7 +429,8 @@ Posting happens in batch order. The auto-poster waits briefly between posts to r
 | `Template Editor` | Opens the template editor. |
 | `Set Credentials` | Opens the credential tabs and saves secrets to the OS keyring. |
 | `Manage Galleries` | Lists, selects, and creates galleries for supported hosts. |
-| `Viper Tools` | Manages saved ViperGirls posting targets. |
+| `ViperGirls Posting Targets` | Manages saved ViperGirls posting targets. |
+| `ViperGirls Posting History` | Shows saved posting attempts with copy/open actions. |
 | `Set Thread Limit` | Sets per-service thread values from `1 Threads` through `10 Threads` for the current session/settings. |
 | `Install Context Menu` | On Windows, adds an Explorer directory context menu entry named `Upload with Connie's Uploader`. |
 
@@ -386,10 +460,11 @@ Posting happens in batch order. The auto-poster waits briefly between posts to r
 | Data | Location |
 | --- | --- |
 | App settings | `user_settings.json` |
-| Custom templates | `user_templates.json` |
+| Custom templates | `~/.conniesuploader/templates.json` |
 | Output for current sessions | `Output/` |
 | Persistent output history | `~/.conniesuploader/history/` |
-| Saved ViperGirls threads | `~/.conniesuploader/saved_threads.json` |
+| Saved ViperGirls posting targets | `~/.conniesuploader/saved_threads.json` |
+| ViperGirls posting history | `~/.conniesuploader/posting_history.json` |
 | Credentials | Operating system keyring |
 | Crash/debug log | `crash_log.log` |
 
@@ -421,7 +496,15 @@ Check whether `Auto-copy to clipboard` was enabled before upload completion. You
 
 ### Nothing posts to ViperGirls
 
-Make sure the batch header thread dropdown is not `Do Not Post`, ViperGirls credentials are saved, and the saved thread URL contains a recognizable thread ID such as `threads/12345` or `t=12345`.
+Make sure the batch header thread dropdown is not `Do Not Post`, ViperGirls credentials are saved, and the saved thread URL contains a recognizable thread ID such as `threads/12345` or `t=12345`. Open `Tools > ViperGirls Posting Targets`, select the target, and click `Validate`.
+
+### ViperGirls posting preflight blocks upload
+
+Upload Checks blocks the upload if posting is enabled but credentials are missing, a selected target was deleted, or a selected target has no parseable thread ID. Use the `Set Credentials` or `Manage ViperGirls Targets` action in Upload Checks, then retry.
+
+### A ViperGirls post fails after upload
+
+Open `Tools > ViperGirls Posting History`. Use `Copy Post` to keep the generated text, `Copy Error` for diagnostics, or `Open` to inspect the target thread. Failed attempts do not update a target's `Last used` value.
 
 ### The app cannot find the uploader sidecar
 

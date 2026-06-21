@@ -161,8 +161,31 @@ class UploadController:
             thumb_size = self.settings.get("pix_thumb", "200")
         elif svc == "turboimagehost":
             thumb_size = self.settings.get("turbo_thumb", "180")
+        elif svc == "vipr.im":
+            thumb_size = self.settings.get("vipr_thumb", "170x170")
+            if "x" in str(thumb_size):
+                thumb_size = str(thumb_size).split("x")[0]
         elif svc == "imagebam.com":
             thumb_size = self.settings.get("imagebam_thumb", "180")
+        elif svc == "imgur.com":
+            thumb_size = self.settings.get("imgur_thumb", self.settings.get("thumbnail_size", "m"))
+
+        thread_name = str(self.settings.get("auto_post_thread") or "").strip()
+        thread_id = ""
+        if thread_name:
+            try:
+                saved_threads = viper_api.load_saved_threads()
+                record = saved_threads.get(thread_name, {})
+                if isinstance(record, dict):
+                    thread_id = viper_api.extract_thread_id(str(record.get("thread_id") or ""))
+                    if not thread_id:
+                        thread_id = viper_api.extract_thread_id(str(record.get("url") or "")) or ""
+                else:
+                    thread_id = viper_api.extract_thread_id(str(record or "")) or ""
+            except Exception as exc:
+                logger.debug(
+                    f"Could not resolve ViperGirls thread ID for template context: {exc}"
+                )
 
         ctx = {
             "gallery_link": gal_link,
@@ -170,6 +193,12 @@ class UploadController:
             "gallery_id": gallery_id,
             "cover_url": cover_url,
             "thumb_size": thumb_size,
+            "batch_name": group_title,
+            "image_count": len(group_results),
+            "service": svc,
+            "thread_name": thread_name,
+            "thread_id": thread_id,
+            "upload_date": datetime.now().strftime("%Y-%m-%d"),
         }
 
         # Generate Text
@@ -244,14 +273,10 @@ class UploadController:
             logger.error("Auto-Post Queue: Invalid credentials or thread. Aborting.")
             return
 
-        thread_url = saved_threads[thread_name].get("url")
-        # Extract Thread ID
-        import re
-
-        tid = None
-        match = re.search(r"threads/(\d+)", thread_url) or re.search(r"t=(\d+)", thread_url)
-        if match:
-            tid = match.group(1)
+        thread_data = saved_threads[thread_name]
+        tid = thread_data.get("thread_id") or viper_api.extract_thread_id(
+            thread_data.get("url", "")
+        )
 
         if not tid:
             logger.error("Auto-Post Queue: Invalid Thread ID.")
