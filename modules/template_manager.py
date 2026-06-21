@@ -6,10 +6,12 @@
 import json
 import os
 import re
+import shutil
 import tempfile
 import urllib.parse
 import webbrowser
 
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 import customtkinter as ctk
@@ -47,6 +49,7 @@ class TemplateManager:
 
         self.templates = self.defaults.copy()
         self.filepath = filepath or "user_templates.json"
+        self.recovery_issue: Optional[Dict[str, Any]] = None
         self.load()
         self.save()
 
@@ -55,17 +58,54 @@ class TemplateManager:
             try:
                 with open(self.filepath, "r", encoding="utf-8") as f:
                     saved = json.load(f)
-                    if isinstance(saved, dict):
-                        self.templates.update(saved)
+                if not isinstance(saved, dict):
+                    raise ValueError("Template file must contain a JSON object.")
+                self.templates.update(saved)
+                self.recovery_issue = None
             except Exception as e:
+                backup_path = self._backup_unreadable_file()
+                self.recovery_issue = {
+                    "filepath": os.path.abspath(self.filepath),
+                    "backup_path": backup_path,
+                    "error": str(e),
+                    "message": (
+                        "Saved templates could not be loaded. Defaults were restored "
+                        "and the broken file was preserved."
+                    ),
+                }
                 logger.error(f"Error loading templates: {e}")
 
     def save(self) -> None:
         try:
+            folder = os.path.dirname(os.path.abspath(self.filepath))
+            if folder:
+                os.makedirs(folder, exist_ok=True)
             with open(self.filepath, "w", encoding="utf-8") as f:
                 json.dump(self.templates, f, indent=4)
         except Exception as e:
             logger.error(f"Error saving templates: {e}")
+
+    def _backup_unreadable_file(self) -> Optional[str]:
+        try:
+            folder = os.path.dirname(os.path.abspath(self.filepath))
+            base_name = os.path.basename(self.filepath)
+            stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_path = os.path.join(folder, f"{base_name}.broken-{stamp}.bak")
+            shutil.copy2(self.filepath, backup_path)
+            return backup_path
+        except Exception as e:
+            logger.error(f"Could not preserve broken template file: {e}")
+            return None
+
+    def get_recovery_issue(self) -> Optional[Dict[str, Any]]:
+        if not self.recovery_issue:
+            return None
+        return dict(self.recovery_issue)
+
+    def restore_defaults(self) -> None:
+        self.templates = self.defaults.copy()
+        self.recovery_issue = None
+        self.save()
 
     def get_template(self, fmt: str) -> str:
         return self.templates.get(fmt, self.defaults.get(fmt, ""))
@@ -251,6 +291,13 @@ class TemplateEditor(ctk.CTkToplevel):
         btn = ctk.CTkFrame(main, fg_color="transparent")
         btn.pack(fill="x")
         ctk.CTkButton(btn, text="Preview in Browser", command=self.generate_preview).pack(side="left")
+        ctk.CTkButton(
+            btn,
+            text="Restore Defaults",
+            command=self.restore_defaults,
+            fg_color="gray",
+            hover_color="#666666",
+        ).pack(side="left", padx=(8, 0))
         ctk.CTkButton(btn, text="Save As New...", command=self.save_as_new, fg_color="green").pack(side="right", padx=(5, 0))
         ctk.CTkButton(btn, text="Save Current", command=self.save).pack(side="right")
         self.load_curr()
@@ -344,6 +391,25 @@ class TemplateEditor(ctk.CTkToplevel):
             messagebox.showinfo("Success", f"Created: {new_name}")
             if self.update_callback:
                 self.update_callback(new_name)
+
+    def restore_defaults(self):
+        if not messagebox.askyesno(
+            "Restore Defaults",
+            "Restore the built-in templates and remove saved custom templates?",
+        ):
+            return
+
+        self.mgr.restore_defaults()
+        keys = self.mgr.get_all_keys()
+        self.cb_saved.configure(values=keys)
+        self.cb_fmt.configure(values=keys)
+        self.cb_fmt.set("BBCode")
+        self.cb_saved.set("BBCode")
+        self.fmt.set("BBCode")
+        self.load_curr()
+        messagebox.showinfo("Templates Restored", "Default templates have been restored.")
+        if self.update_callback:
+            self.update_callback("BBCode")
 
     def generate_preview(self):
         if not self.data_callback:

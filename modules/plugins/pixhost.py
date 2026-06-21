@@ -96,9 +96,11 @@ class PixhostPlugin(ImageHostPlugin):
                 "label": "Save Links.txt",
                 "default": False,
                 "help": "Save upload links to a text file",
+                "advanced": True,
             },
             {
                 "type": "separator",
+                "advanced": True,
             },
             {
                 "type": "text",
@@ -107,6 +109,7 @@ class PixhostPlugin(ImageHostPlugin):
                 "default": "",
                 "placeholder": "Leave blank for auto-gallery",
                 "help": "Existing gallery hash to upload to",
+                "advanced": True,
             },
         ]
 

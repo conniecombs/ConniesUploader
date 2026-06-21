@@ -233,6 +233,202 @@ class TestPluginSchemas(unittest.TestCase):
                         key, standard_keys, f"Plugin {instance.name} uses non-standard key: {key}"
                     )
 
+    def test_plugin_schemas_do_not_duplicate_host_readiness_copy(self):
+        """Credential readiness belongs in the live host readiness panel."""
+        from modules.plugins import imx, imgur, turbo, vipr
+
+        forbidden_text = [
+            "requires credentials",
+            "client id required",
+            "login optional",
+            "set in tools",
+        ]
+        plugins = [
+            imx.ImxPlugin(),
+            imgur.ImgurPlugin(),
+            turbo.TurboPlugin(),
+            vipr.ViprPlugin(),
+        ]
+
+        for plugin in plugins:
+            field_text = " ".join(
+                str(field.get("text", "")).lower() for field in plugin.settings_schema
+            )
+            for phrase in forbidden_text:
+                self.assertNotIn(phrase, field_text, plugin.name)
+
+    def test_inline_group_label_without_key_renders(self):
+        """Test that keyless inline labels do not break schema rendering."""
+        from modules.plugins import schema_renderer
+
+        class FakeWidget:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def pack(self, *args, **kwargs):
+                pass
+
+        class FakeStringVar:
+            def __init__(self, value=""):
+                self.value = value
+
+            def get(self):
+                return self.value
+
+        schema = [
+            {
+                "type": "inline_group",
+                "fields": [
+                    {"type": "label", "text": "Cover Images:", "width": 100},
+                    {
+                        "type": "dropdown",
+                        "key": "cover_count",
+                        "values": ["0", "1", "2"],
+                        "default": "0",
+                        "width": 80,
+                    },
+                ],
+            }
+        ]
+
+        with (
+            patch.object(schema_renderer.ctk, "CTkFrame", FakeWidget),
+            patch.object(schema_renderer.ctk, "CTkLabel", FakeWidget),
+            patch.object(schema_renderer.ctk, "StringVar", FakeStringVar),
+            patch.object(schema_renderer, "MouseWheelComboBox", FakeWidget),
+        ):
+            ui_vars = schema_renderer.SchemaRenderer().render(None, schema, {})
+
+        self.assertEqual(set(ui_vars), {"cover_count"})
+        self.assertEqual(ui_vars["cover_count"].get(), "0")
+
+    def test_dropdown_value_labels_render_readable_text_but_extract_codes(self):
+        """Test that dropdowns can show user-friendly labels while storing service codes."""
+        from modules.plugins import schema_renderer
+
+        class FakeWidget:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def pack(self, *args, **kwargs):
+                pass
+
+        class FakeStringVar:
+            def __init__(self, value=""):
+                self.value = value
+
+            def get(self):
+                return self.value
+
+            def set(self, value):
+                self.value = value
+
+        schema = [
+            {
+                "type": "dropdown",
+                "key": "thumbnail_size",
+                "label": "Thumbnail Size",
+                "values": ["m", "l"],
+                "value_labels": {
+                    "m": "Medium (320 px)",
+                    "l": "Large (640 px)",
+                },
+                "default": "m",
+            }
+        ]
+
+        renderer = schema_renderer.SchemaRenderer()
+        with (
+            patch.object(schema_renderer.ctk, "CTkLabel", FakeWidget),
+            patch.object(schema_renderer.ctk, "StringVar", FakeStringVar),
+            patch.object(schema_renderer, "MouseWheelComboBox", FakeWidget),
+        ):
+            ui_vars = renderer.render(None, schema, {"thumbnail_size": "m"})
+
+        self.assertEqual(ui_vars["thumbnail_size"].get(), "Medium (320 px)")
+        ui_vars["thumbnail_size"].set("Large (640 px)")
+
+        config, errors = renderer.extract_config(ui_vars, schema)
+
+        self.assertEqual(errors, [])
+        self.assertEqual(config["thumbnail_size"], "l")
+
+    def test_advanced_schema_fields_render_collapsed_but_remain_configurable(self):
+        """Test that advanced fields are hidden from the default path but still readable."""
+        from modules.plugins import schema_renderer
+
+        class FakeWidget:
+            created_texts = []
+
+            def __init__(self, *args, **kwargs):
+                text = kwargs.get("text")
+                if text:
+                    self.created_texts.append(text)
+
+            def pack(self, *args, **kwargs):
+                pass
+
+            def pack_forget(self):
+                pass
+
+            def configure(self, **kwargs):
+                text = kwargs.get("text")
+                if text:
+                    self.created_texts.append(text)
+
+        class FakeVar:
+            def __init__(self, value=""):
+                self.value = value
+
+            def get(self):
+                return self.value
+
+        schema = [
+            {
+                "type": "dropdown",
+                "key": "thumbnail_size",
+                "label": "Thumbnail Size",
+                "values": ["180"],
+                "default": "180",
+            },
+            {
+                "type": "checkbox",
+                "key": "save_links",
+                "label": "Save Links.txt",
+                "default": False,
+                "advanced": True,
+            },
+            {"type": "separator", "advanced": True},
+            {
+                "type": "text",
+                "key": "gallery_id",
+                "label": "Gallery ID",
+                "default": "",
+                "advanced": True,
+            },
+        ]
+
+        with (
+            patch.object(schema_renderer.ctk, "CTkFrame", FakeWidget),
+            patch.object(schema_renderer.ctk, "CTkLabel", FakeWidget),
+            patch.object(schema_renderer.ctk, "CTkButton", FakeWidget),
+            patch.object(schema_renderer.ctk, "CTkCheckBox", FakeWidget),
+            patch.object(schema_renderer.ctk, "CTkEntry", FakeWidget),
+            patch.object(schema_renderer.ctk, "StringVar", FakeVar),
+            patch.object(schema_renderer.ctk, "BooleanVar", FakeVar),
+            patch.object(schema_renderer, "MouseWheelComboBox", FakeWidget),
+        ):
+            ui_vars = schema_renderer.SchemaRenderer().render(
+                None,
+                schema,
+                {"save_links": True, "gallery_id": "abc123"},
+            )
+
+        self.assertEqual(set(ui_vars), {"thumbnail_size", "save_links", "gallery_id"})
+        self.assertTrue(ui_vars["save_links"].get())
+        self.assertEqual(ui_vars["gallery_id"].get(), "abc123")
+        self.assertIn("Advanced Host Settings +", FakeWidget.created_texts)
+
 
 class TestPixhostGalleryIntegration(unittest.TestCase):
     """Test Pixhost gallery metadata plumbing."""
@@ -365,6 +561,29 @@ class TestImgurHttpSpec(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             plugin.build_http_request("/tmp/image.jpg", {}, {})
+
+    def test_imgur_thumbnail_size_schema_uses_readable_labels(self):
+        from modules.plugins.imgur import ImgurPlugin
+
+        plugin = ImgurPlugin()
+        thumbnail_field = next(
+            field for field in plugin.settings_schema if field.get("key") == "thumbnail_size"
+        )
+
+        self.assertEqual(thumbnail_field["values"], ["s", "b", "t", "m", "l", "h"])
+        self.assertEqual(thumbnail_field["value_labels"]["m"], "Medium (320 px)")
+        self.assertNotIn("m", thumbnail_field["value_labels"].values())
+
+    def test_imgur_validation_normalizes_readable_thumbnail_label(self):
+        from modules.plugins.imgur import ImgurPlugin
+
+        plugin = ImgurPlugin()
+        config = {"thumbnail_size": "Medium (320 px)", "content_type": "Safe"}
+
+        errors = plugin.validate_configuration(config)
+
+        self.assertEqual(errors, [])
+        self.assertEqual(config["thumbnail_size"], "m")
 
 
 class TestPluginMetadata(unittest.TestCase):

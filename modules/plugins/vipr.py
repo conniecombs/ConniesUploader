@@ -80,11 +80,6 @@ class ViprPlugin(ImageHostPlugin):
         """Declarative UI schema for Vipr settings."""
         return [
             {
-                "type": "label",
-                "text": "⚠️ Requires Credentials (set in Tools)",
-                "color": "red",
-            },
-            {
                 "type": "dropdown",
                 "key": "thumbnail_size",
                 "label": "Thumbnail Size",
@@ -118,6 +113,7 @@ class ViprPlugin(ImageHostPlugin):
                 "key": "save_links",
                 "label": "Save Links.txt",
                 "default": False,
+                "advanced": True,
             },
         ]
 

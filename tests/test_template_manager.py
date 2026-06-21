@@ -234,23 +234,43 @@ class TestTemplatePersistence:
 
             assert "Persistent" in templates
 
+    def test_restore_defaults_removes_custom_templates(self):
+        """Test that defaults can be restored after user edits"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            templates_file = Path(temp_dir) / "templates.json"
+            tm = TemplateManager(str(templates_file))
+
+            tm.add_template("Custom", "[img]#image_url#[/img]")
+            assert "Custom" in tm.get_all_templates()
+
+            tm.restore_defaults()
+            templates = tm.get_all_templates()
+
+            assert "Custom" not in templates
+            assert templates["BBCode"] == tm.defaults["BBCode"]
+            assert tm.get_recovery_issue() is None
+
     def test_file_corruption_handling(self):
         """Test handling of corrupted template file"""
         with tempfile.TemporaryDirectory() as temp_dir:
             templates_file = Path(temp_dir) / "templates.json"
 
             # Write invalid JSON
-            with open(templates_file, "w") as f:
-                f.write("{invalid json")
+            broken_json = "{invalid json"
+            templates_file.write_text(broken_json, encoding="utf-8")
 
-            # Should handle gracefully
-            try:
-                tm = TemplateManager(str(templates_file))
-                # Should either start with empty templates or raise proper error
-                assert tm is not None
-            except (json.JSONDecodeError, ValueError):
-                # Acceptable to raise error for corrupted file
-                pass
+            tm = TemplateManager(str(templates_file))
+            issue = tm.get_recovery_issue()
+
+            assert issue is not None
+            assert issue["filepath"] == str(templates_file.resolve())
+            assert issue["backup_path"]
+            backup_path = Path(issue["backup_path"])
+            assert backup_path.exists()
+            assert backup_path.read_text(encoding="utf-8") == broken_json
+
+            restored_data = json.loads(templates_file.read_text(encoding="utf-8"))
+            assert restored_data["BBCode"] == tm.defaults["BBCode"]
 
 
 @pytest.mark.unit

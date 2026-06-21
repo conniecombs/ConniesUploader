@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025 conniecombs
 
+import os
+
 import customtkinter as ctk
 import tkinter as tk
 from tkinter import messagebox
@@ -192,6 +194,7 @@ class DragDropMixin:
 
     def _move_file_to_group(self, fp, old_group, new_group, before_widget=None):
         old_group.remove_file(fp)
+        removed_old_group = self._remove_empty_group_if_needed(old_group)
         if before_widget:
             target_fp = None
             with self.lock:
@@ -212,7 +215,7 @@ class DragDropMixin:
             old_row = w_data["row"]
         old_row.destroy()
 
-        self._create_row(fp, None, new_group)
+        self._create_row(fp, None, new_group, preview_requested=self.var_show_previews.get())
         with self.lock:
             new_row = self.file_widgets[fp]["row"]
 
@@ -224,6 +227,9 @@ class DragDropMixin:
 
         if self.var_show_previews.get():
             self.thumb_executor.submit(self._thumb_worker, [fp], new_group, True)
+
+        if removed_old_group and hasattr(self, "_refresh_queue_state"):
+            self._refresh_queue_state()
 
     def _show_group_context(self, event, group):
         self.context_menu.delete(0, "end")
@@ -240,6 +246,15 @@ class DragDropMixin:
         row.configure(fg_color="#E0E0E0" if ctk.get_appearance_mode() == "Light" else "#404040")
 
         self.context_menu.delete(0, "end")
+        with self.lock:
+            state = self.file_widgets.get(filepath, {}).get("state")
+        if state == "failed":
+            self.context_menu.add_command(
+                label="Retry Image", command=lambda: self._retry_file(filepath)
+            )
+            self.context_menu.add_command(
+                label="Copy Error", command=lambda: self._copy_file_error(filepath)
+            )
         self.context_menu.add_command(
             label="Delete Image", command=lambda: self._delete_file(filepath)
         )
@@ -258,6 +273,10 @@ class DragDropMixin:
             if group in self.groups:
                 self.groups.remove(group)
             group.destroy()
+            if hasattr(self, "add_activity"):
+                self.add_activity(f"Deleted batch: {group.title}.", "warning")
+            if hasattr(self, "_refresh_queue_state"):
+                self._refresh_queue_state()
 
     def _delete_file(self, filepath):
         with self.lock:
@@ -276,3 +295,25 @@ class DragDropMixin:
         with self.lock:
             del self.file_widgets[filepath]
         self._clear_highlights()
+        if hasattr(self, "add_activity"):
+            self.add_activity(f"Removed image: {os.path.basename(filepath)}.", "warning")
+        self._remove_empty_group_if_needed(group)
+        if hasattr(self, "_refresh_queue_state"):
+            self._refresh_queue_state()
+
+    def _remove_empty_group_if_needed(self, group):
+        if not group or getattr(group, "files", None):
+            return False
+
+        if group in self.groups:
+            self.groups.remove(group)
+
+        try:
+            if group.winfo_exists():
+                group.destroy()
+        except (tk.TclError, AttributeError):
+            pass
+
+        if hasattr(self, "add_activity"):
+            self.add_activity(f"Removed empty batch: {group.title}.", "warning")
+        return True

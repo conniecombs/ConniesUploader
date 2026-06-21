@@ -16,6 +16,15 @@ from .base import ImageHostPlugin
 class ImgurPlugin(ImageHostPlugin):
     """Imgur image hosting plugin using schema-based UI."""
 
+    THUMBNAIL_SIZE_LABELS = {
+        "s": "Small square (90x90)",
+        "b": "Large square (160x160)",
+        "t": "Small (160 px)",
+        "m": "Medium (320 px)",
+        "l": "Large (640 px)",
+        "h": "Huge (1024 px)",
+    }
+
     @property
     def id(self) -> str:
         return "imgur.com"
@@ -79,18 +88,14 @@ class ImgurPlugin(ImageHostPlugin):
         """Declarative UI schema for Imgur settings."""
         return [
             {
-                "type": "label",
-                "text": "Client ID required for anonymous uploads; access token optional.",
-                "color": "orange",
-            },
-            {
                 "type": "dropdown",
                 "key": "thumbnail_size",
                 "label": "Thumbnail Size",
                 "values": ["s", "b", "t", "m", "l", "h"],
+                "value_labels": self.THUMBNAIL_SIZE_LABELS,
                 "default": "m",
                 "required": True,
-                "help": "s=90x90, b=160x160, t=160x160, m=320x320, l=640x640, h=1024x1024",
+                "help": "Controls the thumbnail size used in generated output.",
             },
             {
                 "type": "dropdown",
@@ -107,9 +112,11 @@ class ImgurPlugin(ImageHostPlugin):
                 "label": "Save Links.txt",
                 "default": False,
                 "help": "Save upload links to a text file",
+                "advanced": True,
             },
             {
                 "type": "separator",
+                "advanced": True,
             },
             {
                 "type": "text",
@@ -118,6 +125,7 @@ class ImgurPlugin(ImageHostPlugin):
                 "default": "",
                 "placeholder": "Leave blank for no album",
                 "help": "Imgur album ID to add images to",
+                "advanced": True,
             },
             {
                 "type": "text",
@@ -126,6 +134,7 @@ class ImgurPlugin(ImageHostPlugin):
                 "default": "",
                 "placeholder": "Leave blank for filename",
                 "help": "Title for uploaded images",
+                "advanced": True,
             },
         ]
 
@@ -134,8 +143,17 @@ class ImgurPlugin(ImageHostPlugin):
         errors = []
 
         # Validate thumbnail size
-        valid_sizes = ["s", "b", "t", "m", "l", "h"]
-        if config.get("thumbnail_size") not in valid_sizes:
+        valid_sizes = list(self.THUMBNAIL_SIZE_LABELS)
+        selected_size = str(config.get("thumbnail_size", ""))
+        if selected_size in self.THUMBNAIL_SIZE_LABELS.values():
+            selected_size = next(
+                code
+                for code, label in self.THUMBNAIL_SIZE_LABELS.items()
+                if label == selected_size
+            )
+            config["thumbnail_size"] = selected_size
+
+        if selected_size not in valid_sizes:
             errors.append(f"Invalid thumbnail size. Must be one of: {', '.join(valid_sizes)}")
 
         # Convert content type to Imgur's mature flag

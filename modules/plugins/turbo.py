@@ -71,11 +71,6 @@ class TurboPlugin(ImageHostPlugin):
         """Declarative UI schema for Turbo settings."""
         return [
             {
-                "type": "label",
-                "text": "ℹ️ Login Optional",
-                "color": "orange",
-            },
-            {
                 "type": "dropdown",
                 "key": "thumbnail_size",
                 "label": "Thumbnail Size",
@@ -101,9 +96,11 @@ class TurboPlugin(ImageHostPlugin):
                 "key": "save_links",
                 "label": "Save Links.txt",
                 "default": False,
+                "advanced": True,
             },
             {
                 "type": "separator",
+                "advanced": True,
             },
             {
                 "type": "text",
@@ -111,6 +108,7 @@ class TurboPlugin(ImageHostPlugin):
                 "label": "Gallery ID (Optional)",
                 "default": "",
                 "placeholder": "Leave blank for auto-gallery",
+                "advanced": True,
             },
         ]
 

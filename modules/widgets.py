@@ -332,10 +332,11 @@ class ServiceSettingsView:
 
     def alias_config(self, service_id, config):
         aliases = {}
+        plugin = self.service_plugins.get(service_id)
         for schema_key, legacy_key in self.SERVICE_ALIASES.get(service_id, {}).items():
             if schema_key not in config:
                 continue
-            value = config[schema_key]
+            value = self.normalize_value(service_id, schema_key, config[schema_key], plugin=plugin)
             if schema_key == "cover_count":
                 try:
                     value = int(value)
@@ -343,6 +344,30 @@ class ServiceSettingsView:
                     value = 0
             aliases[legacy_key] = value
         return aliases
+
+    def normalize_value(self, service_id, key, value, plugin=None):
+        plugin = plugin or self.service_plugins.get(service_id)
+        if not plugin:
+            return value
+
+        field = self._find_schema_field(getattr(plugin, "settings_schema", []), key)
+        if not field:
+            return value
+
+        labels = field.get("value_labels", {})
+        for stored_value, display_value in labels.items():
+            if str(value) == str(display_value):
+                return str(stored_value)
+        return value
+
+    def _find_schema_field(self, schema, key):
+        for field in schema:
+            if field.get("key") == key:
+                return field
+            for subfield in field.get("fields", []):
+                if subfield.get("key") == key:
+                    return subfield
+        return None
 
     def get_value(self, service_id, key, default=""):
         return self.get_raw_config(service_id).get(key, default)
