@@ -35,6 +35,12 @@ class SettingsManager:
                 "maximum": config.MAX_WORKER_COUNT,
                 "description": "Number of concurrent upload workers",
             },
+            "global_thread_limit": {
+                "type": "integer",
+                "minimum": config.MIN_THREAD_COUNT,
+                "maximum": config.MAX_THREAD_COUNT,
+                "description": "Maximum concurrent file uploads inside each sidecar job",
+            },
             # IMX settings
             "imx_thumb": {"type": "string", "pattern": "^[0-9]+$"},
             "imx_format": {"type": "string"},
@@ -114,6 +120,7 @@ class SettingsManager:
         self.defaults = {
             "service": "imx.to",
             "global_worker_count": config.DEFAULT_WORKER_COUNT,  # Main job queue dispatcher workers
+            "global_thread_limit": config.DEFAULT_THREAD_COUNT,
             "imx_thumb": "180",
             "imx_format": "Fixed Width",
             "imx_cover_count": 0,  # Was imx_cover
@@ -207,6 +214,23 @@ class SettingsManager:
                     f"global_worker_count ({worker_count}) exceeds maximum ({config.MAX_WORKER_COUNT})"
                 )
 
+        global_thread_limit = data.get("global_thread_limit", config.DEFAULT_THREAD_COUNT)
+        try:
+            global_thread_limit = int(global_thread_limit)
+        except (TypeError, ValueError):
+            global_thread_limit = None
+        if global_thread_limit is not None:
+            if global_thread_limit < config.MIN_THREAD_COUNT:
+                errors.append(
+                    "global_thread_limit "
+                    f"({global_thread_limit}) is below minimum ({config.MIN_THREAD_COUNT})"
+                )
+            elif global_thread_limit > config.MAX_THREAD_COUNT:
+                errors.append(
+                    "global_thread_limit "
+                    f"({global_thread_limit}) exceeds maximum ({config.MAX_THREAD_COUNT})"
+                )
+
         for thread_key in self._thread_count_keys():
             if thread_key not in data:
                 continue
@@ -264,6 +288,12 @@ class SettingsManager:
             config.MIN_WORKER_COUNT,
             config.MAX_WORKER_COUNT,
         )
+        normalized["global_thread_limit"] = self._clamp_int(
+            normalized.get("global_thread_limit"),
+            config.DEFAULT_THREAD_COUNT,
+            config.MIN_THREAD_COUNT,
+            config.MAX_THREAD_COUNT,
+        )
         for thread_key in self._thread_count_keys():
             default = self.defaults.get(thread_key, config.DEFAULT_THREAD_COUNT)
             normalized[thread_key] = self._clamp_int(
@@ -290,8 +320,14 @@ class SettingsManager:
             with open(self.filepath, "r") as f:
                 data = json.load(f)
 
-            # Merge with defaults
-            merged = self.normalize_numeric_ranges({**self.defaults, **data})
+            # Merge with defaults. Older settings files did not have a global
+            # thread limit, so seed it from the previous representative value.
+            merged_input = {**self.defaults, **data}
+            if "global_thread_limit" not in data:
+                merged_input["global_thread_limit"] = data.get(
+                    "imx_threads", self.defaults["global_thread_limit"]
+                )
+            merged = self.normalize_numeric_ranges(merged_input)
 
             # Validate the loaded settings
             validation_errors = self.validate_settings(merged)

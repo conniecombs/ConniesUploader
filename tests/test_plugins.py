@@ -526,11 +526,20 @@ class TestUploadManagerJobConfig(unittest.TestCase):
 
         self.assertEqual(config["threads"], 7)
 
+    def test_global_thread_limit_takes_precedence_over_service_threads(self):
+        from modules.upload_manager import UploadManager
+
+        config = UploadManager._normalize_job_config(
+            {"service": "pixhost.to", "global_thread_limit": 4, "pix_threads": 7}
+        )
+
+        self.assertEqual(config["threads"], 4)
+
     def test_invalid_threads_fall_back_to_safe_default(self):
         from modules.upload_manager import UploadManager
 
         config = UploadManager._normalize_job_config(
-            {"service": "vipr.im", "vipr_threads": "not-a-number"}
+            {"service": "vipr.im", "global_thread_limit": "not-a-number"}
         )
 
         self.assertEqual(config["threads"], 2)

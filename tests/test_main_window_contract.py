@@ -185,12 +185,14 @@ def test_worker_count_is_in_global_advanced_section():
     assert "text=\"Thread Limit:\"" in source
     assert "thread_limit_entry = ctk.CTkEntry" in source
     assert "set_global_threads(self.menu_thread_var.get())" in source
+    assert 'upload_cfg["global_thread_limit"] = 1' in source
+    assert 'cfg["imagebam_threads"] = 1' not in source
     assert "add_cascade(label=\"Set Thread Limit\"" not in source
     assert "self._create_global_advanced_section(out_frame)" in source
 
 
 @pytest.mark.unit
-def test_global_thread_limit_sets_all_service_thread_vars_with_bounds():
+def test_global_thread_limit_is_bounded_without_rewriting_service_thread_vars():
     app = UploaderApp.__new__(UploaderApp)
     app.menu_thread_var = FakeVar(config.DEFAULT_THREAD_COUNT)
     app._last_global_thread_limit_value = config.DEFAULT_THREAD_COUNT
@@ -201,14 +203,14 @@ def test_global_thread_limit_sets_all_service_thread_vars_with_bounds():
 
     assert app.menu_thread_var.get() == config.MAX_THREAD_COUNT
     assert app._last_global_thread_limit_value == config.MAX_THREAD_COUNT
-    for _, var_name, _ in UploaderApp._service_thread_var_specs():
-        assert getattr(app, var_name).get() == config.MAX_THREAD_COUNT
+    for _, var_name, default in UploaderApp._service_thread_var_specs():
+        assert getattr(app, var_name).get() == default
 
     UploaderApp.set_global_threads(app, 0)
 
     assert app.menu_thread_var.get() == config.MIN_THREAD_COUNT
-    for _, var_name, _ in UploaderApp._service_thread_var_specs():
-        assert getattr(app, var_name).get() == config.MIN_THREAD_COUNT
+    for _, var_name, default in UploaderApp._service_thread_var_specs():
+        assert getattr(app, var_name).get() == default
 
 
 @pytest.mark.unit
@@ -230,10 +232,11 @@ def test_gather_settings_clamps_worker_and_changed_global_thread_limit():
     gathered = UploaderApp._gather_settings(app)
 
     assert gathered["global_worker_count"] == config.MAX_WORKER_COUNT
+    assert gathered["global_thread_limit"] == config.MAX_THREAD_COUNT
     assert app.var_global_worker_count.get() == config.MAX_WORKER_COUNT
-    for thread_key, var_name, _ in UploaderApp._service_thread_var_specs():
-        assert gathered[thread_key] == config.MAX_THREAD_COUNT
-        assert getattr(app, var_name).get() == config.MAX_THREAD_COUNT
+    for thread_key, var_name, default in UploaderApp._service_thread_var_specs():
+        assert gathered[thread_key] == default
+        assert getattr(app, var_name).get() == default
 
 
 @pytest.mark.unit

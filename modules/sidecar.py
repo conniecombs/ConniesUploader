@@ -78,27 +78,41 @@ class SidecarBridge:
 
         self._start_process()
 
+    @staticmethod
+    def _binary_names() -> List[str]:
+        if os.name != "nt":
+            return ["uploader"]
+        return ["uploader.exe", "uploader"]
+
     def _resolve_executable(self) -> Optional[Path]:
         """Find the bundled or development sidecar executable."""
-        binary_name = "uploader.exe" if os.name == "nt" else "uploader"
+        binary_names = self._binary_names()
         candidates: List[Path] = []
 
         if getattr(sys, "frozen", False):
             meipass = getattr(sys, "_MEIPASS", None)
             if meipass:
-                candidates.append(Path(meipass) / binary_name)
-            candidates.append(Path(sys.executable).resolve().parent / binary_name)
+                candidates.extend(Path(meipass) / name for name in binary_names)
+            candidates.extend(Path(sys.executable).resolve().parent / name for name in binary_names)
         else:
-            candidates.append(Path(__file__).resolve().parents[1] / binary_name)
+            candidates.extend(Path(__file__).resolve().parents[1] / name for name in binary_names)
 
-        candidates.append(Path.cwd() / binary_name)
+        candidates.extend(Path.cwd() / name for name in binary_names)
 
+        unique_candidates: List[Path] = []
+        seen_candidates = set()
         for candidate in candidates:
+            if candidate in seen_candidates:
+                continue
+            seen_candidates.add(candidate)
+            unique_candidates.append(candidate)
+
+        for candidate in unique_candidates:
             if candidate.is_file():
                 return candidate
 
-        logger.error(f"Sidecar executable '{binary_name}' was not found")
-        for index, candidate in enumerate(candidates, start=1):
+        logger.error(f"Sidecar executable '{binary_names[0]}' was not found")
+        for index, candidate in enumerate(unique_candidates, start=1):
             logger.error(f"Search path {index}: {candidate}")
         return None
 

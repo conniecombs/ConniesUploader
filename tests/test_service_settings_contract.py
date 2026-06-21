@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025 conniecombs
 
+import json
+
 import pytest
 
 from modules.credentials_manager import CredentialsManager
@@ -26,6 +28,7 @@ def test_settings_manager_normalizes_worker_and_thread_ranges():
         {
             **manager.defaults,
             "global_worker_count": 99,
+            "global_thread_limit": 99,
             "imx_threads": 99,
             "pix_threads": 0,
             "turbo_threads": "not-a-number",
@@ -33,10 +36,22 @@ def test_settings_manager_normalizes_worker_and_thread_ranges():
     )
 
     assert normalized["global_worker_count"] == 16
+    assert normalized["global_thread_limit"] == 10
     assert normalized["imx_threads"] == 10
     assert normalized["pix_threads"] == 1
     assert normalized["turbo_threads"] == manager.defaults["turbo_threads"]
     assert manager.validate_settings(normalized) == []
+
+
+@pytest.mark.unit
+def test_settings_manager_migrates_global_thread_limit_from_old_imx_threads(tmp_path):
+    manager = SettingsManager()
+    manager.filepath = tmp_path / "settings.json"
+    manager.filepath.write_text(json.dumps({"imx_threads": 7}), encoding="utf-8")
+
+    loaded = manager.load()
+
+    assert loaded["global_thread_limit"] == 7
 
 
 @pytest.mark.unit

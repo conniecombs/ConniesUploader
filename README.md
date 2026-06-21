@@ -151,17 +151,25 @@ Useful build-script options:
 - `clean` removes build artifacts and exits.
 - `--ci` runs without interactive pauses or opening `dist/`.
 
-Manual development run:
+Manual development run on Windows PowerShell:
 
-```bash
-go build -ldflags="-s -w" -o uploader .
+```powershell
+go build -ldflags="-s -w" -o uploader.exe .
 python -m venv venv
-venv\Scripts\activate
+.\venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 python main.py
 ```
 
-On Linux/macOS, activate the environment with `source venv/bin/activate` and build the sidecar as `uploader`.
+Manual development run on Linux/macOS:
+
+```bash
+go build -ldflags="-s -w" -o uploader .
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+python main.py
+```
 
 ## Usage
 

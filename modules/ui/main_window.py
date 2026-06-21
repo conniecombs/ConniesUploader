@@ -336,9 +336,6 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         )
         self.menu_thread_var.set(n)
         self._last_global_thread_limit_value = n
-        for _, var_name, _ in self._service_thread_var_specs():
-            if hasattr(self, var_name):
-                getattr(self, var_name).set(n)
 
     def open_template_editor(self):
         def on_update(new_key):
@@ -1705,7 +1702,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         )
         self._set_bounded_var(
             self.menu_thread_var,
-            s.get("imx_threads", config.DEFAULT_THREAD_COUNT),
+            s.get("global_thread_limit", config.DEFAULT_THREAD_COUNT),
             config.DEFAULT_THREAD_COUNT,
             config.MIN_THREAD_COUNT,
             config.MAX_THREAD_COUNT,
@@ -1850,6 +1847,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         cfg = {
             "service": selected_service,
             "global_worker_count": worker_count,
+            "global_thread_limit": global_thread_limit,
             **service_thread_settings,
             "output_format": self.settings.get("output_format", "BBCode"),
             "auto_copy": self.var_auto_copy.get(),
@@ -2152,17 +2150,19 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
 
             # Apply worker count setting (will restart sidecar if changed)
             from modules.sidecar import SidecarBridge
+
             SidecarBridge.set_worker_count(cfg.get("global_worker_count", 8))
 
-            # When worker count is 1, force all service threads to 1 for true sequential uploads
-            if cfg.get("global_worker_count") == 1:
-                cfg["imx_threads"] = 1
-                cfg["pix_threads"] = 1
-                cfg["turbo_threads"] = 1
-                cfg["vipr_threads"] = 1
-                cfg["imagebam_threads"] = 1
+            upload_cfg = cfg.copy()
 
-            preflight_issues, ready_message = self._run_upload_preflight(pending_by_group, cfg)
+            # When worker count is 1, force the runtime thread limit to 1 for true sequential uploads.
+            if cfg.get("global_worker_count") == 1:
+                upload_cfg["global_thread_limit"] = 1
+                upload_cfg["threads"] = 1
+
+            preflight_issues, ready_message = self._run_upload_preflight(
+                pending_by_group, upload_cfg
+            )
             if preflight_issues:
                 self._handle_preflight_issues(preflight_issues)
                 return
@@ -2240,7 +2240,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
                     is_uploading_callback=lambda: self.is_uploading, cancel_event=self.cancel_event
                 )
 
-            self.upload_manager.start_batch(pending_by_group, cfg, self.creds)
+            self.upload_manager.start_batch(pending_by_group, upload_cfg, self.creds)
 
         except Exception as e:
             if hasattr(e, "errors"):

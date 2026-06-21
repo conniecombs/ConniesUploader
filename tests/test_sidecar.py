@@ -79,16 +79,12 @@ class TestSidecarBinaryLocation:
     def test_binary_name_windows(self):
         """Test that binary name is correct for Windows"""
         with patch("os.name", "nt"):
-            binary_name = "uploader.exe" if os.name == "nt" else "uploader"
-            if os.name == "nt":
-                assert binary_name == "uploader.exe"
+            assert SidecarBridge._binary_names() == ["uploader.exe", "uploader"]
 
     def test_binary_name_unix(self):
         """Test that binary name is correct for Unix-like systems"""
         with patch("os.name", "posix"):
-            binary_name = "uploader.exe" if os.name == "nt" else "uploader"
-            if os.name != "nt":
-                assert binary_name == "uploader"
+            assert SidecarBridge._binary_names() == ["uploader"]
 
     def test_base_directory_development_mode(self):
         """Test base directory calculation in development mode"""
@@ -359,6 +355,32 @@ class TestSidecarIntegrationPoints:
 @pytest.mark.integration
 class TestSidecarMockProcess:
     """Integration tests with mocked subprocess"""
+
+    @patch("modules.sidecar.threading.Thread")
+    @patch("modules.sidecar.subprocess.Popen")
+    def test_start_process_passes_worker_count(self, mock_popen, mock_thread):
+        """Test that worker count is passed to the sidecar process."""
+        mock_proc = Mock()
+        mock_proc.poll.return_value = None
+        mock_proc.stdout = Mock()
+        mock_popen.return_value = mock_proc
+        mock_thread.return_value.start = Mock()
+
+        old_worker_count = SidecarBridge._worker_count
+        bridge = SidecarBridge.__new__(SidecarBridge)
+        bridge.proc = None
+        bridge.restart_lock = threading.RLock()
+        bridge._shutdown_requested = threading.Event()
+        bridge._resolve_executable = Mock(return_value=Path("uploader.exe"))
+
+        try:
+            SidecarBridge._worker_count = 6
+            assert bridge._start_process() is True
+        finally:
+            SidecarBridge._worker_count = old_worker_count
+
+        command = mock_popen.call_args.args[0]
+        assert command[-2:] == ["--workers", "6"]
 
     @patch("subprocess.Popen")
     def test_process_creation_called(self, mock_popen):

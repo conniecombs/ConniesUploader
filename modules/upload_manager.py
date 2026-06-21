@@ -242,13 +242,17 @@ class UploadManager:
         """Return a sidecar-ready config with service thread controls normalized."""
         normalized = cfg.copy()
         service_id = str(normalized.get("service", ""))
-        thread_key = SERVICE_THREAD_KEYS.get(service_id)
+        thread_value = normalized.get("global_thread_limit")
 
-        if thread_key and normalized.get(thread_key) not in (None, ""):
-            normalized["threads"] = normalized[thread_key]
+        if thread_value in (None, ""):
+            thread_key = SERVICE_THREAD_KEYS.get(service_id)
+            if thread_key and normalized.get(thread_key) not in (None, ""):
+                thread_value = normalized[thread_key]
 
         try:
-            threads = int(normalized.get("threads", 2))
+            threads = int(
+                thread_value if thread_value not in (None, "") else normalized.get("threads", 2)
+            )
         except (TypeError, ValueError):
             threads = 2
 
