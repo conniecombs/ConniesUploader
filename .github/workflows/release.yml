@@ -103,6 +103,7 @@ jobs:
           --icon "logo.ico" `
           --add-binary "uploader.exe;." `
           --add-data "logo.ico;." `
+          --additional-hooks-dir "pyinstaller_hooks" `
           --collect-all tkinterdnd2 `
           --collect-submodules modules.plugins `
           --hidden-import modules.plugins.imx `
@@ -190,6 +191,7 @@ jobs:
         pyinstaller --noconsole --onefile --clean --name "ConniesUploader" \
           --add-binary "uploader:." \
           --add-data "logo.ico:." \
+          --additional-hooks-dir "pyinstaller_hooks" \
           --collect-all tkinterdnd2 \
           --collect-submodules modules.plugins \
           --hidden-import modules.plugins.imx \
@@ -273,6 +275,7 @@ jobs:
         pyinstaller --noconsole --onefile --clean --name "ConniesUploader" \
           --add-binary "uploader:." \
           --add-data "logo.ico:." \
+          --additional-hooks-dir "pyinstaller_hooks" \
           --collect-all tkinterdnd2 \
           --collect-submodules modules.plugins \
           --hidden-import modules.plugins.imx \

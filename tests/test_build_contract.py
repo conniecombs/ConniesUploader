@@ -22,6 +22,12 @@ def test_other_build_entrypoints_use_local_pyinstaller_hooks():
     assert '--additional-hooks-dir "pyinstaller_hooks"' in (ROOT / "Makefile").read_text()
 
 
+def test_release_workflow_uses_local_pyinstaller_hooks():
+    workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+
+    assert workflow.count('--additional-hooks-dir "pyinstaller_hooks"') >= 3
+
+
 def test_customtkinter_hook_preserves_assets_and_adds_tcl_tk_binaries():
     hook = (ROOT / "pyinstaller_hooks" / "hook-customtkinter.py").read_text()
 
