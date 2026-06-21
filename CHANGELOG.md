@@ -9,6 +9,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.4.0] - 2026-06-20
+
+### Added
+
+- Added a real empty queue state with drag-and-drop guidance plus primary Add Files and Add Folder actions.
+- Added in-app Import Checks and Upload Checks panels with contextual actions for credentials, invalid files, problem folders, and retrying.
+- Added a hideable Activity panel that records scanning, queueing, upload, retry, copy, save, and completion events.
+- Added inline completion summaries with uploaded and failed counts, generated files, clipboard status, Open Folder, Copy Output, and Retry Failed actions.
+- Added inline failed-file reasons with one-click retry and copy-error actions.
+- Added template recovery actions for corrupted local template data.
+
+### Changed
+
+- Moved Worker Count and Thread Limit into Advanced App Settings with matching compact controls.
+- Removed the Tools menu thread-limit cascade so thread limits have one clear home.
+- Rendered host settings from plugin schemas to avoid selectable-but-unsupported service traps.
+- Improved queue rows with clearer statuses, stable action lanes, visible remove buttons, retry affordances, and better no-preview spacing.
+- Made Activity and queue add buttons context-aware so the interface uses space more naturally.
+
+### Fixed
+
+- Clamped global worker counts to `1-16` and upload thread limits to `1-10` in the UI, settings load/save path, and sidecar job normalization.
+- Prevented conflicting host-readiness messages from showing at the same time.
+- Removed empty batches automatically after their last image is removed.
+- Improved user-facing thumbnail-size labels for Imgur.
+- Verified `build_uploader.bat --ci` builds the packaged Windows executable automatically.
+
+---
+
 ## [1.3.0] - 2026-06-02
 
 ### Added

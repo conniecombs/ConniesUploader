@@ -1,8 +1,8 @@
 # Remaining Codebase Issues - Technical Debt Tracker
 
 **Created**: 2026-01-03
-**Last Updated**: 2026-06-02
-**Product Version**: v1.3.0
+**Last Updated**: 2026-06-20
+**Product Version**: v1.4.0
 **Architecture Version**: v2.5.0
 **Status**: Phase 1-9 ✅ Complete | **ALL ISSUES RESOLVED** ✅🎉
 **Total Completed**: 45 issues (all critical, high, medium, and low-priority issues)
@@ -335,14 +335,14 @@
 - **Actual Status**: Already Complete
 
 #### **Issue #14: Version String in Multiple Places** ✅ **RESOLVED** (2026-06-02)
-- **Status**: Fixed - all current product version strings are consistent at v1.3.0
+- **Status**: Fixed - all current product version strings are consistent at v1.4.0
 - **Locations Updated**:
-  - `modules/config.py` - `APP_VERSION = "1.3.0"` ✅
-  - `Makefile` - `VERSION := 1.3.0` ✅
-  - `README.md` - Badge and latest release show v1.3.0 ✅
-  - `ARCHITECTURE.md` - Product version shows v1.3.0 ✅
+  - `modules/config.py` - `APP_VERSION = "1.4.0"` ✅
+  - `Makefile` - `VERSION := 1.4.0` ✅
+  - `README.md` - Badge and latest release show v1.4.0 ✅
+  - `ARCHITECTURE.md` - Product version shows v1.4.0 ✅
 - **Action Items**:
-  - [x] Standardize product version to v1.3.0 ✅
+  - [x] Standardize product version to v1.4.0 ✅
   - [ ] Read version in Go from config file (future enhancement)
   - [ ] Auto-update README badge in CI/CD (future enhancement)
 - **Estimated Effort**: Completed
@@ -475,7 +475,7 @@
 - **File**: `README.md`
 - **Status**: Version badges are correct and properly structured
 - **Current State**:
-  - Line 3: App version badge shows v1.3.0
+  - Line 3: App version badge shows v1.4.0
   - Line 9: Go version badge shows 1.25
   - Both badges serve different purposes and are appropriately labeled
 - **Action Items**:
@@ -518,7 +518,7 @@
   - **docs/guides/ (3 developer guides):**
     - PLUGIN_CREATION_GUIDE.md, SCHEMA_PLUGIN_GUIDE.md, BUILD_TROUBLESHOOTING.md
   - **docs/releases/ (8 release docs):**
-    - RELEASE_NOTES.md, RELEASE_NOTES_v1.3.0.md, RELEASE_NOTES_v1.2.4.md, RELEASE_NOTES_v1.2.2.md
+    - RELEASE_NOTES.md, RELEASE_NOTES_v1.4.0.md, RELEASE_NOTES_v1.3.0.md, RELEASE_NOTES_v1.2.4.md, RELEASE_NOTES_v1.2.2.md
     - RELEASE_NOTES_v1.1.0.md, RELEASE_NOTES_v1.0.5.md, release_notes_v1.0.4.md, RELEASE_PROCESS.md
   - **docs/history/ (8 analysis/status docs):**
     - IMPLEMENTATION_ANALYSIS.md, CODE_REVIEW_VALIDATION.md, IMPROVEMENTS.md
@@ -558,7 +558,7 @@
 - **Current State**:
   - All 10 badges have descriptive alt text following accessibility best practices
   - Alt text format: `![Descriptive text](badge URL)`
-  - Examples: "Project version badge showing v1.3.0", "MIT License badge", etc.
+  - Examples: "Project version badge showing v1.4.0", "MIT License badge", etc.
 - **Action Items**:
   - [x] Add meaningful alt text to all badges ✅
   - [x] Follow accessibility best practices ✅
@@ -772,7 +772,7 @@
 - ✅ Generic HTTP runner supports chained prerequests, cookie sessions, template substitution, and richer extraction
 - ✅ Sidecar request IDs keep concurrent upload responses correlated
 - ✅ Security gates tightened for Go and Python dependency/audit workflows
-- ✅ Product version references updated to v1.3.0
+- ✅ Product version references updated to v1.4.0
 
 **Phase 9 - Final Low Priority Issues (2026-01-19):**
 - ✅ **Issue #25**: Contributing guidelines - Created GitHub issue templates (bug_report.md, feature_request.md, config.yml)
@@ -787,7 +787,7 @@
 - Total: 45/45 ✅ (100%)
 
 **Phase 8 - Low Priority Quick Wins (2026-01-16):**
-- ✅ **Issue #23**: README version badges - Verified all version badges are correct (v1.3.0 for app, 1.25 for Go)
+- ✅ **Issue #23**: README version badges - Verified all version badges are correct (v1.4.0 for app, 1.25 for Go)
 - ✅ **Issue #24**: Excessive documentation - Reorganized 21 markdown files into clean hierarchy (76% reduction: 21 → 5 root files)
 - ✅ **Issue #26**: Alt text for badges - Verified all 10 badges have proper accessibility alt text
 - ✅ **Issue #28**: Build script verbosity - Created cross-platform Makefile and build.sh, simplified build_uploader.bat from 311 to 227 lines

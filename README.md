@@ -1,6 +1,6 @@
 # Connie's Uploader Ultimate
 
-![Project version badge showing v1.3.0](https://img.shields.io/badge/version-1.3.0-blue.svg)
+![Project version badge showing v1.4.0](https://img.shields.io/badge/version-1.4.0-blue.svg)
 ![MIT License badge](https://img.shields.io/badge/license-MIT-green.svg)
 ![Supported platforms: Windows, Linux, and macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)
 ![Continuous integration workflow status: passing](https://github.com/conniecombs/ConniesUploader/actions/workflows/ci.yml/badge.svg?branch=main)
@@ -11,17 +11,51 @@
 
 Connie's Uploader Ultimate is a desktop image-uploading tool with a CustomTkinter GUI and a Go sidecar for concurrent uploads. It supports batch uploads, gallery workflows, custom output templates, drag and drop, secure credential storage, and automated release builds for Windows, Linux, and macOS.
 
-**Latest release:** v1.3.0 "Protocol Hardening & Release Reliability" (June 2, 2026)
+**Latest release:** v1.4.0 "User Experience Polish & Safer Upload Controls" (June 20, 2026)
 
 ## Screenshots
 
-| Main dashboard | Batch upload queue |
-| --- | --- |
-| ![Connie's Uploader main dashboard with Pixhost settings selected](docs/assets/screenshots/main-dashboard.png) | ![Connie's Uploader batch upload queue with grouped images and progress states](docs/assets/screenshots/upload-queue.png) |
+### Start With A Clear Drop Zone
 
-| Gallery manager | Template editor |
-| --- | --- |
-| ![Gallery manager showing Pixhost galleries and gallery creation controls](docs/assets/screenshots/gallery-manager.png) | ![Template editor with BBCode formatting toolbar and placeholder controls](docs/assets/screenshots/template-editor.png) |
+The main screen opens directly into the upload workflow. New users get a large drop zone, centered Add Files and Add Folder actions, and host readiness feedback before they start.
+
+![Connie's Uploader 1.4.0 empty upload queue with Pixhost selected, ready status, and centered Add Files and Add Folder actions](docs/assets/screenshots/empty-drop-zone.png)
+
+### Organize Batches Automatically
+
+Folders become separate upload batches with visible thumbnails, per-batch output templates, post targets, progress, and remove actions. Once files are present, the queue-level Add Files and Add Folder buttons move to the top toolbar.
+
+![Connie's Uploader upload queue showing two image batches with thumbnails, templates, post target selectors, progress bars, and remove buttons](docs/assets/screenshots/batched-upload-queue.png)
+
+### Keep Advanced Controls Out Of The Way
+
+Everyday settings stay visible, while Worker Count and Thread Limit live together in Advanced App Settings. The app enforces the displayed ranges so workers stay within `1-16` and upload thread limits stay within `1-10`.
+
+![Advanced App Settings expanded with Worker Count and Thread Limit controls above Pixhost upload settings](docs/assets/screenshots/advanced-app-settings.png)
+
+### Catch Problems Before Upload
+
+Import Checks and Upload Checks explain what needs attention inside the main window, with contextual actions for adding files, setting credentials, removing invalid files, opening problem folders, or retrying.
+
+![Import Checks and Upload Checks panels showing rejected files, preflight warnings, and fix buttons](docs/assets/screenshots/import-upload-checks.png)
+
+### Track Upload Activity Inline
+
+The activity panel records the work as it happens: host readiness, queueing, active uploads, completed files, and progress. It can be hidden when users want the queue to take more space.
+
+![Connie's Uploader upload progress view with uploaded, uploading, and queued rows plus a visible activity timeline](docs/assets/screenshots/activity-progress.png)
+
+### Finish With Useful Next Actions
+
+Completion summaries show uploaded and failed counts, generated output files, clipboard status, and next-step actions such as Open Folder, Copy Output, and Retry Failed.
+
+![Upload completion summary showing uploaded and failed counts, generated files, clipboard status, and retry actions](docs/assets/screenshots/completion-summary.png)
+
+### Customize Output Templates
+
+The Template Editor lets users build BBCode, Markdown, HTML, and custom output formats with formatting controls and one-click placeholders for images, galleries, covers, and IDs.
+
+![Template Editor with BBCode formatting toolbar, gallery placeholders, editable template text, preview, restore, save, and save-as-new controls](docs/assets/screenshots/template-editor-v140.png)
 
 ## Features
 
@@ -48,31 +82,27 @@ The active upload plugins are:
 
 ## Latest Changelog
 
-### v1.3.0 - Protocol Hardening & Release Reliability
+### v1.4.0 - User Experience Polish & Safer Upload Controls
 
-Released June 2, 2026.
+Released June 20, 2026.
 
 **Added**
 
-- Expanded the Go generic HTTP runner with chained prerequests, cookie sessions, template substitution, richer JSON/HTML extraction, response templates, and relative endpoint resolution.
-- Added sidecar request IDs so Python only accepts correlated Go upload responses.
-- Added Imgur request-building support for the shared sidecar upload workflow.
+- Added a real empty queue drop zone with primary Add Files and Add Folder actions.
+- Added in-app import checks, upload preflight checks, activity history, and completion summaries.
+- Added inline retry and failed-reason visibility for upload rows.
 
 **Changed**
 
-- Normalized per-service worker counts before upload jobs are sent to the sidecar.
-- Switched build scripts to `go mod download` for repeatable builds that do not rewrite module files.
-- Moved coverage configuration into `.coveragerc`.
-
-**Security**
-
-- Updated Go security-sensitive dependencies including `golang.org/x/image`, `golang.org/x/net`, and `golang.org/x/sys`.
-- Tightened GitHub security scanning around `govulncheck`, gosec, `pip-audit`, and medium-or-higher Bandit findings.
+- Moved advanced worker and thread controls into a compact Advanced App Settings section.
+- Rendered service settings from plugin schemas, including Imgur-friendly settings labels.
+- Improved queue readability with clearer states, stable row actions, and reclaimed row space when previews are off.
 
 **Fixed**
 
-- Prevented sidecar response mixups during concurrent uploads.
-- Ensured HTTP response bodies are closed explicitly in service paths.
+- Clamped worker counts to `1-16` and upload thread limits to `1-10` throughout the UI, settings, and upload job path.
+- Ensured `build_uploader.bat --ci` can build the packaged executable automatically.
+- Added recovery options for corrupted local templates.
 
 Full history is available in [CHANGELOG.md](CHANGELOG.md).
 
@@ -80,13 +110,13 @@ Full history is available in [CHANGELOG.md](CHANGELOG.md).
 
 ### Download a Release
 
-Download the latest release from [GitHub Releases](https://github.com/conniecombs/ConniesUploader/releases/tag/v1.3.0).
+Download the latest release from [GitHub Releases](https://github.com/conniecombs/ConniesUploader/releases/tag/v1.4.0).
 
 Expected release artifacts:
 
-- `ConniesUploader-v1.3.0-windows-x64.zip`
-- `ConniesUploader-v1.3.0-linux-x64.tar.gz`
-- `ConniesUploader-v1.3.0-macos-x64.zip`
+- `ConniesUploader-v1.4.0-windows-x64.zip`
+- `ConniesUploader-v1.4.0-linux-x64.tar.gz`
+- `ConniesUploader-v1.4.0-macos-x64.zip`
 
 Each release artifact includes a SHA256 checksum.
 
@@ -121,17 +151,25 @@ Useful build-script options:
 - `clean` removes build artifacts and exits.
 - `--ci` runs without interactive pauses or opening `dist/`.
 
-Manual development run:
+Manual development run on Windows PowerShell:
 
-```bash
-go build -ldflags="-s -w" -o uploader .
+```powershell
+go build -ldflags="-s -w" -o uploader.exe .
 python -m venv venv
-venv\Scripts\activate
+.\venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 python main.py
 ```
 
-On Linux/macOS, activate the environment with `source venv/bin/activate` and build the sidecar as `uploader`.
+Manual development run on Linux/macOS:
+
+```bash
+go build -ldflags="-s -w" -o uploader .
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+python main.py
+```
 
 ## Usage
 

@@ -79,11 +79,6 @@ class ImxPlugin(ImageHostPlugin):
         """Declarative UI schema for IMX settings."""
         return [
             {
-                "type": "label",
-                "text": "⚠️ Requires Credentials (set in Tools)",
-                "color": "red",
-            },
-            {
                 "type": "dropdown",
                 "key": "thumbnail_size",
                 "label": "Thumbnail Size",
@@ -117,9 +112,11 @@ class ImxPlugin(ImageHostPlugin):
                 "key": "save_links",
                 "label": "Save Links.txt",
                 "default": False,
+                "advanced": True,
             },
             {
                 "type": "separator",
+                "advanced": True,
             },
             {
                 "type": "text",
@@ -127,6 +124,7 @@ class ImxPlugin(ImageHostPlugin):
                 "label": "Gallery ID (Optional)",
                 "default": "",
                 "placeholder": "Leave blank for auto-gallery",
+                "advanced": True,
             },
         ]
 

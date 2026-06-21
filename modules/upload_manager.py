@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Tuple
 
 from loguru import logger
 
+from . import config
 from .plugin_manager import PluginManager
 from .sidecar import SidecarBridge
 
@@ -177,14 +178,20 @@ class UploadManager:
         elif "vipr" in service_id:
             key = "vipr_cover_count"
 
-        if key is None:
-            return 0
+        keys = ["cover_count", "cover_limit"]
+        if key is not None:
+            keys.insert(0, key)
 
-        try:
-            return max(0, int(cfg.get(key, 0)))
-        except (ValueError, TypeError) as exc:
-            logger.debug(f"Could not get cover count for {service_id}: {exc}")
-            return 0
+        for candidate in keys:
+            value = cfg.get(candidate)
+            if value in (None, ""):
+                continue
+            try:
+                return max(0, int(value))
+            except (ValueError, TypeError) as exc:
+                logger.debug(f"Could not get cover count for {service_id}: {exc}")
+
+        return 0
 
     def _send_job(self, file_list: List[str], cfg: Dict[str, Any], creds: Dict[str, str]) -> None:
         service_id = cfg["service"]
@@ -235,17 +242,24 @@ class UploadManager:
         """Return a sidecar-ready config with service thread controls normalized."""
         normalized = cfg.copy()
         service_id = str(normalized.get("service", ""))
-        thread_key = SERVICE_THREAD_KEYS.get(service_id)
+        thread_value = normalized.get("global_thread_limit")
 
-        if thread_key and normalized.get(thread_key) not in (None, ""):
-            normalized["threads"] = normalized[thread_key]
+        if thread_value in (None, ""):
+            thread_key = SERVICE_THREAD_KEYS.get(service_id)
+            if thread_key and normalized.get(thread_key) not in (None, ""):
+                thread_value = normalized[thread_key]
 
         try:
-            threads = int(normalized.get("threads", 2))
+            threads = int(
+                thread_value if thread_value not in (None, "") else normalized.get("threads", 2)
+            )
         except (TypeError, ValueError):
             threads = 2
 
-        normalized["threads"] = max(1, threads)
+        normalized["threads"] = max(
+            config.MIN_THREAD_COUNT,
+            min(config.MAX_THREAD_COUNT, threads),
+        )
         return normalized
 
     def _process_events(self) -> None:

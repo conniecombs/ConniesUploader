@@ -21,7 +21,7 @@ import subprocess
 import platform
 import time
 from datetime import datetime
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional, Tuple
 from concurrent.futures import ThreadPoolExecutor
 from modules.ui.safe_scrollable_frame import SafeScrollableFrame
 
@@ -80,6 +80,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
     def _init_variables(self):
         """Initialize UI variables and executors."""
         self.menu_thread_var = tk.IntVar(value=5)
+        self._last_global_thread_limit_value = config.DEFAULT_THREAD_COUNT
         self.var_show_previews = tk.BooleanVar(value=True)
         self.var_separate_batches = tk.BooleanVar(value=False)
         self.var_appearance_mode = tk.StringVar(value="System")
@@ -97,6 +98,12 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         self.groups = []
         self.results = []
         self.log_cache = []
+        self.activity_events = []
+        self.preflight_issues = []
+        self.preflight_action_files = []
+        self.preflight_action_file_issue_texts = []
+        self.preflight_action_folders = []
+        self.import_check_issues = []
         self.image_refs = set()  # Using set for O(1) add/remove operations
         self.log_window_ref = None
         self.clipboard_buffer = []
@@ -104,7 +111,11 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         self.upload_count = 0
         self.is_uploading = False
         self.current_output_files = []
+        self.current_completion_summary = None
         self.pix_galleries_to_finalize = []
+        self.output_dir = "Output"
+        self.activity_visible = True
+        self._template_recovery_notice_shown = False
 
     def _init_state(self):
         """Initialize application state tracking."""
@@ -113,6 +124,8 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
 
         # Drag & Drop state
         self.drag_data = {"item": None, "type": None, "y_start": 0, "widget_start": None}
+        self.selected_files = set()
+        self.selection_anchor = None
         self.highlighted_row = None
         self.context_menu = tk.Menu(self, tearoff=0)
 
@@ -157,6 +170,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         self._create_menu()
         self._create_layout()
         self._apply_settings()
+        self.after(250, self._show_template_recovery_notice)
 
         # Register drag-and-drop on main window
         self.drop_target_register(DND_FILES)
@@ -238,6 +252,8 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
     def _load_credentials(self):
         """Load credentials from system keyring using CredentialsManager."""
         self.creds = CredentialsManager.load_all_credentials()
+        if hasattr(self, "lbl_host_readiness"):
+            self._refresh_host_readiness()
 
     def _create_menu(self):
         menubar = tk.Menu(self)
@@ -252,20 +268,11 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         tools_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Tools", menu=tools_menu)
         tools_menu.add_command(label="Template Editor", command=self.open_template_editor)
+        tools_menu.add_command(label="Reset Templates to Defaults", command=self.reset_templates_to_defaults)
         tools_menu.add_command(label="Set Credentials", command=self.open_creds_dialog)
         tools_menu.add_command(label="Manage Galleries", command=self.open_gallery_manager)
         tools_menu.add_separator()
         tools_menu.add_command(label="Viper Tools", command=self.open_viper_tools)
-
-        thread_menu = tk.Menu(tools_menu, tearoff=0)
-        tools_menu.add_cascade(label="Set Thread Limit", menu=thread_menu)
-        for i in range(1, 11):
-            thread_menu.add_radiobutton(
-                label=f"{i} Threads",
-                value=i,
-                variable=self.menu_thread_var,
-                command=lambda n=i: self.set_global_threads(n),
-            )
 
         tools_menu.add_separator()
         tools_menu.add_command(label="Install Context Menu", command=ContextUtils.install_menu)
@@ -323,17 +330,14 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         self.auto_poster.saved_threads_data = self.saved_threads_data
 
     def set_global_threads(self, n):
+        n = self._bounded_int(
+            n,
+            config.DEFAULT_THREAD_COUNT,
+            config.MIN_THREAD_COUNT,
+            config.MAX_THREAD_COUNT,
+        )
         self.menu_thread_var.set(n)
-        if hasattr(self, "var_imx_threads"):
-            self.var_imx_threads.set(n)
-        if hasattr(self, "var_pix_threads"):
-            self.var_pix_threads.set(n)
-        if hasattr(self, "var_turbo_threads"):
-            self.var_turbo_threads.set(n)
-        if hasattr(self, "var_vipr_threads"):
-            self.var_vipr_threads.set(n)
-        if hasattr(self, "var_ib_threads"):
-            self.var_ib_threads.set(n)
+        self._last_global_thread_limit_value = n
 
     def open_template_editor(self):
         def on_update(new_key):
@@ -347,6 +351,136 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             update_callback=on_update,
         )
 
+    def reset_templates_to_defaults(self):
+        if not messagebox.askyesno(
+            "Reset Templates",
+            "Restore the built-in templates and remove saved custom templates?",
+        ):
+            return
+
+        self.template_mgr.restore_defaults()
+        self.add_activity("Template defaults restored.", "success")
+        messagebox.showinfo("Templates Restored", "Default templates have been restored.")
+
+    def _show_template_recovery_notice(self):
+        if self._template_recovery_notice_shown:
+            return
+
+        issue = self.template_mgr.get_recovery_issue()
+        if not issue:
+            return
+
+        self._template_recovery_notice_shown = True
+        self.add_activity(
+            "Template file could not be read. Defaults were restored and a backup was kept.",
+            "warning",
+        )
+
+        dlg = ctk.CTkToplevel(self)
+        dlg.title("Template Recovery")
+        dlg.geometry("560x360")
+        dlg.transient(self)
+        dlg.focus_force()
+
+        ctk.CTkLabel(
+            dlg,
+            text="Templates Restored",
+            font=("Segoe UI", 18, "bold"),
+        ).pack(anchor="w", padx=18, pady=(18, 4))
+        ctk.CTkLabel(
+            dlg,
+            text=(
+                "Your saved templates file could not be read. The app restored "
+                "the built-in templates so you can keep working."
+            ),
+            text_color="gray",
+            wraplength=510,
+            justify="left",
+        ).pack(anchor="w", padx=18, pady=(0, 12))
+
+        details = ctk.CTkFrame(dlg, fg_color="transparent")
+        details.pack(fill="x", padx=18, pady=(0, 8))
+        self._add_recovery_detail(details, "Template file", issue.get("filepath", ""))
+        self._add_recovery_detail(details, "Backup", issue.get("backup_path") or "Backup unavailable")
+        self._add_recovery_detail(details, "Error", issue.get("error", "Unknown error"))
+
+        feedback = ctk.CTkLabel(dlg, text="", text_color="gray", wraplength=510, justify="left")
+        feedback.pack(anchor="w", padx=18, pady=(4, 0))
+
+        actions = ctk.CTkFrame(dlg, fg_color="transparent")
+        actions.pack(fill="x", padx=18, pady=(16, 18))
+
+        def open_broken_file():
+            backup_path = issue.get("backup_path")
+            if backup_path:
+                self._open_path(backup_path)
+
+        def open_backup_folder():
+            path = issue.get("backup_path") or issue.get("filepath")
+            if path:
+                self._open_path(os.path.dirname(path))
+
+        def restore_defaults():
+            self.template_mgr.restore_defaults()
+            feedback.configure(text="Default templates restored.")
+            self.add_activity("Template defaults restored.", "success")
+
+        ctk.CTkButton(
+            actions,
+            text="Open Broken File",
+            command=open_broken_file,
+            state="normal" if issue.get("backup_path") else "disabled",
+            width=135,
+        ).pack(side="left", padx=(0, 6))
+        ctk.CTkButton(
+            actions,
+            text="Open Folder",
+            command=open_backup_folder,
+            width=105,
+        ).pack(side="left", padx=6)
+        ctk.CTkButton(
+            actions,
+            text="Restore Defaults",
+            command=restore_defaults,
+            width=125,
+        ).pack(side="left", padx=6)
+        ctk.CTkButton(
+            actions,
+            text="Close",
+            command=dlg.destroy,
+            fg_color="gray",
+            hover_color="#666666",
+            width=80,
+        ).pack(side="right")
+
+    def _add_recovery_detail(self, parent, label: str, value: str) -> None:
+        row = ctk.CTkFrame(parent, fg_color="transparent")
+        row.pack(fill="x", pady=2)
+        ctk.CTkLabel(row, text=f"{label}:", width=100, anchor="w").pack(side="left")
+        ctk.CTkLabel(
+            row,
+            text=value,
+            anchor="w",
+            text_color="gray",
+            wraplength=390,
+            justify="left",
+        ).pack(side="left", fill="x", expand=True)
+
+    def _open_path(self, path: str) -> None:
+        if not path:
+            return
+
+        try:
+            if platform.system() == "Windows":
+                os.startfile(path)
+            elif platform.system() == "Darwin":
+                subprocess.run(["open", path], check=False, shell=False)
+            else:
+                subprocess.run(["xdg-open", path], check=False, shell=False)
+        except Exception as e:
+            logger.error(f"Could not open path {path}: {e}")
+            messagebox.showerror("Open Failed", f"Could not open:\n{path}\n\nError: {e}")
+
     def get_preview_data(self):
         if not self.groups:
             return None, None, None
@@ -356,7 +490,15 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         current_service = self.var_service.get()
         size = "200"
         try:
-            if current_service == "imx.to":
+            if hasattr(self, "settings_view"):
+                raw = self.settings_view.get_raw_config(current_service)
+                if raw.get("thumbnail_size"):
+                    size = str(
+                        self.settings_view.normalize_value(
+                            current_service, "thumbnail_size", raw["thumbnail_size"]
+                        )
+                    )
+            elif current_service == "imx.to":
                 size = self.var_imx_thumb.get()
             elif current_service == "pixhost.to":
                 size = self.var_pix_thumb.get()
@@ -367,19 +509,19 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
                 size = val.split("x")[0] if "x" in val else val
             elif current_service == "imagebam.com":
                 size = self.var_ib_thumb.get()
+            if "x" in size:
+                size = size.split("x")[0]
         except (AttributeError, tk.TclError) as e:
             logger.debug(f"Could not get thumbnail size for {current_service}: {e}")
         return grp.files, grp.title, size
 
     def on_gallery_created(self, service, gid):
         if service == "imx.to":
-            self.ent_imx_gal.delete(0, "end")
-            self.ent_imx_gal.insert(0, gid)
+            self.settings_view.set_value("imx.to", "gallery_id", gid)
             self.var_service.set("imx.to")
             self._swap_service_frame("imx.to")
         elif service == "pixhost.to":
-            self.ent_pix_hash.delete(0, "end")
-            self.ent_pix_hash.insert(0, gid)
+            self.settings_view.set_value("pixhost.to", "gallery_hash", gid)
             self.var_service.set("pixhost.to")
             self._swap_service_frame("pixhost.to")
         elif service == "vipr.im":
@@ -407,7 +549,23 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
                 if meta and meta.get("galleries"):
                     self.vipr_galleries_map = {g["name"]: g["id"] for g in meta["galleries"]}
                     gal_names = ["None"] + list(self.vipr_galleries_map.keys())
-                    self.after(0, lambda: self.cb_vipr_gallery.configure(values=gal_names))
+                    plugin = getattr(self, "service_plugins", {}).get("vipr.im")
+                    if plugin:
+                        plugin.vipr_galleries_map = dict(self.vipr_galleries_map)
+                    selected_name = next(
+                        (name for name, value in self.vipr_galleries_map.items() if value == select_id),
+                        None,
+                    )
+
+                    def _apply_galleries():
+                        if hasattr(self, "cb_vipr_gallery"):
+                            self.cb_vipr_gallery.configure(values=gal_names)
+                        if selected_name:
+                            self.settings_view.set_value(
+                                "vipr.im", "vipr_gallery_name", selected_name
+                            )
+
+                    self.after(0, _apply_galleries)
                     self.log(f"Vipr: Found {len(meta['galleries'])} galleries.")
                 else:
                     self.log("Vipr: No galleries found.")
@@ -438,30 +596,25 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         ctk.CTkCheckBox(
             out_frame, text="One Gallery Per Folder", variable=self.var_auto_gallery
         ).pack(anchor="w", padx=5, pady=2)
-
-        # Global worker count setting
-        worker_frame = ctk.CTkFrame(out_frame, fg_color="transparent")
-        worker_frame.pack(fill="x", padx=5, pady=5)
-        ctk.CTkLabel(worker_frame, text="Worker Count:", width=100).pack(side="left")
-        self.var_global_worker_count = ctk.IntVar(value=8)
-        worker_spinbox = ctk.CTkEntry(
-            worker_frame, textvariable=self.var_global_worker_count, width=60
-        )
-        worker_spinbox.pack(side="left", padx=5)
-        ctk.CTkLabel(worker_frame, text="(1-16)", font=("Segoe UI", 10)).pack(side="left")
+        self.var_auto_gallery.trace_add("write", lambda *_: self._refresh_host_readiness())
 
         self.btn_open = ctk.CTkButton(
             out_frame, text="Open Output Folder", command=self.open_output_folder, state="disabled"
         )
         self.btn_open.pack(fill="x", padx=5, pady=10)
+        self._create_global_advanced_section(out_frame)
 
         ctk.CTkLabel(
             self.settings_frame_container, text="Select Image Host", font=("Segoe UI", 13, "bold")
         ).pack(pady=(15, 2), padx=10, anchor="w")
         # Dynamically get available plugins from PluginManager
-        plugin_manager = PluginManager()
-        available_services = plugin_manager.get_service_names()
-        default_service = available_services[0] if available_services else "imx.to"
+        self.plugin_manager = PluginManager()
+        available_services = self.plugin_manager.get_service_names()
+        default_service = (
+            "pixhost.to"
+            if "pixhost.to" in available_services
+            else (available_services[0] if available_services else "imx.to")
+        )
 
         self.var_service = ctk.StringVar(value=default_service)
         self.cb_service_select = ctk.CTkOptionMenu(
@@ -471,6 +624,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             command=self._swap_service_frame,
         )
         self.cb_service_select.pack(fill="x", padx=10, pady=(0, 10))
+        self._create_host_readiness_panel()
 
         self.service_settings_container = ctk.CTkFrame(
             self.settings_frame_container, fg_color="transparent"
@@ -478,7 +632,9 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         self.service_settings_container.pack(fill="x", padx=5, pady=0)
 
         # --- REFACTOR: Delegate frame creation to ServiceSettingsView ---
-        self.settings_view = ServiceSettingsView(self.service_settings_container, self)
+        self.settings_view = ServiceSettingsView(
+            self.service_settings_container, self, plugin_manager=self.plugin_manager
+        )
 
         btn_frame = ctk.CTkFrame(self.settings_frame_container, fg_color="transparent")
         btn_frame.pack(fill="x", padx=10, pady=10)
@@ -489,10 +645,9 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             text="Stop",
             command=self.stop_upload,
             state="disabled",
-            fg_color="#FF3B30",
-            hover_color="#D63028",
         )
         self.btn_stop.pack(fill="x", pady=5)
+        self._configure_stop_button(False)
 
         util_grid = ctk.CTkFrame(btn_frame, fg_color="transparent")
         util_grid.pack(fill="x")
@@ -505,9 +660,37 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
 
         right_panel = ctk.CTkFrame(main_container)
         right_panel.pack(side="right", fill="both", expand=True)
+
+        queue_toolbar = ctk.CTkFrame(right_panel, fg_color="transparent")
+        queue_toolbar.pack(fill="x", padx=5, pady=(5, 0))
+
+        queue_title = ctk.CTkFrame(queue_toolbar, fg_color="transparent")
+        queue_title.pack(side="left", fill="x", expand=True)
+        ctk.CTkLabel(queue_title, text="Upload Queue", font=("Segoe UI", 16, "bold")).pack(
+            anchor="w"
+        )
+        self.lbl_file_summary = ctk.CTkLabel(queue_title, text="No files added", text_color="gray")
+        self.lbl_file_summary.pack(anchor="w")
+
+        self.queue_actions = ctk.CTkFrame(queue_toolbar, fg_color="transparent")
+        self.btn_add_files = ctk.CTkButton(
+            self.queue_actions, text="Add Files", command=self.add_files, width=110
+        )
+        self.btn_add_files.pack(side="left", padx=(0, 6))
+        self.btn_add_folder = ctk.CTkButton(
+            self.queue_actions, text="Add Folder", command=self.add_folder, width=110
+        )
+        self.btn_add_folder.pack(side="left")
+
         self.list_container = ScrollableFrame(right_panel, width=600)
         self.list_container.pack(fill="both", expand=True, padx=5, pady=5)
         self.file_frame = self.list_container
+        self._create_empty_queue_state()
+        self._create_import_checks_panel(right_panel)
+        self._create_upload_checks_panel(right_panel)
+        self._create_completion_panel(right_panel)
+        self._create_activity_panel(right_panel)
+        self._refresh_queue_state()
 
         footer = ctk.CTkFrame(right_panel, height=40, fg_color="transparent")
         footer.pack(fill="x", padx=5, pady=5)
@@ -517,50 +700,1056 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         self.overall_progress.set(0)
         self.overall_progress.pack(fill="x", pady=5)
 
+    def _create_global_advanced_section(self, parent):
+        self.var_global_worker_count = ctk.IntVar(value=config.DEFAULT_WORKER_COUNT)
+
+        wrapper = ctk.CTkFrame(parent, fg_color="transparent")
+        wrapper.pack(fill="x", padx=5, pady=(0, 8))
+
+        content = ctk.CTkFrame(wrapper, fg_color="transparent")
+        expanded = {"value": False}
+
+        def toggle():
+            expanded["value"] = not expanded["value"]
+            if expanded["value"]:
+                btn_toggle.configure(text="Advanced App Settings -")
+                content.pack(fill="x", pady=(6, 0))
+            else:
+                content.pack_forget()
+                btn_toggle.configure(text="Advanced App Settings +")
+
+        btn_toggle = ctk.CTkButton(
+            wrapper,
+            text="Advanced App Settings +",
+            command=toggle,
+            fg_color="gray",
+            hover_color="#666666",
+        )
+        btn_toggle.pack(fill="x")
+
+        worker_frame = ctk.CTkFrame(content, fg_color="transparent")
+        worker_frame.pack(fill="x", pady=5)
+        ctk.CTkLabel(worker_frame, text="Worker Count:", width=100).pack(side="left")
+        worker_spinbox = ctk.CTkEntry(
+            worker_frame, textvariable=self.var_global_worker_count, width=60
+        )
+        worker_spinbox.pack(side="left", padx=5)
+        worker_spinbox.bind(
+            "<FocusOut>",
+            lambda _event: self._set_bounded_var(
+                self.var_global_worker_count,
+                self.var_global_worker_count.get(),
+                config.DEFAULT_WORKER_COUNT,
+                config.MIN_WORKER_COUNT,
+                config.MAX_WORKER_COUNT,
+            ),
+        )
+        worker_spinbox.bind(
+            "<Return>",
+            lambda _event: self._set_bounded_var(
+                self.var_global_worker_count,
+                self.var_global_worker_count.get(),
+                config.DEFAULT_WORKER_COUNT,
+                config.MIN_WORKER_COUNT,
+                config.MAX_WORKER_COUNT,
+            ),
+        )
+        ctk.CTkLabel(
+            worker_frame,
+            text=f"({config.MIN_WORKER_COUNT}-{config.MAX_WORKER_COUNT})",
+            font=("Segoe UI", 10),
+        ).pack(side="left")
+
+        thread_frame = ctk.CTkFrame(content, fg_color="transparent")
+        thread_frame.pack(fill="x", pady=5)
+        ctk.CTkLabel(thread_frame, text="Thread Limit:", width=100).pack(side="left")
+        thread_limit_entry = ctk.CTkEntry(
+            thread_frame, textvariable=self.menu_thread_var, width=60
+        )
+        thread_limit_entry.pack(side="left", padx=5)
+        thread_limit_entry.bind(
+            "<FocusOut>", lambda _event: self.set_global_threads(self.menu_thread_var.get())
+        )
+        thread_limit_entry.bind(
+            "<Return>", lambda _event: self.set_global_threads(self.menu_thread_var.get())
+        )
+        ctk.CTkLabel(
+            thread_frame,
+            text=f"({config.MIN_THREAD_COUNT}-{config.MAX_THREAD_COUNT})",
+            font=("Segoe UI", 10),
+        ).pack(side="left")
+
+    def _create_empty_queue_state(self):
+        self.empty_queue_frame = ctk.CTkFrame(self.list_container, fg_color="transparent")
+        self.empty_queue_frame.pack(fill="both", expand=True, padx=24, pady=90)
+
+        ctk.CTkLabel(
+            self.empty_queue_frame,
+            text="Add images to begin",
+            font=("Segoe UI", 18, "bold"),
+        ).pack(pady=(0, 6))
+        ctk.CTkLabel(
+            self.empty_queue_frame,
+            text="Drag files or folders here, or choose an option below.",
+            text_color="gray",
+            wraplength=520,
+            justify="center",
+        ).pack(pady=(0, 14))
+
+        empty_actions = ctk.CTkFrame(self.empty_queue_frame, fg_color="transparent")
+        empty_actions.pack()
+        ctk.CTkButton(
+            empty_actions, text="Add Files", command=self.add_files, width=120
+        ).pack(side="left", padx=5)
+        ctk.CTkButton(
+            empty_actions, text="Add Folder", command=self.add_folder, width=120
+        ).pack(side="left", padx=5)
+
+    def _set_empty_queue_visible(self, visible: bool) -> None:
+        if not hasattr(self, "empty_queue_frame"):
+            return
+
+        if visible:
+            if not self.empty_queue_frame.winfo_ismapped():
+                self.empty_queue_frame.pack(fill="both", expand=True, padx=24, pady=90)
+        else:
+            if self.empty_queue_frame.winfo_ismapped():
+                self.empty_queue_frame.pack_forget()
+
+    def _set_queue_actions_visible(self, visible: bool) -> None:
+        if "queue_actions" not in self.__dict__:
+            return
+
+        if visible:
+            if not self.queue_actions.winfo_ismapped():
+                self.queue_actions.pack(side="right", padx=(10, 0))
+        else:
+            if self.queue_actions.winfo_ismapped():
+                self.queue_actions.pack_forget()
+
+    def _refresh_queue_state(self) -> None:
+        if not hasattr(self, "lbl_file_summary"):
+            return
+
+        with self.lock:
+            file_count = len(self.file_widgets)
+        group_count = len(self.groups)
+
+        if file_count == 0:
+            if group_count == 0:
+                summary = "No files added"
+            else:
+                batch_label = "batch" if group_count == 1 else "batches"
+                summary = f"{group_count} empty {batch_label}"
+        else:
+            file_label = "file" if file_count == 1 else "files"
+            batch_label = "batch" if group_count == 1 else "batches"
+            summary = f"{file_count} {file_label} in {group_count} {batch_label}"
+
+        self.lbl_file_summary.configure(text=summary)
+        queue_is_empty = file_count == 0 and group_count == 0
+        self._set_empty_queue_visible(queue_is_empty)
+        self._set_queue_actions_visible(not queue_is_empty)
+        self._refresh_start_button_state()
+
+    def _create_activity_panel(self, parent):
+        panel = ctk.CTkFrame(parent)
+        panel.pack(fill="x", padx=5, pady=(0, 5))
+        self.activity_panel = panel
+
+        header = ctk.CTkFrame(panel, fg_color="transparent")
+        header.pack(fill="x", padx=10, pady=(8, 2))
+        ctk.CTkLabel(header, text="Activity", font=("Segoe UI", 13, "bold")).pack(side="left")
+        self.btn_activity_toggle = ctk.CTkButton(
+            header,
+            text="Hide",
+            command=self.toggle_activity_panel,
+            width=70,
+            fg_color="gray",
+            hover_color="#666666",
+        )
+        self.btn_activity_toggle.pack(side="right")
+
+        self.activity_frame = ctk.CTkScrollableFrame(panel, height=115, fg_color="transparent")
+        self.activity_frame.pack(fill="x", padx=8, pady=(0, 8))
+        self._render_activity_events()
+
+    def toggle_activity_panel(self) -> None:
+        self.activity_visible = not getattr(self, "activity_visible", True)
+        if self.activity_visible:
+            if "activity_frame" in self.__dict__ and not self.activity_frame.winfo_ismapped():
+                self.activity_frame.pack(fill="x", padx=8, pady=(0, 8))
+            if "btn_activity_toggle" in self.__dict__:
+                self.btn_activity_toggle.configure(text="Hide")
+        else:
+            if "activity_frame" in self.__dict__ and self.activity_frame.winfo_ismapped():
+                self.activity_frame.pack_forget()
+            if "btn_activity_toggle" in self.__dict__:
+                self.btn_activity_toggle.configure(text="Show")
+
+    def _create_upload_checks_panel(self, parent) -> None:
+        self.upload_checks_panel = ctk.CTkFrame(parent, border_width=1, border_color="#FFB340")
+
+        header = ctk.CTkFrame(self.upload_checks_panel, fg_color="transparent")
+        header.pack(fill="x", padx=10, pady=(8, 2))
+        self.lbl_upload_checks_title = ctk.CTkLabel(
+            header,
+            text="Upload Checks",
+            font=("Segoe UI", 13, "bold"),
+            text_color="#FFB340",
+        )
+        self.lbl_upload_checks_title.pack(side="left")
+
+        self.btn_upload_checks_hide = ctk.CTkButton(
+            header,
+            text="Hide",
+            command=lambda: self._set_upload_checks([]),
+            width=62,
+            height=26,
+            fg_color="gray",
+            hover_color="#666666",
+        )
+        self.btn_upload_checks_hide.pack(side="right")
+
+        self.upload_checks_body = ctk.CTkFrame(self.upload_checks_panel, fg_color="transparent")
+        self.upload_checks_body.pack(fill="x", padx=10, pady=(0, 8))
+
+        self.upload_checks_actions = ctk.CTkFrame(
+            self.upload_checks_panel, fg_color="transparent"
+        )
+        self.btn_upload_checks_credentials = ctk.CTkButton(
+            self.upload_checks_actions,
+            text="Set Credentials",
+            command=self.open_creds_dialog,
+            width=125,
+            height=28,
+        )
+        self.btn_upload_checks_remove_files = ctk.CTkButton(
+            self.upload_checks_actions,
+            text="Remove Invalid Files",
+            command=self._remove_preflight_file_issues,
+            width=145,
+            height=28,
+        )
+        self.btn_upload_checks_open_folder = ctk.CTkButton(
+            self.upload_checks_actions,
+            text="Open Problem Folder",
+            command=self._open_preflight_problem_folder,
+            width=145,
+            height=28,
+        )
+        self.btn_upload_checks_retry = ctk.CTkButton(
+            self.upload_checks_actions,
+            text="Try Upload Again",
+            command=self.start_upload,
+            width=125,
+            height=28,
+            fg_color="gray",
+            hover_color="#666666",
+        )
+
+    def _set_upload_checks(self, issues: List[str]) -> None:
+        self.preflight_issues = [str(issue) for issue in issues if str(issue).strip()]
+        if not self.preflight_issues:
+            self._reset_preflight_actions()
+        if "upload_checks_panel" in self.__dict__:
+            self._render_upload_checks()
+
+    def _render_upload_checks(self) -> None:
+        issues = getattr(self, "preflight_issues", [])
+        if not issues:
+            if self.upload_checks_panel.winfo_ismapped():
+                self.upload_checks_panel.pack_forget()
+            return
+
+        if not self.upload_checks_panel.winfo_ismapped():
+            pack_kwargs = {"fill": "x", "padx": 5, "pady": (0, 5)}
+            if "activity_panel" in self.__dict__:
+                pack_kwargs["before"] = self.activity_panel
+            self.upload_checks_panel.pack(**pack_kwargs)
+
+        count = len(issues)
+        issue_label = "issue" if count == 1 else "issues"
+        self.lbl_upload_checks_title.configure(text=f"Upload Checks: {count} {issue_label}")
+        self._refresh_upload_check_actions(issues)
+
+        for child in self.upload_checks_body.winfo_children():
+            child.destroy()
+
+        visible_issues = issues[:6]
+        for issue in visible_issues:
+            ctk.CTkLabel(
+                self.upload_checks_body,
+                text=f"- {issue}",
+                anchor="w",
+                justify="left",
+                wraplength=690,
+                text_color="#FFB340",
+            ).pack(anchor="w", fill="x", pady=1)
+
+        remaining = len(issues) - len(visible_issues)
+        if remaining > 0:
+            ctk.CTkLabel(
+                self.upload_checks_body,
+                text=f"...and {remaining} more issue(s).",
+                anchor="w",
+                text_color="gray",
+            ).pack(anchor="w", fill="x", pady=(2, 0))
+
+    def _set_upload_check_action_visible(self, button, visible: bool, **pack_kwargs) -> None:
+        if visible:
+            button.configure(state="normal")
+            if not button.winfo_ismapped():
+                button.pack(**pack_kwargs)
+        elif button.winfo_ismapped():
+            button.pack_forget()
+
+    def _refresh_upload_check_actions(self, issues: List[str]) -> None:
+        show_credentials = self._preflight_issues_need_credentials(issues)
+        show_remove_files = bool(self._preflight_action_files())
+        show_open_folder = bool(self._preflight_action_folders())
+        show_retry = bool(issues)
+        show_actions = show_credentials or show_remove_files or show_open_folder or show_retry
+
+        if show_actions:
+            if not self.upload_checks_actions.winfo_ismapped():
+                self.upload_checks_actions.pack(fill="x", padx=10, pady=(0, 8))
+        elif self.upload_checks_actions.winfo_ismapped():
+            self.upload_checks_actions.pack_forget()
+
+        self._set_upload_check_action_visible(
+            self.btn_upload_checks_credentials,
+            show_credentials,
+            side="left",
+            padx=(0, 6),
+        )
+        self._set_upload_check_action_visible(
+            self.btn_upload_checks_remove_files,
+            show_remove_files,
+            side="left",
+            padx=6,
+        )
+        self._set_upload_check_action_visible(
+            self.btn_upload_checks_open_folder,
+            show_open_folder,
+            side="left",
+            padx=6,
+        )
+        self._set_upload_check_action_visible(
+            self.btn_upload_checks_retry,
+            show_retry,
+            side="right",
+        )
+
+    def _create_import_checks_panel(self, parent) -> None:
+        self.import_checks_panel = ctk.CTkFrame(parent, border_width=1, border_color="#FFB340")
+
+        header = ctk.CTkFrame(self.import_checks_panel, fg_color="transparent")
+        header.pack(fill="x", padx=10, pady=(8, 2))
+        self.lbl_import_checks_title = ctk.CTkLabel(
+            header,
+            text="Import Checks",
+            font=("Segoe UI", 13, "bold"),
+            text_color="#FFB340",
+        )
+        self.lbl_import_checks_title.pack(side="left")
+        self.btn_import_checks_hide = ctk.CTkButton(
+            header,
+            text="Hide",
+            command=lambda: self._set_import_checks([]),
+            width=62,
+            height=26,
+            fg_color="gray",
+            hover_color="#666666",
+        )
+        self.btn_import_checks_hide.pack(side="right")
+
+        self.import_checks_body = ctk.CTkFrame(self.import_checks_panel, fg_color="transparent")
+        self.import_checks_body.pack(fill="x", padx=10, pady=(0, 8))
+
+        actions = ctk.CTkFrame(self.import_checks_panel, fg_color="transparent")
+        actions.pack(fill="x", padx=10, pady=(0, 8))
+        ctk.CTkButton(
+            actions,
+            text="Add Files",
+            command=self.add_files,
+            width=110,
+            height=28,
+        ).pack(side="left", padx=(0, 6))
+        ctk.CTkButton(
+            actions,
+            text="Add Folder",
+            command=self.add_folder,
+            width=110,
+            height=28,
+        ).pack(side="left", padx=6)
+
+    def _set_import_checks(self, issues: List[str]) -> None:
+        self.import_check_issues = [str(issue) for issue in issues if str(issue).strip()]
+        if "import_checks_panel" in self.__dict__:
+            self._render_import_checks()
+
+    def _render_import_checks(self) -> None:
+        issues = getattr(self, "import_check_issues", [])
+        if not issues:
+            if self.import_checks_panel.winfo_ismapped():
+                self.import_checks_panel.pack_forget()
+            return
+
+        if not self.import_checks_panel.winfo_ismapped():
+            pack_kwargs = {"fill": "x", "padx": 5, "pady": (0, 5)}
+            if "activity_panel" in self.__dict__:
+                pack_kwargs["before"] = self.activity_panel
+            self.import_checks_panel.pack(**pack_kwargs)
+
+        count = len(issues)
+        issue_label = "issue" if count == 1 else "issues"
+        self.lbl_import_checks_title.configure(text=f"Import Checks: {count} {issue_label}")
+
+        for child in self.import_checks_body.winfo_children():
+            child.destroy()
+
+        visible_issues = issues[:6]
+        for issue in visible_issues:
+            ctk.CTkLabel(
+                self.import_checks_body,
+                text=f"- {issue}",
+                anchor="w",
+                justify="left",
+                wraplength=690,
+                text_color="#FFB340",
+            ).pack(anchor="w", fill="x", pady=1)
+
+        remaining = len(issues) - len(visible_issues)
+        if remaining > 0:
+            ctk.CTkLabel(
+                self.import_checks_body,
+                text=f"...and {remaining} more issue(s).",
+                anchor="w",
+                text_color="gray",
+            ).pack(anchor="w", fill="x", pady=(2, 0))
+
+    def _create_completion_panel(self, parent) -> None:
+        self.completion_panel = ctk.CTkFrame(parent, border_width=1, border_color="#34C759")
+
+        header = ctk.CTkFrame(self.completion_panel, fg_color="transparent")
+        header.pack(fill="x", padx=10, pady=(8, 2))
+        self.lbl_completion_title = ctk.CTkLabel(
+            header,
+            text="Upload Complete",
+            font=("Segoe UI", 13, "bold"),
+            text_color="#34C759",
+        )
+        self.lbl_completion_title.pack(side="left")
+        self.btn_completion_hide = ctk.CTkButton(
+            header,
+            text="Hide",
+            command=lambda: self._set_completion_summary(None),
+            width=62,
+            height=26,
+            fg_color="gray",
+            hover_color="#666666",
+        )
+        self.btn_completion_hide.pack(side="right")
+
+        self.lbl_completion_status = ctk.CTkLabel(
+            self.completion_panel,
+            text="",
+            anchor="w",
+            justify="left",
+            wraplength=690,
+            text_color="gray",
+        )
+        self.lbl_completion_status.pack(fill="x", padx=10, pady=(0, 8))
+
+        details = ctk.CTkFrame(self.completion_panel, fg_color="transparent")
+        details.pack(fill="x", padx=10, pady=(0, 6))
+        self.lbl_completion_uploaded = self._add_inline_completion_detail(details, "Uploaded")
+        self.lbl_completion_failed = self._add_inline_completion_detail(details, "Failed")
+        self.lbl_completion_generated = self._add_inline_completion_detail(
+            details, "Generated files"
+        )
+        self.lbl_completion_clipboard = self._add_inline_completion_detail(details, "Clipboard")
+
+        self.lbl_completion_files = ctk.CTkLabel(
+            self.completion_panel,
+            text="",
+            anchor="w",
+            justify="left",
+            wraplength=690,
+            text_color="gray",
+        )
+
+        self.lbl_completion_feedback = ctk.CTkLabel(
+            self.completion_panel,
+            text="",
+            anchor="w",
+            justify="left",
+            text_color="gray",
+        )
+
+        self.completion_actions = ctk.CTkFrame(self.completion_panel, fg_color="transparent")
+        self.btn_completion_open = ctk.CTkButton(
+            self.completion_actions,
+            text="Open Folder",
+            command=self.open_output_folder,
+            width=110,
+            height=28,
+        )
+        self.btn_completion_copy = ctk.CTkButton(
+            self.completion_actions,
+            text="Copy Output",
+            command=self._copy_completion_again,
+            width=110,
+            height=28,
+        )
+        self.btn_completion_retry = ctk.CTkButton(
+            self.completion_actions,
+            text="Retry Failed",
+            command=self._retry_failed_from_completion,
+            width=110,
+            height=28,
+        )
+
+    def _add_inline_completion_detail(self, parent, label: str):
+        row = ctk.CTkFrame(parent, fg_color="transparent")
+        row.pack(side="left", padx=(0, 22))
+        ctk.CTkLabel(row, text=f"{label}:", anchor="w", text_color="gray").pack(anchor="w")
+        value_label = ctk.CTkLabel(row, text="0", anchor="w", font=("Segoe UI", 13, "bold"))
+        value_label.pack(anchor="w")
+        return value_label
+
+    def _set_completion_summary(self, summary: Optional[Dict[str, Any]]) -> None:
+        self.current_completion_summary = summary
+        if "completion_panel" in self.__dict__:
+            self._render_completion_summary()
+
+    def _hide_completion_summary(self) -> None:
+        if "completion_panel" in self.__dict__ and self.completion_panel.winfo_ismapped():
+            self.completion_panel.pack_forget()
+        for button_name in (
+            "btn_completion_open",
+            "btn_completion_copy",
+            "btn_completion_retry",
+        ):
+            button = getattr(self, button_name, None)
+            if button and button.winfo_ismapped():
+                button.pack_forget()
+        if "completion_actions" in self.__dict__ and self.completion_actions.winfo_ismapped():
+            self.completion_actions.pack_forget()
+
+    def _render_completion_summary(self) -> None:
+        summary = getattr(self, "current_completion_summary", None)
+        if not summary:
+            self._hide_completion_summary()
+            return
+
+        failed_count = int(summary.get("failed_count") or 0)
+        accent_color = "#FFB340" if failed_count else "#34C759"
+        title = "Upload Finished with Issues" if failed_count else "Upload Complete"
+
+        if not self.completion_panel.winfo_ismapped():
+            pack_kwargs = {"fill": "x", "padx": 5, "pady": (0, 5)}
+            if "activity_panel" in self.__dict__:
+                pack_kwargs["before"] = self.activity_panel
+            self.completion_panel.pack(**pack_kwargs)
+
+        self.completion_panel.configure(border_color=accent_color)
+        self.lbl_completion_title.configure(text=title, text_color=accent_color)
+        self.lbl_completion_status.configure(text=summary.get("status_text", "Upload complete."))
+        self.lbl_completion_uploaded.configure(text=str(summary.get("uploaded_count", 0)))
+        self.lbl_completion_failed.configure(text=str(summary.get("failed_count", 0)))
+        self.lbl_completion_generated.configure(text=str(summary.get("generated_count", 0)))
+        self.lbl_completion_clipboard.configure(text=self._completion_clipboard_status(summary))
+
+        file_text = self._completion_output_file_text(summary)
+        if file_text:
+            self.lbl_completion_files.configure(text=file_text)
+            if not self.lbl_completion_files.winfo_ismapped():
+                self.lbl_completion_files.pack(fill="x", padx=10, pady=(0, 6))
+        elif self.lbl_completion_files.winfo_ismapped():
+            self.lbl_completion_files.pack_forget()
+
+        feedback = summary.get("feedback", "")
+        self.lbl_completion_feedback.configure(text=feedback)
+        if feedback:
+            if not self.lbl_completion_feedback.winfo_ismapped():
+                self.lbl_completion_feedback.pack(fill="x", padx=10, pady=(0, 6))
+        elif self.lbl_completion_feedback.winfo_ismapped():
+            self.lbl_completion_feedback.pack_forget()
+
+        self._refresh_completion_actions(summary)
+
+    def _completion_clipboard_status(self, summary: Dict[str, Any]) -> str:
+        if summary.get("copied_to_clipboard"):
+            return "Copied"
+        if summary.get("auto_copy_requested"):
+            return "Copy failed"
+        return "Not copied"
+
+    def _completion_output_file_text(self, summary: Dict[str, Any]) -> str:
+        output_files = summary.get("output_files", [])
+        if not output_files:
+            return ""
+
+        names = [os.path.basename(path) for path in output_files[:4]]
+        if len(output_files) > 4:
+            names.append(f"...and {len(output_files) - 4} more")
+        return "Generated: " + ", ".join(names)
+
+    def _set_completion_action_visible(self, button, visible: bool, **pack_kwargs) -> None:
+        if visible:
+            button.configure(state="normal")
+            if not button.winfo_ismapped():
+                button.pack(**pack_kwargs)
+        elif button.winfo_ismapped():
+            button.pack_forget()
+
+    def _refresh_completion_actions(self, summary: Dict[str, Any]) -> None:
+        show_open = bool(summary.get("output_files"))
+        show_copy = bool(summary.get("has_copy_text"))
+        show_retry = bool(summary.get("failed_count"))
+        show_actions = show_open or show_copy or show_retry
+
+        if show_actions:
+            if not self.completion_actions.winfo_ismapped():
+                self.completion_actions.pack(fill="x", padx=10, pady=(0, 8))
+        elif self.completion_actions.winfo_ismapped():
+            self.completion_actions.pack_forget()
+
+        self._set_completion_action_visible(
+            self.btn_completion_open,
+            show_open,
+            side="left",
+            padx=(0, 6),
+        )
+        self._set_completion_action_visible(
+            self.btn_completion_copy,
+            show_copy,
+            side="left",
+            padx=6,
+        )
+        self._set_completion_action_visible(
+            self.btn_completion_retry,
+            show_retry,
+            side="left",
+            padx=6,
+        )
+
+    def _copy_completion_again(self) -> None:
+        summary = getattr(self, "current_completion_summary", None)
+        if not summary:
+            self.add_activity("No completed upload output is available to copy.", "warning")
+            return
+
+        if self._copy_completion_output_to_clipboard(summary):
+            summary["copied_to_clipboard"] = True
+            summary["feedback"] = "Copied output to clipboard."
+            self.add_activity("Copied output to clipboard.", "success")
+        else:
+            summary["feedback"] = "No output text was available to copy."
+            self.add_activity("No output text was available to copy.", "warning")
+        self._set_completion_summary(summary)
+
+    def _retry_failed_from_completion(self) -> None:
+        self._set_completion_summary(None)
+        self.retry_failed()
+
+    def _preflight_issues_need_credentials(self, issues: List[str]) -> bool:
+        credential_words = ("credential", "client id", "access token", "password", "api key")
+        return any(
+            any(word in str(issue).lower() for word in credential_words) for issue in issues
+        )
+
+    def _preflight_action_files(self) -> List[str]:
+        return list(dict.fromkeys(getattr(self, "preflight_action_files", [])))
+
+    def _preflight_action_folders(self) -> List[Dict[str, str]]:
+        folders = []
+        seen = set()
+        for folder in getattr(self, "preflight_action_folders", []):
+            path = str(folder.get("path", "") if isinstance(folder, dict) else folder)
+            if not path or path in seen:
+                continue
+            seen.add(path)
+            label = folder.get("label", "Folder") if isinstance(folder, dict) else "Folder"
+            folders.append({"label": str(label), "path": path})
+        return folders
+
+    def _reset_preflight_actions(self) -> None:
+        self.preflight_action_files = []
+        self.preflight_action_file_issue_texts = []
+        self.preflight_action_folders = []
+
+    def _handle_preflight_issues(self, issues: List[str]) -> None:
+        issue_count = len(issues)
+        issue_label = "issue" if issue_count == 1 else "issues"
+        self.lbl_eta.configure(text=f"Fix {issue_count} upload {issue_label} before uploading.")
+        self._set_upload_checks(issues)
+        self.add_activity(
+            f"Upload blocked: {issue_count} {issue_label} need attention.", "error"
+        )
+        for issue in issues[:5]:
+            self.add_activity(str(issue), "error")
+        self._refresh_start_button_state()
+
+    def _remove_preflight_file_issues(self) -> None:
+        file_paths = self._preflight_action_files()
+        removed = 0
+
+        for file_path in file_paths:
+            with self.lock:
+                is_queued = file_path in self.file_widgets
+            if not is_queued:
+                continue
+            self._delete_file(file_path)
+            removed += 1
+
+        file_issue_texts = set(getattr(self, "preflight_action_file_issue_texts", []))
+        remaining_issues = [
+            issue for issue in getattr(self, "preflight_issues", []) if issue not in file_issue_texts
+        ]
+        self.preflight_action_files = []
+        self.preflight_action_file_issue_texts = []
+        self._set_upload_checks(remaining_issues)
+
+        if removed:
+            file_label = "file" if removed == 1 else "files"
+            self.add_activity(f"Removed {removed} invalid {file_label} from the queue.", "warning")
+        else:
+            self.add_activity("No invalid queued files were available to remove.", "warning")
+
+    def _open_preflight_problem_folder(self) -> None:
+        folders = self._preflight_action_folders()
+        if not folders:
+            self.add_activity("No problem folder is available to open.", "warning")
+            return
+
+        folder = folders[0]
+        path = self._nearest_existing_folder(folder["path"])
+        self._open_path(path)
+        self.add_activity(f"Opened {folder['label']}: {path}.")
+
+    def _nearest_existing_folder(self, path: str) -> str:
+        current = os.path.abspath(path)
+        while current and not os.path.isdir(current):
+            parent = os.path.dirname(current)
+            if parent == current:
+                break
+            current = parent
+        return current if os.path.isdir(current) else os.path.abspath(os.path.expanduser("~"))
+
+    def add_activity(self, message: str, level: str = "info") -> None:
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        event = {"time": timestamp, "message": str(message), "level": level}
+        self.activity_events.append(event)
+        self.activity_events = self.activity_events[-80:]
+
+        if "activity_frame" in self.__dict__:
+            try:
+                self._render_activity_events()
+            except (tk.TclError, AttributeError) as exc:
+                logger.debug(f"Could not render activity event: {exc}")
+
+    def _render_activity_events(self) -> None:
+        if "activity_frame" not in self.__dict__:
+            return
+
+        for child in self.activity_frame.winfo_children():
+            child.destroy()
+
+        if not self.activity_events:
+            ctk.CTkLabel(
+                self.activity_frame,
+                text="Activity will appear here as files move through the upload.",
+                text_color="gray",
+                wraplength=620,
+                justify="left",
+            ).pack(anchor="w", padx=4, pady=4)
+            return
+
+        colors = {
+            "success": "#34C759",
+            "warning": "#FFB340",
+            "error": "#FF3B30",
+            "info": "gray",
+        }
+        for event in reversed(self.activity_events[-30:]):
+            row = ctk.CTkFrame(self.activity_frame, fg_color="transparent")
+            row.pack(fill="x", padx=2, pady=1)
+            ctk.CTkLabel(row, text=event["time"], width=64, text_color="gray").pack(side="left")
+            ctk.CTkLabel(
+                row,
+                text=event["message"],
+                text_color=colors.get(event.get("level"), "gray"),
+                anchor="w",
+                justify="left",
+                wraplength=610,
+            ).pack(side="left", fill="x", expand=True)
+
+    def _create_host_readiness_panel(self) -> None:
+        self.host_readiness_frame = ctk.CTkFrame(self.settings_frame_container)
+        self.host_readiness_frame.pack(fill="x", padx=10, pady=(0, 8))
+
+        self.lbl_host_readiness = ctk.CTkLabel(
+            self.host_readiness_frame,
+            text="Checking host readiness...",
+            anchor="w",
+            justify="left",
+            wraplength=250,
+        )
+        self.lbl_host_readiness.pack(fill="x", padx=8, pady=(8, 4))
+
+        self.btn_host_credentials = ctk.CTkButton(
+            self.host_readiness_frame,
+            text="Set Credentials",
+            command=self.open_creds_dialog,
+        )
+
+    def _host_readiness_for(
+        self, service_id: str, cfg: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        plugin = self._plugin_for_service(service_id)
+        if not plugin:
+            return {
+                "level": "error",
+                "message": f"Host unavailable: {service_id or 'None selected'}.",
+                "action_required": False,
+            }
+
+        cfg = cfg or {}
+        creds = getattr(self, "creds", {})
+        missing_required = []
+        for credential in plugin.metadata.get("credentials", []):
+            if not credential.get("required"):
+                continue
+            key = credential.get("key", "")
+            if not str(creds.get(key, "") or "").strip():
+                missing_required.append(credential.get("label", key))
+
+        if missing_required:
+            missing_text = ", ".join(missing_required)
+            return {
+                "level": "error",
+                "message": f"{plugin.name} needs {missing_text} before upload.",
+                "action_required": True,
+            }
+
+        if plugin.id == "imgur.com":
+            has_client_id = bool(str(creds.get("imgur_client_id", "") or "").strip())
+            has_token = bool(str(creds.get("imgur_access_token", "") or "").strip())
+            if not has_client_id and not has_token:
+                return {
+                    "level": "error",
+                    "message": "Imgur needs a Client ID or Access Token before upload.",
+                    "action_required": True,
+                }
+
+        auto_gallery = cfg.get("auto_gallery")
+        if auto_gallery is None and hasattr(self, "var_auto_gallery"):
+            auto_gallery = self.var_auto_gallery.get()
+        if plugin.id == "imx.to" and auto_gallery:
+            has_gallery_login = all(
+                str(creds.get(key, "") or "").strip() for key in ("imx_user", "imx_pass")
+            )
+            if not has_gallery_login:
+                return {
+                    "level": "error",
+                    "message": "IMX.to needs username and password for One Gallery Per Folder.",
+                    "action_required": True,
+                }
+
+        credentials = plugin.metadata.get("credentials", [])
+        optional_credentials = [item for item in credentials if not item.get("required")]
+        configured_optional = [
+            item
+            for item in optional_credentials
+            if str(creds.get(item.get("key", ""), "") or "").strip()
+        ]
+        auth_mode = plugin.metadata.get("features", {}).get("authentication")
+
+        if not credentials or auth_mode == "none":
+            message = f"{plugin.name} ready - no account required."
+        elif optional_credentials and configured_optional:
+            message = f"{plugin.name} ready with saved credentials."
+        elif optional_credentials:
+            message = f"{plugin.name} ready - login optional."
+        else:
+            message = f"{plugin.name} ready."
+
+        return {
+            "level": "ready",
+            "message": message,
+            "action_required": False,
+        }
+
+    def _refresh_host_readiness(self) -> None:
+        if "lbl_host_readiness" not in self.__dict__:
+            return
+
+        service_id = self.var_service.get() if hasattr(self, "var_service") else ""
+        readiness = self._host_readiness_for(service_id)
+        colors = {
+            "ready": "#34C759",
+            "warning": "#FFB340",
+            "error": "#FF3B30",
+        }
+        self.lbl_host_readiness.configure(
+            text=readiness["message"],
+            text_color=colors.get(readiness.get("level"), "gray"),
+        )
+
+        if readiness.get("action_required"):
+            if not self.btn_host_credentials.winfo_ismapped():
+                self.btn_host_credentials.pack(fill="x", padx=8, pady=(0, 8))
+        elif self.btn_host_credentials.winfo_ismapped():
+            self.btn_host_credentials.pack_forget()
+        self._refresh_start_button_state(readiness)
+
+    def _pending_upload_count(self) -> int:
+        with self.lock:
+            return sum(
+                1 for data in self.file_widgets.values() if data.get("state") == "pending"
+            )
+
+    def _configure_start_button(self, text: str, state: str, active: bool = False) -> None:
+        if "btn_start" not in self.__dict__:
+            return
+
+        if active:
+            self.btn_start.configure(
+                text=text,
+                state=state,
+                fg_color="#1F6AA5",
+                hover_color="#144870",
+                text_color="white",
+            )
+        else:
+            self.btn_start.configure(
+                text=text,
+                state=state,
+                fg_color="#5A5A5A",
+                hover_color="#5A5A5A",
+                text_color="#D0D0D0",
+            )
+
+    def _configure_stop_button(self, active: bool) -> None:
+        if "btn_stop" not in self.__dict__:
+            return
+
+        if active:
+            self.btn_stop.configure(
+                state="normal",
+                fg_color="#FF3B30",
+                hover_color="#D63028",
+                text_color="white",
+            )
+        else:
+            self.btn_stop.configure(
+                state="disabled",
+                fg_color="#5A5A5A",
+                hover_color="#5A5A5A",
+                text_color="#D0D0D0",
+            )
+
+    def _refresh_start_button_state(self, readiness: Optional[Dict[str, Any]] = None) -> None:
+        if "btn_start" not in self.__dict__:
+            return
+
+        if getattr(self, "is_uploading", False):
+            self._configure_start_button("Uploading...", "disabled")
+            self._configure_stop_button(True)
+            return
+
+        self._configure_stop_button(False)
+        pending_count = self._pending_upload_count()
+        if pending_count == 0:
+            self._configure_start_button("Add Files to Upload", "disabled")
+            return
+
+        if readiness is None:
+            service_id = self.var_service.get() if hasattr(self, "var_service") else ""
+            readiness = self._host_readiness_for(service_id)
+
+        if readiness.get("action_required") or readiness.get("level") == "error":
+            self._configure_start_button("Fix Host Settings", "disabled")
+            return
+
+        self._configure_start_button(f"Start Upload ({pending_count})", "normal", active=True)
+
     def _swap_service_frame(self, service_name):
         for frame in self.service_frames.values():
             frame.pack_forget()
         if service_name in self.service_frames:
             self.service_frames[service_name].pack(fill="both", expand=True, padx=5, pady=5)
+        self._refresh_host_readiness()
 
     def _apply_settings(self):
         s = self.settings
 
-        def get_count(key, old_bool_key):
-            val = s.get(key)
-            if val is not None:
-                return str(val)
-            return "1" if s.get(old_bool_key, False) else "0"
+        self._set_bounded_var(
+            self.var_global_worker_count,
+            s.get("global_worker_count", config.DEFAULT_WORKER_COUNT),
+            config.DEFAULT_WORKER_COUNT,
+            config.MIN_WORKER_COUNT,
+            config.MAX_WORKER_COUNT,
+        )
 
-        self.var_global_worker_count.set(s.get("global_worker_count", 8))
+        self._set_bounded_var(
+            self.var_imx_threads,
+            s.get("imx_threads", config.DEFAULT_THREAD_COUNT),
+            config.DEFAULT_THREAD_COUNT,
+            config.MIN_THREAD_COUNT,
+            config.MAX_THREAD_COUNT,
+        )
+        self._set_bounded_var(
+            self.menu_thread_var,
+            s.get("global_thread_limit", config.DEFAULT_THREAD_COUNT),
+            config.DEFAULT_THREAD_COUNT,
+            config.MIN_THREAD_COUNT,
+            config.MAX_THREAD_COUNT,
+        )
+        self._last_global_thread_limit_value = self.menu_thread_var.get()
 
-        self.var_imx_thumb.set(s.get("imx_thumb", "180"))
-        self.var_imx_format.set(s.get("imx_format", "Fixed Width"))
-        self.var_imx_cover_count.set(get_count("imx_cover_count", "imx_cover"))
-        self.var_imx_links.set(s.get("imx_links", False))
-        self.var_imx_threads.set(s.get("imx_threads", 5))
-        self.menu_thread_var.set(s.get("imx_threads", 5))
+        self._set_bounded_var(
+            self.var_pix_threads,
+            s.get("pix_threads", 3),
+            3,
+            config.MIN_THREAD_COUNT,
+            config.MAX_THREAD_COUNT,
+        )
 
-        self.var_pix_content.set(s.get("pix_content", "Safe"))
-        self.var_pix_thumb.set(s.get("pix_thumb", "200"))
-        self.var_pix_cover_count.set(get_count("pix_cover_count", "pix_cover"))
-        self.var_pix_links.set(s.get("pix_links", False))
-        self.var_pix_threads.set(s.get("pix_threads", 3))
+        self._set_bounded_var(
+            self.var_turbo_threads,
+            s.get("turbo_threads", 2),
+            2,
+            config.MIN_THREAD_COUNT,
+            config.MAX_THREAD_COUNT,
+        )
 
-        self.var_turbo_content.set(s.get("turbo_content", "Safe"))
-        self.var_turbo_thumb.set(s.get("turbo_thumb", "180"))
-        self.var_turbo_cover_count.set(get_count("turbo_cover_count", "turbo_cover"))
-        self.var_turbo_links.set(s.get("turbo_links", False))
-        self.var_turbo_threads.set(s.get("turbo_threads", 2))
+        self._set_bounded_var(
+            self.var_vipr_threads,
+            s.get("vipr_threads", 1),
+            1,
+            config.MIN_THREAD_COUNT,
+            config.MAX_THREAD_COUNT,
+        )
 
-        self.var_vipr_thumb.set(s.get("vipr_thumb", "170x170"))
-        self.var_vipr_cover_count.set(get_count("vipr_cover_count", "vipr_cover"))
-        self.var_vipr_links.set(s.get("vipr_links", False))
-        self.var_vipr_threads.set(s.get("vipr_threads", 1))
-
-        self.var_ib_content.set(s.get("imagebam_content", "Safe"))
-        self.var_ib_thumb.set(s.get("imagebam_thumb", "180"))
-        self.var_ib_threads.set(s.get("imagebam_threads", 2))
+        self._set_bounded_var(
+            self.var_ib_threads,
+            s.get("imagebam_threads", 2),
+            2,
+            config.MIN_THREAD_COUNT,
+            config.MAX_THREAD_COUNT,
+        )
+        if hasattr(self, "var_imgur_threads"):
+            self._set_bounded_var(
+                self.var_imgur_threads,
+                s.get("imgur_threads", 2),
+                2,
+                config.MIN_THREAD_COUNT,
+                config.MAX_THREAD_COUNT,
+            )
 
         self.var_auto_copy.set(s.get("auto_copy", False))
         self.var_auto_gallery.set(s.get("auto_gallery", False))
@@ -571,13 +1760,20 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         self.var_appearance_mode.set(mode)
         ctk.set_appearance_mode(mode)
 
-        saved_service = s.get("service", "imx.to")
+        available_services = list(getattr(self, "service_frames", {}).keys())
+        fallback_service = (
+            "pixhost.to"
+            if "pixhost.to" in available_services
+            else (available_services[0] if available_services else "imx.to")
+        )
+        saved_service = s.get("service", fallback_service)
+        if saved_service not in available_services:
+            logger.warning(
+                f"Saved service '{saved_service}' is not available; using '{fallback_service}'"
+            )
+            saved_service = fallback_service
         self.var_service.set(saved_service)
         self._swap_service_frame(saved_service)
-        self.ent_imx_gal.delete(0, "end")
-        self.ent_imx_gal.insert(0, s.get("gallery_id", ""))
-        self.ent_pix_hash.delete(0, "end")
-        self.ent_pix_hash.insert(0, s.get("pix_gallery_hash", ""))
 
     def _safe_int(self, value, default=2):
         try:
@@ -586,51 +1782,95 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             logger.debug(f"Could not convert '{value}' to int, using default {default}: {e}")
             return default
 
+    @staticmethod
+    def _service_thread_var_specs():
+        return (
+            ("imx_threads", "var_imx_threads", config.DEFAULT_THREAD_COUNT),
+            ("pix_threads", "var_pix_threads", 3),
+            ("turbo_threads", "var_turbo_threads", 2),
+            ("vipr_threads", "var_vipr_threads", 1),
+            ("imagebam_threads", "var_ib_threads", 2),
+            ("imgur_threads", "var_imgur_threads", 2),
+        )
+
+    def _bounded_int(self, value, default, minimum, maximum):
+        number = self._safe_int(value, default)
+        return max(minimum, min(maximum, number))
+
+    def _set_bounded_var(self, variable, value, default, minimum, maximum):
+        bounded = self._bounded_int(value, default, minimum, maximum)
+        try:
+            variable.set(bounded)
+        except Exception as e:
+            logger.debug(f"Could not set bounded UI value '{bounded}': {e}")
+        return bounded
+
     def _gather_settings(self) -> Dict[str, Any]:
-        vipr_gal_name = self.cb_vipr_gallery.get()
-        vipr_id = self.vipr_galleries_map.get(vipr_gal_name, "0")
+        selected_service = self.var_service.get()
+        worker_count = self._set_bounded_var(
+            self.var_global_worker_count,
+            self.var_global_worker_count.get(),
+            config.DEFAULT_WORKER_COUNT,
+            config.MIN_WORKER_COUNT,
+            config.MAX_WORKER_COUNT,
+        )
+        global_thread_limit = self._set_bounded_var(
+            self.menu_thread_var,
+            self.menu_thread_var.get(),
+            config.DEFAULT_THREAD_COUNT,
+            config.MIN_THREAD_COUNT,
+            config.MAX_THREAD_COUNT,
+        )
+        if global_thread_limit != getattr(
+            self, "_last_global_thread_limit_value", global_thread_limit
+        ):
+            self.set_global_threads(global_thread_limit)
 
-        def get_c(var):
-            try:
-                return int(var.get())
-            except (ValueError, TypeError, AttributeError) as e:
-                logger.debug(f"Could not convert variable to int: {e}")
-                return 0
+        service_thread_settings = {}
+        for key, var_name, default in self._service_thread_var_specs():
+            variable = getattr(self, var_name, None)
+            value = variable.get() if variable is not None else default
+            if variable is not None:
+                service_thread_settings[key] = self._set_bounded_var(
+                    variable,
+                    value,
+                    default,
+                    config.MIN_THREAD_COUNT,
+                    config.MAX_THREAD_COUNT,
+                )
+            else:
+                service_thread_settings[key] = self._bounded_int(
+                    value,
+                    default,
+                    config.MIN_THREAD_COUNT,
+                    config.MAX_THREAD_COUNT,
+                )
 
-        return {
-            "service": self.var_service.get(),
-            "global_worker_count": self._safe_int(self.var_global_worker_count.get(), 8),
-            "imx_thumb": self.var_imx_thumb.get(),
-            "imx_format": self.var_imx_format.get(),
-            "imx_cover_count": get_c(self.var_imx_cover_count),
-            "imx_links": self.var_imx_links.get(),
-            "imx_threads": self._safe_int(self.var_imx_threads.get(), 5),
-            "pix_content": self.var_pix_content.get(),
-            "pix_thumb": self.var_pix_thumb.get(),
-            "pix_cover_count": get_c(self.var_pix_cover_count),
-            "pix_links": self.var_pix_links.get(),
-            "pix_threads": self._safe_int(self.var_pix_threads.get(), 3),
-            "turbo_content": self.var_turbo_content.get(),
-            "turbo_thumb": self.var_turbo_thumb.get(),
-            "turbo_cover_count": get_c(self.var_turbo_cover_count),
-            "turbo_links": self.var_turbo_links.get(),
-            "turbo_threads": self._safe_int(self.var_turbo_threads.get(), 2),
-            "vipr_thumb": self.var_vipr_thumb.get(),
-            "vipr_cover_count": get_c(self.var_vipr_cover_count),
-            "vipr_links": self.var_vipr_links.get(),
-            "vipr_threads": self._safe_int(self.var_vipr_threads.get(), 1),
-            "vipr_gal_id": vipr_id,
-            "imagebam_content": self.var_ib_content.get(),
-            "imagebam_thumb": self.var_ib_thumb.get(),
-            "imagebam_threads": self._safe_int(self.var_ib_threads.get(), 2),
+        cfg = {
+            "service": selected_service,
+            "global_worker_count": worker_count,
+            "global_thread_limit": global_thread_limit,
+            **service_thread_settings,
+            "output_format": self.settings.get("output_format", "BBCode"),
             "auto_copy": self.var_auto_copy.get(),
             "auto_gallery": self.var_auto_gallery.get(),
             "show_previews": self.var_show_previews.get(),
-            "gallery_id": self.ent_imx_gal.get(),
-            "pix_gallery_hash": self.ent_pix_hash.get(),
             "separate_batches": self.var_separate_batches.get(),
             "appearance_mode": self.var_appearance_mode.get(),
         }
+
+        settings_view = self.__dict__.get("settings_view")
+        if settings_view is None:
+            return cfg
+
+        for service_id, raw_config in settings_view.get_all_raw_configs().items():
+            cfg.update(settings_view.alias_config(service_id, raw_config))
+
+        selected_config = settings_view.get_validated_config(selected_service)
+        cfg.update(selected_config)
+        cfg.update(settings_view.alias_config(selected_service, selected_config))
+
+        return cfg
 
     def add_files(self):
         files = filedialog.askopenfilenames()
@@ -688,16 +1928,19 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
     def _process_files(self, inputs, target_group=None):
         """Process dropped or selected files/folders and add them to groups."""
         logger.info(f"📁 Processing {len(inputs)} input(s)...")
+        self._set_completion_summary(None)
+        self._set_import_checks([])
 
         # Show processing status to user
         self.lbl_eta.configure(text=f"Processing {len(inputs)} item(s)...")
+        self.add_activity(f"Processing {len(inputs)} selected item(s).")
         self.update_idletasks()  # Force UI update
 
         misc_files = []
         show_previews = self.var_show_previews.get()
         folder_count = 0
         file_count = 0
-        rejected_count = 0
+        rejected_details = []
         empty_folders = []
 
         try:
@@ -739,7 +1982,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
                         logger.error(
                             f"      ✗ Error scanning folder {folder_name}: {e}", exc_info=True
                         )
-                        rejected_count += 1
+                        rejected_details.append(f"{folder_name}: could not scan folder ({e})")
 
                 elif os.path.isfile(path):
                     if path.lower().endswith(file_handler.VALID_EXTENSIONS):
@@ -751,16 +1994,18 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
                             file_count += 1
                         except Exception as e:
                             logger.warning(f"      ⚠ Rejected file {os.path.basename(path)}: {e}")
-                            rejected_count += 1
+                            rejected_details.append(f"{os.path.basename(path)}: {e}")
                     else:
                         ext = os.path.splitext(path)[1]
                         logger.warning(
                             f"      ⚠ Rejected (invalid extension): {os.path.basename(path)} ({ext})"
                         )
-                        rejected_count += 1
+                        rejected_details.append(
+                            f"{os.path.basename(path)}: unsupported extension {ext or '(none)'}"
+                        )
                 else:
                     logger.warning(f"      ⚠ Path does not exist or is not accessible: {path}")
-                    rejected_count += 1
+                    rejected_details.append(f"{os.path.basename(path) or path}: not found or inaccessible")
 
             if misc_files:
                 logger.info(f"   📄 Processing {len(misc_files)} miscellaneous file(s)")
@@ -785,22 +2030,17 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             # Provide user feedback
             if file_count == 0:
                 logger.warning("⚠ No valid files were processed from the drop")
-                self.lbl_eta.configure(text="No valid files found")
-                msg = "No valid image files found.\n\n"
-                msg += f"Supported formats: {', '.join(file_handler.VALID_EXTENSIONS)}\n"
-                if empty_folders:
-                    msg += f"\nEmpty folders: {', '.join(empty_folders)}"
-                if rejected_count > 0:
-                    msg += f"\nRejected files: {rejected_count}"
-                messagebox.showwarning("No Valid Files", msg)
+                self._notify_no_valid_files(empty_folders, rejected_details)
             else:
                 logger.info(
                     f"✓ Successfully processed {file_count} file(s) from {folder_count} folder(s)"
                 )
                 status_msg = f"Added {file_count} file(s) from {folder_count} folder(s)"
+                rejected_count = len(rejected_details)
                 if rejected_count > 0:
                     logger.info(f"   ({rejected_count} file(s) rejected)")
                     status_msg += f" ({rejected_count} rejected)"
+                self._set_import_checks([])
 
                 # Show loading message for large batches
                 if file_count > 100:
@@ -808,13 +2048,37 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
                     logger.info(f"Loading thumbnails for {file_count} files (this may take a moment)...")
 
                 self.lbl_eta.configure(text=status_msg)
+                self.add_activity(status_msg, "success")
 
         except Exception as e:
             logger.error(f"✗ Error in _process_files: {e}", exc_info=True)
             self.lbl_eta.configure(text="Error processing files")
+            self.add_activity(f"Error processing files: {e}", "error")
             messagebox.showerror(
                 "Processing Error", f"An error occurred while processing files:\n\n{str(e)}"
             )
+
+    def _notify_no_valid_files(self, empty_folders: List[str], rejected_details: List[str]) -> None:
+        supported = ", ".join(file_handler.VALID_EXTENSIONS)
+        issues = [f"No valid image files found. Supported formats: {supported}."]
+
+        if empty_folders:
+            shown_folders = empty_folders[:4]
+            folder_text = ", ".join(shown_folders)
+            if len(empty_folders) > len(shown_folders):
+                folder_text += f", and {len(empty_folders) - len(shown_folders)} more"
+            issues.append(f"Empty folders: {folder_text}")
+
+        if rejected_details:
+            issues.append(f"Rejected files: {len(rejected_details)}")
+            issues.extend(rejected_details[:4])
+            remaining = len(rejected_details) - 4
+            if remaining > 0:
+                issues.append(f"...and {remaining} more rejected file(s).")
+
+        self.lbl_eta.configure(text="No valid image files found.")
+        self._set_import_checks(issues)
+        self.add_activity("No valid image files found. Check Import Checks for details.", "warning")
 
     def _create_group(self, title):
         t_names = list(self.saved_threads_data.keys()) if self.saved_threads_data else []
@@ -831,6 +2095,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         group.batch_index = self.group_counter
         self.group_counter += 1
         self.groups.append(group)
+        self._refresh_queue_state()
 
         def bind_header(w):
             w.bind("<Button-1>", lambda e, g=group: self._on_group_drag_start(e, g))
@@ -859,11 +2124,11 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
                     logger.debug(f"Thumbnail generation failed for {os.path.basename(f)}: {e}")
                     pil_image = None
             try:
-                self.ui_queue.put(("add", f, pil_image, group_widget), timeout=5.0)
+                self.ui_queue.put(("add", f, pil_image, group_widget, show_previews), timeout=5.0)
             except queue.Full:
                 logger.warning(f"UI queue full, skipping thumbnail for {os.path.basename(f)}")
                 # Still add the file without thumbnail
-                self.ui_queue.put(("add", f, None, group_widget), timeout=5.0)
+                self.ui_queue.put(("add", f, None, group_widget, show_previews), timeout=5.0)
             time.sleep(0.001)
 
     def start_upload(self) -> None:
@@ -877,28 +2142,37 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
                         pending_by_group[grp].append(fp)
 
         if not pending_by_group:
-            messagebox.showinfo(
-                "Info", "No pending files found. Please add files or use 'Retry Failed'."
-            )
+            self._notify_no_pending_upload()
             return
 
+        self._set_completion_summary(None)
         try:
             cfg = self._gather_settings()
-            self.settings = cfg
-            self.settings_mgr.save(cfg)
             cfg["api_key"] = self.creds.get("imx_api", "")
 
             # Apply worker count setting (will restart sidecar if changed)
             from modules.sidecar import SidecarBridge
+
             SidecarBridge.set_worker_count(cfg.get("global_worker_count", 8))
 
-            # When worker count is 1, force all service threads to 1 for true sequential uploads
+            upload_cfg = cfg.copy()
+
+            # When worker count is 1, force the runtime thread limit to 1 for true sequential uploads.
             if cfg.get("global_worker_count") == 1:
-                cfg["imx_threads"] = 1
-                cfg["pix_threads"] = 1
-                cfg["turbo_threads"] = 1
-                cfg["vipr_threads"] = 1
-                cfg["imagebam_threads"] = 1
+                upload_cfg["global_thread_limit"] = 1
+                upload_cfg["threads"] = 1
+
+            preflight_issues, ready_message = self._run_upload_preflight(
+                pending_by_group, upload_cfg
+            )
+            if preflight_issues:
+                self._handle_preflight_issues(preflight_issues)
+                return
+
+            self._set_upload_checks([])
+            self.settings = cfg
+            self.settings_mgr.save(cfg)
+            self.add_activity(ready_message, "success")
 
             self.cancel_event.clear()
             self.results = []
@@ -908,9 +2182,9 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             self.pix_galleries_to_finalize = []
             self.clipboard_buffer = []
 
-            self.btn_start.configure(state="disabled")
-            self.btn_stop.configure(state="normal")
-            self.lbl_eta.configure(text="Starting...")
+            self._configure_start_button("Uploading...", "disabled")
+            self._configure_stop_button(True)
+            self.lbl_eta.configure(text=ready_message)
 
             self.overall_progress.set(0)
             try:
@@ -922,11 +2196,21 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             self.upload_total = sum(len(v) for v in pending_by_group.values())
             self.upload_count = 0
             self.is_uploading = True
+            self._refresh_start_button_state()
 
             for files in pending_by_group.values():
                 for fp in files:
                     with self.lock:
-                        self.file_widgets[fp]["state"] = "queued"
+                        row_data = self.file_widgets[fp]
+                        row_data["state"] = "queued"
+                        self._set_row_error(row_data, "")
+                        row_data["status"].configure(text="Queued")
+                        row_data["prog"].set(0)
+                        self._set_row_progress_color(row_data, ["#3B8ED0", "#1F6AA5"])
+                        self._set_row_retry_visible(row_data, False)
+                        if row_data.get("remove"):
+                            row_data["remove"].configure(state="disabled")
+            self.add_activity(f"Queued {self.upload_total} file(s) for upload.")
 
             # Reset and prepare AutoPoster
             self.auto_poster.reset()
@@ -953,15 +2237,190 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
 
             # Start AutoPoster if needed
             if active_post_jobs:
+                self.add_activity("Auto-posting will start after output is generated.")
                 self.auto_poster.start_processing(
                     is_uploading_callback=lambda: self.is_uploading, cancel_event=self.cancel_event
                 )
 
-            self.upload_manager.start_batch(pending_by_group, cfg, self.creds)
+            self.upload_manager.start_batch(pending_by_group, upload_cfg, self.creds)
 
         except Exception as e:
-            messagebox.showerror("Error starting upload", str(e))
-            self.btn_start.configure(state="normal")
+            if hasattr(e, "errors"):
+                self._handle_preflight_issues([str(error) for error in e.errors])
+            else:
+                messagebox.showerror("Error starting upload", str(e))
+            self._refresh_start_button_state()
+
+    def _notify_no_pending_upload(self) -> None:
+        message = "No pending files to upload. Add files or retry failed items."
+        self._set_upload_checks([])
+        self.lbl_eta.configure(text=message)
+        self.add_activity(message, "warning")
+        self._refresh_start_button_state()
+
+    def _run_upload_preflight(
+        self, pending_by_group: Dict[Any, List[str]], cfg: Dict[str, Any]
+    ) -> Tuple[List[str], str]:
+        """Validate upload readiness before any files are queued."""
+        issues: List[str] = []
+        self._reset_preflight_actions()
+        service_id = cfg.get("service", "")
+        plugin = self._plugin_for_service(service_id)
+        file_count = sum(len(files) for files in pending_by_group.values())
+
+        if not plugin:
+            issues.append(f"Selected image host is not available: {service_id or 'None'}")
+            plugin_name = service_id or "Image host"
+        else:
+            plugin_name = plugin.name
+            self._preflight_check_credentials(plugin, cfg, issues)
+            self._preflight_check_files(plugin, pending_by_group, issues)
+            self._preflight_check_sidecar(plugin, issues)
+
+        self._preflight_check_output_locations(issues)
+
+        if issues:
+            return issues, ""
+
+        batch_count = len(pending_by_group)
+        file_label = "file" if file_count == 1 else "files"
+        batch_label = "batch" if batch_count == 1 else "batches"
+        copy_status = (
+            "Output will copy to clipboard."
+            if cfg.get("auto_copy")
+            else "Output will be saved when uploads finish."
+        )
+        summary = (
+            f"{plugin_name} ready - {file_count} {file_label} "
+            f"in {batch_count} {batch_label}. {copy_status}"
+        )
+        return [], summary
+
+    def _plugin_for_service(self, service_id):
+        plugin = getattr(self, "service_plugins", {}).get(service_id)
+        if plugin:
+            return plugin
+        plugin_manager = getattr(self, "plugin_manager", None)
+        if plugin_manager:
+            return plugin_manager.get_plugin(service_id)
+        return None
+
+    def _preflight_check_credentials(self, plugin, cfg: Dict[str, Any], issues: List[str]) -> None:
+        credentials = plugin.metadata.get("credentials", [])
+        for credential in credentials:
+            if not credential.get("required"):
+                continue
+            key = credential.get("key", "")
+            value = str(self.creds.get(key, "") or "").strip()
+            if not value:
+                label = credential.get("label", key)
+                issues.append(f"{plugin.name} requires {label}. Set it in Tools > Set Credentials.")
+
+        if plugin.id == "imgur.com":
+            has_client_id = bool(str(self.creds.get("imgur_client_id", "") or "").strip())
+            has_token = bool(str(self.creds.get("imgur_access_token", "") or "").strip())
+            if not has_client_id and not has_token:
+                issues.append(
+                    "Imgur requires a Client ID or Access Token. Set it in Tools > Set Credentials."
+                )
+
+        if plugin.id == "imx.to" and cfg.get("auto_gallery"):
+            has_gallery_login = all(
+                str(self.creds.get(key, "") or "").strip() for key in ("imx_user", "imx_pass")
+            )
+            if not has_gallery_login:
+                issues.append(
+                    "One Gallery Per Folder for IMX.to requires IMX username and password."
+                )
+
+    def _preflight_check_files(
+        self,
+        plugin,
+        pending_by_group: Dict[Any, List[str]],
+        issues: List[str],
+    ) -> None:
+        limits = plugin.metadata.get("limits", {})
+        allowed = tuple(
+            str(ext).lower()
+            for ext in limits.get("allowed_formats", file_handler.VALID_EXTENSIONS)
+        )
+        max_size = int(limits.get("max_file_size", config.MAX_FILE_SIZE))
+
+        invalid_files: List[str] = []
+        invalid_file_paths: List[str] = []
+        for files in pending_by_group.values():
+            for file_path in files:
+                name = os.path.basename(file_path)
+                try:
+                    if not os.path.isfile(file_path):
+                        raise ValueError("file is missing or not accessible")
+                    if allowed and not file_path.lower().endswith(allowed):
+                        raise ValueError(f"not supported by {plugin.name}")
+                    file_handler.validate_file_size(file_path, max_size)
+                except Exception as exc:
+                    invalid_files.append(f"{name}: {exc}")
+                    invalid_file_paths.append(file_path)
+
+        if invalid_files:
+            file_issue_texts = ["Some queued files are not ready:"]
+            file_issue_texts.extend(invalid_files[:5])
+            remaining = len(invalid_files) - 5
+            if remaining > 0:
+                file_issue_texts.append(f"...and {remaining} more file issue(s).")
+            issues.extend(file_issue_texts)
+            self.preflight_action_files = invalid_file_paths
+            self.preflight_action_file_issue_texts = file_issue_texts
+
+    def _preflight_check_sidecar(self, plugin, issues: List[str]) -> None:
+        if plugin.metadata.get("implementation") != "go":
+            return
+
+        bridge = getattr(getattr(self, "upload_manager", None), "bridge", None)
+        if bridge is None:
+            from modules.sidecar import SidecarBridge
+
+            bridge = SidecarBridge.get()
+
+        if bridge.is_process_alive():
+            return
+
+        started = False
+        start_process = getattr(bridge, "_start_process", None)
+        if callable(start_process):
+            started = bool(start_process())
+
+        if not started and not bridge.is_process_alive():
+            issues.append(
+                "Upload engine is not running. Run build_uploader.bat to rebuild the bundled sidecar."
+            )
+
+    def _preflight_check_output_locations(self, issues: List[str]) -> None:
+        for folder, label in [
+            (getattr(self, "output_dir", "Output"), "Output folder"),
+            (
+                getattr(
+                    self,
+                    "central_history_path",
+                    os.path.join(os.path.expanduser("~"), ".conniesuploader", "history"),
+                ),
+                "History folder",
+            ),
+        ]:
+            try:
+                self._assert_folder_writable(folder)
+            except OSError as exc:
+                issues.append(f"{label} is not writable: {exc}")
+                self.preflight_action_folders.append({"label": label, "path": folder})
+
+    def _assert_folder_writable(self, folder: str) -> None:
+        os.makedirs(folder, exist_ok=True)
+        test_path = os.path.join(folder, ".conniesuploader_write_test")
+        with open(test_path, "w", encoding="utf-8") as handle:
+            handle.write("ok")
+        try:
+            os.remove(test_path)
+        except OSError as exc:
+            logger.warning(f"Could not remove preflight test file {test_path}: {exc}")
 
     # _process_post_queue removed - now handled by AutoPoster class
 
@@ -997,9 +2456,11 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         processed = 0
         try:
             while ui_limit > 0:
-                a, f, p, g = self.ui_queue.get_nowait()
+                item = self.ui_queue.get_nowait()
+                a, f, p, g = item[:4]
+                preview_requested = item[4] if len(item) > 4 else True
                 if a == "add" and g.winfo_exists():
-                    self._create_row(f, p, g)
+                    self._create_row(f, p, g, preview_requested=preview_requested)
                     processed += 1
                 ui_limit -= 1
         except queue.Empty:
@@ -1018,33 +2479,60 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
                 if k == "register_pix_gal":
                     new_data = item[2]
                     self.pix_galleries_to_finalize.append(new_data)
+                    self.add_activity("Pixhost gallery registered for finalization.")
                 else:
                     f = item[1]
                     v = item[2]
                     if f in self.file_widgets:
                         w = self.file_widgets[f]
                         if k == "status":
-                            w["status"].configure(text=v)
-                            if v in ["Done", "Failed"]:
+                            status_text = str(v or "")
+                            is_success = status_text == "Done"
+                            is_failure = status_text == "Failed" or status_text.lower().startswith(
+                                "error"
+                            )
+                            if is_success or is_failure:
                                 with self.lock:
                                     self.upload_count += 1
-                                w["state"] = "success" if v == "Done" else "failed"
+                                w["state"] = "success" if is_success else "failed"
+                                w["status"].configure(text="Uploaded" if is_success else "Failed")
                                 w["prog"].set(1.0)
-                                w["prog"].configure(
-                                    progress_color="#34C759" if v == "Done" else "#FF3B30"
+                                self._set_row_progress_color(
+                                    w, "#34C759" if is_success else "#FF3B30"
                                 )
+                                if w.get("remove"):
+                                    w["remove"].configure(state="normal")
+                                name = os.path.basename(f)
+                                if is_success:
+                                    self._set_row_error(w, "")
+                                    self._set_row_retry_visible(w, False)
+                                    self.add_activity(f"Uploaded {name}.", "success")
+                                else:
+                                    reason = status_text
+                                    if reason.lower().startswith("error:"):
+                                        reason = reason.split(":", 1)[1].strip()
+                                    reason = (
+                                        reason
+                                        if reason != "Failed"
+                                        else "Upload failed without more detail."
+                                    )
+                                    self._set_row_error(w, reason)
+                                    self._set_row_retry_visible(w, True)
+                                    self.add_activity(f"Failed {name}: {reason}.", "error")
                                 self._update_group_progress(f)
                                 # Update overall progress bar
                                 if self.upload_total > 0:
                                     progress = self.upload_count / self.upload_total
                                     self.overall_progress.set(progress)
+                            else:
+                                w["status"].configure(text=self._friendly_row_status(status_text))
                         elif k == "prog":
                             w["prog"].set(v)
                 prog_limit -= 1
         except queue.Empty:
             pass
 
-    def _create_row(self, fp, pil_image, group_widget):
+    def _create_row(self, fp, pil_image, group_widget, preview_requested=True):
         """Create a UI row for a file with thumbnail, status, and progress bar.
 
         Args:
@@ -1055,6 +2543,16 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         group_widget.add_file(fp)
         row = ctk.CTkFrame(group_widget.content_frame)
         row.pack(fill="x", pady=1)
+        drag_handle = ctk.CTkButton(
+            row,
+            text="::",
+            width=24,
+            height=24,
+            fg_color="transparent",
+            hover_color="#555555",
+            text_color="gray",
+        )
+        drag_handle.pack(side="left", padx=(4, 2), pady=3)
         img_widget = None
         if pil_image:
             img_widget = ctk.CTkImage(
@@ -1063,16 +2561,65 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             image_label = ctk.CTkLabel(row, image=img_widget, text="")
             image_label.pack(side="left", padx=5)
             self.image_refs.add(img_widget)
-        else:
-            ctk.CTkLabel(row, text="[Img]", width=40).pack(side="left")
-        st = ctk.CTkLabel(row, text="Wait", width=60)
+        elif preview_requested:
+            ctk.CTkLabel(row, text="No preview", width=78, text_color="gray").pack(
+                side="left", padx=5
+            )
+        st = ctk.CTkLabel(row, text="Waiting", width=86, anchor="center")
         st.pack(side="left")
-        ctk.CTkLabel(row, text=os.path.basename(fp)).pack(
-            side="left", fill="x", expand=True, padx=5
+        text_frame = ctk.CTkFrame(row, fg_color="transparent")
+        text_frame.pack(side="left", fill="x", expand=True, padx=5)
+        filename_label = ctk.CTkLabel(
+            text_frame,
+            text=os.path.basename(fp),
+            anchor="w",
+            justify="left",
         )
-        pr = ctk.CTkProgressBar(row, width=100)
+        filename_label.pack(anchor="w", fill="x")
+        error_label = ctk.CTkLabel(
+            text_frame,
+            text="",
+            anchor="w",
+            justify="left",
+            text_color="#FF3B30",
+        )
+
+        def update_text_wrap(event):
+            wraplength = max(160, event.width - 8)
+            filename_label.configure(wraplength=wraplength)
+            error_label.configure(wraplength=wraplength)
+
+        text_frame.bind("<Configure>", update_text_wrap)
+
+        row_actions = ctk.CTkFrame(row, fg_color="transparent", width=250, height=30)
+        row_actions.pack(side="right", padx=(4, 5))
+        row_actions.pack_propagate(False)
+        btn_remove = ctk.CTkButton(
+            row_actions,
+            text="Remove",
+            width=72,
+            height=24,
+            command=lambda f=fp: self._delete_file(f),
+            fg_color="gray",
+            hover_color="#666666",
+        )
+        btn_remove.pack(side="right", padx=(4, 0), pady=3)
+        retry_slot = ctk.CTkFrame(row_actions, fg_color="transparent", width=64, height=30)
+        retry_slot.pack(side="right", padx=(4, 0))
+        retry_slot.pack_propagate(False)
+        btn_retry = ctk.CTkButton(
+            retry_slot,
+            text="Retry",
+            width=58,
+            height=24,
+            command=lambda f=fp: self._retry_file(f),
+            fg_color="#3B8ED0",
+            hover_color="#1F6AA5",
+            state="disabled",
+        )
+        pr = ctk.CTkProgressBar(row_actions, width=100)
         pr.set(0)
-        pr.pack(side="right", padx=5)
+        pr.pack(side="right", padx=(0, 6), pady=8)
         with self.lock:
             self.file_widgets[fp] = {
                 "row": row,
@@ -1081,9 +2628,19 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
                 "state": "pending",
                 "group": group_widget,
                 "image_ref": img_widget,  # Store reference for cleanup
+                "text_frame": text_frame,
+                "filename": filename_label,
+                "error_label": error_label,
+                "actions": row_actions,
+                "retry_slot": retry_slot,
+                "remove": btn_remove,
+                "retry": btn_retry,
+                "drag_handle": drag_handle,
+                "error": "",
             }
             file_count = len(self.file_widgets)
         self.lbl_eta.configure(text=f"Files: {file_count}")
+        self._refresh_queue_state()
 
         def bind_row(w):
             w.bind("<Button-1>", lambda e, w=row, f=fp: self._on_row_drag_start(e, w, f))
@@ -1092,9 +2649,126 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             w.bind("<Button-3>", lambda e, f=fp: self._show_row_context(e, f))
             w.bind("<Button-2>", lambda e, f=fp: self._show_row_context(e, f))
 
-        bind_row(row)
-        for child in row.winfo_children():
-            bind_row(child)
+        interactive_widgets = (row_actions, retry_slot, btn_remove, btn_retry, pr)
+
+        def bind_row_tree(w):
+            if w in interactive_widgets:
+                return
+            bind_row(w)
+            for child_widget in w.winfo_children():
+                bind_row_tree(child_widget)
+
+        bind_row_tree(row)
+
+    def _set_row_error(self, row_data: Dict[str, Any], reason: str) -> None:
+        reason = str(reason or "").strip()
+        row_data["error"] = reason
+        error_label = row_data.get("error_label")
+        if not error_label:
+            return
+
+        if reason:
+            error_label.configure(text=f"Reason: {reason}")
+            if not error_label.winfo_ismapped():
+                error_label.pack(anchor="w", fill="x")
+        else:
+            error_label.configure(text="")
+            if error_label.winfo_ismapped():
+                error_label.pack_forget()
+
+    def _set_row_retry_visible(self, row_data: Dict[str, Any], visible: bool) -> None:
+        btn_retry = row_data.get("retry")
+        if not btn_retry:
+            return
+
+        if visible:
+            btn_retry.configure(state="normal")
+            if not btn_retry.winfo_ismapped():
+                btn_retry.pack(fill="both", expand=True, pady=3)
+        else:
+            btn_retry.configure(state="disabled")
+            if btn_retry.winfo_ismapped():
+                btn_retry.pack_forget()
+
+    def _set_row_progress_color(self, row_data: Dict[str, Any], color: Any) -> None:
+        progress = row_data.get("prog")
+        if not progress:
+            return
+
+        try:
+            progress.configure(progress_color=color)
+        except (tk.TclError, TypeError):
+            fallback = color[-1] if isinstance(color, (list, tuple)) else color
+            progress.configure(progress_color=fallback)
+
+    def _reset_row_for_retry(self, row_data: Dict[str, Any]) -> None:
+        row_data["state"] = "pending"
+        self._set_row_error(row_data, "")
+        row_data["status"].configure(text="Retry")
+        row_data["prog"].set(0)
+        self._set_row_progress_color(row_data, ["#3B8ED0", "#1F6AA5"])
+        self._set_row_retry_visible(row_data, False)
+
+    def _retry_file(self, filepath: str) -> None:
+        if getattr(self, "is_uploading", False):
+            self.add_activity(
+                "Wait for the current upload to finish before retrying one file.", "warning"
+            )
+            return
+
+        with self.lock:
+            row_data = self.file_widgets.get(filepath)
+
+        if not row_data:
+            self.add_activity("That file is no longer in the queue.", "warning")
+            return
+
+        if row_data.get("state") != "failed":
+            self.add_activity(f"{os.path.basename(filepath)} is not failed.", "warning")
+            return
+
+        self._reset_row_for_retry(row_data)
+        self.add_activity(f"Retrying {os.path.basename(filepath)}.")
+        self.start_upload()
+
+    def _copy_file_error(self, filepath: str) -> None:
+        with self.lock:
+            row_data = self.file_widgets.get(filepath)
+
+        reason = str((row_data or {}).get("error", "") or "").strip()
+        if not reason:
+            self.add_activity(
+                f"No error detail is available for {os.path.basename(filepath)}.", "warning"
+            )
+            return
+
+        text = f"{os.path.basename(filepath)}: {reason}"
+        try:
+            pyperclip.copy(text)
+            self.add_activity(f"Copied error for {os.path.basename(filepath)}.", "success")
+        except (OSError, pyperclip.PyperclipException) as exc:
+            logger.warning(f"Could not copy file error: {exc}")
+            self.add_activity(
+                f"Could not copy error for {os.path.basename(filepath)}.", "warning"
+            )
+
+    def _friendly_row_status(self, status_text: str) -> str:
+        text = str(status_text or "").strip()
+        if not text:
+            return "Waiting"
+
+        normalized = text.lower()
+        if normalized in {"queued", "queue"}:
+            return "Queued"
+        if "upload" in normalized:
+            return "Uploading"
+        if "start" in normalized:
+            return "Starting"
+        if normalized == "done":
+            return "Uploaded"
+        if normalized == "failed" or normalized.startswith("error"):
+            return "Failed"
+        return text
 
     def _update_group_progress(self, fp):
         with self.lock:
@@ -1144,26 +2818,85 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
 
     def _on_upload_complete(self):
         self.is_uploading = False
-        self.btn_start.configure(state="normal")
-        self.btn_stop.configure(state="disabled")
+        self._refresh_start_button_state()
+        self._configure_stop_button(False)
         self.overall_progress.set(1.0)
         self.overall_progress.configure(progress_color="#34C759")
-        self.lbl_eta.configure(text="All batches finished.")
+        summary = self._build_completion_summary()
+        self.lbl_eta.configure(text=summary["status_text"])
+        self.add_activity(summary["status_text"], "warning" if summary["failed_count"] else "success")
+
         if self.var_auto_copy.get() and self.clipboard_buffer:
-            try:
-                pyperclip.copy("\n\n".join(self.clipboard_buffer))
-            except (OSError, pyperclip.PyperclipException) as e:
-                logger.warning(f"Could not copy to clipboard: {e}")
+            summary["copied_to_clipboard"] = self._copy_completion_output_to_clipboard(summary)
+            if summary["copied_to_clipboard"]:
+                self.add_activity("Copied output to clipboard.", "success")
+
         if self.current_output_files:
             self.btn_open.configure(state="normal")
-            msg = "Output files created."
-            if self.var_auto_copy.get():
-                msg += " All output text copied to clipboard."
-            messagebox.showinfo("Done", msg)
+
+        self._set_completion_summary(summary)
+
+    def _build_completion_summary(self) -> Dict[str, Any]:
+        with self.lock:
+            states = [data.get("state") for data in self.file_widgets.values()]
+
+        uploaded_count = sum(1 for state in states if state == "success")
+        failed_count = sum(1 for state in states if state == "failed")
+        total_count = len(states)
+        output_files = list(self.current_output_files)
+        generated_count = len(output_files)
+        auto_copy_requested = bool(self.var_auto_copy.get())
+        has_copy_text = bool(self.clipboard_buffer or output_files)
+
+        if failed_count:
+            status_text = f"Upload complete: {uploaded_count} uploaded, {failed_count} failed."
+        else:
+            file_label = "file" if uploaded_count == 1 else "files"
+            status_text = f"Upload complete: {uploaded_count} {file_label} uploaded."
+
+        return {
+            "uploaded_count": uploaded_count,
+            "failed_count": failed_count,
+            "total_count": total_count,
+            "generated_count": generated_count,
+            "output_files": output_files,
+            "auto_copy_requested": auto_copy_requested,
+            "copied_to_clipboard": False,
+            "has_copy_text": has_copy_text,
+            "status_text": status_text,
+        }
+
+    def _completion_output_text(self, summary: Dict[str, Any]) -> str:
+        if self.clipboard_buffer:
+            return "\n\n".join(self.clipboard_buffer)
+
+        chunks = []
+        for output_file in summary.get("output_files", []):
+            try:
+                with open(output_file, "r", encoding="utf-8") as handle:
+                    text = handle.read().strip()
+                if text:
+                    chunks.append(text)
+            except OSError as exc:
+                logger.warning(f"Could not read output file for clipboard copy: {exc}")
+        return "\n\n".join(chunks)
+
+    def _copy_completion_output_to_clipboard(self, summary: Dict[str, Any]) -> bool:
+        text = self._completion_output_text(summary)
+        if not text:
+            return False
+
+        try:
+            pyperclip.copy(text)
+            return True
+        except (OSError, pyperclip.PyperclipException) as exc:
+            logger.warning(f"Could not copy output to clipboard: {exc}")
+            return False
 
     def stop_upload(self):
         self.cancel_event.set()
         self.lbl_eta.configure(text="Stopping...")
+        self.add_activity("Stopping upload after current work finishes.", "warning")
 
     def generate_group_output(self, group):
         res_map = {r[0]: (r[1], r[2]) for r in self.results}
@@ -1183,6 +2916,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
 
         if not group_results:
             self.log(f"Warning: No successful uploads for '{group.title}'.")
+            self.add_activity(f"No successful uploads for {group.title}.", "warning")
             return
 
         gal_id = getattr(group, "gallery_id", "")
@@ -1196,8 +2930,14 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             thumb_size = self.settings.get("pix_thumb", "200")
         elif svc == "turboimagehost":
             thumb_size = self.settings.get("turbo_thumb", "180")
+        elif svc == "vipr.im":
+            thumb_size = self.settings.get("vipr_thumb", "170x170")
+            if "x" in str(thumb_size):
+                thumb_size = str(thumb_size).split("x")[0]
         elif svc == "imagebam.com":
             thumb_size = self.settings.get("imagebam_thumb", "180")
+        elif svc == "imgur.com":
+            thumb_size = self.settings.get("imgur_thumb", self.settings.get("thumbnail_size", "m"))
 
         gal_link = ""
         if gal_id:
@@ -1222,18 +2962,20 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
 
             safe_title = sanitize_filename(group.title)
             ts = datetime.now().strftime("%Y%m%d_%H%M")
-            out_dir = "Output"
+            out_dir = getattr(self, "output_dir", "Output")
             os.makedirs(out_dir, exist_ok=True)
             out_name = os.path.join(out_dir, f"{safe_title}_{ts}.txt")
             with open(out_name, "w", encoding="utf-8") as f:
                 f.write(text)
             self.current_output_files.append(out_name)
             self.log(f"Saved: {out_name}")
+            self.add_activity(f"Saved output: {os.path.basename(out_name)}.", "success")
 
             # Queue for auto-posting if needed
             tgt_thread = group.selected_thread
             if tgt_thread and tgt_thread != "Do Not Post":
                 self.auto_poster.queue_post(group.batch_index, text, tgt_thread)
+                self.add_activity(f"Queued post for {tgt_thread}.")
 
             central_name = os.path.join(self.central_history_path, f"{safe_title}_{ts}.txt")
             with open(central_name, "w", encoding="utf-8") as f:
@@ -1245,10 +2987,12 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
                 self.clipboard_buffer.append(text)
                 try:
                     pyperclip.copy("\n\n".join(self.clipboard_buffer))
+                    self.add_activity("Copied output to clipboard.", "success")
                 except (OSError, pyperclip.PyperclipException) as e:
                     logger.warning(f"Could not copy to clipboard: {e}")
+                    self.add_activity("Could not copy output to clipboard.", "warning")
 
-            need_links_txt = False
+            need_links_txt = bool(self.settings.get("save_links", False))
             if svc == "imx.to" and self.var_imx_links.get():
                 need_links_txt = True
             elif svc == "pixhost.to" and self.var_pix_links.get():
@@ -1264,9 +3008,11 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
                 with open(links_name, "w", encoding="utf-8") as f:
                     f.write(raw_links)
                 self.log(f"Saved Links: {links_name}")
+                self.add_activity(f"Saved links file: {os.path.basename(links_name)}.", "success")
 
         except Exception as e:
             self.log(f"Error writing output: {e}")
+            self.add_activity(f"Error writing output: {e}", "error")
 
     def open_output_folder(self):
         if self.current_output_files:
@@ -1282,7 +3028,9 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
                 messagebox.showerror("Error", f"Could not open output folder:\n{folder}\n\nError: {str(e)}")
         else:
             logger.warning("No output files available to open folder")
-            messagebox.showinfo("Info", "No output files have been generated yet.")
+            message = "No output files have been generated yet."
+            self.lbl_eta.configure(text=message)
+            self.add_activity(message, "warning")
 
     def toggle_log(self):
         if self.log_window_ref and self.log_window_ref.winfo_exists():
@@ -1295,12 +3043,13 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         with self.lock:
             for w in self.file_widgets.values():
                 if w["state"] == "failed":
-                    w["status"].configure(text="Retry")
-                    w["prog"].set(0)
-                    w["state"] = "pending"
+                    self._reset_row_for_retry(w)
                     cnt += 1
         if cnt:
+            self.add_activity(f"Retrying {cnt} failed file(s).")
             self.start_upload()
+        else:
+            self.add_activity("No failed files to retry.", "warning")
 
     def clear_list(self) -> None:
         self.cancel_event.set()
@@ -1315,12 +3064,18 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         self.groups.clear()
         with self.lock:
             self.file_widgets.clear()
+        self.selected_files.clear()
+        self.selection_anchor = None
         self.image_refs.clear()
         self.overall_progress.set(0)
         self.lbl_eta.configure(text="Cleared.")
-        self.btn_start.configure(state="normal")
-        self.btn_stop.configure(state="disabled")
+        self._configure_stop_button(False)
         self.btn_open.configure(state="disabled")
+        self._set_import_checks([])
+        self._set_upload_checks([])
+        self._set_completion_summary(None)
+        self._refresh_queue_state()
+        self.add_activity("Cleared upload queue.")
 
     def _cleanup_orphaned_images(self):
         """Periodically clean up image references that are no longer in use."""

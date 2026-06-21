@@ -148,6 +148,27 @@ class SchemaRenderer:
         """
         ui_vars = {}
 
+        visible_fields = []
+        advanced_fields = []
+        for field in schema:
+            if field.get("advanced"):
+                advanced_fields.append(field)
+            else:
+                visible_fields.append(field)
+
+        self._render_schema_fields(parent, visible_fields, current_settings, ui_vars)
+        if advanced_fields:
+            self._render_advanced_section(parent, advanced_fields, current_settings, ui_vars)
+
+        return ui_vars
+
+    def _render_schema_fields(
+        self,
+        parent: ctk.CTkFrame,
+        schema: List[Dict],
+        current_settings: Dict[str, Any],
+        ui_vars: Dict[str, Any],
+    ) -> None:
         for field in schema:
             field_type = field.get("type", "text")
 
@@ -168,7 +189,51 @@ class SchemaRenderer:
             else:
                 logger.warning(f"Unknown field type: {field_type}")
 
-        return ui_vars
+    def _render_advanced_section(
+        self,
+        parent: ctk.CTkFrame,
+        schema: List[Dict],
+        current_settings: Dict[str, Any],
+        ui_vars: Dict[str, Any],
+    ) -> None:
+        """Render advanced fields inside a collapsed section."""
+        fields = self._trim_section_separators(schema)
+        if not fields:
+            return
+
+        wrapper = ctk.CTkFrame(parent, fg_color="transparent")
+        wrapper.pack(fill="x", pady=(8, 0))
+
+        content = ctk.CTkFrame(wrapper, fg_color="transparent")
+        expanded = {"value": False}
+
+        def toggle():
+            expanded["value"] = not expanded["value"]
+            if expanded["value"]:
+                btn_toggle.configure(text="Advanced Host Settings -")
+                content.pack(fill="x", pady=(4, 0))
+            else:
+                content.pack_forget()
+                btn_toggle.configure(text="Advanced Host Settings +")
+
+        btn_toggle = ctk.CTkButton(
+            wrapper,
+            text="Advanced Host Settings +",
+            command=toggle,
+            fg_color="gray",
+            hover_color="#666666",
+        )
+        btn_toggle.pack(fill="x")
+
+        self._render_schema_fields(content, fields, current_settings, ui_vars)
+
+    def _trim_section_separators(self, schema: List[Dict]) -> List[Dict]:
+        fields = list(schema)
+        while fields and fields[0].get("type") == "separator":
+            fields.pop(0)
+        while fields and fields[-1].get("type") == "separator":
+            fields.pop()
+        return fields
 
     def _render_dropdown(
         self,
@@ -182,7 +247,8 @@ class SchemaRenderer:
         label = field.get("label", key)
         values = field.get("values", [])
         default = field.get("default", values[0] if values else "")
-        current = settings.get(key, default)
+        current = self._dropdown_display_value(field, settings.get(key, default))
+        combo_values = self._dropdown_display_values(field)
 
         # Label
         label_widget = ctk.CTkLabel(parent, text=label)
@@ -197,7 +263,7 @@ class SchemaRenderer:
         ui_vars[key] = var
 
         # Widget
-        combo = MouseWheelComboBox(parent, variable=var, values=values)
+        combo = MouseWheelComboBox(parent, variable=var, values=combo_values)
         combo.pack(fill="x", pady=(0, 5))
 
     def _render_checkbox(
@@ -312,27 +378,56 @@ class SchemaRenderer:
         frame.pack(fill="x", pady=5)
 
         fields = field.get("fields", [])
-        for i, subfield in enumerate(fields):
+        for subfield in fields:
             subfield_type = subfield.get("type")
-            key = subfield["key"]
 
             if subfield_type == "label":
                 label_text = subfield.get("text", "")
                 width = subfield.get("width", 60)
                 ctk.CTkLabel(frame, text=label_text, width=width).pack(side="left", padx=(0, 5))
+                continue
 
-            elif subfield_type == "dropdown":
+            key = subfield.get("key")
+            if not key:
+                logger.warning(f"Inline field missing key: {subfield}")
+                continue
+
+            if subfield_type == "dropdown":
                 values = subfield.get("values", [])
                 default = subfield.get("default", values[0] if values else "")
-                current = settings.get(key, default)
+                current = self._dropdown_display_value(subfield, settings.get(key, default))
+                combo_values = self._dropdown_display_values(subfield)
                 width = subfield.get("width", 80)
 
                 var = ctk.StringVar(value=str(current))
                 ui_vars[key] = var
 
-                MouseWheelComboBox(frame, variable=var, values=values, width=width).pack(
+                MouseWheelComboBox(frame, variable=var, values=combo_values, width=width).pack(
                     side="left", padx=5
                 )
+            else:
+                logger.warning(f"Unknown inline field type: {subfield_type}")
+
+    def _dropdown_display_values(self, field: Dict) -> List[str]:
+        labels = field.get("value_labels", {})
+        return [str(labels.get(value, value)) for value in field.get("values", [])]
+
+    def _dropdown_display_value(self, field: Dict, value: Any) -> str:
+        labels = field.get("value_labels", {})
+        value = str(value)
+        if value in labels:
+            return str(labels[value])
+        if value in [str(label) for label in labels.values()]:
+            return value
+        return value
+
+    def _dropdown_storage_value(self, field: Dict, value: Any) -> str:
+        labels = field.get("value_labels", {})
+        value = str(value) if value else ""
+        for stored_value, display_value in labels.items():
+            if value == str(display_value):
+                return str(stored_value)
+        return value
 
     def _add_tooltip(self, widget, text: str) -> None:
         """Add tooltip to widget."""
@@ -409,8 +504,11 @@ class SchemaRenderer:
         elif field_type == "checkbox":
             config[key] = bool(value)
 
+        elif field_type == "dropdown":
+            config[key] = self._dropdown_storage_value(field, value)
+
         else:
-            # text, dropdown, etc
+            # text, etc
             config[key] = str(value) if value else ""
 
         # Custom validation function

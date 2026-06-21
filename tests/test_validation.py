@@ -208,7 +208,14 @@ class TestValidateServiceName:
 
     def test_valid_service_names(self):
         """Test that known service names are valid"""
-        valid_services = ["imx.to", "pixhost.to", "turboimagehost", "vipr.im"]
+        valid_services = [
+            "imx.to",
+            "pixhost.to",
+            "turboimagehost",
+            "vipr.im",
+            "imagebam.com",
+            "imgur.com",
+        ]
 
         for service in valid_services:
             result = validate_service_name(service)

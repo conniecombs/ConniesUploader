@@ -8,7 +8,7 @@ from loguru import logger
 import os
 
 # --- Version ---
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.4.0"
 USER_AGENT = f"ConniesUploader/{APP_VERSION}"
 
 # --- Constants ---
@@ -47,7 +47,11 @@ UI_THUMB_SIZE = (40, 40)
 # Upload Configuration
 DEFAULT_THREAD_COUNT = 5
 MIN_THREAD_COUNT = 1
-MAX_THREAD_COUNT = 20
+MAX_THREAD_COUNT = 10
+MAX_SERVICE_THREAD_COUNT = MAX_THREAD_COUNT
+DEFAULT_WORKER_COUNT = 8
+MIN_WORKER_COUNT = 1
+MAX_WORKER_COUNT = 16
 DEFAULT_UPLOAD_TIMEOUT = 120  # seconds
 
 # Thread Pool Configuration
@@ -82,6 +86,8 @@ KEYRING_SERVICE_VIPR_USER = "ImageUploader:vipr_username"
 KEYRING_SERVICE_VIPR_PASS = "ImageUploader:vipr_password"
 KEYRING_SERVICE_IB_USER = "ImageUploader:imagebam_username"
 KEYRING_SERVICE_IB_PASS = "ImageUploader:imagebam_password"
+KEYRING_SERVICE_IMGUR_CLIENT_ID = "ImageUploader:imgur_client_id"
+KEYRING_SERVICE_IMGUR_ACCESS_TOKEN = "ImageUploader:imgur_access_token"
 # NEW: ViperGirls Forum Credentials
 KEYRING_SERVICE_VG_USER = "ImageUploader:vipergirls_username"
 KEYRING_SERVICE_VG_PASS = "ImageUploader:vipergirls_password"

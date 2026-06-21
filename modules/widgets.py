@@ -98,9 +98,53 @@ class ServiceSettingsView:
     Accepts the main `app` instance to attach variables to, preserving the existing data model.
     """
 
-    def __init__(self, parent, app):
+    SERVICE_ALIASES = {
+        "imx.to": {
+            "thumbnail_size": "imx_thumb",
+            "thumbnail_format": "imx_format",
+            "cover_count": "imx_cover_count",
+            "save_links": "imx_links",
+            "gallery_id": "imx_gallery_id",
+        },
+        "pixhost.to": {
+            "content_type": "pix_content",
+            "thumbnail_size": "pix_thumb",
+            "cover_count": "pix_cover_count",
+            "save_links": "pix_links",
+            "gallery_hash": "pix_gallery_hash",
+        },
+        "turboimagehost": {
+            "thumbnail_size": "turbo_thumb",
+            "cover_count": "turbo_cover_count",
+            "save_links": "turbo_links",
+            "gallery_id": "turbo_gallery_id",
+        },
+        "vipr.im": {
+            "thumbnail_size": "vipr_thumb",
+            "cover_count": "vipr_cover_count",
+            "save_links": "vipr_links",
+            "vipr_gallery_name": "vipr_gallery_name",
+            "vipr_gal_id": "vipr_gal_id",
+        },
+        "imagebam.com": {
+            "content_type": "imagebam_content",
+            "thumbnail_size": "imagebam_thumb",
+        },
+        "imgur.com": {
+            "thumbnail_size": "imgur_thumb",
+            "content_type": "imgur_content",
+            "save_links": "imgur_links",
+            "album_id": "imgur_album_id",
+            "title": "imgur_title",
+        },
+    }
+
+    def __init__(self, parent, app, plugin_manager=None):
         self.parent = parent
         self.app = app
+        self.plugin_manager = plugin_manager
+        self.service_handles = {}
+        self.service_plugins = {}
 
         # Initialize variables on the app instance if they don't exist
         # This keeps compatibility with app._gather_settings()
@@ -168,6 +212,10 @@ class ServiceSettingsView:
         if not hasattr(self.app, "var_ib_threads"):
             self.app.var_ib_threads = ctk.IntVar(value=2)
 
+        # Imgur
+        if not hasattr(self.app, "var_imgur_threads"):
+            self.app.var_imgur_threads = ctk.IntVar(value=2)
+
     def _create_cover_count_combo(self, parent, variable, label_text="Covers:"):
         f = ctk.CTkFrame(parent, fg_color="transparent")
         f.pack(fill="x", pady=5)
@@ -179,11 +227,164 @@ class ServiceSettingsView:
 
     def _build_frames(self):
         self.app.service_frames = {}
-        self._build_imx()
-        self._build_pix()
-        self._build_turbo()
-        self._build_vipr()
-        self._build_imagebam()
+        self.app.service_config_handles = self.service_handles
+        self.app.service_plugins = self.service_plugins
+
+        if not self.plugin_manager:
+            self._build_imx()
+            self._build_pix()
+            self._build_turbo()
+            self._build_vipr()
+            self._build_imagebam()
+            return
+
+        for plugin in self.plugin_manager.get_all_plugins():
+            p = ctk.CTkFrame(self.parent)
+            service_id = plugin.id
+            self.app.service_frames[service_id] = p
+            self.service_plugins[service_id] = plugin
+
+            current_settings = self._settings_for_service(service_id)
+            try:
+                handle = plugin.render_settings(p, current_settings)
+            except Exception as exc:
+                handle = {}
+                ctk.CTkLabel(
+                    p,
+                    text=f"{plugin.name} settings could not be loaded.",
+                    text_color="#FF3B30",
+                ).pack(anchor="w", padx=5, pady=(5, 2))
+                ctk.CTkLabel(p, text=str(exc), wraplength=260, justify="left").pack(
+                    anchor="w", padx=5, pady=(0, 5)
+                )
+
+            self.service_handles[service_id] = handle
+            self._install_legacy_aliases(service_id, handle)
+
+    def _settings_for_service(self, service_id):
+        settings = dict(getattr(self.app, "settings", {}) or {})
+        for schema_key, legacy_key in self.SERVICE_ALIASES.get(service_id, {}).items():
+            if legacy_key in settings:
+                settings[schema_key] = settings[legacy_key]
+        if service_id == "imx.to" and "imx_gallery_id" not in settings:
+            settings["gallery_id"] = settings.get("gallery_id", "")
+        return settings
+
+    def _install_legacy_aliases(self, service_id, handle):
+        aliases = self.SERVICE_ALIASES.get(service_id, {})
+        for schema_key, legacy_key in aliases.items():
+            if schema_key not in handle:
+                continue
+            var = handle[schema_key]
+            if legacy_key == "imx_thumb":
+                self.app.var_imx_thumb = var
+            elif legacy_key == "imx_format":
+                self.app.var_imx_format = var
+            elif legacy_key == "imx_cover_count":
+                self.app.var_imx_cover_count = var
+            elif legacy_key == "imx_links":
+                self.app.var_imx_links = var
+            elif legacy_key == "pix_content":
+                self.app.var_pix_content = var
+            elif legacy_key == "pix_thumb":
+                self.app.var_pix_thumb = var
+            elif legacy_key == "pix_cover_count":
+                self.app.var_pix_cover_count = var
+            elif legacy_key == "pix_links":
+                self.app.var_pix_links = var
+            elif legacy_key == "turbo_thumb":
+                self.app.var_turbo_thumb = var
+            elif legacy_key == "turbo_cover_count":
+                self.app.var_turbo_cover_count = var
+            elif legacy_key == "turbo_links":
+                self.app.var_turbo_links = var
+            elif legacy_key == "vipr_thumb":
+                self.app.var_vipr_thumb = var
+            elif legacy_key == "vipr_cover_count":
+                self.app.var_vipr_cover_count = var
+            elif legacy_key == "vipr_links":
+                self.app.var_vipr_links = var
+            elif legacy_key == "imagebam_content":
+                self.app.var_ib_content = var
+            elif legacy_key == "imagebam_thumb":
+                self.app.var_ib_thumb = var
+
+        if service_id == "vipr.im":
+            plugin = self.service_plugins.get(service_id)
+            if getattr(plugin, "cb_gallery", None) is not None:
+                self.app.cb_vipr_gallery = plugin.cb_gallery
+
+    def get_raw_config(self, service_id):
+        return self._read_handle(self.service_handles.get(service_id, {}))
+
+    def get_all_raw_configs(self):
+        return {
+            service_id: self.get_raw_config(service_id)
+            for service_id in self.service_handles
+        }
+
+    def get_validated_config(self, service_id):
+        plugin = self.service_plugins.get(service_id)
+        handle = self.service_handles.get(service_id)
+        if not plugin or handle is None:
+            return {}
+        return plugin.get_configuration(handle)
+
+    def alias_config(self, service_id, config):
+        aliases = {}
+        plugin = self.service_plugins.get(service_id)
+        for schema_key, legacy_key in self.SERVICE_ALIASES.get(service_id, {}).items():
+            if schema_key not in config:
+                continue
+            value = self.normalize_value(service_id, schema_key, config[schema_key], plugin=plugin)
+            if schema_key == "cover_count":
+                try:
+                    value = int(value)
+                except (TypeError, ValueError):
+                    value = 0
+            aliases[legacy_key] = value
+        return aliases
+
+    def normalize_value(self, service_id, key, value, plugin=None):
+        plugin = plugin or self.service_plugins.get(service_id)
+        if not plugin:
+            return value
+
+        field = self._find_schema_field(getattr(plugin, "settings_schema", []), key)
+        if not field:
+            return value
+
+        labels = field.get("value_labels", {})
+        for stored_value, display_value in labels.items():
+            if str(value) == str(display_value):
+                return str(stored_value)
+        return value
+
+    def _find_schema_field(self, schema, key):
+        for field in schema:
+            if field.get("key") == key:
+                return field
+            for subfield in field.get("fields", []):
+                if subfield.get("key") == key:
+                    return subfield
+        return None
+
+    def get_value(self, service_id, key, default=""):
+        return self.get_raw_config(service_id).get(key, default)
+
+    def set_value(self, service_id, key, value):
+        handle = self.service_handles.get(service_id, {})
+        var = handle.get(key)
+        if var is not None:
+            var.set(value)
+
+    @staticmethod
+    def _read_handle(handle):
+        config = {}
+        for key, var in (handle or {}).items():
+            if hasattr(var, "get"):
+                config[key] = var.get()
+        return config
 
     def _build_imx(self):
         p = ctk.CTkFrame(self.parent)
