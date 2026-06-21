@@ -223,6 +223,7 @@ build_executable() {
         --icon "logo.ico" \
         --add-data "$SIDECAR_NAME$ADD_DATA_SEP." \
         --add-data "logo.ico$ADD_DATA_SEP." \
+        --additional-hooks-dir "pyinstaller_hooks" \
         --collect-all tkinterdnd2 \
         --collect-submodules modules.plugins \
         --hidden-import modules.plugins.imx \

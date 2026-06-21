@@ -92,6 +92,8 @@ if defined DO_CLEAN (
 if defined CLEAN_ONLY exit /b 0
 
 REM --- Cleanup files that can mask failed builds ---
+call :stop_running_app
+if errorlevel 1 exit /b 1
 if exist "%SCRIPT_DIR%python_installer.exe" del /q "%SCRIPT_DIR%python_installer.exe"
 if exist "%SCRIPT_DIR%go_installer.zip" del /q "%SCRIPT_DIR%go_installer.zip"
 if exist "%SCRIPT_DIR%uploader.exe" del /q "%SCRIPT_DIR%uploader.exe"
@@ -238,6 +240,7 @@ if exist "%SCRIPT_DIR%dist\%APP_NAME%.exe" del /q "%SCRIPT_DIR%dist\%APP_NAME%.e
     --icon "logo.ico" ^
     --add-data "uploader.exe;." ^
     --add-data "logo.ico;." ^
+    --additional-hooks-dir "pyinstaller_hooks" ^
     --collect-all tkinterdnd2 ^
     --collect-submodules modules.plugins ^
     --hidden-import modules.plugins.imx ^
@@ -279,6 +282,38 @@ if errorlevel 1 (
     exit /b 1
 )
 echo       - Go sidecar bundled
+
+findstr /I /L /C:"_tkinter.pyd" "%ARCHIVE_LIST%" >nul
+if errorlevel 1 (
+    echo [ERROR] Python Tkinter extension was not bundled!
+    del /q "%ARCHIVE_LIST%"
+    exit /b 1
+)
+findstr /I /L /C:"_tcl_data" "%ARCHIVE_LIST%" >nul
+if errorlevel 1 (
+    echo [ERROR] Tcl runtime data was not bundled!
+    del /q "%ARCHIVE_LIST%"
+    exit /b 1
+)
+findstr /I /L /C:"_tk_data" "%ARCHIVE_LIST%" >nul
+if errorlevel 1 (
+    echo [ERROR] Tk runtime data was not bundled!
+    del /q "%ARCHIVE_LIST%"
+    exit /b 1
+)
+findstr /I /L /C:"tcl86t.dll" "%ARCHIVE_LIST%" >nul
+if errorlevel 1 (
+    echo [ERROR] Tcl DLL was not bundled!
+    del /q "%ARCHIVE_LIST%"
+    exit /b 1
+)
+findstr /I /L /C:"tk86t.dll" "%ARCHIVE_LIST%" >nul
+if errorlevel 1 (
+    echo [ERROR] Tk DLL was not bundled!
+    del /q "%ARCHIVE_LIST%"
+    exit /b 1
+)
+echo       - Tkinter runtime bundled
 
 findstr /L /C:"tkinterdnd2" "%ARCHIVE_LIST%" >nul
 if errorlevel 1 (
@@ -332,6 +367,8 @@ exit /b 0
 
 :clean_build
 echo [INFO] Cleaning build artifacts...
+call :stop_running_app
+if errorlevel 1 exit /b 1
 if exist "%SCRIPT_DIR%build" rmdir /s /q "%SCRIPT_DIR%build"
 if exist "%SCRIPT_DIR%dist" rmdir /s /q "%SCRIPT_DIR%dist"
 if exist "%SCRIPT_DIR%venv" rmdir /s /q "%SCRIPT_DIR%venv"
@@ -342,6 +379,19 @@ if exist "%SCRIPT_DIR%uploader.exe" del /q "%SCRIPT_DIR%uploader.exe"
 if exist "%SCRIPT_DIR%go_installer.zip" del /q "%SCRIPT_DIR%go_installer.zip"
 echo [INFO] Clean complete.
 echo.
+exit /b 0
+
+:stop_running_app
+tasklist /FI "IMAGENAME eq %APP_NAME%.exe" 2>nul | find /I "%APP_NAME%.exe" >nul
+if errorlevel 1 exit /b 0
+echo       - Closing running %APP_NAME%.exe before rebuild...
+taskkill /F /IM "%APP_NAME%.exe" >nul 2>&1
+if errorlevel 1 (
+    echo [ERROR] Could not close running %APP_NAME%.exe.
+    echo         Close it manually and run the build again.
+    exit /b 1
+)
+ping 127.0.0.1 -n 2 >nul
 exit /b 0
 
 :find_python

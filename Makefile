@@ -75,6 +75,7 @@ build-python: build-go
 		--icon "logo.ico" \
 		--add-data "$(GO_OUTPUT)$(if $(filter Windows,$(DETECTED_OS)),;.,:)" \
 		--add-data "logo.ico$(if $(filter Windows,$(DETECTED_OS)),;.,:)" \
+		--additional-hooks-dir "pyinstaller_hooks" \
 		--collect-all tkinterdnd2 \
 		--collect-submodules modules.plugins \
 		--hidden-import modules.plugins.imx \
