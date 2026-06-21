@@ -80,7 +80,7 @@ class DragDropMixin:
             self.highlighted_row = None
 
     def _queue_reorder_allowed(self):
-        if self.__dict__.get("is_uploading", False):
+        if vars(self).get("is_uploading", False):
             if hasattr(self, "add_activity"):
                 self.add_activity(
                     "Wait for the current upload to finish before reordering.",
@@ -90,10 +90,10 @@ class DragDropMixin:
         return True
 
     def _selected_file_set(self):
-        selection = self.__dict__.get("selected_files")
+        selection = vars(self).get("selected_files")
         if not isinstance(selection, set):
             selection = set(selection or [])
-            self.__dict__["selected_files"] = selection
+            self.selected_files = selection
         return selection
 
     def _ordered_filepaths(self):
@@ -147,7 +147,7 @@ class DragDropMixin:
         if filepath not in ordered:
             return
 
-        anchor = self.__dict__.get("selection_anchor")
+        anchor = vars(self).get("selection_anchor")
         if anchor not in ordered:
             anchor = filepath
             self.selection_anchor = filepath
@@ -160,7 +160,7 @@ class DragDropMixin:
         selection = self._selected_file_set()
         if not append:
             selection.clear()
-        selection.update(ordered[start_index : end_index + 1])
+        selection.update(ordered[start_index: end_index + 1])
         self._apply_file_selection_styles()
 
     def _toggle_file_selection(self, filepath):
@@ -170,7 +170,7 @@ class DragDropMixin:
         selection = self._selected_file_set()
         if filepath in selection:
             selection.remove(filepath)
-            if self.__dict__.get("selection_anchor") == filepath:
+            if vars(self).get("selection_anchor") == filepath:
                 self.selection_anchor = next(iter(selection), None)
         else:
             selection.add(filepath)
@@ -221,7 +221,7 @@ class DragDropMixin:
         removed = set(filepaths)
         selection = self._selected_file_set()
         selection.difference_update(removed)
-        if self.__dict__.get("selection_anchor") in removed:
+        if vars(self).get("selection_anchor") in removed:
             self.selection_anchor = next(iter(selection), None)
 
     def _reset_drag_data(self):

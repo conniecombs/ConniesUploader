@@ -263,7 +263,7 @@ class TestTemplatePersistence:
             issue = tm.get_recovery_issue()
 
             assert issue is not None
-            assert issue["filepath"] == str(templates_file.resolve())
+            assert Path(issue["filepath"]).resolve() == templates_file.resolve()
             assert issue["backup_path"]
             backup_path = Path(issue["backup_path"])
             assert backup_path.exists()
