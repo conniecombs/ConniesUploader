@@ -943,6 +943,99 @@ Saved thread data is stored under:
 | Credentials | Operating system keyring |
 | Crash/debug log | `crash_log.log` |
 
+## How The Program Works
+
+You do not need to know the internals to upload images, but this section helps explain why some settings exist and where to look when something breaks.
+
+### The Short Version
+
+Connie's Uploader is two programs working together:
+
+| Part | What it does |
+| --- | --- |
+| Python desktop app | Shows the window, manages batches, validates files, loads plugins, renders templates, stores settings, and coordinates posting. |
+| Go sidecar | Performs the upload-related network work. In normal release builds, it is bundled into the final app, so most users never see it as a separate file. |
+
+The sidecar is not a public server and does not listen for outside users. The Python app starts it locally, sends it JSON messages through standard input, and reads JSON progress/result events back from standard output. If you run from source or use manual build steps, you may see a separate `uploader.exe` on Windows or `uploader` on Linux/macOS. In packaged releases, it should be bundled into the final executable.
+
+### What Happens When You Click Start Upload
+
+1. The main window reads the current queue, selected host, selected template, cover selections, gallery settings, and posting targets.
+2. Upload Checks run before network work begins. This catches missing credentials, invalid posting targets, bad thread IDs, unsupported files, and other fixable problems.
+3. `modules/plugin_manager.py` finds the selected host plugin in `modules/plugins/`.
+4. The selected plugin converts your settings into an HTTP upload plan. This includes the target URL, form fields, file field, headers, login steps when needed, and response parsing rules.
+5. `modules/upload_manager.py` sends that plan to `modules/sidecar.py`.
+6. `modules/sidecar.py` starts or reuses the bundled Go sidecar and sends it the upload job.
+7. The Go sidecar applies worker limits, service thread limits, timeouts, rate limits, retries, and HTTP response parsing.
+8. The sidecar sends progress events back to Python so the queue rows, progress bars, and activity log can update.
+9. When uploads finish, `modules/template_manager.py` renders the selected template using returned image links, cover links, gallery details, batch details, and ViperGirls target details.
+10. Output is saved to `Output/` and persistent history is saved under `~/.conniesuploader/history/`.
+11. If a batch has a ViperGirls target selected, `modules/auto_poster.py` queues the rendered post and posts it after upload output is ready.
+
+### Why There Is A Go Sidecar
+
+The app uses Go for upload execution because upload work is different from normal desktop UI work.
+
+Go is good at:
+
+- Running several upload workers without freezing the window.
+- Applying rate limits and timeouts consistently.
+- Handling multipart HTTP uploads and response parsing.
+- Keeping network work isolated from the CustomTkinter interface.
+- Reporting progress back while Python stays focused on the user interface.
+
+Python is still the brain of the app. The image-host plugins live in Python, so adding or changing a host usually means editing one plugin file instead of recompiling Go. The Go sidecar mostly acts as a generic HTTP runner: Python describes what needs to happen, and Go executes it.
+
+### Worker Count And Thread Limit
+
+These two controls are related but not identical.
+
+| Control | Scope | Plain-English meaning |
+| --- | --- | --- |
+| `Worker Count` | Go sidecar process | How many upload workers the sidecar may run overall. The app clamps this to `1` through `16`. |
+| `Thread Limit` | Current upload service | How many simultaneous files that service should receive. The app clamps this to `1` through `10`. |
+
+Example:
+
+- `Worker Count: 8` and `Thread Limit: 4` means the sidecar exists with up to 8 workers, but the selected service should only upload up to 4 files at the same time.
+- `Worker Count: 1` forces conservative sequential uploading. This is useful for testing credentials, fragile services, or rate-limit problems.
+
+### What The Main Modules Do
+
+| Module | Job |
+| --- | --- |
+| `main.py` | Starts the desktop app. |
+| `modules/ui/main_window.py` | Owns the main CustomTkinter window, queue UI, menus, settings controls, preflight checks, and shutdown flow. |
+| `modules/dnd.py` | Handles drag and drop, row selection, reordering, and context-menu queue actions. |
+| `modules/file_handler.py` and `modules/validation.py` | Check file extensions, sizes, paths, and import rules before files enter the queue. |
+| `modules/settings_manager.py` | Loads, saves, normalizes, and validates app settings from `user_settings.json`. |
+| `modules/credentials_manager.py` | Reads and writes credentials through the operating system keyring. |
+| `modules/plugin_manager.py` | Discovers available image-host plugins and exposes their metadata to the app. |
+| `modules/plugins/` | Contains the per-host upload rules for Pixhost, IMX, Vipr, TurboImageHost, ImageBam, Imgur, and helpers. |
+| `modules/upload_manager.py` | Coordinates upload jobs, talks to plugins, dispatches work to the sidecar, and collects result events. |
+| `modules/sidecar.py` | Finds, starts, stops, and communicates with the bundled sidecar, or with `uploader.exe`/`uploader` during source builds. |
+| `modules/template_manager.py` | Stores templates, validates placeholders, renders output, previews posts, and powers the Template Editor. |
+| `modules/gallery_manager.py` | Shows and creates supported image-host galleries. |
+| `modules/viper_api.py` | Manages ViperGirls targets, thread validation, thread-title fetching, and posting history windows. |
+| `modules/auto_poster.py` | Posts completed ViperGirls batches sequentially with cooldowns and clearer failure reporting. |
+| `handlers.go`, `main.go`, and `core/` | Implement the Go sidecar's job handling, worker limits, validation, rate limiting, HTTP execution, retries, and result parsing. |
+
+### How To Read Errors
+
+Most errors tell you which layer failed:
+
+| Error clue | Usually means |
+| --- | --- |
+| `uploader.exe was not found` | The app could not find the sidecar. In a release build this usually means the package is broken; in a source build, rebuild or restore the sidecar binary. |
+| `credentials missing` | The Python app or plugin could not read the needed keyring entry. Re-save credentials and retry. |
+| `Upload Checks` warning | The app caught a problem before upload, usually settings, files, or ViperGirls posting targets. |
+| `http_upload` or parser error | The sidecar received the plugin's upload plan, but the host response did not match what the plugin expected. |
+| `rate limit`, `timeout`, or `429` | The host or network is slowing/rejecting requests. Lower Worker Count or Thread Limit and retry. |
+| Template warning | The output renderer found invalid placeholders, bad conditionals, HTML in a BBCode template, or missing image output. |
+| ViperGirls posting history failure | Upload may have succeeded, but the later forum post failed. Copy the generated post text from history and post manually if needed. |
+
+For the deeper developer version, read [Architecture](../../ARCHITECTURE.md).
+
 ## Troubleshooting
 
 Start with the symptom you see.
@@ -1033,7 +1126,9 @@ Open `Tools > ViperGirls Posting History`. Use `Copy Post` to keep the generated
 
 ### The app cannot find the uploader sidecar
 
-Build or restore `uploader.exe` on Windows, or `uploader` on Linux/macOS. The desktop app communicates with that sidecar for uploads and thumbnail generation.
+Most release users should never need to manage the sidecar manually because it is bundled into the final app. If a packaged app reports this error, the build is probably missing its bundled sidecar and should be rebuilt or replaced.
+
+If you are running from source, build or restore `uploader.exe` on Windows, or `uploader` on Linux/macOS. The desktop app communicates with that sidecar for uploads and thumbnail generation.
 
 ## Responsible Use
 
