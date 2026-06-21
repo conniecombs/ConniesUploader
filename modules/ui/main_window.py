@@ -124,6 +124,8 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
 
         # Drag & Drop state
         self.drag_data = {"item": None, "type": None, "y_start": 0, "widget_start": None}
+        self.selected_files = set()
+        self.selection_anchor = None
         self.highlighted_row = None
         self.context_menu = tk.Menu(self, tearoff=0)
 
@@ -2541,6 +2543,16 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         group_widget.add_file(fp)
         row = ctk.CTkFrame(group_widget.content_frame)
         row.pack(fill="x", pady=1)
+        drag_handle = ctk.CTkButton(
+            row,
+            text="::",
+            width=24,
+            height=24,
+            fg_color="transparent",
+            hover_color="#555555",
+            text_color="gray",
+        )
+        drag_handle.pack(side="left", padx=(4, 2), pady=3)
         img_widget = None
         if pil_image:
             img_widget = ctk.CTkImage(
@@ -2623,6 +2635,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
                 "retry_slot": retry_slot,
                 "remove": btn_remove,
                 "retry": btn_retry,
+                "drag_handle": drag_handle,
                 "error": "",
             }
             file_count = len(self.file_widgets)
@@ -3051,6 +3064,8 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         self.groups.clear()
         with self.lock:
             self.file_widgets.clear()
+        self.selected_files.clear()
+        self.selection_anchor = None
         self.image_refs.clear()
         self.overall_progress.set(0)
         self.lbl_eta.configure(text="Cleared.")

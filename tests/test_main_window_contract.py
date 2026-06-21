@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025 conniecombs
 
+import os
 from pathlib import Path
 import queue
 from types import SimpleNamespace
@@ -160,6 +161,8 @@ def test_queue_rows_have_visible_remove_button_and_readable_fallbacks():
     assert '"error_label": error_label' in source
     assert '"actions": row_actions' in source
     assert '"retry_slot": retry_slot' in source
+    assert 'text="::"' in source
+    assert '"drag_handle": drag_handle' in source
 
 
 @pytest.mark.unit
@@ -699,6 +702,153 @@ def test_moving_last_image_removes_old_batch():
     assert app.file_widgets["move.jpg"]["row"] is new_row
     assert refreshed
     assert ("Removed empty batch: Old Batch.", "warning") in activity
+
+
+@pytest.mark.unit
+def test_move_file_relative_updates_upload_order_and_repacks_rows():
+    group = FakeGroup("Batch", ["one.jpg", "two.jpg", "three.jpg"])
+    rows = {filepath: FakeFrame() for filepath in group.files}
+    refreshed = []
+    activity = []
+
+    app = UploaderApp.__new__(UploaderApp)
+    app.lock = Lock()
+    app.is_uploading = False
+    app.file_widgets = {
+        filepath: {"row": rows[filepath], "group": group} for filepath in group.files
+    }
+    app._refresh_queue_state = lambda: refreshed.append(True)
+    app.add_activity = lambda message, level="info": activity.append((message, level))
+
+    moved = UploaderApp._move_file_relative(app, "three.jpg", "top")
+
+    assert moved is True
+    assert group.files == ["three.jpg", "one.jpg", "two.jpg"]
+    assert all(row.mapped for row in rows.values())
+    assert refreshed
+    assert activity[-1] == ("Moved image: three.jpg.", "info")
+
+
+@pytest.mark.unit
+def test_row_selection_supports_ctrl_shift_and_persists_after_release():
+    group = FakeGroup("Batch", ["one.jpg", "two.jpg", "three.jpg", "four.jpg"])
+    rows = {filepath: FakeFrame() for filepath in group.files}
+
+    app = UploaderApp.__new__(UploaderApp)
+    app.lock = Lock()
+    app.groups = [group]
+    app.is_uploading = False
+    app.file_widgets = {
+        filepath: {"row": rows[filepath], "group": group} for filepath in group.files
+    }
+    app.selected_files = set()
+    app.selection_anchor = None
+    app.drag_data = {"item": None, "type": None, "widget_start": None}
+    app.configure = lambda **_kwargs: None
+    app.winfo_containing = lambda *_args: None
+
+    def event(state=0):
+        return SimpleNamespace(state=state, x_root=0, y_root=0)
+
+    UploaderApp._on_row_drag_start(app, event(), rows["one.jpg"], "one.jpg")
+    UploaderApp._on_row_drag_end(app, event())
+    assert app.selected_files == {"one.jpg"}
+
+    UploaderApp._on_row_drag_start(app, event(0x0004), rows["three.jpg"], "three.jpg")
+    UploaderApp._on_row_drag_end(app, event(0x0004))
+    assert app.selected_files == {"one.jpg", "three.jpg"}
+
+    UploaderApp._on_row_drag_start(app, event(0x0004), rows["one.jpg"], "one.jpg")
+    UploaderApp._on_row_drag_end(app, event(0x0004))
+    assert app.selected_files == {"three.jpg"}
+
+    UploaderApp._on_row_drag_start(app, event(), rows["one.jpg"], "one.jpg")
+    UploaderApp._on_row_drag_end(app, event())
+    UploaderApp._on_row_drag_start(app, event(0x0001), rows["three.jpg"], "three.jpg")
+    UploaderApp._on_row_drag_end(app, event(0x0001))
+
+    assert app.selected_files == {"one.jpg", "two.jpg", "three.jpg"}
+    assert app.selection_anchor == "one.jpg"
+    assert rows["one.jpg"].options["fg_color"] != "transparent"
+    assert rows["three.jpg"].options["fg_color"] != "transparent"
+
+
+@pytest.mark.unit
+def test_selected_files_move_as_one_ordered_block():
+    group = FakeGroup("Batch", ["one.jpg", "two.jpg", "three.jpg", "four.jpg"])
+    rows = {filepath: FakeFrame() for filepath in group.files}
+    refreshed = []
+    activity = []
+
+    app = UploaderApp.__new__(UploaderApp)
+    app.lock = Lock()
+    app.groups = [group]
+    app.is_uploading = False
+    app.file_widgets = {
+        filepath: {"row": rows[filepath], "group": group} for filepath in group.files
+    }
+    app.selected_files = {"two.jpg", "three.jpg"}
+    app.selection_anchor = "two.jpg"
+    app._refresh_queue_state = lambda: refreshed.append(True)
+    app.add_activity = lambda message, level="info": activity.append((message, level))
+
+    moved = UploaderApp._move_file_relative(app, "two.jpg", "bottom")
+
+    assert moved is True
+    assert group.files == ["one.jpg", "four.jpg", "two.jpg", "three.jpg"]
+    assert app.selected_files == {"two.jpg", "three.jpg"}
+    assert all(row.mapped for row in rows.values())
+    assert refreshed
+    assert activity[-1] == ("Moved 2 images.", "info")
+
+
+@pytest.mark.unit
+def test_sort_group_files_updates_upload_order_by_name_modified_and_reverse(tmp_path):
+    img10 = tmp_path / "img10.jpg"
+    img2 = tmp_path / "img2.jpg"
+    img1 = tmp_path / "img1.jpg"
+    for path in (img10, img2, img1):
+        path.write_bytes(b"image")
+    os.utime(img10, (1000, 1000))
+    os.utime(img2, (2000, 2000))
+    os.utime(img1, (3000, 3000))
+
+    group = FakeGroup("Batch", [str(img10), str(img2), str(img1)])
+    rows = {filepath: FakeFrame() for filepath in group.files}
+    refreshed = []
+    activity = []
+
+    app = UploaderApp.__new__(UploaderApp)
+    app.lock = Lock()
+    app.is_uploading = False
+    app.file_widgets = {
+        filepath: {"row": rows[filepath], "group": group} for filepath in group.files
+    }
+    app._refresh_queue_state = lambda: refreshed.append(True)
+    app.add_activity = lambda message, level="info": activity.append((message, level))
+
+    assert UploaderApp._sort_group_files(app, group, "name") is True
+    assert [Path(filepath).name for filepath in group.files] == [
+        "img1.jpg",
+        "img2.jpg",
+        "img10.jpg",
+    ]
+
+    assert UploaderApp._sort_group_files(app, group, "modified") is True
+    assert [Path(filepath).name for filepath in group.files] == [
+        "img10.jpg",
+        "img2.jpg",
+        "img1.jpg",
+    ]
+
+    assert UploaderApp._sort_group_files(app, group, "reverse") is True
+    assert [Path(filepath).name for filepath in group.files] == [
+        "img1.jpg",
+        "img2.jpg",
+        "img10.jpg",
+    ]
+    assert len(refreshed) == 3
+    assert activity[-1] == ("Reversed batch order: Batch.", "info")
 
 
 @pytest.mark.unit
@@ -1328,5 +1478,23 @@ def test_failed_row_context_menu_exposes_retry_action():
 
     assert 'label="Retry Image"' in source
     assert 'label="Copy Error"' in source
+
+
+@pytest.mark.unit
+def test_queue_order_context_menus_expose_reorder_and_sort_actions():
+    source = Path("modules/dnd.py").read_text(encoding="utf-8")
+    row_motion_block = source[
+        source.index("def _on_row_drag_motion") : source.index("def _on_row_drag_end")
+    ]
+
+    assert "pass" not in row_motion_block
+    assert "_highlight_drag_target" in row_motion_block
+    assert 'label="Move to Top"' in source
+    assert 'label="Move Up"' in source
+    assert 'label="Move Down"' in source
+    assert 'label="Move to Bottom"' in source
+    assert 'label="Sort Batch by Name"' in source
+    assert 'label="Sort Batch by Modified Date"' in source
+    assert 'label="Reverse Batch Order"' in source
     assert "self._retry_file(filepath)" in source
     assert "self._copy_file_error(filepath)" in source
