@@ -4,24 +4,25 @@ This directory contains release notes and publishing guidance for Connie's Uploa
 
 ## Latest Release
 
-**v1.3.0 - "Protocol Hardening & Release Reliability"**
-Release date: June 2, 2026
-Tag: `v1.3.0`
+**v1.4.0 - "User Experience Polish & Safer Upload Controls"**
+Release date: June 20, 2026
+Tag: `v1.4.0`
 
-Read the full notes: [RELEASE_NOTES_v1.3.0.md](RELEASE_NOTES_v1.3.0.md)
+Read the full notes: [RELEASE_NOTES_v1.4.0.md](RELEASE_NOTES_v1.4.0.md)
 
 ### Summary
 
-- Expanded the generic Go HTTP runner with chained prerequests, cookie sessions, template substitution, and richer extraction support.
-- Added sidecar request IDs to keep concurrent upload responses correlated.
-- Added Imgur request-building support for the shared sidecar workflow.
-- Updated Go security-sensitive dependencies and pinned strict Python audit tools.
-- Tightened release/security gates around `govulncheck`, gosec, `pip-audit`, and Bandit.
+- Added task-oriented empty, checks, activity, and completion states.
+- Improved queue readability with visible row actions, retry controls, and failed reasons.
+- Moved Worker Count and Thread Limit into Advanced App Settings.
+- Clamped worker counts to `1-16` and upload thread limits to `1-10`.
+- Kept the Windows `build_uploader.bat --ci` path verified for automated everyday-user builds.
 
 ## Release History
 
 | Version | Date | Focus | Notes |
 |---------|------|-------|-------|
+| v1.4.0 | 2026-06-20 | User Experience Polish & Safer Upload Controls | [Notes](RELEASE_NOTES_v1.4.0.md) |
 | v1.3.0 | 2026-06-02 | Protocol Hardening & Release Reliability | [Notes](RELEASE_NOTES_v1.3.0.md) |
 | v1.2.4 | 2026-05-20 | CI & Packaging Reliability | [Notes](RELEASE_NOTES_v1.2.4.md) |
 | v1.2.3 | 2026-01-31 | Gallery Logic Fix | See [CHANGELOG.md](../../CHANGELOG.md) |
@@ -34,11 +35,11 @@ Read the full notes: [RELEASE_NOTES_v1.3.0.md](RELEASE_NOTES_v1.3.0.md)
 
 ## Publishing
 
-The release workflow is tag-based. For v1.3.0, use:
+The release workflow is tag-based. For v1.4.0, use:
 
 ```bash
-git tag -a v1.3.0 -m "Release v1.3.0"
-git push origin v1.3.0
+git tag -a v1.4.0 -m "Release v1.4.0"
+git push origin v1.4.0
 ```
 
 See [RELEASE_PROCESS.md](RELEASE_PROCESS.md) for the full checklist.

@@ -23,7 +23,7 @@ Start here if you're new to the project:
 1. **[README.md](../README.md)** - Overview, features, installation, and quick start
 2. **[User Tutorial](guides/USER_TUTORIAL.md)** - Complete walkthrough of uploads, settings, galleries, templates, and output
 3. **[Build Troubleshooting](guides/BUILD_TROUBLESHOOTING.md)** - Common build issues and solutions
-4. **[Latest Release Notes](releases/RELEASE_NOTES_v1.2.4.md)** - Latest detailed release notes
+4. **[Latest Release Notes](releases/RELEASE_NOTES_v1.4.0.md)** - Latest detailed release notes
 
 ### For Contributors
 Development and contribution guides:
@@ -55,6 +55,7 @@ docs/
 │   └── USER_TUTORIAL.md
 ├── releases/                    # Release documentation
 │   ├── RELEASE_NOTES.md
+│   ├── RELEASE_NOTES_v1.4.0.md
 │   ├── RELEASE_NOTES_v1.3.0.md
 │   ├── RELEASE_NOTES_v1.2.4.md
 │   ├── RELEASE_NOTES_v1.2.2.md
@@ -120,7 +121,7 @@ Contribution guidelines:
 
 ### [CHANGELOG.md](../CHANGELOG.md) (22KB)
 Detailed version history:
-- All releases from v1.0.0 to v1.3.0
+- All releases from v1.0.0 to v1.4.0
 - Feature additions
 - Bug fixes
 - Breaking changes
@@ -172,8 +173,14 @@ Complete end-user walkthrough:
 
 ## 🚀 Release Documentation (docs/releases/)
 
+### [RELEASE_NOTES_v1.4.0.md](releases/RELEASE_NOTES_v1.4.0.md)
+Latest release - "User Experience Polish & Safer Upload Controls" (June 20, 2026):
+- Task-oriented empty queue, checks, activity, and completion states
+- Clearer queue rows with visible actions, retry controls, and failed reasons
+- Worker Count and Thread Limit grouped in Advanced App Settings with enforced ranges
+
 ### [RELEASE_NOTES_v1.3.0.md](releases/RELEASE_NOTES_v1.3.0.md)
-Latest release - "Protocol Hardening & Release Reliability" (June 2, 2026):
+"Protocol Hardening & Release Reliability" release (June 2, 2026):
 - Generic HTTP runner support for chained prerequests, cookie sessions, template substitution, and richer extraction
 - Sidecar request IDs that keep concurrent upload responses correlated
 - Security workflow hardening for Go and Python dependency scans
@@ -339,6 +346,6 @@ Archive of implementation notes, phase summaries, and technical analyses from th
 
 ---
 
-**Last Updated**: 2026-06-02
+**Last Updated**: 2026-06-20
 **Documentation Version**: 2.1
-**Project Version**: v1.3.0
+**Project Version**: v1.4.0

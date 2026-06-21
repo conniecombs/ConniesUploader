@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-**Product Version:** v1.3.0
+**Product Version:** v1.4.0
 **Architecture Version:** v2.5.0 (Protocol Hardening - Correlated Sidecar Workflows)
 
 **Status:** The application is now **fully refactored** with a plugin-driven architecture. The split-brain problem has been RESOLVED by making Go a "dumb HTTP runner" that executes requests defined by Python plugins. ALL services (stateless APIs and session-based) now use the generic HTTP runner!
