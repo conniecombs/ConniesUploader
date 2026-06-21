@@ -146,6 +146,7 @@ class TurboPlugin(ImageHostPlugin):
 
         # Build upload URL with query parameters
         upload_url = f"{base_endpoint}?upload_id={upload_id}&js_on=1&utype=reg&upload_type=file"
+        thumb_size = str(config.get("thumbnail_size") or config.get("turbo_thumb", "180"))
 
         # Check if credentials are provided
         has_credentials = bool(creds.get("turbo_user") and creds.get("turbo_pass"))
@@ -201,6 +202,7 @@ class TurboPlugin(ImageHostPlugin):
             "pre_request": pre_request_spec,
             "multipart_fields": {
                 "qqfile": {"type": "file", "value": file_path},
+                "thumb_size": {"type": "text", "value": thumb_size},
             },
             "response_parser": {
                 "type": "json",

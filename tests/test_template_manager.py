@@ -691,6 +691,38 @@ class TestTemplateManagerAdvanced:
             assert "thumb1" not in all_images_part
             assert "thumb2" not in all_images_part
 
+    def test_user_template_with_four_cover_images_renders_displayable_bbcode(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            templates_file = Path(temp_dir) / "templates.json"
+            mgr = TemplateManager(str(templates_file))
+
+            template = (
+                "[center][b]#batch_name#[/b]\n"
+                "#cover_image#\n"
+                "#cover_image#\n"
+                "#cover_image#\n"
+                "#cover_image#\n\n"
+                "#all_images#[/center]"
+            )
+            mgr.set_template("Four Covers", template)
+
+            images = [
+                ("viewer1", "thumb1", "direct1"),
+                ("viewer2", "thumb2", "direct2"),
+                ("viewer3", "thumb3", "direct3"),
+                ("viewer4", "thumb4", "direct4"),
+                ("viewer5", "thumb5", "direct5"),
+            ]
+
+            result = mgr.apply("Four Covers", {"batch_name": "Batch"}, images)
+
+            for index in range(1, 5):
+                assert f"[url=viewer{index}][img]thumb{index}[/img][/url]" in result
+            assert "[url=viewer5][img]thumb5[/img][/url]" in result
+            all_images_part = result.split("\n\n")[1]
+            for index in range(1, 5):
+                assert f"thumb{index}" not in all_images_part
+
     def test_process_conditionals(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             templates_file = Path(temp_dir) / "templates.json"
@@ -893,12 +925,25 @@ class TestTemplateManagerAdvanced:
 
     def test_placeholder_categories_cover_all_supported_hash_placeholders(self):
         categorized = {
-            value.strip("#")
+            match.group(1)
             for value in TemplateEditor.supported_placeholder_values()
-            if value.startswith("#") and value.endswith("#")
+            for match in TemplateManager.HASH_PLACEHOLDER_PATTERN.finditer(value)
         }
+        image_labels = {
+            label for label, _value in TemplateEditor.PLACEHOLDER_CATEGORIES["Images"]
+        }
+        cover_labels = [
+            label
+            for label, _value in TemplateEditor.PLACEHOLDER_CATEGORIES["Images"]
+            if "Cover" in label
+        ]
 
-        assert categorized == TemplateManager.ALLOWED_PLACEHOLDERS
+        assert categorized <= TemplateManager.ALLOWED_PLACEHOLDERS
+        assert "cover_image" in categorized
+        assert "cover_url" not in categorized
+        assert "Cover{s}" in image_labels
+        assert cover_labels == ["Cover{s}"]
+        assert "#cover_image#" in TemplateEditor.supported_placeholder_values()
 
     def test_direct_image_placeholders_resolve_when_used_in_template_body(self):
         with tempfile.TemporaryDirectory() as temp_dir:

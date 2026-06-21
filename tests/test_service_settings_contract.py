@@ -9,8 +9,9 @@ import pytest
 
 from modules.credentials_manager import CredentialsManager
 from modules.plugins.imgur import ImgurPlugin
+from modules.plugins.turbo import TurboPlugin
 from modules.settings_manager import SettingsManager
-from modules.upload_manager import UploadManager
+from modules.upload_manager import COVER_THUMBNAIL_OVERRIDES, UploadManager
 from modules.widgets import ServiceSettingsView
 
 
@@ -109,6 +110,48 @@ def test_upload_manager_uses_explicit_cover_files_before_legacy_count():
     assert sent_jobs[0][1]["pix_thumb"] == "500"
     assert sent_jobs[0][1]["thumbnail_size"] == "500"
     assert sent_jobs[1][0] == ["one.jpg", "two.jpg"]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("service_id", "expected"),
+    [
+        ("imx.to", {"thumbnail_size": "600", "imx_thumb": "600"}),
+        ("pixhost.to", {"thumbnail_size": "500", "pix_thumb": "500"}),
+        ("turboimagehost", {"thumbnail_size": "600", "turbo_thumb": "600"}),
+        ("vipr.im", {"thumbnail_size": "800x800", "vipr_thumb": "800x800"}),
+        ("imagebam.com", {"thumbnail_size": "300", "imagebam_thumb": "300"}),
+        ("imgur.com", {"thumbnail_size": "h", "imgur_thumb": "h"}),
+    ],
+)
+def test_cover_thumbnail_overrides_force_host_max_size(service_id, expected):
+    cfg = {
+        "service": service_id,
+        "thumbnail_size": "180",
+        "imx_thumb": "180",
+        "pix_thumb": "200",
+        "turbo_thumb": "180",
+        "vipr_thumb": "170x170",
+        "imagebam_thumb": "180",
+        "imgur_thumb": "m",
+    }
+
+    UploadManager._apply_cover_thumbnail_overrides(cfg)
+
+    for key, value in expected.items():
+        assert cfg[key] == value
+    assert COVER_THUMBNAIL_OVERRIDES[service_id] == expected
+
+
+@pytest.mark.unit
+def test_turbo_http_request_uses_schema_thumbnail_size():
+    request = TurboPlugin().build_http_request(
+        "image.jpg",
+        {"thumbnail_size": "600", "turbo_thumb": "180"},
+        {},
+    )
+
+    assert request["multipart_fields"]["thumb_size"]["value"] == "600"
 
 
 @pytest.mark.unit

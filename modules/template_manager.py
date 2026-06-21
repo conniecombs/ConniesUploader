@@ -60,6 +60,7 @@ class TemplateManager:
         "all_images",
         "all_full_images",
         "batch_name",
+        "cover_image",
         "cover_url",
         "direct_url",
         "gallery_id",
@@ -77,6 +78,7 @@ class TemplateManager:
     IMAGE_OUTPUT_MARKERS = (
         "#all_images#",
         "#all_full_images#",
+        "#cover_image#",
         "#cover_url#",
         "#image_url#",
         "#thumb_url#",
@@ -120,7 +122,7 @@ class TemplateManager:
             "Vipr Forum (Simple)": "[b]Gallery:[/b] [url=#gallery_link#]#gallery_name#[/url]\n\n#all_images#",
             "Reddit Markdown": "[📂 View Gallery](#gallery_link#)\n\n#all_images#",
             "HTML Page Wrapper": "<html>\n<body>\n<h3><a href='#gallery_link#'>View Gallery</a></h3>\n<hr>\n#all_images#\n</body>\n</html>",
-            "Cover + Gallery ID": "[center][img]#cover_url#[/img]\n\n[b]Gallery ID:[/b] #gallery_id#\n[url=#gallery_link#]Click to View Gallery[/url][/center]\n\n#all_images#",
+            "Cover + Gallery ID": "[center]#cover_image#\n\n[b]Gallery ID:[/b] #gallery_id#\n[url=#gallery_link#]Click to View Gallery[/url][/center]\n\n#all_images#",
             "ViperGirls Gallery Post": "[center][b]#batch_name#[/b]\n[if gallery_link][url=#gallery_link#]Open Gallery[/url]\n[/if][if thread_name][size=1]Target: #thread_name# (thread #thread_id#)[/size]\n[/if]\n#all_images#[/center]",
             "ViperGirls Compact Grid": "[center][for image separator=space][url=#image_url#][img]#thumb_url#[/img][/url][/for][/center]",
             "ViperGirls Full Image Post": "[center][b]#batch_name#[/b]\n\n[for image separator=blankline][img]#direct_url#[/img][/for]\n\n[if gallery_link][url=#gallery_link#]Gallery[/url][/if][/center]",
@@ -422,7 +424,7 @@ class TemplateManager:
         if not any(marker in template for marker in self.IMAGE_OUTPUT_MARKERS):
             errors.append(
                 "Template needs an image output placeholder such as #all_images#, "
-                "#all_full_images#, or #cover_url#."
+                "#all_full_images#, #cover_image#, or #cover_url#."
             )
 
         if errors and raise_on_error:
@@ -739,15 +741,17 @@ class TemplateManager:
         temp_data = data.copy()
         temp_data.setdefault("all_images", "dummy")
         temp_data.setdefault("all_full_images", "dummy")
+        temp_data.setdefault("cover_image", "dummy")
         active_template = self.process_conditionals(template, temp_data)
-        cover_count = active_template.count("#cover_url#")
+        cover_count = active_template.count("#cover_image#") + active_template.count("#cover_url#")
 
         covers_extracted = []
         if cover_count > 0:
             for img in images[:cover_count]:
                 viewer_url = img[0] if len(img) > 0 else ""
                 thumb_url = img[1] if len(img) > 1 else viewer_url
-                covers_extracted.append(thumb_url)
+                direct_url = img[2] if len(img) > 2 else viewer_url
+                covers_extracted.append((viewer_url, thumb_url, direct_url))
             remaining_images = images[cover_count:]
         else:
             remaining_images = images
@@ -786,13 +790,25 @@ class TemplateManager:
         covers_to_use = covers_extracted.copy()
 
         def cover_repl(match):
+            placeholder = match.group(0)
             if covers_to_use:
-                return covers_to_use.pop(0)
-            return data.get("cover_url", "")
+                viewer_url, thumb_url, direct_url = covers_to_use.pop(0)
+            else:
+                viewer_url = str(data.get("image_url", ""))
+                thumb_url = str(data.get("cover_url") or data.get("thumb_url", ""))
+                direct_url = str(data.get("direct_url", viewer_url))
 
-        content = re.sub(r"#cover_url#", cover_repl, content)
+            if placeholder == "#cover_image#":
+                image_data = dict(data)
+                image_data["image_url"] = viewer_url
+                image_data["thumb_url"] = thumb_url
+                image_data["direct_url"] = direct_url
+                return self._replace_placeholders(img_fmt, image_data)
+            return thumb_url
 
-        return self._replace_placeholders(content, data, skip_keys={"cover_url"})
+        content = re.sub(r"#cover_image#|#cover_url#", cover_repl, content)
+
+        return self._replace_placeholders(content, data, skip_keys={"cover_image", "cover_url"})
 
 
 class TemplateEditor(ctk.CTkToplevel):
@@ -800,7 +816,7 @@ class TemplateEditor(ctk.CTkToplevel):
         "Images": [
             ("All Images", "#all_images#"),
             ("Full Images", "#all_full_images#"),
-            ("Cover URL", "#cover_url#"),
+            ("Cover{s}", "#cover_image#"),
             ("Image URL", "#image_url#"),
             ("Thumb URL", "#thumb_url#"),
             ("Direct URL", "#direct_url#"),

@@ -27,6 +27,16 @@ SERVICE_THREAD_KEYS = {
 }
 
 
+COVER_THUMBNAIL_OVERRIDES = {
+    "imx.to": {"thumbnail_size": "600", "imx_thumb": "600"},
+    "pixhost.to": {"thumbnail_size": "500", "pix_thumb": "500"},
+    "turboimagehost": {"thumbnail_size": "600", "turbo_thumb": "600"},
+    "vipr.im": {"thumbnail_size": "800x800", "vipr_thumb": "800x800"},
+    "imagebam.com": {"thumbnail_size": "300", "imagebam_thumb": "300"},
+    "imgur.com": {"thumbnail_size": "h", "imgur_thumb": "h"},
+}
+
+
 class UploadManager:
     def __init__(
         self,
@@ -156,13 +166,7 @@ class UploadManager:
 
                 if covers:
                     cover_cfg = group_cfg.copy()
-                    cover_cfg["imx_thumb"] = "600"
-                    cover_cfg["pix_thumb"] = "500"
-                    cover_cfg["turbo_thumb"] = "600"
-                    cover_cfg["vipr_thumb"] = "800x800"
-                    cover_cfg["imagebam_thumb"] = "300"
-                    if "pix" in group_cfg.get("service", ""):
-                        cover_cfg["thumbnail_size"] = "500"
+                    self._apply_cover_thumbnail_overrides(cover_cfg)
                     self._send_job(covers, cover_cfg, creds)
 
                 if standards:
@@ -198,6 +202,14 @@ class UploadManager:
                 logger.debug(f"Could not get cover count for {service_id}: {exc}")
 
         return 0
+
+    @staticmethod
+    def _apply_cover_thumbnail_overrides(cfg: Dict[str, Any]) -> Dict[str, Any]:
+        """Force cover jobs to the largest exposed thumbnail size for the active host."""
+        service_id = str(cfg.get("service", ""))
+        overrides = COVER_THUMBNAIL_OVERRIDES.get(service_id, {})
+        cfg.update(overrides)
+        return cfg
 
     @staticmethod
     def _explicit_cover_files_for_group(group_obj: Any, files: List[str]) -> List[str] | None:

@@ -274,7 +274,8 @@ Custom templates are saved in `~/.conniesuploader/templates.json`. Existing `use
 | `#gallery_link#` | Gallery URL built from the selected or created gallery. |
 | `#gallery_name#` | Batch title. |
 | `#gallery_id#` | Gallery ID or hash. |
-| `#cover_url#` | Thumbnail URL of the first selected cover image, or the first successful upload when no cover is selected. |
+| `#cover_image#` | Clickable thumbnail block for the first selected cover image, or the first successful upload when no cover is selected. |
+| `#cover_url#` | Raw thumbnail URL of the first selected cover image, or the first successful upload when no cover is selected. |
 | `#thumb_size#` | Thumbnail size used for the selected service. |
 | `#image_count#` | Number of images in the generated batch output. |
 | `#batch_name#` | Batch title. |
@@ -283,7 +284,9 @@ Custom templates are saved in `~/.conniesuploader/templates.json`. Existing `use
 | `#thread_name#` | Selected ViperGirls target name in preview/posting contexts. |
 | `#thread_id#` | Selected ViperGirls thread ID in preview/posting contexts. |
 
-If a template contains one or more `#cover_url#` placeholders, the template engine uses selected cover thumbnails first and excludes those cover images from `#all_images#` so they are not duplicated.
+The raw `#cover_url#` placeholder is only a thumbnail URL. To display a clickable cover image in BBCode/ViperGirls posts, use `#cover_image#`. The Template Editor's `Images > Cover{s}` button inserts one clickable cover image slot each time you press it, so press it four times for four cover images.
+
+If a template contains one or more `#cover_image#` or `#cover_url#` placeholders, the template engine uses selected cover thumbnails first and excludes those cover images from `#all_images#` so they are not duplicated.
 
 ### Template Conditionals
 
