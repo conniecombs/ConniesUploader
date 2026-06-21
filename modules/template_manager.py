@@ -40,7 +40,7 @@ class TemplateValidationError(ValueError):
 
 class TemplateManager:
     TEMPLATE_TAG_PATTERN = re.compile(
-        r"\[(?P<tag>else|/if|/for|if(?:\s+[^\]]*)?|for\s+image(?:\s+[^\]]*)?)\]",
+        r"\[(?P<tag>else|/if|/for|if(?:\s+[^\]]*)?|for\s+(?:image|cover)(?:\s+[^\]]*)?)\]",
         re.IGNORECASE,
     )
     CONDITIONAL_START_PATTERN = re.compile(
@@ -50,17 +50,23 @@ class TemplateManager:
     CONDITIONAL_EXPRESSION_PATTERN = re.compile(
         r"^#?([A-Za-z_][A-Za-z0-9_]*)#?(?:\s*=\s*(.+))?$"
     )
-    LOOP_START_PATTERN = re.compile(r"^for\s+image(?:\s+(.+))?$", re.IGNORECASE)
+    LOOP_START_PATTERN = re.compile(r"^for\s+(image|cover)(?:\s+(.+))?$", re.IGNORECASE)
     LOOP_SEPARATOR_PATTERN = re.compile(
         r"(?:separator|sep)\s*=\s*(\"[^\"]*\"|'[^']*'|\S+)",
         re.IGNORECASE,
     )
     HASH_PLACEHOLDER_PATTERN = re.compile(r"#([A-Za-z_][A-Za-z0-9_]*)#")
+    HTML_TAG_PATTERN = re.compile(
+        r"<\s*/?\s*(?:a|b|body|br|center|div|em|font|h[1-6]|html|i|img|p|span|strong|table|td|tr|u)\b[^>]*>",
+        re.IGNORECASE,
+    )
     ALLOWED_PLACEHOLDERS = {
         "all_images",
         "all_full_images",
         "batch_name",
+        "cover_count",
         "cover_image",
+        "cover_images",
         "cover_url",
         "direct_url",
         "gallery_id",
@@ -79,6 +85,7 @@ class TemplateManager:
         "#all_images#",
         "#all_full_images#",
         "#cover_image#",
+        "#cover_images#",
         "#cover_url#",
         "#image_url#",
         "#thumb_url#",
@@ -111,6 +118,14 @@ class TemplateManager:
         "ViperGirls Compact Grid": "ViperGirls",
         "ViperGirls Full Image Post": "ViperGirls",
     }
+    OUTPUT_FORMAT_BY_CATEGORY = {
+        "BBCode": "BBCode",
+        "Forum": "BBCode",
+        "ViperGirls": "BBCode",
+        "Markdown": "Markdown",
+        "HTML": "HTML",
+        CUSTOM_CATEGORY: "BBCode",
+    }
 
     def __init__(self, filepath: Optional[str] = None) -> None:
         self.defaults = {
@@ -123,7 +138,7 @@ class TemplateManager:
             "Reddit Markdown": "[📂 View Gallery](#gallery_link#)\n\n#all_images#",
             "HTML Page Wrapper": "<html>\n<body>\n<h3><a href='#gallery_link#'>View Gallery</a></h3>\n<hr>\n#all_images#\n</body>\n</html>",
             "Cover + Gallery ID": "[center]#cover_image#\n\n[b]Gallery ID:[/b] #gallery_id#\n[url=#gallery_link#]Click to View Gallery[/url][/center]\n\n#all_images#",
-            "ViperGirls Gallery Post": "[center][b]#batch_name#[/b]\n[if gallery_link][url=#gallery_link#]Open Gallery[/url]\n[/if][if thread_name][size=1]Target: #thread_name# (thread #thread_id#)[/size]\n[/if]\n#all_images#[/center]",
+            "ViperGirls Gallery Post": "[center][b]#batch_name#[/b]\n[if gallery_link][url=#gallery_link#]Open Gallery[/url]\n[/if][if thread_name][size=1]Target: #thread_name# (thread #thread_id#)[/size]\n[/if]\n#cover_images#\n\n#all_images#[/center]",
             "ViperGirls Compact Grid": "[center][for image separator=space][url=#image_url#][img]#thumb_url#[/img][/url][/for][/center]",
             "ViperGirls Full Image Post": "[center][b]#batch_name#[/b]\n\n[for image separator=blankline][img]#direct_url#[/img][/for]\n\n[if gallery_link][url=#gallery_link#]Gallery[/url][/if][/center]",
         }
@@ -231,7 +246,7 @@ class TemplateManager:
         if not clean_name:
             raise TemplateValidationError(["Template name is required."])
         if validate:
-            self.validate_template(content, raise_on_error=True)
+            self.validate_template(content, raise_on_error=True, template_name=clean_name)
         self.templates[clean_name] = content
         self.save(validate=False)
 
@@ -255,7 +270,7 @@ class TemplateManager:
         if not clean_name:
             raise TemplateValidationError(["Template name is required."])
         template_content = self.templates[old_name] if content is None else content
-        self.validate_template(template_content, raise_on_error=True)
+        self.validate_template(template_content, raise_on_error=True, template_name=clean_name)
         updated = dict(self.templates)
         if clean_name != old_name:
             updated.pop(old_name, None)
@@ -268,6 +283,21 @@ class TemplateManager:
 
     def get_template_category(self, name: str) -> str:
         return self.BUILTIN_TEMPLATE_CATEGORIES.get(name, self.CUSTOM_CATEGORY)
+
+    def resolve_output_format(self, name: str) -> str:
+        category = self.get_template_category(name)
+        return self.OUTPUT_FORMAT_BY_CATEGORY.get(category, "BBCode")
+
+    def template_warnings(self, name: str, content: str) -> List[str]:
+        warnings: List[str] = []
+        category = self.get_template_category(name)
+        if self.resolve_output_format(name) == "BBCode" and category in {"BBCode", "Forum", "ViperGirls"}:
+            if self.HTML_TAG_PATTERN.search(str(content or "")):
+                warnings.append(
+                    "This template is treated as BBCode, but it contains HTML tags. "
+                    "ViperGirls/forum posts should use BBCode tags such as [b], [url], and [img]."
+                )
+        return warnings
 
     def get_category_names(self, include_all: bool = True) -> List[str]:
         present = {
@@ -370,7 +400,7 @@ class TemplateManager:
                 skipped += 1
                 continue
 
-            template_errors = self.validate_template(content)
+            template_errors = self.validate_template(content, template_name=name)
             if template_errors:
                 skipped += 1
                 errors.extend(f"{name}: {error}" for error in template_errors)
@@ -387,7 +417,7 @@ class TemplateManager:
         errors = {
             name: template_errors
             for name, content in self.templates.items()
-            for template_errors in [self.validate_template(content)]
+            for template_errors in [self.validate_template(content, template_name=name)]
             if template_errors
         }
         if errors and raise_on_error:
@@ -399,7 +429,12 @@ class TemplateManager:
             raise TemplateValidationError(flat_errors)
         return errors
 
-    def validate_template(self, content: str, raise_on_error: bool = False) -> List[str]:
+    def validate_template(
+        self,
+        content: str,
+        raise_on_error: bool = False,
+        template_name: Optional[str] = None,
+    ) -> List[str]:
         template = str(content or "")
         errors = []
 
@@ -424,7 +459,7 @@ class TemplateManager:
         if not any(marker in template for marker in self.IMAGE_OUTPUT_MARKERS):
             errors.append(
                 "Template needs an image output placeholder such as #all_images#, "
-                "#all_full_images#, #cover_image#, or #cover_url#."
+                "#all_full_images#, #cover_images#, #cover_image#, or #cover_url#."
             )
 
         if errors and raise_on_error:
@@ -465,13 +500,14 @@ class TemplateManager:
                     stack.pop()
                 continue
 
-            if kind == "for_start":
-                stack.append({"kind": "for", "tag": match.group(0)})
+            if kind in {"for_image_start", "for_cover_start"}:
+                loop_name = "image" if kind == "for_image_start" else "cover"
+                stack.append({"kind": "for", "tag": match.group(0), "loop_name": loop_name})
                 continue
 
             if kind == "for_end":
                 if not stack or stack[-1]["kind"] != "for":
-                    errors.append("Template has a closing [/for] without a matching [for image].")
+                    errors.append("Template has a closing [/for] without a matching [for image] or [for cover].")
                 else:
                     stack.pop()
 
@@ -479,7 +515,8 @@ class TemplateManager:
             if entry["kind"] == "if":
                 errors.append("Template has an unclosed [if] block.")
             elif entry["kind"] == "for":
-                errors.append("Template has an unclosed [for image] block.")
+                loop_name = entry.get("loop_name", "image")
+                errors.append(f"Template has an unclosed [for {loop_name}] block.")
 
         return errors, conditional_names
 
@@ -521,8 +558,10 @@ class TemplateManager:
             return "for_end"
         if self.CONDITIONAL_START_PATTERN.fullmatch(tag):
             return "if_start"
-        if self.LOOP_START_PATTERN.fullmatch(tag):
-            return "for_start"
+        loop_match = self.LOOP_START_PATTERN.fullmatch(tag)
+        if loop_match:
+            loop_name = str(loop_match.group(1) or "").lower()
+            return "for_cover_start" if loop_name == "cover" else "for_image_start"
         return "text"
 
     def _parse_condition_tag(self, raw_tag: str) -> Tuple[str, Optional[str], bool]:
@@ -553,7 +592,7 @@ class TemplateManager:
 
     def _loop_separator_from_tag(self, raw_tag: str) -> str:
         match = self.LOOP_START_PATTERN.fullmatch(raw_tag.strip())
-        attrs = str(match.group(1) or "") if match else ""
+        attrs = str(match.group(2) or "") if match else ""
         sep_match = self.LOOP_SEPARATOR_PATTERN.search(attrs)
         value = self._clean_separator_value(sep_match.group(1)) if sep_match else "newline"
         normalized = value.strip().lower().replace("_", "").replace("-", "").replace(" ", "")
@@ -644,14 +683,15 @@ class TemplateManager:
                 position = next_position
                 continue
 
-            if kind == "for_start":
+            if kind in {"for_image_start", "for_cover_start"}:
                 separator = self._loop_separator_from_tag(raw_tag)
                 body_nodes, next_position, _stop_kind = self._parse_nodes(
                     template_content,
                     match.end(),
                     {"for_end"},
                 )
-                nodes.append(("for_image", separator, body_nodes))
+                node_kind = "for_cover" if kind == "for_cover_start" else "for_image"
+                nodes.append((node_kind, separator, body_nodes))
                 position = next_position
                 continue
 
@@ -675,12 +715,49 @@ class TemplateManager:
             content = content.replace(f"#{key}#", str(value))
         return content
 
+    @staticmethod
+    def _safe_nonnegative_int(value: Any, default: int = 0) -> int:
+        try:
+            return max(0, int(value))
+        except (TypeError, ValueError):
+            return default
+
+    def _cover_requirements_from_nodes(
+        self,
+        nodes: List[Tuple[Any, ...]],
+        data: Dict[str, Any],
+    ) -> Tuple[int, bool]:
+        cover_slots = 0
+        uses_auto_covers = False
+        for node in nodes:
+            kind = node[0]
+            if kind == "text":
+                text = str(node[1])
+                cover_slots += text.count("#cover_image#") + text.count("#cover_url#")
+                if "#cover_images#" in text:
+                    uses_auto_covers = True
+            elif kind == "if":
+                _kind, name, expected, true_nodes, false_nodes = node
+                selected_nodes = (
+                    true_nodes
+                    if self._condition_matches(name, expected, data)
+                    else false_nodes
+                )
+                child_slots, child_auto = self._cover_requirements_from_nodes(selected_nodes, data)
+                cover_slots += child_slots
+                uses_auto_covers = uses_auto_covers or child_auto
+            elif kind == "for_cover":
+                uses_auto_covers = True
+        return cover_slots, uses_auto_covers
+
     def _render_nodes(
         self,
         nodes: List[Tuple[Any, ...]],
         data: Dict[str, Any],
         images: List[Tuple[str, str, str]],
+        cover_images: Optional[List[Tuple[str, str, str]]] = None,
     ) -> str:
+        cover_images = cover_images or []
         rendered: List[str] = []
         for node in nodes:
             kind = node[0]
@@ -693,13 +770,21 @@ class TemplateManager:
                     if self._condition_matches(name, expected, data)
                     else false_nodes
                 )
-                rendered.append(self._render_nodes(selected_nodes, data, images))
+                rendered.append(self._render_nodes(selected_nodes, data, images, cover_images))
             elif kind == "for_image":
                 _kind, separator, body_nodes = node
                 blocks = []
                 for image in images:
                     image_data = self._image_context(data, image)
-                    block = self._render_nodes(body_nodes, image_data, images)
+                    block = self._render_nodes(body_nodes, image_data, images, cover_images)
+                    blocks.append(self._replace_placeholders(block, image_data))
+                rendered.append(separator.join(blocks))
+            elif kind == "for_cover":
+                _kind, separator, body_nodes = node
+                blocks = []
+                for image in cover_images:
+                    image_data = self._image_context(data, image)
+                    block = self._render_nodes(body_nodes, image_data, images, cover_images)
                     blocks.append(self._replace_placeholders(block, image_data))
                 rendered.append(separator.join(blocks))
         return "".join(rendered)
@@ -709,8 +794,14 @@ class TemplateManager:
         template_content: str,
         data: Dict[str, Any],
         images: List[Tuple[str, str, str]],
+        cover_images: Optional[List[Tuple[str, str, str]]] = None,
     ) -> str:
-        return self._render_nodes(self._parse_template_nodes(template_content), data, images)
+        return self._render_nodes(
+            self._parse_template_nodes(template_content),
+            data,
+            images,
+            cover_images,
+        )
 
     def process_conditionals(self, template_content: str, data: Dict[str, Any]) -> str:
         return self._render_template(template_content, data, [])
@@ -721,6 +812,8 @@ class TemplateManager:
 
     def apply(self, format_mode: str, data: Dict[str, Any], images: List[Tuple[str, str, str]]) -> str:
         template = self.get_template(format_mode)
+        output_format = self.resolve_output_format(format_mode)
+        nodes = self._parse_template_nodes(template)
         data = dict(data)
         if images:
             first_image = images[0]
@@ -736,34 +829,25 @@ class TemplateManager:
         data.setdefault("direct_url", first_direct)
         data.setdefault("image_count", len(images))
 
-        # Pre-process conditionals with dummy values for yet-to-be-populated keys
-        # to accurately determine the active cover count.
         temp_data = data.copy()
         temp_data.setdefault("all_images", "dummy")
         temp_data.setdefault("all_full_images", "dummy")
         temp_data.setdefault("cover_image", "dummy")
-        active_template = self.process_conditionals(template, temp_data)
-        cover_count = active_template.count("#cover_image#") + active_template.count("#cover_url#")
+        temp_data.setdefault("cover_images", "dummy")
+        temp_data.setdefault("cover_url", "dummy")
+        cover_slots, uses_auto_covers = self._cover_requirements_from_nodes(nodes, temp_data)
+        selected_cover_count = self._safe_nonnegative_int(data.get("cover_count"), 0)
+        cover_count = max(cover_slots, selected_cover_count if uses_auto_covers else 0)
+        cover_count = min(cover_count, len(images))
 
-        covers_extracted = []
-        if cover_count > 0:
-            for img in images[:cover_count]:
-                viewer_url = img[0] if len(img) > 0 else ""
-                thumb_url = img[1] if len(img) > 1 else viewer_url
-                direct_url = img[2] if len(img) > 2 else viewer_url
-                covers_extracted.append((viewer_url, thumb_url, direct_url))
-            remaining_images = images[cover_count:]
-        else:
-            remaining_images = images
+        covers_extracted = [self._image_values(img) for img in images[:cover_count]]
+        remaining_images = images[cover_count:] if cover_count > 0 else images
 
         filtered_images = []
         for img in remaining_images:
-            viewer_url = img[0] if len(img) > 0 else ""
-            thumb_url = img[1] if len(img) > 1 else viewer_url
-            direct_url = img[2] if len(img) > 2 else viewer_url
-            filtered_images.append((viewer_url, thumb_url, direct_url))
+            filtered_images.append(self._image_values(img))
 
-        img_fmt = self.image_formats.get(format_mode, self.image_formats["BBCode"])
+        img_fmt = self.image_formats.get(output_format, self.image_formats["BBCode"])
         processed_images = []
         for v_url, t_url, d_url in filtered_images:
             item_str = img_fmt
@@ -774,7 +858,7 @@ class TemplateManager:
             processed_images.append(self._replace_placeholders(item_str, image_data))
         data["all_images"] = " ".join(processed_images)
 
-        full_fmt = self.full_image_formats.get(format_mode, self.full_image_formats["BBCode"])
+        full_fmt = self.full_image_formats.get(output_format, self.full_image_formats["BBCode"])
         processed_full = []
         for _, t_url, d_url in filtered_images:
             item_str = full_fmt
@@ -784,8 +868,21 @@ class TemplateManager:
             image_data["direct_url"] = d_url
             processed_full.append(self._replace_placeholders(item_str, image_data))
         data["all_full_images"] = " ".join(processed_full)
+        data["cover_count"] = len(covers_extracted)
+        data["cover_images"] = "\n".join(
+            self._replace_placeholders(
+                img_fmt,
+                {
+                    **data,
+                    "image_url": viewer_url,
+                    "thumb_url": thumb_url,
+                    "direct_url": direct_url,
+                },
+            )
+            for viewer_url, thumb_url, direct_url in covers_extracted
+        )
 
-        content = self._render_template(template, data, filtered_images)
+        content = self._render_nodes(nodes, data, filtered_images, covers_extracted)
 
         covers_to_use = covers_extracted.copy()
 
@@ -816,12 +913,15 @@ class TemplateEditor(ctk.CTkToplevel):
         "Images": [
             ("All Images", "#all_images#"),
             ("Full Images", "#all_full_images#"),
+            ("All Covers", "#cover_images#"),
             ("Cover{s}", "#cover_image#"),
+            ("Cover Count", "#cover_count#"),
             ("Image URL", "#image_url#"),
             ("Thumb URL", "#thumb_url#"),
             ("Direct URL", "#direct_url#"),
             ("Thumb Size", "#thumb_size#"),
             ("Image Count", "#image_count#"),
+            ("Cover Loop", "[for cover separator=newline]\n[url=#image_url#][img]#thumb_url#[/img][/url]\n[/for]"),
             ("Loop: Newline", "[for image separator=newline]\n[url=#image_url#][img]#thumb_url#[/img][/url]\n[/for]"),
             ("Loop: Blank Line", "[for image separator=blankline]\n[url=#image_url#][img]#thumb_url#[/img][/url]\n[/for]"),
             ("Loop: Space", "[for image separator=space][url=#image_url#][img]#thumb_url#[/img][/url][/for]"),
@@ -966,7 +1066,7 @@ class TemplateEditor(ctk.CTkToplevel):
         self.load_curr()
 
     def get_tags(self, mode, value=None):
-        fmt = self.fmt.get()
+        fmt = self.mgr.resolve_output_format(self.fmt.get())
         if mode == "Bold":
             return ("[b]", "[/b]") if fmt == "BBCode" else (("**", "**") if fmt == "Markdown" else ("<b>", "</b>"))
         if mode == "Italic":
@@ -1097,6 +1197,17 @@ class TemplateEditor(ctk.CTkToplevel):
             return
         messagebox.showerror(title, str(exc))
 
+    def _confirm_template_warnings(self, name: str, content: str) -> bool:
+        warnings = self.mgr.template_warnings(name, content)
+        if not warnings:
+            return True
+        return messagebox.askyesno(
+            "Template Warning",
+            "Review this template before saving:\n\n"
+            + "\n".join(warnings)
+            + "\n\nSave anyway?",
+        )
+
     def _load_template_content(self, name: str) -> None:
         self.txt.delete("0.0", "end")
         content = self.mgr.get_template(name)
@@ -1123,6 +1234,8 @@ class TemplateEditor(ctk.CTkToplevel):
     def save(self, show_success: bool = True) -> bool:
         name = self.fmt.get().strip()
         content = self._editor_content()
+        if not self._confirm_template_warnings(name, content):
+            return False
         try:
             self.mgr.set_template(name, content)
         except (TemplateValidationError, OSError) as exc:
@@ -1149,8 +1262,11 @@ class TemplateEditor(ctk.CTkToplevel):
             f"Replace existing template '{clean_name}'?",
         ):
             return
+        content = self._editor_content()
+        if not self._confirm_template_warnings(clean_name, content):
+            return
         try:
-            self.mgr.set_template(clean_name, self._editor_content())
+            self.mgr.set_template(clean_name, content)
         except (TemplateValidationError, OSError) as exc:
             self._show_validation_errors("Template Not Saved", exc)
             return
@@ -1171,8 +1287,11 @@ class TemplateEditor(ctk.CTkToplevel):
             f"Replace existing template '{clean_name}'?",
         ):
             return
+        content = self._editor_content()
+        if not self._confirm_template_warnings(clean_name, content):
+            return
         try:
-            self.mgr.set_template(clean_name, self._editor_content())
+            self.mgr.set_template(clean_name, content)
         except (TemplateValidationError, OSError) as exc:
             self._show_validation_errors("Duplicate Failed", exc)
             return
@@ -1193,8 +1312,11 @@ class TemplateEditor(ctk.CTkToplevel):
             f"Replace existing template '{clean_name}'?",
         ):
             return
+        content = self._editor_content()
+        if not self._confirm_template_warnings(clean_name, content):
+            return
         try:
-            self.mgr.rename_template(old_name, clean_name, self._editor_content())
+            self.mgr.rename_template(old_name, clean_name, content)
         except (TemplateValidationError, OSError, KeyError) as exc:
             self._show_validation_errors("Rename Failed", exc)
             return
@@ -1345,10 +1467,19 @@ class TemplateEditor(ctk.CTkToplevel):
             return None
 
         try:
-            files, title, size = self.data_callback()
+            preview_data = self.data_callback()
         except Exception as exc:
             messagebox.showerror("Preview Unavailable", f"Could not prepare preview data:\n{exc}")
             return None
+
+        cover_count = 0
+        if preview_data:
+            if len(preview_data) >= 4:
+                files, title, size, cover_count = preview_data[:4]
+            else:
+                files, title, size = preview_data[:3]
+        else:
+            files, title, size = None, None, None
 
         if not files:
             messagebox.showwarning(
@@ -1365,6 +1496,7 @@ class TemplateEditor(ctk.CTkToplevel):
             mock.append((path_url, path_url, path_url))
 
         curr_fmt = self.fmt.get()
+        output_fmt = self.mgr.resolve_output_format(curr_fmt)
         existed = curr_fmt in self.mgr.templates
         orig = self.mgr.templates.get(curr_fmt)
         self.mgr.templates[curr_fmt] = content
@@ -1374,6 +1506,7 @@ class TemplateEditor(ctk.CTkToplevel):
             "gallery_name": title,
             "gallery_id": "PREV_123",
             "cover_url": mock[0][1] if mock else "",
+            "cover_count": self.mgr._safe_nonnegative_int(cover_count, 0),
             "image_count": len(mock),
             "service": "preview",
             "thread_name": "Preview Thread",
@@ -1387,7 +1520,7 @@ class TemplateEditor(ctk.CTkToplevel):
                 self.mgr.templates[curr_fmt] = orig
             else:
                 self.mgr.templates.pop(curr_fmt, None)
-        return raw, curr_fmt, str(size)
+        return raw, output_fmt, str(size)
 
     @staticmethod
     def build_preview_html(raw: str, curr_fmt: str, size: str) -> str:

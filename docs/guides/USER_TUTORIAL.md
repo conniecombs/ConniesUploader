@@ -4,6 +4,52 @@ This tutorial walks through Connie's Uploader Ultimate from first launch through
 
 The program is a desktop image uploader. You add image files or folders, choose an image host, adjust service settings, start the upload, and receive formatted output text such as BBCode, Markdown, HTML, or a custom template.
 
+If you are new, do not start by changing every setting. Use the first example below exactly once, confirm output is created, then adjust settings for your real workflow.
+
+## Start Here: Safest First Upload
+
+This example avoids credentials, galleries, and forum posting. It proves the app, sidecar, queue, upload host, template engine, and output folder are working.
+
+1. Open Connie's Uploader.
+2. Set `Select Image Host` to `pixhost.to`.
+3. Leave `One Gallery Per Folder` off.
+4. Leave ViperGirls thread dropdowns at `Do Not Post`.
+5. Set `Worker Count` to `1`.
+6. Add 2 or 3 small `.jpg` or `.png` files with `File > Add Files`.
+7. Leave the batch template as `BBCode`.
+8. Click `Start Upload`.
+9. When the upload finishes, click `Open Output Folder`.
+10. Open the generated `.txt` file and confirm it contains links that look like this:
+
+```bbcode
+[url=https://...][img]https://...[/img][/url]
+```
+
+If this works, the basic app is working. After that, move to folders, galleries, covers, or ViperGirls posting.
+
+### What Not To Touch On A First Test
+
+Leave these alone until a simple upload works:
+
+- Gallery IDs or gallery hashes.
+- ViperGirls posting targets.
+- Custom templates.
+- High worker counts.
+- `One Gallery Per Folder`.
+- Existing account-only gallery features.
+
+### Basic Terms
+
+| Term | Meaning |
+| --- | --- |
+| Batch | A group of images uploaded together. A folder usually becomes one batch. |
+| Host | The image site, such as `pixhost.to`, `imx.to`, or `vipr.im`. |
+| Template | The text layout generated after upload, such as BBCode for forums. |
+| Cover | One or more images shown first/larger in template output. Covers are not duplicated in `#all_images#`. |
+| Gallery | A host-side album/folder, when the selected image host supports it. |
+| Sidecar | The bundled Go uploader process that performs the upload work. |
+| Output | The final generated text file saved in `Output/`. |
+
 ## Main Window
 
 ![Main dashboard](../assets/screenshots/tutorial-main-dashboard.png)
@@ -17,15 +63,81 @@ The bottom status text shows the current state, such as `Ready...`, `Processing.
 
 ## Basic Upload Workflow
 
-1. Open the program.
-2. Set any needed credentials from `Tools > Set Credentials`.
-3. Choose an image host from `Select Image Host`.
-4. Add files with `File > Add Files`, add a folder with `File > Add Folder`, or drag files/folders into the app.
-5. Review the generated batch groups in the upload queue.
-6. Choose a template for each batch if you do not want the default.
-7. Choose a ViperGirls thread for each batch only if you want automatic posting.
+Use this checklist for every upload.
+
+### Before You Click Start
+
+1. Choose the image host.
+2. Confirm credentials if the host needs them.
+3. Add files or folders.
+4. Confirm each batch has the right files.
+5. Reorder images if the output order matters.
+6. Mark covers if you want cover images.
+7. Choose the template for each batch.
+8. Choose a ViperGirls target only if you want automatic posting.
+9. Check `Worker Count`. Use `1` for testing, `4-8` for normal use.
+10. Read Upload Checks if the app shows them.
+
+### During Upload
+
+Watch the row status labels:
+
+| Status | Meaning |
+| --- | --- |
+| `Wait` | The file has not started yet. |
+| `Uploading` | The sidecar is currently uploading that file. |
+| `Done` | The host returned a usable upload result. |
+| `Failed` | The host or app returned an error for that file. |
+| `Timeout` | The upload took too long or stopped responding. |
+
+If one file fails, let the batch finish. Use `Retry Failed` afterward.
+
+### After Upload
+
+1. Open `Output/`.
+2. Open the newest `.txt` file for the batch.
+3. Copy the generated text if auto-copy was off.
+4. Paste it wherever you need it, such as a forum post editor.
+5. If anything failed, use `Retry Failed` before clearing the queue.
+
+### Example: Upload One Folder To Pixhost
+
+Use this when you have one folder named `Example Set` with 10 images.
+
+1. Select `pixhost.to`.
+2. Set `Content` to the correct value, usually `Safe` or `Adult`.
+3. Set `Thumb Size` to `250`.
+4. Set `Auto Covers` to `0` if you do not need covers.
+5. Click `File > Add Folder`.
+6. Choose the `Example Set` folder.
+7. Confirm one batch appears named `Example Set`.
+8. Set the batch template to `BBCode`.
+9. Leave the thread dropdown at `Do Not Post`.
+10. Click `Start Upload`.
+
+Expected result:
+
+- One output file appears in `Output/`.
+- The output file contains clickable BBCode thumbnails.
+- No ViperGirls post is created.
+
+### Example: Upload Several Folders As Separate Batches
+
+Use this when you have folders like `Set 01`, `Set 02`, and `Set 03`.
+
+1. Select the host.
+2. Turn on `One Gallery Per Folder` only if the host supports galleries and you want one gallery for each folder.
+3. Click `File > Add Folder`.
+4. Choose the parent folder that contains `Set 01`, `Set 02`, and `Set 03`.
+5. If the app asks how to scan, choose the option that adds immediate subfolders as batches.
+6. Confirm each folder appears as its own batch.
+7. Choose a template per batch.
 8. Click `Start Upload`.
-9. When complete, open the generated text files from `Output/` or use `Open Output Folder`.
+
+Expected result:
+
+- Each folder gets its own output `.txt` file.
+- If gallery creation was enabled and supported, each folder gets its own gallery.
 
 ## Adding Files And Folders
 
@@ -74,6 +186,49 @@ Queue actions:
 - `Retry Failed` resets failed files to pending and starts another upload pass.
 - `Clear List` removes all batches, queued files, generated progress, and current output references.
 
+### Example: Reorder Images Before Upload
+
+Use this when the forum post should show images in a specific order.
+
+1. Add your folder or files.
+2. Expand the batch if it is collapsed.
+3. Drag image rows up or down until the order is correct.
+4. If you need to move several files together, select them first with `Ctrl+click` or `Shift+click`.
+5. Drag the selected files to the new position.
+6. Start the upload.
+
+The output follows the queue order. If cover images are selected, covers are placed first for upload/output handling and are excluded from `#all_images#` when the template uses cover placeholders.
+
+### Example: Use Multiple Cover Images
+
+Use this when you want 1, 2, 4, or more larger/featured images at the top of a post.
+
+1. Add a batch.
+2. Click `Set Cover` on each image that should be a cover.
+3. Make sure the selected covers are the images you want featured.
+4. Use a template that contains `#cover_images#`.
+5. Start the upload.
+
+Recommended template:
+
+```bbcode
+[center][b]#batch_name#[/b]
+
+#cover_images#
+
+#all_images#[/center]
+```
+
+What happens:
+
+- If you select 1 cover, one cover appears.
+- If you select 4 covers, four covers appear.
+- If you select no covers, the cover section is empty.
+- Cover images are not repeated in `#all_images#`.
+- Cover uploads use the largest supported cover thumbnail size for the selected host.
+
+Use repeated `#cover_image#` only when you need a fixed number of cover slots. For most users, `#cover_images#` is easier.
+
 ## Main Settings
 
 These settings appear at the top of the left panel.
@@ -93,6 +248,20 @@ These settings appear at the top of the left panel.
 ## Service Settings
 
 The service settings panel changes when you choose a host from `Select Image Host`.
+
+### Which Host Should I Pick?
+
+Use this as a starting point:
+
+| Goal | Suggested host | Why |
+| --- | --- | --- |
+| First test with no login | `pixhost.to` | No credentials required and simple settings. |
+| Forum thumbnails with galleries | `pixhost.to`, `imx.to`, or `vipr.im` | These have gallery-related workflows in the app. |
+| Largest cover thumbnails | `vipr.im` or `turboimagehost` | Current cover settings expose larger cover thumbnail sizes. |
+| Account-based Vipr gallery workflow | `vipr.im` | Requires saved Vipr credentials. |
+| Imgur testing | `imgur.com` | Available through plugin metadata, but use a small test batch first. |
+
+If you are not sure, start with `pixhost.to`, upload 2 files, and check the output.
 
 ### `imx.to`
 
@@ -184,6 +353,22 @@ Credential tabs:
 
 Use `Save All` to store all fields. Use `Cancel` to close without saving changes.
 
+### Credential Examples
+
+Use these examples to decide what to fill in:
+
+| Workflow | Credentials needed |
+| --- | --- |
+| Pixhost upload only | None. |
+| IMX upload only | IMX API key. |
+| IMX gallery listing or gallery creation | IMX username and password, plus API key for uploads. |
+| Vipr upload or gallery refresh | Vipr username and password. |
+| ViperGirls automatic posting | ViperGirls username and password. |
+| TurboImageHost account upload | Turbo username and password. |
+| ImageBam account upload | ImageBam email/user and password. |
+
+If a feature says credentials are missing after you saved them, close and reopen the app once, then try again.
+
 ## Gallery Manager
 
 ![Gallery manager](../assets/screenshots/gallery-manager.png)
@@ -205,6 +390,38 @@ Controls:
 
 Use Gallery Manager when you want to attach a batch to an existing gallery or create a gallery before uploading.
 
+### Example: Attach Uploads To An Existing Gallery
+
+Use this when the gallery already exists on the image host.
+
+1. Open `Tools > Manage Galleries`.
+2. Choose the service, such as `imx.to`, `pixhost.to`, or `vipr.im`.
+3. Click `Refresh`.
+4. Select the gallery from `Your Galleries`.
+5. Click `Select`.
+6. Confirm the gallery ID/hash appears in the service settings panel.
+7. Add files and upload.
+
+Expected result:
+
+- Uploaded images are attached to that selected gallery when the service supports it.
+- The generated template can use `#gallery_link#`, `#gallery_name#`, and `#gallery_id#`.
+
+### Example: One Gallery Per Folder
+
+Use this when each folder should become its own gallery.
+
+1. Enable `One Gallery Per Folder`.
+2. Choose a gallery-capable host.
+3. Make sure any required credentials are saved.
+4. Add folders, not loose individual files.
+5. Start the upload.
+
+Expected result:
+
+- Each batch/folder gets a separate gallery when the host supports automatic gallery creation.
+- The generated output for each batch uses that batch's gallery details.
+
 ## Template Editor
 
 ![Template editor](../assets/screenshots/tutorial-template-editor.png)
@@ -212,6 +429,40 @@ Use Gallery Manager when you want to attach a batch to an existing gallery or cr
 Open it with `Tools > Template Editor`.
 
 Templates control the text files generated after upload. Each batch can choose a template from its batch header dropdown.
+
+### Do You Need To Edit Templates?
+
+Probably not at first.
+
+Use a built-in template when:
+
+- You only need normal BBCode thumbnails.
+- You are posting to ViperGirls with a normal gallery post.
+- You are not sure what placeholders mean yet.
+
+Edit or create a template when:
+
+- You want cover images at the top.
+- You want a specific title, spacing, or gallery link.
+- You want full-size images instead of thumbnails.
+- You want Markdown or HTML output.
+- You want a custom ViperGirls post layout.
+
+Safe beginner choice:
+
+```text
+ViperGirls Gallery Post
+```
+
+Safe custom starter:
+
+```bbcode
+[center][b]#batch_name#[/b]
+
+#cover_images#
+
+#all_images#[/center]
+```
 
 ### Template Editor Controls
 
@@ -274,8 +525,10 @@ Custom templates are saved in `~/.conniesuploader/templates.json`. Existing `use
 | `#gallery_link#` | Gallery URL built from the selected or created gallery. |
 | `#gallery_name#` | Batch title. |
 | `#gallery_id#` | Gallery ID or hash. |
+| `#cover_images#` | All selected cover images rendered as clickable image blocks. The number of covers follows the batch's selected cover count. |
 | `#cover_image#` | Clickable thumbnail block for the first selected cover image, or the first successful upload when no cover is selected. |
 | `#cover_url#` | Raw thumbnail URL of the first selected cover image, or the first successful upload when no cover is selected. |
+| `#cover_count#` | Number of selected cover images used by automatic cover placeholders and cover loops. |
 | `#thumb_size#` | Thumbnail size used for the selected service. |
 | `#image_count#` | Number of images in the generated batch output. |
 | `#batch_name#` | Batch title. |
@@ -284,9 +537,13 @@ Custom templates are saved in `~/.conniesuploader/templates.json`. Existing `use
 | `#thread_name#` | Selected ViperGirls target name in preview/posting contexts. |
 | `#thread_id#` | Selected ViperGirls thread ID in preview/posting contexts. |
 
-The raw `#cover_url#` placeholder is only a thumbnail URL. To display a clickable cover image in BBCode/ViperGirls posts, use `#cover_image#`. The Template Editor's `Images > Cover{s}` button inserts one clickable cover image slot each time you press it, so press it four times for four cover images.
+The easiest cover placeholder is `#cover_images#`. It renders exactly the selected covers for the batch, so users do not need to edit the template when a post has one cover, four covers, or no covers.
 
-If a template contains one or more `#cover_image#` or `#cover_url#` placeholders, the template engine uses selected cover thumbnails first and excludes those cover images from `#all_images#` so they are not duplicated.
+The raw `#cover_url#` placeholder is only a thumbnail URL. To display one clickable cover image in BBCode/ViperGirls posts, use `#cover_image#`. The Template Editor's `Images > Cover{s}` button inserts one fixed cover slot each time you press it; this remains available for templates that need an exact number of cover positions.
+
+If a template contains `#cover_images#`, `[for cover]`, `#cover_image#`, or `#cover_url#`, the template engine uses selected cover thumbnails first and excludes those cover images from `#all_images#` so they are not duplicated.
+
+ViperGirls and forum templates are treated as BBCode templates by the editor toolbar, even when their saved template names are not literally `BBCode`. HTML templates still insert HTML tags.
 
 ### Template Conditionals
 
@@ -335,6 +592,16 @@ Use `[for image]...[/for]` when you want full control over each image instead of
 
 Inside an image loop, `#image_url#`, `#thumb_url#`, and `#direct_url#` refer to the current image. Other placeholders such as `#batch_name#`, `#service#`, `#thread_name#`, and `#thread_id#` remain available.
 
+Use `[for cover]...[/for]` when you want the same control for selected cover images:
+
+```text
+[for cover separator=blankline]
+[url=#image_url#][img]#thumb_url#[/img][/url]
+[/for]
+```
+
+Inside a cover loop, image placeholders refer to the current cover image. The loop runs once for each selected cover.
+
 Supported separators:
 
 | Separator | Output between image blocks |
@@ -352,6 +619,118 @@ Conditionals also work inside loops:
 [if direct_url][img]#direct_url#[/img][else][url=#image_url#]#image_url#[/url][/if]
 [/for]
 ```
+
+### Copy-Paste Template Examples
+
+These examples can be pasted into the Template Editor and saved as new templates.
+
+#### Simple Forum Thumbnails
+
+Use this for a normal forum post with all images as clickable thumbnails.
+
+```bbcode
+[center]
+#all_images#
+[/center]
+```
+
+Example output shape:
+
+```bbcode
+[center]
+[url=https://host/view1][img]https://host/thumb1.jpg[/img][/url] [url=https://host/view2][img]https://host/thumb2.jpg[/img][/url]
+[/center]
+```
+
+#### Title, Covers, Then Thumbnails
+
+Use this when you mark one or more cover images in the queue.
+
+```bbcode
+[center][b]#batch_name#[/b]
+
+#cover_images#
+
+#all_images#[/center]
+```
+
+What changes automatically:
+
+- `#batch_name#` becomes the batch/folder name.
+- `#cover_images#` becomes however many covers you selected.
+- `#all_images#` becomes the remaining non-cover images.
+
+#### Gallery Link Only When A Gallery Exists
+
+Use this when some uploads have galleries and others do not.
+
+```bbcode
+[center][b]#batch_name#[/b]
+
+[if gallery_link][url=#gallery_link#]Open Gallery[/url]
+
+[/if]#cover_images#
+
+#all_images#[/center]
+```
+
+If `#gallery_link#` is empty, the `Open Gallery` line disappears.
+
+#### Compact Grid
+
+Use this when you want thumbnails on one dense line.
+
+```bbcode
+[center][for image separator=space][url=#image_url#][img]#thumb_url#[/img][/url][/for][/center]
+```
+
+#### Full Images With Blank Lines
+
+Use this when the host provides useful direct image links and you want full embeds.
+
+```bbcode
+[center][b]#batch_name#[/b]
+
+[for image separator=blankline][img]#direct_url#[/img][/for][/center]
+```
+
+#### Markdown Links
+
+Use this outside forums when Markdown is wanted.
+
+```markdown
+# #batch_name#
+
+#all_images#
+```
+
+Use a Markdown built-in template for Markdown output so image formatting is generated correctly.
+
+#### HTML Page
+
+Use this when you specifically want HTML output, not forum BBCode.
+
+```html
+<html>
+<body>
+<h2>#batch_name#</h2>
+#all_images#
+</body>
+</html>
+```
+
+Choose or save the template under an HTML template/category when you want toolbar buttons to insert HTML.
+
+### Template Mistakes And Fixes
+
+| Mistake | What happens | Fix |
+| --- | --- | --- |
+| Using `<img>` or `<span>` in a ViperGirls/forum template | The forum may show broken text or reject formatting. | Use `[img]`, `[url]`, `[b]`, `[color]`, and `[size]` instead. |
+| Typing `#cover_url#` when you want a clickable image | Only the raw thumbnail URL appears. | Use `#cover_image#` for one fixed cover or `#cover_images#` for all selected covers. |
+| Forgetting `[/if]` | Save/preview validation fails. | Add the missing closing tag. |
+| Forgetting `[/for]` | Save/preview validation fails. | Add the missing closing tag. |
+| Using an unknown placeholder like `#folder#` | Save/preview validation fails. | Use `#batch_name#` for the folder/batch title. |
+| Expecting `[if]` to work on ViperGirls directly | ViperGirls does not understand app template tags. | Let Connie's Uploader render the template before posting. Raw `[if]` tags should not appear in final output. |
 
 ## Output Files
 
@@ -383,6 +762,28 @@ Sample_Gallery_20260522_0859_links.txt
 
 That links file contains raw viewer links, one per line.
 
+### Example Output Folder
+
+After uploading a batch named `Sample Gallery`, you might see:
+
+```text
+Output/
+  Sample_Gallery_20260621_1430.txt
+  Sample_Gallery_20260621_1430_links.txt
+```
+
+Open the `.txt` file when you want formatted forum/Markdown/HTML output.
+
+Open the `_links.txt` file when you want one raw viewer link per line.
+
+### If You Cannot Find The Output
+
+1. Check whether the upload actually finished.
+2. Click `Open Output Folder`.
+3. Look for the newest file by timestamp.
+4. If no file exists, open `View > Execution Log`.
+5. If the queue still has failed files, use `Retry Failed`.
+
 ## ViperGirls Posting
 
 The app can automatically post completed batch output to saved ViperGirls threads.
@@ -402,6 +803,69 @@ Setup:
 If the batch thread dropdown remains `Do Not Post`, no forum post is queued.
 
 Enable `Confirm before ViperGirls posting` in Settings to review the batch name, selected thread, thread ID, and generated post preview before uploads begin.
+
+### Safe ViperGirls Dry Run
+
+Use this before your first real automatic post.
+
+1. Save ViperGirls credentials in `Tools > Set Credentials`.
+2. Add one saved target in `Tools > ViperGirls Posting Targets`.
+3. Add 2 test images to the queue.
+4. Select the saved ViperGirls target in the batch header.
+5. Choose `ViperGirls Gallery Post`.
+6. Click `Preview Post`.
+7. Read the generated BBCode.
+8. Cancel if anything looks wrong.
+9. Enable `Confirm before ViperGirls posting`.
+10. Start the upload only when the preview is correct.
+
+Expected preview shape:
+
+```bbcode
+[center][b]Batch Name[/b]
+[url=https://...]Open Gallery[/url]
+[size=1]Target: Thread Name (thread 12345)[/size]
+
+[url=https://image-host/view][img]https://image-host/thumb.jpg[/img][/url]
+[/center]
+```
+
+If the preview contains raw `<span>`, `<img>`, or `<a href=...>` tags, switch to a BBCode/ViperGirls template before posting.
+
+### ViperGirls With Covers Example
+
+Use this when each post should show selected covers first.
+
+1. Add the image batch.
+2. Click `Set Cover` on the images that should appear at the top.
+3. Open `Tools > Template Editor`.
+4. Create or select a ViperGirls template containing this:
+
+```bbcode
+[center][b]#batch_name#[/b]
+
+[if gallery_link][url=#gallery_link#]Open Gallery[/url]
+
+[/if]#cover_images#
+
+#all_images#[/center]
+```
+
+5. Save the template.
+6. Choose that template in the batch header.
+7. Click `Preview Post`.
+8. Confirm the covers appear once at the top and do not repeat below.
+
+### ViperGirls Posting Checklist
+
+Before clicking `Start Upload`, confirm:
+
+- ViperGirls credentials are saved.
+- The target thread is selected in the batch header.
+- The target thread validates and has a thread ID.
+- The selected template is BBCode/ViperGirls-friendly.
+- `Preview Post` looks correct.
+- `Confirm before ViperGirls posting` is on if you want a final review.
 
 The targets manager supports search, sorting by name, last used time, or thread ID, and per-target validation. Use `Refresh Names` to update existing saved targets from the current ViperGirls thread titles. Use the checkboxes to bulk export or delete selected targets. `Import` and `Export All` move saved targets between installs using JSON files.
 
@@ -473,6 +937,20 @@ Saved thread data is stored under:
 
 ## Troubleshooting
 
+Start with the symptom you see.
+
+| Symptom | Most likely cause | First thing to try |
+| --- | --- | --- |
+| Upload button starts but everything fails | Missing sidecar, credentials, host issue, or invalid settings. | Open `View > Execution Log` and read the first red/error line. |
+| Vipr galleries are empty | Vipr credentials missing or login failed. | Save Vipr credentials, select `vipr.im`, click `Refresh Galleries / Login`. |
+| ViperGirls post never happens | Batch target is `Do Not Post` or posting preflight failed. | Select a saved thread in the batch header and run Upload Checks again. |
+| Covers do not appear | Template does not contain a cover placeholder. | Add `#cover_images#` to the template. |
+| Covers repeat in the normal image list | Template may not be using the cover-aware placeholders. | Use `#cover_images#` plus `#all_images#`. |
+| Post shows HTML tags | Wrong template/category or manually pasted HTML into a forum template. | Use BBCode tags and a ViperGirls/BBCode template. |
+| Output file is missing | Upload did not finish or all files failed. | Check row statuses, use `Retry Failed`, then open `Output/`. |
+| App says credentials missing after saving | Keyring did not return saved values yet. | Close and reopen the app, then retry. |
+| Images upload in the wrong order | Queue order was not adjusted before upload. | Drag rows into the correct order before starting. |
+
 ### Uploads fail immediately
 
 Open `View > Execution Log` and check the sidecar message. Also verify credentials, selected service, content type, gallery ID/hash, and file size.
@@ -496,6 +974,42 @@ Disable `View > Show Image Previews` before adding the files. You can also split
 ### Output was generated but not copied
 
 Check whether `Auto-copy to clipboard` was enabled before upload completion. You can still open `Output/` and copy the generated text manually.
+
+### Covers do not appear
+
+Make sure all three things are true:
+
+1. One or more files are marked with `Set Cover`.
+2. The selected template contains `#cover_images#`, `[for cover]`, `#cover_image#`, or `#cover_url#`.
+3. You previewed or uploaded after marking the covers.
+
+Recommended fix:
+
+```bbcode
+[center][b]#batch_name#[/b]
+
+#cover_images#
+
+#all_images#[/center]
+```
+
+### ViperGirls shows HTML instead of BBCode
+
+Forum posts should use BBCode, not HTML.
+
+Use this:
+
+```bbcode
+[url=https://example.com][img]https://example.com/thumb.jpg[/img][/url]
+```
+
+Do not use this in ViperGirls/forum templates:
+
+```html
+<a href="https://example.com"><img src="https://example.com/thumb.jpg"></a>
+```
+
+If the Template Editor warns that a BBCode template contains HTML tags, replace the HTML tags before posting.
 
 ### Nothing posts to ViperGirls
 

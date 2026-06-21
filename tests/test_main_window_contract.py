@@ -168,11 +168,12 @@ def test_preview_data_uses_storage_thumbnail_value_for_readable_service_label():
     app.var_service = FakeVar("imgur.com")
     app.settings_view = FakeSettingsView()
 
-    files, title, size = UploaderApp.get_preview_data(app)
+    files, title, size, cover_count = UploaderApp.get_preview_data(app)
 
     assert files == ["image.jpg"]
     assert title == "Batch"
     assert size == "m"
+    assert cover_count == 0
 
 
 @pytest.mark.unit
@@ -425,7 +426,7 @@ def test_start_button_disabled_until_pending_files_exist():
 
     UploaderApp._refresh_start_button_state(app)
 
-    assert app.btn_start.options["text"] == "Add Files to Upload"
+    assert app.btn_start.options["text"] == "Start Upload"
     assert app.btn_start.options["state"] == "disabled"
     assert app.btn_start.options["fg_color"] == "#5A5A5A"
 

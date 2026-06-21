@@ -144,6 +144,22 @@ class UploadController:
 
         # Prepare Template Context
         cover_url = group_results[0][1] if group_results else ""
+        cover_count = 0
+        cover_count_keys = {
+            "imx.to": "imx_cover_count",
+            "pixhost.to": "pix_cover_count",
+            "turboimagehost": "turbo_cover_count",
+            "vipr.im": "vipr_cover_count",
+        }
+        for key in ("cover_count", cover_count_keys.get(svc, "")):
+            if not key:
+                continue
+            try:
+                cover_count = max(0, int(self.settings.get(key, 0)))
+            except (TypeError, ValueError):
+                cover_count = 0
+            if cover_count:
+                break
         gal_link = ""
         if gallery_id:
             if svc == "pixhost.to":
@@ -192,6 +208,7 @@ class UploadController:
             "gallery_name": group_title,
             "gallery_id": gallery_id,
             "cover_url": cover_url,
+            "cover_count": cover_count,
             "thumb_size": thumb_size,
             "batch_name": group_title,
             "image_count": len(group_results),

@@ -723,6 +723,91 @@ class TestTemplateManagerAdvanced:
             for index in range(1, 5):
                 assert f"thumb{index}" not in all_images_part
 
+    def test_cover_images_placeholder_expands_selected_covers(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            templates_file = Path(temp_dir) / "templates.json"
+            mgr = TemplateManager(str(templates_file))
+            mgr.set_template("Auto Covers", "#cover_images#\n--\n#all_images#")
+
+            result = mgr.apply(
+                "Auto Covers",
+                {"cover_count": 2},
+                [
+                    ("viewer1", "thumb1", "direct1"),
+                    ("viewer2", "thumb2", "direct2"),
+                    ("viewer3", "thumb3", "direct3"),
+                    ("viewer4", "thumb4", "direct4"),
+                ],
+            )
+
+            cover_part, all_images_part = result.split("\n--\n")
+            assert "[url=viewer1][img]thumb1[/img][/url]" in cover_part
+            assert "[url=viewer2][img]thumb2[/img][/url]" in cover_part
+            assert "thumb1" not in all_images_part
+            assert "thumb2" not in all_images_part
+            assert "[url=viewer3][img]thumb3[/img][/url]" in all_images_part
+            assert "[url=viewer4][img]thumb4[/img][/url]" in all_images_part
+
+    def test_cover_images_placeholder_is_empty_without_selected_covers(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            templates_file = Path(temp_dir) / "templates.json"
+            mgr = TemplateManager(str(templates_file))
+            mgr.set_template("Auto Covers Empty", "#cover_count#|#cover_images#|#all_images#")
+
+            result = mgr.apply(
+                "Auto Covers Empty",
+                {"cover_count": 0},
+                [("viewer1", "thumb1", "direct1"), ("viewer2", "thumb2", "direct2")],
+            )
+
+            assert result.startswith("0||")
+            assert "[url=viewer1][img]thumb1[/img][/url]" in result
+            assert "[url=viewer2][img]thumb2[/img][/url]" in result
+
+    def test_cover_loop_renders_selected_covers_with_separator(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            templates_file = Path(temp_dir) / "templates.json"
+            mgr = TemplateManager(str(templates_file))
+            mgr.set_template(
+                "Cover Loop",
+                "[for cover separator=blankline]#thumb_url#[/for]\n--\n"
+                "[for image separator=space]#thumb_url#[/for]",
+            )
+
+            result = mgr.apply(
+                "Cover Loop",
+                {"cover_count": 2},
+                [
+                    ("viewer1", "thumb1", "direct1"),
+                    ("viewer2", "thumb2", "direct2"),
+                    ("viewer3", "thumb3", "direct3"),
+                ],
+            )
+
+            assert result == "thumb1\n\nthumb2\n--\nthumb3"
+
+    def test_vipergirls_template_resolves_to_bbcode_for_covers_and_images(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            templates_file = Path(temp_dir) / "templates.json"
+            mgr = TemplateManager(str(templates_file))
+
+            result = mgr.apply(
+                "ViperGirls Gallery Post",
+                {"batch_name": "Batch", "cover_count": 2},
+                [
+                    ("viewer1", "thumb1", "direct1"),
+                    ("viewer2", "thumb2", "direct2"),
+                    ("viewer3", "thumb3", "direct3"),
+                ],
+            )
+
+            assert mgr.resolve_output_format("ViperGirls Gallery Post") == "BBCode"
+            assert "[url=viewer1][img]thumb1[/img][/url]" in result
+            assert "[url=viewer2][img]thumb2[/img][/url]" in result
+            assert "[url=viewer3][img]thumb3[/img][/url]" in result
+            assert "<a href=" not in result
+            assert '<img src="' not in result
+
     def test_process_conditionals(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             templates_file = Path(temp_dir) / "templates.json"
@@ -849,6 +934,15 @@ class TestTemplateManagerAdvanced:
 
             assert "Template has an unclosed [for image] block." in errors
 
+    def test_template_validation_reports_unclosed_cover_loop(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            templates_file = Path(temp_dir) / "templates.json"
+            mgr = TemplateManager(str(templates_file))
+
+            errors = mgr.validate_template("[for cover]#thumb_url#")
+
+            assert "Template has an unclosed [for cover] block." in errors
+
     def test_template_validation_reports_unmatched_image_loop_close(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             templates_file = Path(temp_dir) / "templates.json"
@@ -856,7 +950,7 @@ class TestTemplateManagerAdvanced:
 
             errors = mgr.validate_template("#all_images#[/for]")
 
-            assert "Template has a closing [/for] without a matching [for image]." in errors
+            assert "Template has a closing [/for] without a matching [for image] or [for cover]." in errors
 
     def test_metadata_placeholders_render_from_context(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -923,6 +1017,44 @@ class TestTemplateManagerAdvanced:
         assert '<a href="https://example.com">' in preview
         assert "[url=https://example.com]" in preview
 
+    def test_editor_toolbar_uses_resolved_output_format(self):
+        class FakeVar:
+            def __init__(self, value):
+                self.value = value
+
+            def get(self):
+                return self.value
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            templates_file = Path(temp_dir) / "templates.json"
+            mgr = TemplateManager(str(templates_file))
+            editor = TemplateEditor.__new__(TemplateEditor)
+            editor.mgr = mgr
+            editor.fmt = FakeVar("ViperGirls Gallery Post")
+
+            assert TemplateEditor.get_tags(editor, "Bold") == ("[b]", "[/b]")
+            assert TemplateEditor.get_tags(editor, "Color", "#ff0000") == (
+                "[color=#ff0000]",
+                "[/color]",
+            )
+
+            editor.fmt = FakeVar("HTML")
+            assert TemplateEditor.get_tags(editor, "Bold") == ("<b>", "</b>")
+
+    def test_template_warnings_flag_html_in_bbcode_forum_templates(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            templates_file = Path(temp_dir) / "templates.json"
+            mgr = TemplateManager(str(templates_file))
+
+            warnings = mgr.template_warnings(
+                "ViperGirls Gallery Post",
+                "<span>Bad for forum</span>\n#all_images#",
+            )
+
+            assert warnings
+            assert "treated as BBCode" in warnings[0]
+            assert mgr.template_warnings("HTML", "<span>Fine</span>\n#all_images#") == []
+
     def test_placeholder_categories_cover_all_supported_hash_placeholders(self):
         categorized = {
             match.group(1)
@@ -940,9 +1072,11 @@ class TestTemplateManagerAdvanced:
 
         assert categorized <= TemplateManager.ALLOWED_PLACEHOLDERS
         assert "cover_image" in categorized
+        assert "cover_images" in categorized
+        assert "cover_count" in categorized
         assert "cover_url" not in categorized
         assert "Cover{s}" in image_labels
-        assert cover_labels == ["Cover{s}"]
+        assert cover_labels == ["All Covers", "Cover{s}", "Cover Count", "Cover Loop"]
         assert "#cover_image#" in TemplateEditor.supported_placeholder_values()
 
     def test_direct_image_placeholders_resolve_when_used_in_template_body(self):
@@ -1016,11 +1150,54 @@ class TestTemplateManagerAdvanced:
         assert warnings == []
         assert preview is not None
         raw, fmt, size = preview
-        assert fmt == "Preview Custom"
+        assert fmt == "BBCode"
         assert size == "180"
         assert raw.startswith("Preview Batch|preview|Preview Thread|PREV_THREAD")
         assert "first%20image.jpg" in raw
         assert "second.jpg" in raw
+
+    def test_preview_output_accepts_cover_count_from_callback(self, tmp_path, monkeypatch):
+        class FakeText:
+            def __init__(self, content):
+                self.content = content
+
+            def get(self, *_args):
+                return self.content
+
+        class FakeVar:
+            def __init__(self, value):
+                self.value = value
+
+            def get(self):
+                return self.value
+
+        monkeypatch.setattr(template_manager.messagebox, "showerror", lambda *_args: None)
+        monkeypatch.setattr(template_manager.messagebox, "showwarning", lambda *_args: None)
+
+        image_one = tmp_path / "cover.jpg"
+        image_two = tmp_path / "standard.jpg"
+        image_one.write_bytes(b"cover")
+        image_two.write_bytes(b"standard")
+        mgr = TemplateManager(str(tmp_path / "templates.json"))
+        editor = TemplateEditor.__new__(TemplateEditor)
+        editor.mgr = mgr
+        editor.txt = FakeText("#cover_images#\n--\n#all_images#")
+        editor.fmt = FakeVar("Preview Custom")
+        editor.data_callback = lambda: (
+            [str(image_one), str(image_two)],
+            "Preview Batch",
+            "180",
+            1,
+        )
+
+        preview = TemplateEditor._build_preview_output(editor)
+
+        assert preview is not None
+        raw, _fmt, _size = preview
+        cover_part, all_images_part = raw.split("\n--\n")
+        assert "cover.jpg" in cover_part
+        assert "standard.jpg" in all_images_part
+        assert "cover.jpg" not in all_images_part
 
     def test_preview_without_data_callback_reports_empty_state(self, monkeypatch):
         warnings = []

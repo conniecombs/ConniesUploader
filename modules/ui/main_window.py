@@ -526,7 +526,12 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
                 size = size.split("x")[0]
         except (AttributeError, tk.TclError) as e:
             logger.debug(f"Could not get thumbnail size for {current_service}: {e}")
-        return grp.files, grp.title, size
+        return (
+            self._ordered_group_files_for_output(grp),
+            grp.title,
+            size,
+            len(self._cover_files_for_group(grp)),
+        )
 
     def on_gallery_created(self, service, gid):
         if service == "imx.to":
@@ -1706,7 +1711,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         self._configure_stop_button(False)
         pending_count = self._pending_upload_count()
         if pending_count == 0:
-            self._configure_start_button("Add Files to Upload", "disabled")
+            self._configure_start_button("Start Upload", "disabled")
             return
 
         if readiness is None:
@@ -2684,6 +2689,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             "gallery_name": self._batch_display_name(group),
             "gallery_id": gallery_id,
             "cover_url": cover_url,
+            "cover_count": len(self._cover_files_for_group(group)),
             "thumb_size": self._thumbnail_size_for_service(service_id, settings),
             "batch_name": self._batch_display_name(group),
             "image_count": len(group_results),
@@ -3518,6 +3524,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             "gallery_name": batch_name,
             "gallery_id": gal_id,
             "cover_url": cover_url,
+            "cover_count": len(self._cover_files_for_group(group)),
             "thumb_size": thumb_size,
             "batch_name": batch_name,
             "image_count": len(group_results),
