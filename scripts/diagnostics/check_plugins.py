@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-er: MIT
+# SPDX-License-Identifier: MIT
 # Copyright (c) 2025 conniecombs
 
 """
@@ -7,11 +7,12 @@ Plugin Discovery Diagnostic Script
 Checks which plugins are being discovered and reports any errors.
 """
 
-import sys
 import os
+import sys
+from pathlib import Path
 
-# Add current directory to path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT))
 
 print("=" * 70)
 print("Plugin Discovery Diagnostic".center(70))
@@ -19,15 +20,15 @@ print("=" * 70)
 
 # Step 1: Check if plugin files exist
 print("\n[1] Checking plugin files...")
-plugin_dir = "modules/plugins"
+plugin_dir = REPO_ROOT / "modules" / "plugins"
 plugin_files = [f for f in os.listdir(plugin_dir) if f.endswith(".py") and not f.startswith("_")]
 plugin_files = [f for f in plugin_files if "legacy" not in f and "v2" not in f]
 
 print(f"Found {len(plugin_files)} plugin files:")
 for f in sorted(plugin_files):
-    file_path = os.path.join(plugin_dir, f)
+    file_path = plugin_dir / f
     size = os.path.getsize(file_path)
-    print(f"  ✓ {f:20} ({size:,} bytes)")
+    print(f"  [OK]   {f:20} ({size:,} bytes)")
 
 # Step 2: Try importing each plugin module
 print("\n[2] Testing plugin module imports...")
@@ -43,10 +44,10 @@ for plugin_file in sorted(plugin_files):
     full_module = f"modules.plugins.{module_name}"
 
     try:
-        mod = importlib.import_module(full_module)
-        print(f"  ✓ {module_name:20} imported successfully")
+        importlib.import_module(full_module)
+        print(f"  [OK]   {module_name:20} imported successfully")
     except Exception as e:
-        print(f"  ✗ {module_name:20} FAILED: {e}")
+        print(f"  [FAIL] {module_name:20} FAILED: {e}")
         failed_imports.append((module_name, str(e)))
 
 # Step 3: Load plugins via PluginManager
@@ -63,12 +64,12 @@ try:
     for plugin in plugins:
         impl = plugin.metadata.get("implementation", "unknown")
         version = plugin.metadata.get("version", "?")
-        print(f"  ✓ {plugin.name:20} id={plugin.id:25} v{version} ({impl})")
+        print(f"  [OK]   {plugin.name:20} id={plugin.id:25} v{version} ({impl})")
 
     if errors:
-        print(f"\n⚠ Plugin load errors ({len(errors)}):")
+        print(f"\n[WARN] Plugin load errors ({len(errors)}):")
         for filename, classname, error in errors:
-            print(f"  ✗ {filename}.{classname or '?'}")
+            print(f"  [FAIL] {filename}.{classname or '?'}")
             print(f"     {error}")
 
     # Check specifically for Imgur
@@ -76,18 +77,18 @@ try:
     imgur_found = any(p.id == "imgur.com" for p in plugins)
 
     if imgur_found:
-        print("  ✓ Imgur plugin IS loaded and ready!")
+        print("  [OK]   Imgur plugin IS loaded and ready!")
         imgur = next(p for p in plugins if p.id == "imgur.com")
         print(f"     Name: {imgur.name}")
         print(f"     ID: {imgur.id}")
         print(f"     Version: {imgur.metadata.get('version')}")
     else:
-        print("  ✗ Imgur plugin NOT found in loaded plugins")
+        print("  [FAIL] Imgur plugin NOT found in loaded plugins")
         print("\n  Checking if imgur.py can be imported...")
         try:
             from modules.plugins import imgur
 
-            print("  ✓ imgur module can be imported")
+            print("  [OK]   imgur module can be imported")
             print(f"     Has ImgurPlugin: {hasattr(imgur, 'ImgurPlugin')}")
             if hasattr(imgur, "ImgurPlugin"):
                 try:
@@ -95,15 +96,15 @@ try:
                     print(f"     Plugin ID: {instance.id}")
                     print(f"     Plugin Name: {instance.name}")
                 except Exception as e:
-                    print(f"  ✗ Cannot instantiate ImgurPlugin: {e}")
+                    print(f"  [FAIL] Cannot instantiate ImgurPlugin: {e}")
         except Exception as e:
-            print(f"  ✗ Cannot import imgur module: {e}")
+            print(f"  [FAIL] Cannot import imgur module: {e}")
             import traceback
 
             traceback.print_exc()
 
 except Exception as e:
-    print(f"✗ Error loading PluginManager: {e}")
+    print(f"[FAIL] Error loading PluginManager: {e}")
     import traceback
 
     traceback.print_exc()

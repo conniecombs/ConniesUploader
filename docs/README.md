@@ -31,8 +31,9 @@ Development and contribution guides:
 1. **[CONTRIBUTING.md](../CONTRIBUTING.md)** - Contribution guidelines and workflow
 2. **[ARCHITECTURE.md](../ARCHITECTURE.md)** - System architecture and design patterns
 3. **[Plugin Creation Guide](guides/PLUGIN_CREATION_GUIDE.md)** - Create new service plugins
-4. **[Schema Plugin Guide](guides/SCHEMA_PLUGIN_GUIDE.md)** - Schema-based plugin development
-5. **[Release Process](releases/RELEASE_PROCESS.md)** - How to create releases
+4. **[Repository Layout](guides/REPOSITORY_LAYOUT.md)** - What belongs in source control and what is generated locally
+5. **[Schema Plugin Guide](guides/SCHEMA_PLUGIN_GUIDE.md)** - Schema-based plugin development
+6. **[Release Process](releases/RELEASE_PROCESS.md)** - How to create releases
 
 ### For Maintainers
 Project management and planning:
@@ -50,6 +51,7 @@ docs/
 ├── README.md                    # This file - documentation index
 ├── guides/                      # Developer and user guides
 │   ├── PLUGIN_CREATION_GUIDE.md
+│   ├── REPOSITORY_LAYOUT.md
 │   ├── SCHEMA_PLUGIN_GUIDE.md
 │   ├── BUILD_TROUBLESHOOTING.md
 │   └── USER_TUTORIAL.md

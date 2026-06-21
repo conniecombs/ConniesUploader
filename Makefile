@@ -47,9 +47,7 @@ help:
 # Clean build artifacts
 clean:
 	@echo "Cleaning build artifacts..."
-	rm -rf build dist *.spec __pycache__ .pytest_cache
-	rm -f $(GO_OUTPUT)
-	@echo "Clean complete!"
+	$(PYTHON) scripts/maintenance/clean_generated.py
 
 # Install Python dependencies
 install-deps:

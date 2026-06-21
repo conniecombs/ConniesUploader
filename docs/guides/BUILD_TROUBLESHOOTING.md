@@ -61,7 +61,7 @@ If your exe is only 26 MB, the Go sidecar is missing.
 Run the diagnostic script:
 
 ```python
-python test_sidecar.py
+python scripts/diagnostics/check_sidecar_location.py
 ```
 
 This will show exactly where the script is looking for uploader.exe and whether it's found.
@@ -169,7 +169,7 @@ If modules aren't found, add to PyInstaller command:
 Before distributing the built exe:
 
 - [ ] EXE file size is 40-50 MB (not 26 MB)
-- [ ] Run `test_sidecar.py` and verify sidecar is found
+- [ ] Run `python scripts/diagnostics/check_sidecar_location.py` and verify sidecar is found
 - [ ] Test upload to at least one service (IMX, Pixhost, etc.)
 - [ ] Check log window for errors
 - [ ] Verify plugins load in Settings > Service dropdown
@@ -185,9 +185,9 @@ If issues persist:
    ```
    ConniesUploader.exe --console
    ```
-3. Run `test_sidecar.py` and save output
+3. Run `python scripts/diagnostics/check_sidecar_location.py` and save output
 4. Open an issue with:
    - Build command used
    - EXE file size
-   - test_sidecar.py output
+   - `scripts/diagnostics/check_sidecar_location.py` output
    - Error messages from log

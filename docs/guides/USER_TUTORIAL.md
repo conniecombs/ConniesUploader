@@ -52,7 +52,7 @@ Leave these alone until a simple upload works:
 
 ## Main Window
 
-![Main dashboard](../assets/screenshots/tutorial-main-dashboard.png)
+![Connie's Uploader empty upload queue with Pixhost selected, ready status, and centered Add Files and Add Folder actions](../assets/screenshots/empty-drop-zone.png)
 
 The window is split into two main areas:
 
@@ -67,6 +67,8 @@ Use this checklist for every upload.
 
 ### Before You Click Start
 
+![Import Checks and Upload Checks panels showing rejected files, preflight warnings, and fix buttons](../assets/screenshots/import-upload-checks.png)
+
 1. Choose the image host.
 2. Confirm credentials if the host needs them.
 3. Add files or folders.
@@ -79,6 +81,8 @@ Use this checklist for every upload.
 10. Read Upload Checks if the app shows them.
 
 ### During Upload
+
+![Upload progress view with uploaded, uploading, and queued rows plus a visible activity timeline](../assets/screenshots/activity-progress.png)
 
 Watch the row status labels:
 
@@ -93,6 +97,8 @@ Watch the row status labels:
 If one file fails, let the batch finish. Use `Retry Failed` afterward.
 
 ### After Upload
+
+![Upload completion summary showing uploaded and failed counts, generated files, clipboard status, and retry actions](../assets/screenshots/completion-summary.png)
 
 1. Open `Output/`.
 2. Open the newest `.txt` file for the batch.
@@ -157,7 +163,7 @@ The app validates files before adding them. The default per-file size limit is 5
 
 ## Upload Queue
 
-![Upload queue with sample files](../assets/screenshots/tutorial-upload-queue.png)
+![Upload queue showing two image batches with thumbnails, templates, post target selectors, progress bars, and remove buttons](../assets/screenshots/batched-upload-queue.png)
 
 Each batch header contains:
 
@@ -230,6 +236,8 @@ What happens:
 Use repeated `#cover_image#` only when you need a fixed number of cover slots. For most users, `#cover_images#` is easier.
 
 ## Main Settings
+
+![Advanced App Settings expanded with Worker Count and Thread Limit controls above Pixhost upload settings](../assets/screenshots/advanced-app-settings.png)
 
 These settings appear at the top of the left panel.
 
@@ -424,7 +432,7 @@ Expected result:
 
 ## Template Editor
 
-![Template editor](../assets/screenshots/tutorial-template-editor.png)
+![Template Editor with BBCode formatting toolbar, categorized placeholders, template list, editable template text, and preview output](../assets/screenshots/template-editor-v140.png)
 
 Open it with `Tools > Template Editor`.
 

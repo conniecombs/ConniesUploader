@@ -152,6 +152,15 @@ Useful build-script options:
 - `clean` removes build artifacts and exits.
 - `--ci` runs without interactive pauses or opening `dist/`.
 
+Local cleanup without a full build:
+
+```bash
+python scripts/maintenance/clean_generated.py --dry-run
+python scripts/maintenance/clean_generated.py
+```
+
+The cleanup helper removes generated artifacts such as `build/`, `dist/`, `htmlcov/`, coverage files, sidecar binaries, PyInstaller spec files, and crash logs. It leaves `Output/`, `user_settings.json`, and legacy `user_templates.json` alone unless you pass the explicit `--include-output` or `--include-user-data` flags.
+
 Manual development run on Windows PowerShell:
 
 ```powershell
@@ -212,7 +221,16 @@ Connie's Uploader uses a hybrid desktop architecture:
 - `main.go` and `handlers.go` provide the Go sidecar entry point and request handlers.
 - `core/` contains shared Go upload utilities such as validation, retry, rate limiting, HTTP helpers, and output handling.
 - `services/` contains Go service integrations.
+- `scripts/maintenance/` contains repository cleanup and maintenance helpers.
+- `scripts/diagnostics/` contains local troubleshooting helpers that are not part of the app runtime.
 - Python and Go communicate through JSON events over standard input and output.
+
+Generated folders and runtime data are intentionally kept out of source control:
+
+- Build output: `build/`, `dist/`, `uploader`, `uploader.exe`, `ConniesUploader.spec`
+- Test output: `.coverage`, `htmlcov/`, `.pytest_cache/`
+- Local app data: `Output/`, `user_settings.json`, legacy `user_templates.json`
+- Runtime diagnostics: `crash_log*.log`
 
 ## CI, Security, and Releases
 
@@ -246,6 +264,14 @@ make quick
 make clean
 ```
 
+Maintenance and diagnostics:
+
+```bash
+python scripts/maintenance/clean_generated.py --dry-run
+python scripts/diagnostics/check_plugins.py
+python scripts/diagnostics/check_sidecar_location.py
+```
+
 ## Documentation
 
 - [Architecture](ARCHITECTURE.md)
@@ -253,6 +279,7 @@ make clean
 - [Changelog](CHANGELOG.md)
 - [Build Troubleshooting](docs/guides/BUILD_TROUBLESHOOTING.md)
 - [Plugin Creation Guide](docs/guides/PLUGIN_CREATION_GUIDE.md)
+- [Repository Layout](docs/guides/REPOSITORY_LAYOUT.md)
 - [Schema Plugin Guide](docs/guides/SCHEMA_PLUGIN_GUIDE.md)
 - [Release Process](docs/releases/RELEASE_PROCESS.md)
 - [Documentation Index](docs/README.md)

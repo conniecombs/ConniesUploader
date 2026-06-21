@@ -41,3 +41,26 @@ def test_customtkinter_hook_preserves_assets_and_adds_tcl_tk_binaries():
     assert "tcltk_info.tcl_shared_library" in hook
     assert "tcltk_info.tk_shared_library" in hook
     assert 'binaries.append((library, "."))' in hook
+
+
+def test_cleanup_helper_covers_generated_artifacts_and_keeps_user_data_explicit():
+    cleanup = (ROOT / "scripts" / "maintenance" / "clean_generated.py").read_text(
+        encoding="utf-8"
+    )
+    gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
+
+    for artifact in [
+        "build",
+        "dist",
+        "htmlcov",
+        ".coverage",
+        "uploader.exe",
+        "crash_log*.log",
+    ]:
+        assert artifact in cleanup
+
+    assert "--include-output" in cleanup
+    assert "--include-user-data" in cleanup
+    assert "Output/" in gitignore
+    assert "user_settings.json" in gitignore
+    assert "user_templates.json" in gitignore

@@ -292,8 +292,20 @@ show_success() {
 
 clean_build() {
     echo "Cleaning build artifacts..."
-    rm -rf build dist __pycache__ .pytest_cache
-    rm -f "$APP_NAME.spec" uploader uploader.exe
+    local clean_python="$PYTHON_CMD"
+    if [ -z "$clean_python" ]; then
+        if command -v python3 >/dev/null 2>&1; then
+            clean_python="python3"
+        elif command -v python >/dev/null 2>&1; then
+            clean_python="python"
+        fi
+    fi
+    if [ -n "$clean_python" ]; then
+        "$clean_python" scripts/maintenance/clean_generated.py
+    else
+        rm -rf build dist htmlcov __pycache__ .pytest_cache
+        rm -f "$APP_NAME.spec" uploader uploader.exe .coverage .coverage.* crash_log*.log
+    fi
     echo "Clean complete!"
 }
 
