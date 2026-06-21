@@ -2,14 +2,18 @@
 # Copyright (c) 2025 conniecombs
 
 import customtkinter as ctk
-from tkinter import messagebox
 import threading
-import requests
-import re
-from loguru import logger
+import webbrowser
+from modules.credentials_manager import CredentialsManager
 from modules.sidecar import SidecarBridge
-from . import api
 from . import config
+from .gallery_service import (
+    CREATE_SUPPORTED,
+    GalleryRecord,
+    GalleryResult,
+    GalleryService,
+    GalleryStatus,
+)
 
 
 class GalleryManager(ctk.CTkToplevel):
@@ -18,14 +22,21 @@ class GalleryManager(ctk.CTkToplevel):
         self.creds = creds
         self.callback = callback
         self.bridge = SidecarBridge.get()
+        self.gallery_service = GalleryService(self.bridge, self.creds)
 
         self.title("Gallery Manager")
-        self.geometry("600x700")  # Slightly taller for the new controls
+        self.geometry("820x720")
+        self.minsize(720, 560)
+        self.resizable(True, True)
         self.transient(parent)
 
         self.service_var = ctk.StringVar(value="imx.to")
-        self.manual_cookies = {}
+        self.search_var = ctk.StringVar(value="")
+        self.sort_var = ctk.StringVar(value="Name")
         self.current_page = 1  # Track current page
+        self._records = []
+        self._refresh_request_id = 0
+        self._create_request_id = 0
 
         self._init_ui()
         self.after(config.UI_GALLERY_REFRESH_DELAY_MS, self._refresh_list)
@@ -45,6 +56,28 @@ class GalleryManager(ctk.CTkToplevel):
 
         # Refresh resets to Page 1
         ctk.CTkButton(top, text="Refresh", width=80, command=self._refresh_list).pack(side="right")
+
+        tools = ctk.CTkFrame(self, fg_color="transparent")
+        tools.pack(fill="x", padx=10, pady=(0, 8))
+
+        ctk.CTkLabel(tools, text="Search:").pack(side="left", padx=(0, 5))
+        self.search_entry = ctk.CTkEntry(tools, textvariable=self.search_var, width=260)
+        self.search_entry.pack(side="left", fill="x", expand=True, padx=(0, 10))
+        self.search_var.trace_add("write", lambda *_: self._render_current_records())
+
+        ctk.CTkLabel(tools, text="Sort:").pack(side="left", padx=(0, 5))
+        self.sort_menu = ctk.CTkOptionMenu(
+            tools,
+            variable=self.sort_var,
+            values=["Name", "ID/hash", "Last used"],
+            width=130,
+            command=lambda _choice: self._render_current_records(),
+        )
+        self.sort_menu.pack(side="left")
+
+        self.status_label = ctk.CTkLabel(self, text="", anchor="w", justify="left", wraplength=760)
+        self.status_label.pack(fill="x", padx=12, pady=(0, 5))
+        self._status_default_text_color = self.status_label.cget("text_color")
 
         self.scroll = ctk.CTkScrollableFrame(self, label_text="Your Galleries")
         self.scroll.pack(fill="both", expand=True, padx=10, pady=5)
@@ -68,45 +101,49 @@ class GalleryManager(ctk.CTkToplevel):
         sess = dialog.get_input()
         if not sess:
             return
-        self.manual_cookies = {"PHPSESSID": sess.strip(), "continue": "1"}
-        messagebox.showinfo("Saved", "Cookie set! Refreshing list...")
+        self.gallery_service.set_imx_php_session(sess.strip())
+        self._set_status("Manual IMX cookie saved for this Gallery Manager session.")
         self._refresh_list()
 
     def _refresh_list(self):
         """Resets to Page 1 and clears the list"""
         self.current_page = 1
+        self._refresh_request_id += 1
+        request_id = self._refresh_request_id
 
         # Clear UI
-        for widget in self.scroll.winfo_children():
-            widget.destroy()
+        self._clear_scroll()
 
         service = self.service_var.get()
+        self._set_status("")
         ctk.CTkLabel(self.scroll, text="Loading...").pack(pady=20)
 
         def _task():
-            data = self._fetch_galleries(service, page=1)
-            self.after(0, lambda: self._render_list(data, append=False))
+            result = self.gallery_service.list_galleries(service, page=1)
+            self.after(0, lambda: self._render_list_result(request_id, service, result))
 
         threading.Thread(target=_task, daemon=True).start()
 
     def _load_more_pages(self):
         """Fetches the next page and replaces current galleries"""
-        self.current_page += 1
+        page = self.current_page + 1
+        self._refresh_request_id += 1
+        request_id = self._refresh_request_id
 
         # Clear UI
-        for widget in self.scroll.winfo_children():
-            widget.destroy()
+        self._clear_scroll()
 
         service = self.service_var.get()
-        ctk.CTkLabel(self.scroll, text=f"Loading Page {self.current_page}...").pack(pady=20)
+        self._set_status("")
+        ctk.CTkLabel(self.scroll, text=f"Loading Page {page}...").pack(pady=20)
 
         def _task():
-            data = self._fetch_galleries(service, page=self.current_page)
-            self.after(0, lambda: self._render_list(data, append=False))
+            result = self.gallery_service.list_galleries(service, page=page)
+            self.after(0, lambda: self._render_list_result(request_id, service, result))
 
         threading.Thread(target=_task, daemon=True).start()
 
-    def _render_list(self, data, append=False):
+    def _render_list_result(self, request_id: int, service: str, result: GalleryResult):
         # --- FIX: RACE CONDITION CHECK ---
         # If the window was closed while the thread was running, self.scroll might be gone.
         try:
@@ -116,54 +153,41 @@ class GalleryManager(ctk.CTkToplevel):
             return
         # ---------------------------------
 
-        if not append:
-            for widget in self.scroll.winfo_children():
-                widget.destroy()
+        if self._is_stale_refresh(request_id, service):
+            return
 
-        if not data:
-            if not append:
-                # Full refresh and no data
-                if self.service_var.get() == "imx.to":
-                    btn = ctk.CTkButton(
-                        self.scroll,
-                        text="Login Failed? Set Cookies Manually",
-                        command=self._ask_cookies_dialog,
-                        fg_color="orange",
-                        text_color="black",
-                    )
-                    btn.pack(pady=20)
-                    ctk.CTkLabel(
-                        self.scroll, text="Login Failed.\nUse the button above if this persists."
-                    ).pack(pady=5)
-                else:
-                    ctk.CTkLabel(self.scroll, text="No galleries found.").pack(pady=20)
-            else:
-                # Load more pressed but no more data
-                ctk.CTkLabel(self.scroll, text="-- No more results --", text_color="gray").pack(
-                    pady=10
+        self._clear_scroll()
+        self.current_page = result.page
+        self._records = result.records
+
+        if not result.ok:
+            self._render_result_message(result)
+            return
+
+        self._set_status(result.message)
+        self._render_current_records()
+
+    def _render_current_records(self):
+        try:
+            if not self.winfo_exists() or not self.scroll.winfo_exists():
+                return
+        except Exception:
+            return
+
+        self._clear_scroll()
+        records = self._filtered_sorted_records()
+
+        if not records:
+            if self._records:
+                self._render_inline_empty_state(
+                    "No matching galleries",
+                    "No gallery matches the current search.",
+                    [("Clear Search", self._clear_search)],
                 )
             return
 
-        for item in data:
-            f = ctk.CTkFrame(self.scroll, fg_color="transparent")
-            f.pack(fill="x", pady=2)
-
-            name = item.get("name") or item.get("gallery_name") or item.get("id")
-            gid = item.get("id") or item.get("gallery_hash")
-
-            ctk.CTkLabel(f, text=name, font=("", 12, "bold")).pack(side="left", padx=5)
-            ctk.CTkLabel(f, text=f"({gid})", text_color="gray", font=("", 11)).pack(
-                side="left", padx=5
-            )
-
-            if self.callback:
-                ctk.CTkButton(
-                    f,
-                    text="Select",
-                    width=60,
-                    height=24,
-                    command=lambda s=self.service_var.get(), g=gid: self._select(s, g),
-                ).pack(side="right", padx=5)
+        for record in records:
+            self._render_record_row(record)
 
         # Append "Load More" button at the bottom if we found data
         # (Assuming if we found data, there *might* be another page)
@@ -176,167 +200,253 @@ class GalleryManager(ctk.CTkToplevel):
             )
             self.btn_load_more.pack(pady=15)
 
-    def _select(self, service, gid):
+    def _render_record_row(self, record: GalleryRecord, highlight: bool = False):
+        row_color = ("#1f6aa5", "#1f6aa5") if highlight else "transparent"
+        f = ctk.CTkFrame(self.scroll, fg_color=row_color)
+        f.pack(fill="x", pady=3, padx=2)
+        f.grid_columnconfigure(0, weight=1)
+
+        text_frame = ctk.CTkFrame(f, fg_color="transparent")
+        text_frame.grid(row=0, column=0, sticky="ew", padx=8, pady=6)
+        text_frame.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(text_frame, text=record.name, font=("", 12, "bold"), anchor="w").grid(
+            row=0, column=0, sticky="ew"
+        )
+
+        meta_parts = [f"ID/hash: {record.id}"]
+        last_used = self._record_last_used(record)
+        if last_used:
+            meta_parts.append(f"Last used: {last_used}")
+        ctk.CTkLabel(
+            text_frame,
+            text=" | ".join(meta_parts),
+            text_color="gray",
+            font=("", 11),
+            anchor="w",
+        ).grid(row=1, column=0, sticky="ew")
+
+        actions = ctk.CTkFrame(f, fg_color="transparent")
+        actions.grid(row=0, column=1, sticky="e", padx=6, pady=6)
+
         if self.callback:
-            self.callback(service, gid)
+            ctk.CTkButton(
+                actions,
+                text="Select",
+                width=62,
+                height=26,
+                command=lambda r=record: self._select(r),
+            ).pack(side="left", padx=2)
+
+        ctk.CTkButton(
+            actions,
+            text="Copy ID",
+            width=72,
+            height=26,
+            command=lambda r=record: self._copy_text(r.id, "Gallery ID/hash"),
+        ).pack(side="left", padx=2)
+
+        url_state = "normal" if record.url else "disabled"
+        ctk.CTkButton(
+            actions,
+            text="Copy URL",
+            width=78,
+            height=26,
+            state=url_state,
+            command=lambda r=record: self._copy_text(r.url, "Gallery URL"),
+        ).pack(side="left", padx=2)
+        ctk.CTkButton(
+            actions,
+            text="Open",
+            width=58,
+            height=26,
+            state=url_state,
+            command=lambda r=record: self._open_gallery(r),
+        ).pack(side="left", padx=2)
+
+    def _filtered_sorted_records(self):
+        query = self.search_var.get().strip().lower()
+        records = list(self._records)
+        if query:
+            records = [
+                record
+                for record in records
+                if query in record.name.lower()
+                or query in record.id.lower()
+                or query in record.url.lower()
+            ]
+
+        reverse = self.sort_var.get() == "Last used"
+        return sorted(records, key=self._record_sort_key, reverse=reverse)
+
+    def _record_sort_key(self, record: GalleryRecord):
+        sort_mode = self.sort_var.get()
+        if sort_mode == "ID/hash":
+            return (record.id.lower(), record.name.lower())
+        if sort_mode == "Last used":
+            last_used = self._record_last_used(record)
+            return (bool(last_used), last_used.lower(), record.name.lower())
+        return (record.name.lower(), record.id.lower())
+
+    def _record_last_used(self, record: GalleryRecord) -> str:
+        for key in ("last_used", "last_used_at", "last_used_ts"):
+            value = str(record.raw.get(key, "") or "").strip()
+            if value:
+                return value
+        return ""
+
+    def _select(self, record: GalleryRecord):
+        if self.callback:
+            self.callback(record.service, record.id)
         self.destroy()
 
     def _create_gallery(self):
         name = self.ent_name.get().strip()
         if not name:
-            messagebox.showwarning("Error", "Enter a gallery name")
+            self._set_status("Enter a gallery name.", is_error=True)
             return
 
         service = self.service_var.get()
+        self._create_request_id += 1
+        request_id = self._create_request_id
+        self._set_status(f"Creating gallery '{name}'...")
 
         def _task():
-            new_id = self._perform_create(service, name)
-            if new_id:
-                self.after(0, lambda: messagebox.showinfo("Success", f"Gallery Created: {new_id}"))
-                self.after(0, self._refresh_list)
-                if self.callback:
-                    self.after(0, lambda: self.callback(service, new_id))
-            else:
-                self.after(0, lambda: messagebox.showerror("Error", "Failed to create gallery."))
+            result = self.gallery_service.create_gallery(service, name)
+            self.after(0, lambda: self._handle_create_result(request_id, service, result))
 
         threading.Thread(target=_task, daemon=True).start()
 
-    # --- Logic ---
+    def _handle_create_result(self, request_id: int, service: str, result: GalleryResult):
+        if self._is_stale_create(request_id, service):
+            return
 
-    def _get_creds_dict(self):
-        return {
-            "vipr_user": self.creds.get("vipr_user", ""),
-            "vipr_pass": self.creds.get("vipr_pass", ""),
-            "imagebam_user": self.creds.get("imagebam_user", ""),
-            "imagebam_pass": self.creds.get("imagebam_pass", ""),
-            "api_key": self.creds.get("imx_api", ""),
-        }
+        if not result.ok:
+            self._set_status(result.message, is_error=True)
+            self._render_result_message(result)
+            return
 
-    def _fetch_galleries(self, service, page=1):
-        if service == "imx.to":
-            return self._fetch_imx_galleries(page)
+        record = result.record
+        self._set_status(result.message)
+        if record:
+            self._render_created_gallery(record)
+        else:
+            self._render_result_message(result)
 
-        # Other services don't support pagination in this bridge yet, return page 1 only
-        if page > 1:
-            return []
+    def _render_created_gallery(self, record: GalleryRecord):
+        self._records = [record]
+        self._clear_scroll()
+        ctk.CTkLabel(self.scroll, text="Gallery created", font=("", 16, "bold")).pack(
+            pady=(22, 4)
+        )
+        ctk.CTkLabel(
+            self.scroll,
+            text="Choose what to do with the new gallery.",
+            text_color="gray",
+        ).pack(pady=(0, 12))
+        self._render_record_row(record, highlight=True)
+        self._render_empty_actions(
+            [
+                ("Refresh List", self._refresh_list),
+                ("Create Another", self._focus_create_gallery),
+            ]
+        )
 
-        payload = {"action": "list_galleries", "service": service, "creds": self._get_creds_dict()}
-        resp = self.bridge.request_sync(payload, timeout=20)
-        if resp.get("type") == "data" and resp.get("data"):
-            return resp["data"]
-        return []
+    def _render_result_message(self, result: GalleryResult):
+        self._clear_scroll()
+        is_error = result.status != GalleryStatus.EMPTY
+        self._set_status(result.message, is_error=is_error)
 
-    def _perform_create(self, service, name):
-        if service == "imx.to":
-            return self._create_imx_gallery(name)
-        payload = {
-            "action": "create_gallery",
-            "service": service,
-            "creds": self._get_creds_dict(),
-            "config": {"gallery_name": name},
-        }
-        resp = self.bridge.request_sync(payload, timeout=20)
-        if resp.get("status") == "success":
-            data = resp.get("data")
-            if service == "pixhost.to" and isinstance(data, dict):
-                return data.get("gallery_hash")
-            return resp.get("msg") or data
-        if service == "pixhost.to":
-            try:
-                client = api.create_resilient_client()
-                res = api.create_pixhost_gallery(name, client)
-                client.close()
-                if res:
-                    return res.get("gallery_hash")
-            except (requests.RequestException, AttributeError) as e:
-                logger.error(f"Failed to create Pixhost gallery: {e}")
-        return None
+        title = {
+            GalleryStatus.EMPTY: "No galleries found",
+            GalleryStatus.MISSING_CREDENTIALS: "Missing credentials",
+            GalleryStatus.LOGIN_FAILED: "Login failed",
+            GalleryStatus.UNSUPPORTED: "Unsupported gallery operation",
+            GalleryStatus.PARSE_FAILED: "Could not read galleries",
+            GalleryStatus.ERROR: "Gallery operation failed",
+        }.get(result.status, "Gallery Manager")
 
-    # --- IMX IMPLEMENTATION ---
+        ctk.CTkLabel(self.scroll, text=title, font=("", 14, "bold")).pack(pady=(24, 4))
+        ctk.CTkLabel(self.scroll, text=result.message, wraplength=500, justify="center").pack(
+            pady=(0, 12)
+        )
 
-    def _create_imx_session(self):
-        session = requests.Session()
-        session.headers.update({"User-Agent": "Mozilla/5.0"})
+        actions = [("Refresh", self._refresh_list)]
+        if result.status in {GalleryStatus.MISSING_CREDENTIALS, GalleryStatus.LOGIN_FAILED}:
+            actions.insert(0, ("Set Credentials", self._open_credentials))
+        if result.service in CREATE_SUPPORTED:
+            actions.append(("Create Gallery", self._focus_create_gallery))
 
-        if self.manual_cookies:
-            for k, v in self.manual_cookies.items():
-                session.cookies.set(k, v, domain="imx.to")
-            return session
+        if result.status == GalleryStatus.LOGIN_FAILED and result.service == "imx.to":
+            actions.append(("Set IMX Cookie", self._ask_cookies_dialog))
 
-        user = self.creds.get("imx_user") or self.creds.get("vipr_user")
-        pwd = self.creds.get("imx_pass") or self.creds.get("vipr_pass")
-        if not user or not pwd:
-            return None
+        self._render_empty_actions(actions)
 
-        try:
-            # Login
-            login_url = "https://imx.to/login.php"
-            session.get(login_url, timeout=10)  # Init cookies
+    def _render_inline_empty_state(self, title: str, message: str, actions):
+        ctk.CTkLabel(self.scroll, text=title, font=("", 14, "bold")).pack(pady=(24, 4))
+        ctk.CTkLabel(self.scroll, text=message, wraplength=500, justify="center").pack(
+            pady=(0, 12)
+        )
+        self._render_empty_actions(actions)
 
-            payload = {"usr_email": user, "pwd": pwd, "doLogin": "Login", "remember": "1"}
-            session.post(login_url, data=payload, timeout=10)
-            return session
-        except requests.RequestException as e:
-            logger.error(f"IMX login failed: {e}")
-            return None
-
-    def _fetch_imx_galleries(self, page=1):
-        session = self._create_imx_session()
-        if not session:
-            return []
-
-        try:
-            # Append page parameter with 200 galleries per page
-            url = f"https://imx.to/user/galleries?page={page}&limit=200"
-            r = session.get(url, timeout=15)
-
-            galleries = []
-            seen = set()
-            # FIX: Updated pattern to make <i> tags optional
-            # Old pattern: r"href=['\"](?:https?://[^/'\"]+)?/g/(\w+)['\"][^>]*>\s*<i>([^<]+)</i>"
-            pattern = (
-                r"href=['\"](?:https?://[^/'\"]+)?/g/(\w+)['\"][^>]*>\s*(?:<i>)?([^<]+)(?:</i>)?"
+    def _render_empty_actions(self, actions):
+        if not actions:
+            return
+        frame = ctk.CTkFrame(self.scroll, fg_color="transparent")
+        frame.pack(pady=8)
+        for label, command in actions:
+            ctk.CTkButton(frame, text=label, width=120, command=command).pack(
+                side="left", padx=4
             )
-            for gid, gname in re.findall(pattern, r.text, re.IGNORECASE):
-                if gid not in seen:
-                    galleries.append({"id": gid, "name": gname.strip()})
-                    seen.add(gid)
-            return galleries
-        except (requests.RequestException, AttributeError) as e:
-            logger.error(f"Failed to fetch IMX galleries: {e}")
-            return []
 
-    def _create_imx_gallery(self, name):
-        session = self._create_imx_session()
-        if not session:
-            return None
+    def _clear_search(self):
+        self.search_var.set("")
+
+    def _focus_create_gallery(self):
         try:
-            url = "https://imx.to/user/gallery/add"
-            # Correct fields from add.php source code
-            data = {"gallery_name": name, "submit_new_gallery": "Add"}
+            self.ent_name.focus_set()
+        except Exception:
+            pass
 
-            r = session.post(url, data=data, timeout=15)
+    def _open_credentials(self):
+        CredentialsManager.create_credentials_dialog(
+            parent=self,
+            on_save_callback=self._reload_credentials_and_refresh,
+        )
 
-            if "id=" in r.url:
-                from urllib.parse import urlparse, parse_qs
+    def _reload_credentials_and_refresh(self):
+        self.creds = CredentialsManager.load_all_credentials()
+        self.gallery_service = GalleryService(self.bridge, self.creds)
+        self._refresh_list()
 
-                q = parse_qs(urlparse(r.url).query)
-                if "id" in q:
-                    return q["id"][0]
-
-            return self._find_gid_in_list(session, name)
-        except (requests.RequestException, KeyError, IndexError) as e:
-            logger.error(f"Failed to create IMX gallery: {e}")
-            return None
-
-    def _find_gid_in_list(self, session, name):
+    def _copy_text(self, text: str, label: str):
+        if not text:
+            self._set_status(f"No {label.lower()} is available.", is_error=True)
+            return
         try:
-            r = session.get("https://imx.to/user/galleries", timeout=10)
-            # FIX: Updated pattern to make <i> tags optional
-            pattern = r"href=['\"].*?/g/(\w+)['\"].*?>\s*(?:<i>)?(.*?)(?:</i>)?"
-            for gid, gname in re.findall(pattern, r.text, re.IGNORECASE):
-                if gname.strip() == name:
-                    return gid
-        except (requests.RequestException, AttributeError) as e:
-            logger.debug(f"Could not find gallery '{name}' in list: {e}")
-        return None
+            self.clipboard_clear()
+            self.clipboard_append(text)
+            self._set_status(f"Copied {label}.")
+        except Exception as exc:
+            self._set_status(f"Could not copy {label}: {exc}", is_error=True)
+
+    def _open_gallery(self, record: GalleryRecord):
+        if not record.url:
+            self._set_status("No gallery URL is available.", is_error=True)
+            return
+        webbrowser.open(record.url)
+        self._set_status(f"Opened {record.name}.")
+
+    def _clear_scroll(self):
+        for widget in self.scroll.winfo_children():
+            widget.destroy()
+
+    def _set_status(self, message: str, is_error: bool = False):
+        text_color = "#ff6b6b" if is_error else self._status_default_text_color
+        self.status_label.configure(text=message, text_color=text_color)
+
+    def _is_stale_refresh(self, request_id: int, service: str) -> bool:
+        return request_id != self._refresh_request_id or service != self.service_var.get()
+
+    def _is_stale_create(self, request_id: int, service: str) -> bool:
+        return request_id != self._create_request_id or service != self.service_var.get()

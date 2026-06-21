@@ -165,13 +165,7 @@ func (m *Module) doLogin(creds map[string]string) bool {
 	m.mu.RUnlock()
 
 	user := creds["imx_user"]
-	if user == "" {
-		user = creds["vipr_user"]
-	}
 	pass := creds["imx_pass"]
-	if pass == "" {
-		pass = creds["vipr_pass"]
-	}
 	if user == "" || pass == "" {
 		return false
 	}

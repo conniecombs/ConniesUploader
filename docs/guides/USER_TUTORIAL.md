@@ -383,18 +383,30 @@ If a feature says credentials are missing after you saved them, close and reopen
 
 Open it with `Tools > Manage Galleries`.
 
-The Gallery Manager supports `imx.to`, `pixhost.to`, and `vipr.im`.
+The Gallery Manager supports `imx.to`, `pixhost.to`, and `vipr.im`, but each service exposes different gallery features.
+
+| Service | Gallery Manager support |
+| --- | --- |
+| `imx.to` | List, select, create, and load additional pages. |
+| `vipr.im` | List, select, and create with saved Vipr credentials. |
+| `pixhost.to` | Create new galleries and return their gallery hash. Listing existing Pixhost galleries is not available yet. |
 
 Controls:
 
 - `Service`: choose which host's galleries to show.
-- `Refresh`: reload gallery data.
+- `Refresh`: reload gallery data for services that support listing.
+- `Search`: filter the visible gallery list by name, ID/hash, or URL.
+- `Sort`: order visible galleries by name, ID/hash, or last used date when that data is available.
 - `Your Galleries`: lists fetched galleries and their IDs/hashes.
 - `Select`: sends the chosen gallery ID/hash back to the main window.
+- `Copy ID`: copies the gallery ID/hash.
+- `Copy URL`: copies the gallery URL when the host returned or can build one.
+- `Open`: opens the gallery in your browser when a URL is known.
 - `New Gallery Name`: name to use when creating a new gallery.
-- `Create Gallery`: creates a gallery on the selected service.
+- `Create Gallery`: creates a gallery on the selected service. After creation, the new gallery is shown by itself with `Select`, `Copy ID`, `Copy URL`, and `Open` actions.
 - `Load Next Page`: appears for IMX gallery pagination.
-- `Login Failed? Set Cookies Manually`: appears for IMX when normal login/listing fails; it lets you paste a `PHPSESSID` cookie value.
+- `Set Credentials`: appears when saved credentials are missing or rejected.
+- `Set IMX Cookie Manually`: appears for IMX login failures; it lets you paste a `PHPSESSID` cookie value for the current Gallery Manager session.
 
 Use Gallery Manager when you want to attach a batch to an existing gallery or create a gallery before uploading.
 
@@ -403,7 +415,7 @@ Use Gallery Manager when you want to attach a batch to an existing gallery or cr
 Use this when the gallery already exists on the image host.
 
 1. Open `Tools > Manage Galleries`.
-2. Choose the service, such as `imx.to`, `pixhost.to`, or `vipr.im`.
+2. Choose a service that supports listing, such as `imx.to` or `vipr.im`.
 3. Click `Refresh`.
 4. Select the gallery from `Your Galleries`.
 5. Click `Select`.
