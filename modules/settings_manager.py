@@ -31,8 +31,8 @@ class SettingsManager:
             },
             "global_worker_count": {
                 "type": "integer",
-                "minimum": 1,
-                "maximum": 20,
+                "minimum": config.MIN_WORKER_COUNT,
+                "maximum": config.MAX_WORKER_COUNT,
                 "description": "Number of concurrent upload workers",
             },
             # IMX settings
@@ -40,19 +40,31 @@ class SettingsManager:
             "imx_format": {"type": "string"},
             "imx_cover_count": {"type": "integer", "minimum": 0, "maximum": 10},
             "imx_links": {"type": "boolean"},
-            "imx_threads": {"type": "integer", "minimum": 1, "maximum": 20},
+            "imx_threads": {
+                "type": "integer",
+                "minimum": config.MIN_THREAD_COUNT,
+                "maximum": config.MAX_THREAD_COUNT,
+            },
             # Pixhost settings
             "pix_content": {"type": "string", "enum": ["Safe", "Adult"]},
             "pix_thumb": {"type": "string", "pattern": "^[0-9]+$"},
             "pix_cover_count": {"type": "integer", "minimum": 0, "maximum": 10},
             "pix_links": {"type": "boolean"},
             "pix_mk_gal": {"type": "boolean"},
-            "pix_threads": {"type": "integer", "minimum": 1, "maximum": 20},
+            "pix_threads": {
+                "type": "integer",
+                "minimum": config.MIN_THREAD_COUNT,
+                "maximum": config.MAX_THREAD_COUNT,
+            },
             # TurboImageHost settings
             "turbo_content": {"type": "string"},
             "turbo_thumb": {"type": "string", "pattern": "^[0-9]+$"},
             "turbo_cover_count": {"type": "integer", "minimum": 0, "maximum": 10},
-            "turbo_threads": {"type": "integer", "minimum": 1, "maximum": 20},
+            "turbo_threads": {
+                "type": "integer",
+                "minimum": config.MIN_THREAD_COUNT,
+                "maximum": config.MAX_THREAD_COUNT,
+            },
             # Output settings
             "output_format": {"type": "string"},
             "auto_copy": {"type": "boolean"},
@@ -61,19 +73,31 @@ class SettingsManager:
             # Vipr settings
             "vipr_thumb": {"type": "string"},
             "vipr_cover_count": {"type": "integer", "minimum": 0, "maximum": 10},
-            "vipr_threads": {"type": "integer", "minimum": 1, "maximum": 20},
+            "vipr_threads": {
+                "type": "integer",
+                "minimum": config.MIN_THREAD_COUNT,
+                "maximum": config.MAX_THREAD_COUNT,
+            },
             # ImageBam settings
             "imagebam_content": {"type": "string"},
             "imagebam_thumb": {"type": "string", "pattern": "^[0-9]+$"},
             "imagebam_cover_count": {"type": "integer", "minimum": 0, "maximum": 10},
-            "imagebam_threads": {"type": "integer", "minimum": 1, "maximum": 20},
+            "imagebam_threads": {
+                "type": "integer",
+                "minimum": config.MIN_THREAD_COUNT,
+                "maximum": config.MAX_THREAD_COUNT,
+            },
             # Imgur settings
             "imgur_content": {"type": "string"},
             "imgur_thumb": {"type": "string"},
             "imgur_links": {"type": "boolean"},
             "imgur_album_id": {"type": "string"},
             "imgur_title": {"type": "string"},
-            "imgur_threads": {"type": "integer", "minimum": 1, "maximum": 20},
+            "imgur_threads": {
+                "type": "integer",
+                "minimum": config.MIN_THREAD_COUNT,
+                "maximum": config.MAX_THREAD_COUNT,
+            },
             # Optional fields (for future expansion)
             "auto_gallery": {"type": "boolean"},
             "gallery_id": {"type": "string"},
@@ -89,12 +113,12 @@ class SettingsManager:
         # UPDATED: Changed booleans (*_cover) to integers (*_cover_count)
         self.defaults = {
             "service": "imx.to",
-            "global_worker_count": 8,  # Main job queue dispatcher workers
+            "global_worker_count": config.DEFAULT_WORKER_COUNT,  # Main job queue dispatcher workers
             "imx_thumb": "180",
             "imx_format": "Fixed Width",
             "imx_cover_count": 0,  # Was imx_cover
             "imx_links": False,
-            "imx_threads": 5,
+            "imx_threads": config.DEFAULT_THREAD_COUNT,
             "pix_content": "Safe",
             "pix_thumb": "200",
             "pix_cover_count": 0,  # Was pix_cover
@@ -167,11 +191,38 @@ class SettingsManager:
         """
         errors = []
 
-        # Validate thread counts are consistent
-        if data.get("global_worker_count", 0) > config.MAX_THREAD_COUNT:
-            errors.append(
-                f"global_worker_count ({data['global_worker_count']}) exceeds maximum ({config.MAX_THREAD_COUNT})"
-            )
+        # Validate worker and upload thread counts are consistent with the UI.
+        worker_count = data.get("global_worker_count", config.DEFAULT_WORKER_COUNT)
+        try:
+            worker_count = int(worker_count)
+        except (TypeError, ValueError):
+            worker_count = None
+        if worker_count is not None:
+            if worker_count < config.MIN_WORKER_COUNT:
+                errors.append(
+                    f"global_worker_count ({worker_count}) is below minimum ({config.MIN_WORKER_COUNT})"
+                )
+            elif worker_count > config.MAX_WORKER_COUNT:
+                errors.append(
+                    f"global_worker_count ({worker_count}) exceeds maximum ({config.MAX_WORKER_COUNT})"
+                )
+
+        for thread_key in self._thread_count_keys():
+            if thread_key not in data:
+                continue
+            thread_count = data[thread_key]
+            try:
+                thread_count = int(thread_count)
+            except (TypeError, ValueError):
+                continue
+            if thread_count < config.MIN_THREAD_COUNT:
+                errors.append(
+                    f"{thread_key} ({thread_count}) is below minimum ({config.MIN_THREAD_COUNT})"
+                )
+            elif thread_count > config.MAX_THREAD_COUNT:
+                errors.append(
+                    f"{thread_key} ({thread_count}) exceeds maximum ({config.MAX_THREAD_COUNT})"
+                )
 
         # Validate cover counts don't exceed total
         for service_prefix in ["imx", "pix", "turbo", "vipr", "imagebam"]:
@@ -184,6 +235,44 @@ class SettingsManager:
                     errors.append(f"{cover_key} cannot exceed 10")
 
         return errors
+
+    @staticmethod
+    def _clamp_int(value: Any, default: int, minimum: int, maximum: int) -> int:
+        try:
+            number = int(value)
+        except (TypeError, ValueError):
+            number = default
+        return max(minimum, min(maximum, number))
+
+    @staticmethod
+    def _thread_count_keys() -> List[str]:
+        return [
+            "imx_threads",
+            "pix_threads",
+            "turbo_threads",
+            "vipr_threads",
+            "imagebam_threads",
+            "imgur_threads",
+        ]
+
+    def normalize_numeric_ranges(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Return settings with worker and thread counts clamped to supported ranges."""
+        normalized = data.copy()
+        normalized["global_worker_count"] = self._clamp_int(
+            normalized.get("global_worker_count"),
+            config.DEFAULT_WORKER_COUNT,
+            config.MIN_WORKER_COUNT,
+            config.MAX_WORKER_COUNT,
+        )
+        for thread_key in self._thread_count_keys():
+            default = self.defaults.get(thread_key, config.DEFAULT_THREAD_COUNT)
+            normalized[thread_key] = self._clamp_int(
+                normalized.get(thread_key),
+                default,
+                config.MIN_THREAD_COUNT,
+                config.MAX_THREAD_COUNT,
+            )
+        return normalized
 
     def load(self):
         """Load settings from file with validation.
@@ -202,7 +291,7 @@ class SettingsManager:
                 data = json.load(f)
 
             # Merge with defaults
-            merged = {**self.defaults, **data}
+            merged = self.normalize_numeric_ranges({**self.defaults, **data})
 
             # Validate the loaded settings
             validation_errors = self.validate_settings(merged)
@@ -242,6 +331,8 @@ class SettingsManager:
         Raises:
             InvalidConfigException: If data contains invalid configuration
         """
+        data = self.normalize_numeric_ranges(data)
+
         # Validate before saving
         validation_errors = self.validate_settings(data)
         if validation_errors:

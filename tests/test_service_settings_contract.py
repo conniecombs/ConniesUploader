@@ -19,6 +19,27 @@ def test_settings_validation_accepts_imgur_service():
 
 
 @pytest.mark.unit
+def test_settings_manager_normalizes_worker_and_thread_ranges():
+    manager = SettingsManager()
+
+    normalized = manager.normalize_numeric_ranges(
+        {
+            **manager.defaults,
+            "global_worker_count": 99,
+            "imx_threads": 99,
+            "pix_threads": 0,
+            "turbo_threads": "not-a-number",
+        }
+    )
+
+    assert normalized["global_worker_count"] == 16
+    assert normalized["imx_threads"] == 10
+    assert normalized["pix_threads"] == 1
+    assert normalized["turbo_threads"] == manager.defaults["turbo_threads"]
+    assert manager.validate_settings(normalized) == []
+
+
+@pytest.mark.unit
 def test_imgur_credentials_are_configurable():
     imgur_config = CredentialsManager.SERVICE_CONFIGS["Imgur"]
     keys = {field["key"] for field in imgur_config["fields"]}

@@ -535,6 +535,19 @@ class TestUploadManagerJobConfig(unittest.TestCase):
 
         self.assertEqual(config["threads"], 2)
 
+    def test_threads_are_clamped_to_visible_thread_limit_range(self):
+        from modules.upload_manager import UploadManager
+
+        too_high = UploadManager._normalize_job_config(
+            {"service": "pixhost.to", "pix_threads": 99}
+        )
+        too_low = UploadManager._normalize_job_config(
+            {"service": "pixhost.to", "pix_threads": 0}
+        )
+
+        self.assertEqual(too_high["threads"], 10)
+        self.assertEqual(too_low["threads"], 1)
+
 
 class TestImgurHttpSpec(unittest.TestCase):
     """Test Imgur generic HTTP runner specification."""

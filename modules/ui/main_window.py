@@ -80,6 +80,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
     def _init_variables(self):
         """Initialize UI variables and executors."""
         self.menu_thread_var = tk.IntVar(value=5)
+        self._last_global_thread_limit_value = config.DEFAULT_THREAD_COUNT
         self.var_show_previews = tk.BooleanVar(value=True)
         self.var_separate_batches = tk.BooleanVar(value=False)
         self.var_appearance_mode = tk.StringVar(value="System")
@@ -271,16 +272,6 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         tools_menu.add_separator()
         tools_menu.add_command(label="Viper Tools", command=self.open_viper_tools)
 
-        thread_menu = tk.Menu(tools_menu, tearoff=0)
-        tools_menu.add_cascade(label="Set Thread Limit", menu=thread_menu)
-        for i in range(1, 11):
-            thread_menu.add_radiobutton(
-                label=f"{i} Threads",
-                value=i,
-                variable=self.menu_thread_var,
-                command=lambda n=i: self.set_global_threads(n),
-            )
-
         tools_menu.add_separator()
         tools_menu.add_command(label="Install Context Menu", command=ContextUtils.install_menu)
 
@@ -337,19 +328,17 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         self.auto_poster.saved_threads_data = self.saved_threads_data
 
     def set_global_threads(self, n):
+        n = self._bounded_int(
+            n,
+            config.DEFAULT_THREAD_COUNT,
+            config.MIN_THREAD_COUNT,
+            config.MAX_THREAD_COUNT,
+        )
         self.menu_thread_var.set(n)
-        if hasattr(self, "var_imx_threads"):
-            self.var_imx_threads.set(n)
-        if hasattr(self, "var_pix_threads"):
-            self.var_pix_threads.set(n)
-        if hasattr(self, "var_turbo_threads"):
-            self.var_turbo_threads.set(n)
-        if hasattr(self, "var_vipr_threads"):
-            self.var_vipr_threads.set(n)
-        if hasattr(self, "var_ib_threads"):
-            self.var_ib_threads.set(n)
-        if hasattr(self, "var_imgur_threads"):
-            self.var_imgur_threads.set(n)
+        self._last_global_thread_limit_value = n
+        for _, var_name, _ in self._service_thread_var_specs():
+            if hasattr(self, var_name):
+                getattr(self, var_name).set(n)
 
     def open_template_editor(self):
         def on_update(new_key):
@@ -713,7 +702,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         self.overall_progress.pack(fill="x", pady=5)
 
     def _create_global_advanced_section(self, parent):
-        self.var_global_worker_count = ctk.IntVar(value=8)
+        self.var_global_worker_count = ctk.IntVar(value=config.DEFAULT_WORKER_COUNT)
 
         wrapper = ctk.CTkFrame(parent, fg_color="transparent")
         wrapper.pack(fill="x", padx=5, pady=(0, 8))
@@ -746,7 +735,50 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             worker_frame, textvariable=self.var_global_worker_count, width=60
         )
         worker_spinbox.pack(side="left", padx=5)
-        ctk.CTkLabel(worker_frame, text="(1-16)", font=("Segoe UI", 10)).pack(side="left")
+        worker_spinbox.bind(
+            "<FocusOut>",
+            lambda _event: self._set_bounded_var(
+                self.var_global_worker_count,
+                self.var_global_worker_count.get(),
+                config.DEFAULT_WORKER_COUNT,
+                config.MIN_WORKER_COUNT,
+                config.MAX_WORKER_COUNT,
+            ),
+        )
+        worker_spinbox.bind(
+            "<Return>",
+            lambda _event: self._set_bounded_var(
+                self.var_global_worker_count,
+                self.var_global_worker_count.get(),
+                config.DEFAULT_WORKER_COUNT,
+                config.MIN_WORKER_COUNT,
+                config.MAX_WORKER_COUNT,
+            ),
+        )
+        ctk.CTkLabel(
+            worker_frame,
+            text=f"({config.MIN_WORKER_COUNT}-{config.MAX_WORKER_COUNT})",
+            font=("Segoe UI", 10),
+        ).pack(side="left")
+
+        thread_frame = ctk.CTkFrame(content, fg_color="transparent")
+        thread_frame.pack(fill="x", pady=5)
+        ctk.CTkLabel(thread_frame, text="Thread Limit:", width=100).pack(side="left")
+        thread_limit_entry = ctk.CTkEntry(
+            thread_frame, textvariable=self.menu_thread_var, width=60
+        )
+        thread_limit_entry.pack(side="left", padx=5)
+        thread_limit_entry.bind(
+            "<FocusOut>", lambda _event: self.set_global_threads(self.menu_thread_var.get())
+        )
+        thread_limit_entry.bind(
+            "<Return>", lambda _event: self.set_global_threads(self.menu_thread_var.get())
+        )
+        ctk.CTkLabel(
+            thread_frame,
+            text=f"({config.MIN_THREAD_COUNT}-{config.MAX_THREAD_COUNT})",
+            font=("Segoe UI", 10),
+        ).pack(side="left")
 
     def _create_empty_queue_state(self):
         self.empty_queue_frame = ctk.CTkFrame(self.list_container, fg_color="transparent")
@@ -1656,20 +1688,69 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
     def _apply_settings(self):
         s = self.settings
 
-        self.var_global_worker_count.set(s.get("global_worker_count", 8))
+        self._set_bounded_var(
+            self.var_global_worker_count,
+            s.get("global_worker_count", config.DEFAULT_WORKER_COUNT),
+            config.DEFAULT_WORKER_COUNT,
+            config.MIN_WORKER_COUNT,
+            config.MAX_WORKER_COUNT,
+        )
 
-        self.var_imx_threads.set(s.get("imx_threads", 5))
-        self.menu_thread_var.set(s.get("imx_threads", 5))
+        self._set_bounded_var(
+            self.var_imx_threads,
+            s.get("imx_threads", config.DEFAULT_THREAD_COUNT),
+            config.DEFAULT_THREAD_COUNT,
+            config.MIN_THREAD_COUNT,
+            config.MAX_THREAD_COUNT,
+        )
+        self._set_bounded_var(
+            self.menu_thread_var,
+            s.get("imx_threads", config.DEFAULT_THREAD_COUNT),
+            config.DEFAULT_THREAD_COUNT,
+            config.MIN_THREAD_COUNT,
+            config.MAX_THREAD_COUNT,
+        )
+        self._last_global_thread_limit_value = self.menu_thread_var.get()
 
-        self.var_pix_threads.set(s.get("pix_threads", 3))
+        self._set_bounded_var(
+            self.var_pix_threads,
+            s.get("pix_threads", 3),
+            3,
+            config.MIN_THREAD_COUNT,
+            config.MAX_THREAD_COUNT,
+        )
 
-        self.var_turbo_threads.set(s.get("turbo_threads", 2))
+        self._set_bounded_var(
+            self.var_turbo_threads,
+            s.get("turbo_threads", 2),
+            2,
+            config.MIN_THREAD_COUNT,
+            config.MAX_THREAD_COUNT,
+        )
 
-        self.var_vipr_threads.set(s.get("vipr_threads", 1))
+        self._set_bounded_var(
+            self.var_vipr_threads,
+            s.get("vipr_threads", 1),
+            1,
+            config.MIN_THREAD_COUNT,
+            config.MAX_THREAD_COUNT,
+        )
 
-        self.var_ib_threads.set(s.get("imagebam_threads", 2))
+        self._set_bounded_var(
+            self.var_ib_threads,
+            s.get("imagebam_threads", 2),
+            2,
+            config.MIN_THREAD_COUNT,
+            config.MAX_THREAD_COUNT,
+        )
         if hasattr(self, "var_imgur_threads"):
-            self.var_imgur_threads.set(s.get("imgur_threads", 2))
+            self._set_bounded_var(
+                self.var_imgur_threads,
+                s.get("imgur_threads", 2),
+                2,
+                config.MIN_THREAD_COUNT,
+                config.MAX_THREAD_COUNT,
+            )
 
         self.var_auto_copy.set(s.get("auto_copy", False))
         self.var_auto_gallery.set(s.get("auto_gallery", False))
@@ -1702,19 +1783,74 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             logger.debug(f"Could not convert '{value}' to int, using default {default}: {e}")
             return default
 
+    @staticmethod
+    def _service_thread_var_specs():
+        return (
+            ("imx_threads", "var_imx_threads", config.DEFAULT_THREAD_COUNT),
+            ("pix_threads", "var_pix_threads", 3),
+            ("turbo_threads", "var_turbo_threads", 2),
+            ("vipr_threads", "var_vipr_threads", 1),
+            ("imagebam_threads", "var_ib_threads", 2),
+            ("imgur_threads", "var_imgur_threads", 2),
+        )
+
+    def _bounded_int(self, value, default, minimum, maximum):
+        number = self._safe_int(value, default)
+        return max(minimum, min(maximum, number))
+
+    def _set_bounded_var(self, variable, value, default, minimum, maximum):
+        bounded = self._bounded_int(value, default, minimum, maximum)
+        try:
+            variable.set(bounded)
+        except Exception as e:
+            logger.debug(f"Could not set bounded UI value '{bounded}': {e}")
+        return bounded
+
     def _gather_settings(self) -> Dict[str, Any]:
         selected_service = self.var_service.get()
+        worker_count = self._set_bounded_var(
+            self.var_global_worker_count,
+            self.var_global_worker_count.get(),
+            config.DEFAULT_WORKER_COUNT,
+            config.MIN_WORKER_COUNT,
+            config.MAX_WORKER_COUNT,
+        )
+        global_thread_limit = self._set_bounded_var(
+            self.menu_thread_var,
+            self.menu_thread_var.get(),
+            config.DEFAULT_THREAD_COUNT,
+            config.MIN_THREAD_COUNT,
+            config.MAX_THREAD_COUNT,
+        )
+        if global_thread_limit != getattr(
+            self, "_last_global_thread_limit_value", global_thread_limit
+        ):
+            self.set_global_threads(global_thread_limit)
+
+        service_thread_settings = {}
+        for key, var_name, default in self._service_thread_var_specs():
+            variable = getattr(self, var_name, None)
+            value = variable.get() if variable is not None else default
+            if variable is not None:
+                service_thread_settings[key] = self._set_bounded_var(
+                    variable,
+                    value,
+                    default,
+                    config.MIN_THREAD_COUNT,
+                    config.MAX_THREAD_COUNT,
+                )
+            else:
+                service_thread_settings[key] = self._bounded_int(
+                    value,
+                    default,
+                    config.MIN_THREAD_COUNT,
+                    config.MAX_THREAD_COUNT,
+                )
+
         cfg = {
             "service": selected_service,
-            "global_worker_count": self._safe_int(self.var_global_worker_count.get(), 8),
-            "imx_threads": self._safe_int(self.var_imx_threads.get(), 5),
-            "pix_threads": self._safe_int(self.var_pix_threads.get(), 3),
-            "turbo_threads": self._safe_int(self.var_turbo_threads.get(), 2),
-            "vipr_threads": self._safe_int(self.var_vipr_threads.get(), 1),
-            "imagebam_threads": self._safe_int(self.var_ib_threads.get(), 2),
-            "imgur_threads": self._safe_int(
-                self.var_imgur_threads.get() if hasattr(self, "var_imgur_threads") else 2, 2
-            ),
+            "global_worker_count": worker_count,
+            **service_thread_settings,
             "output_format": self.settings.get("output_format", "BBCode"),
             "auto_copy": self.var_auto_copy.get(),
             "auto_gallery": self.var_auto_gallery.get(),
@@ -1723,15 +1859,16 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             "appearance_mode": self.var_appearance_mode.get(),
         }
 
-        if not hasattr(self, "settings_view"):
+        settings_view = self.__dict__.get("settings_view")
+        if settings_view is None:
             return cfg
 
-        for service_id, raw_config in self.settings_view.get_all_raw_configs().items():
-            cfg.update(self.settings_view.alias_config(service_id, raw_config))
+        for service_id, raw_config in settings_view.get_all_raw_configs().items():
+            cfg.update(settings_view.alias_config(service_id, raw_config))
 
-        selected_config = self.settings_view.get_validated_config(selected_service)
+        selected_config = settings_view.get_validated_config(selected_service)
         cfg.update(selected_config)
-        cfg.update(self.settings_view.alias_config(selected_service, selected_config))
+        cfg.update(settings_view.alias_config(selected_service, selected_config))
 
         return cfg
 

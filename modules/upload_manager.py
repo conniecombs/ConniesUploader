@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Tuple
 
 from loguru import logger
 
+from . import config
 from .plugin_manager import PluginManager
 from .sidecar import SidecarBridge
 
@@ -251,7 +252,10 @@ class UploadManager:
         except (TypeError, ValueError):
             threads = 2
 
-        normalized["threads"] = max(1, threads)
+        normalized["threads"] = max(
+            config.MIN_THREAD_COUNT,
+            min(config.MAX_THREAD_COUNT, threads),
+        )
         return normalized
 
     def _process_events(self) -> None:
