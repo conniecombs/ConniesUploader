@@ -55,7 +55,7 @@ Completion summaries show uploaded and failed counts, generated output files, cl
 
 The Template Editor lets users build BBCode, Markdown, HTML, ViperGirls posting, and custom output formats with built-in template categories, search, import/export, validation, duplicate/rename/delete actions, categorized placeholders, nested conditionals, custom `[for image]` loops, and previews that include rendered output plus raw generated text.
 
-![Template Editor with BBCode formatting toolbar, gallery placeholders, editable template text, preview, restore, save, and save-as-new controls](docs/assets/screenshots/template-editor-v140.png)
+![Template Editor with template search, duplicate rename delete import export actions, categorized image placeholders including Cover{s}, editable template text, preview, copy preview, restore, save, and save-as-new controls](docs/assets/screenshots/template-editor-v140.png)
 
 ### Manage Galleries With Clear State
 

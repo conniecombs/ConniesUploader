@@ -1,0 +1,7 @@
+[
+  "tests/test_build_contract.py::test_cleanup_helper_covers_generated_artifacts_and_keeps_user_data_explicit",
+  "tests/test_build_contract.py::test_customtkinter_hook_preserves_assets_and_adds_tcl_tk_binaries",
+  "tests/test_build_contract.py::test_other_build_entrypoints_use_local_pyinstaller_hooks",
+  "tests/test_build_contract.py::test_release_workflow_uses_local_pyinstaller_hooks",
+  "tests/test_build_contract.py::test_windows_build_uses_local_pyinstaller_hooks_and_verifies_tkinter"
+]

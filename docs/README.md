@@ -103,6 +103,7 @@ docs/
 - Updated contributor and plugin docs for automatic plugin discovery, current schema settings, current build commands, and current test commands.
 - Updated build troubleshooting for PyInstaller hooks, Tkinter/Tcl bundling, plugin bundling, and current Go/Python toolchain expectations.
 - Added documentation for current Template Manager, cover, ViperGirls, repository cleanup, and user tutorial improvements in `CHANGELOG.md`.
+- Refreshed the Template Editor screenshot to show search, template actions, categorized placeholders, and current cover controls.
 
 ### 2026-06-20
 
