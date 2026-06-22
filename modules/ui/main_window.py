@@ -3209,7 +3209,8 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
     def _preview_group_results(self, group: Any) -> List[Tuple[str, str, str]]:
         results = []
         for index, file_path in enumerate(self._ordered_group_files_for_output(group), start=1):
-            name = os.path.basename(file_path) or f"image-{index}"
+            preview_path = str(file_path or "").replace("\\", "/").rstrip("/")
+            name = os.path.basename(preview_path) or f"image-{index}"
             safe_name = file_handler.sanitize_filename(os.path.splitext(name)[0]) or f"image-{index}"
             base_url = f"https://preview.invalid/{safe_name}"
             results.append(
