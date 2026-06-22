@@ -5,6 +5,7 @@ import customtkinter as ctk
 import threading
 import webbrowser
 from modules.credentials_manager import CredentialsManager
+from modules.gallery_cache import GalleryCache
 from modules.sidecar import SidecarBridge
 from . import config
 from .gallery_service import (
@@ -16,13 +17,22 @@ from .gallery_service import (
 )
 
 
+GALLERY_CACHE_FALLBACK_STATUSES = {
+    GalleryStatus.LOGIN_FAILED,
+    GalleryStatus.PARSE_FAILED,
+    GalleryStatus.ERROR,
+}
+
+
 class GalleryManager(ctk.CTkToplevel):
     def __init__(self, parent, creds, callback=None):
         super().__init__(parent)
+        self.parent = parent
         self.creds = creds
         self.callback = callback
         self.bridge = SidecarBridge.get()
         self.gallery_service = GalleryService(self.bridge, self.creds)
+        self.gallery_cache = GalleryCache()
 
         self.title("Gallery Manager")
         self.geometry("820x720")
@@ -39,7 +49,7 @@ class GalleryManager(ctk.CTkToplevel):
         self._create_request_id = 0
 
         self._init_ui()
-        self.after(config.UI_GALLERY_REFRESH_DELAY_MS, self._refresh_list)
+        self.after(config.UI_GALLERY_REFRESH_DELAY_MS, self._load_cached_or_refresh)
 
     def _init_ui(self):
         top = ctk.CTkFrame(self, fg_color="transparent")
@@ -50,12 +60,16 @@ class GalleryManager(ctk.CTkToplevel):
             top,
             variable=self.service_var,
             values=["imx.to", "pixhost.to", "vipr.im"],
-            command=lambda x: self._refresh_list(),
+            command=lambda _choice: self._load_cached_or_refresh(),
         )
         self.cb_service.pack(side="left")
 
-        # Refresh resets to Page 1
-        ctk.CTkButton(top, text="Refresh", width=80, command=self._refresh_list).pack(side="right")
+        ctk.CTkButton(
+            top,
+            text="Refresh from host",
+            width=132,
+            command=self._refresh_list,
+        ).pack(side="right")
 
         tools = ctk.CTkFrame(self, fg_color="transparent")
         tools.pack(fill="x", padx=10, pady=(0, 8))
@@ -103,6 +117,24 @@ class GalleryManager(ctk.CTkToplevel):
             return
         self.gallery_service.set_imx_php_session(sess.strip())
         self._set_status("Manual IMX cookie saved for this Gallery Manager session.")
+        self._refresh_list()
+
+    def _load_cached_or_refresh(self):
+        service = self.service_var.get()
+        records = self.gallery_cache.records_for_service(service)
+        if records:
+            result = GalleryResult(
+                status=GalleryStatus.SUCCESS,
+                message=(
+                    f"Showing {len(records)} cached gallery record(s). "
+                    "Use Refresh from host to reload live data."
+                ),
+                service=service,
+                records=records,
+                cached=True,
+            )
+            self._render_list_result(self._refresh_request_id, service, result)
+            return
         self._refresh_list()
 
     def _refresh_list(self):
@@ -161,11 +193,52 @@ class GalleryManager(ctk.CTkToplevel):
         self._records = result.records
 
         if not result.ok:
+            cached_result = self._cached_result_for_failure(service, result)
+            if result.status in GALLERY_CACHE_FALLBACK_STATUSES and cached_result:
+                self.current_page = cached_result.page
+                self._records = cached_result.records
+                self._set_status(cached_result.message, is_warning=True)
+                self._render_current_records()
+                return
             self._render_result_message(result)
             return
 
-        self._set_status(result.message)
+        if not result.cached and result.records:
+            self.gallery_cache.upsert_records(service, result.records)
+            self._records = self._records_with_cache_metadata(service, result.records)
+        self._set_status(result.message, is_warning=result.cached)
         self._render_current_records()
+
+    def _records_with_cache_metadata(self, service: str, records):
+        cached_by_id = {
+            record.id: record
+            for record in self.gallery_cache.records_for_service(service)
+        }
+        merged = []
+        for record in records:
+            cached = cached_by_id.get(record.id)
+            if cached:
+                record.raw["pinned"] = cached.raw.get("pinned")
+                record.raw["last_used_at"] = cached.raw.get("last_used_at")
+                record.raw["cached_at"] = cached.raw.get("cached_at")
+            merged.append(record)
+        return merged
+
+    def _cached_result_for_failure(self, service: str, result: GalleryResult):
+        records = self.gallery_cache.records_for_service(service)
+        if not records:
+            return None
+        return GalleryResult(
+            status=GalleryStatus.SUCCESS,
+            message=(
+                f"{result.message} Showing {len(records)} cached gallery record(s) instead."
+            ),
+            service=service,
+            records=records,
+            page=result.page,
+            raw=result.raw,
+            cached=True,
+        )
 
     def _render_current_records(self):
         try:
@@ -215,6 +288,10 @@ class GalleryManager(ctk.CTkToplevel):
         )
 
         meta_parts = [f"ID/hash: {record.id}"]
+        if self._record_is_pinned(record):
+            meta_parts.append("Pinned")
+        if self._record_is_cached(record):
+            meta_parts.append("Cached")
         last_used = self._record_last_used(record)
         if last_used:
             meta_parts.append(f"Last used: {last_used}")
@@ -237,6 +314,23 @@ class GalleryManager(ctk.CTkToplevel):
                 height=26,
                 command=lambda r=record: self._select(r),
             ).pack(side="left", padx=2)
+            if self._can_assign_selected_batches():
+                ctk.CTkButton(
+                    actions,
+                    text="Assign Batches",
+                    width=106,
+                    height=26,
+                    command=lambda r=record: self._assign_selected_batches(r),
+                ).pack(side="left", padx=2)
+
+        pin_text = "Unpin" if self._record_is_pinned(record) else "Pin"
+        ctk.CTkButton(
+            actions,
+            text=pin_text,
+            width=62,
+            height=26,
+            command=lambda r=record: self._toggle_pin(r),
+        ).pack(side="left", padx=2)
 
         ctk.CTkButton(
             actions,
@@ -277,7 +371,8 @@ class GalleryManager(ctk.CTkToplevel):
             ]
 
         reverse = self.sort_var.get() == "Last used"
-        return sorted(records, key=self._record_sort_key, reverse=reverse)
+        records = sorted(records, key=self._record_sort_key, reverse=reverse)
+        return sorted(records, key=lambda record: 0 if self._record_is_pinned(record) else 1)
 
     def _record_sort_key(self, record: GalleryRecord):
         sort_mode = self.sort_var.get()
@@ -295,10 +390,43 @@ class GalleryManager(ctk.CTkToplevel):
                 return value
         return ""
 
+    def _record_is_pinned(self, record: GalleryRecord) -> bool:
+        return bool(record.raw.get("pinned"))
+
+    def _record_is_cached(self, record: GalleryRecord) -> bool:
+        return bool(record.raw.get("_cached"))
+
     def _select(self, record: GalleryRecord):
+        self._mark_used(record)
         if self.callback:
-            self.callback(record.service, record.id)
+            try:
+                self.callback(record.service, record.id, record)
+            except TypeError:
+                self.callback(record.service, record.id)
         self.destroy()
+
+    def _can_assign_selected_batches(self) -> bool:
+        selected_count = getattr(self.parent, "gallery_selected_batch_count", None)
+        return callable(selected_count) and selected_count() > 0
+
+    def _assign_selected_batches(self, record: GalleryRecord):
+        self._mark_used(record)
+        assign = getattr(self.parent, "on_gallery_assign_to_selected_batches", None)
+        if callable(assign):
+            assign(record.service, record.id, record)
+        self.destroy()
+
+    def _mark_used(self, record: GalleryRecord):
+        used_at = self.gallery_cache.mark_used(record)
+        record.raw["last_used_at"] = used_at
+        record.raw.pop("_cached", None)
+
+    def _toggle_pin(self, record: GalleryRecord):
+        is_pinned = self.gallery_cache.toggle_pinned(record)
+        record.raw["pinned"] = is_pinned
+        state = "Pinned" if is_pinned else "Unpinned"
+        self._set_status(f"{state} {record.name}.")
+        self._render_current_records()
 
     def _create_gallery(self):
         name = self.ent_name.get().strip()
@@ -329,6 +457,7 @@ class GalleryManager(ctk.CTkToplevel):
         record = result.record
         self._set_status(result.message)
         if record:
+            self.gallery_cache.upsert_record(record)
             self._render_created_gallery(record)
         else:
             self._render_result_message(result)
@@ -347,7 +476,7 @@ class GalleryManager(ctk.CTkToplevel):
         self._render_record_row(record, highlight=True)
         self._render_empty_actions(
             [
-                ("Refresh List", self._refresh_list),
+                ("Refresh from host", self._refresh_list),
                 ("Create Another", self._focus_create_gallery),
             ]
         )
@@ -371,7 +500,7 @@ class GalleryManager(ctk.CTkToplevel):
             pady=(0, 12)
         )
 
-        actions = [("Refresh", self._refresh_list)]
+        actions = [("Refresh from host", self._refresh_list)]
         if result.status in {GalleryStatus.MISSING_CREDENTIALS, GalleryStatus.LOGIN_FAILED}:
             actions.insert(0, ("Set Credentials", self._open_credentials))
         if result.service in CREATE_SUPPORTED:
@@ -395,7 +524,7 @@ class GalleryManager(ctk.CTkToplevel):
         frame = ctk.CTkFrame(self.scroll, fg_color="transparent")
         frame.pack(pady=8)
         for label, command in actions:
-            ctk.CTkButton(frame, text=label, width=120, command=command).pack(
+            ctk.CTkButton(frame, text=label, width=145, command=command).pack(
                 side="left", padx=4
             )
 
@@ -441,8 +570,13 @@ class GalleryManager(ctk.CTkToplevel):
         for widget in self.scroll.winfo_children():
             widget.destroy()
 
-    def _set_status(self, message: str, is_error: bool = False):
-        text_color = "#ff6b6b" if is_error else self._status_default_text_color
+    def _set_status(self, message: str, is_error: bool = False, is_warning: bool = False):
+        if is_error:
+            text_color = "#ff6b6b"
+        elif is_warning:
+            text_color = "#FFB340"
+        else:
+            text_color = self._status_default_text_color
         self.status_label.configure(text=message, text_color=text_color)
 
     def _is_stale_refresh(self, request_id: int, service: str) -> bool:

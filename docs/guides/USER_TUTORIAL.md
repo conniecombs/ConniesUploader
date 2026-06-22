@@ -383,22 +383,24 @@ If a feature says credentials are missing after you saved them, close and reopen
 
 Open it with `Tools > Manage Galleries`.
 
-The Gallery Manager supports `imx.to`, `pixhost.to`, and `vipr.im`, but each service exposes different gallery features.
+The Gallery Manager supports `imx.to`, `pixhost.to`, and `vipr.im`, but each service exposes different gallery features. It can also remember recently loaded or created galleries locally, so you can still see known galleries when a host refresh fails.
 
 | Service | Gallery Manager support |
 | --- | --- |
 | `imx.to` | List, select, create, and load additional pages. |
 | `vipr.im` | List, select, and create with saved Vipr credentials. |
-| `pixhost.to` | Create new galleries and return their gallery hash. Listing existing Pixhost galleries is not available yet. |
+| `pixhost.to` | Create new galleries and return their gallery hash. Recently created Pixhost galleries may appear from the local cache, but listing existing Pixhost galleries from the host is not available yet. |
 
 Controls:
 
 - `Service`: choose which host's galleries to show.
-- `Refresh`: reload gallery data for services that support listing.
+- `Refresh from host`: reload live gallery data from the selected host.
 - `Search`: filter the visible gallery list by name, ID/hash, or URL.
 - `Sort`: order visible galleries by name, ID/hash, or last used date when that data is available.
-- `Your Galleries`: lists fetched galleries and their IDs/hashes.
-- `Select`: sends the chosen gallery ID/hash back to the main window.
+- `Your Galleries`: lists live or cached galleries and their IDs/hashes.
+- `Select`: sends the chosen gallery ID/hash, real gallery name, and URL back to the current service settings.
+- `Assign Batches`: appears when queued images are selected; assigns the gallery to the batches containing those selected images instead of only changing the global service setting.
+- `Pin` / `Unpin`: keeps frequently reused galleries at the top of the list.
 - `Copy ID`: copies the gallery ID/hash.
 - `Copy URL`: copies the gallery URL when the host returned or can build one.
 - `Open`: opens the gallery in your browser when a URL is known.
@@ -408,6 +410,18 @@ Controls:
 - `Set Credentials`: appears when saved credentials are missing or rejected.
 - `Set IMX Cookie Manually`: appears for IMX login failures; it lets you paste a `PHPSESSID` cookie value for the current Gallery Manager session.
 
+Gallery Manager keeps a local cache at `~/.conniesuploader/gallery_cache.json`. Live refreshes update that cache, selected galleries get a `Last used` timestamp, and pinned galleries stay pinned across restarts. If a live refresh fails because of login, network, or parsing trouble, the manager can show known galleries with a `Cached` label. A real empty result stays empty so you know the host did not return any galleries.
+
+Status meanings:
+
+| Status | What it means | Best next step |
+| --- | --- | --- |
+| `Missing credentials` | The selected host needs a saved username/password before listing or creating galleries. | Click `Set Credentials`, save the correct service credentials, then click `Refresh from host`. |
+| `Login failed` | Credentials were found, but the host rejected them or showed the login page again. | Re-save credentials. For IMX, use `Set IMX Cookie` if normal login is blocked. |
+| `No galleries found` | The host returned a valid empty list. | Create a gallery, choose another service, or confirm the account has galleries on the host site. |
+| `Cached` | The row came from local cache because live refresh was unavailable. | Use it if the ID/hash is still valid, or click `Refresh from host` when the host is reachable. |
+| `Could not read galleries` | The host page or sidecar response changed shape. | Try again later and check `View > Execution Log` for the raw failure. |
+
 Use Gallery Manager when you want to attach a batch to an existing gallery or create a gallery before uploading.
 
 ### Example: Attach Uploads To An Existing Gallery
@@ -416,8 +430,8 @@ Use this when the gallery already exists on the image host.
 
 1. Open `Tools > Manage Galleries`.
 2. Choose a service that supports listing, such as `imx.to` or `vipr.im`.
-3. Click `Refresh`.
-4. Select the gallery from `Your Galleries`.
+3. Click `Refresh from host`.
+4. Select the gallery from `Your Galleries`. If the row says `Cached`, it is a remembered gallery rather than a fresh host result.
 5. Click `Select`.
 6. Confirm the gallery ID/hash appears in the service settings panel.
 7. Add files and upload.
@@ -425,7 +439,24 @@ Use this when the gallery already exists on the image host.
 Expected result:
 
 - Uploaded images are attached to that selected gallery when the service supports it.
-- The generated template can use `#gallery_link#`, `#gallery_name#`, and `#gallery_id#`.
+- Upload Checks show the selected gallery name, ID/hash, and URL when there is a preflight issue.
+- The generated template can use `#gallery_link#`, `#gallery_name#`, and `#gallery_id#`. If Gallery Manager supplied a real site gallery name, `#gallery_name#` uses it; otherwise it falls back to the batch title.
+
+### Example: Assign One Gallery To Specific Batches
+
+Use this when only some batches should upload into a chosen gallery.
+
+1. Add files or folders.
+2. Select one or more images in the batches you want to target.
+3. Open `Tools > Manage Galleries`.
+4. Choose the matching image host.
+5. Click `Assign Batches` on the gallery row.
+6. Start the upload.
+
+Expected result:
+
+- Every batch containing one of the selected images gets that gallery assignment.
+- Batches with no selected images keep the normal service settings.
 
 ### Example: One Gallery Per Folder
 
@@ -440,7 +471,11 @@ Use this when each folder should become its own gallery.
 Expected result:
 
 - Each batch/folder gets a separate gallery when the host supports automatic gallery creation.
+- Before upload starts, Activity shows the gallery names the app plans to create.
 - The generated output for each batch uses that batch's gallery details.
+- Pixhost galleries show a finalization success or failure message after upload because Pixhost requires an extra finalize step.
+
+For Pixhost, gallery creation and upload are separate from finalization. If finalization fails, the uploaded image links may still be generated, but the Pixhost gallery page may not contain every image until the host accepts the finalize request.
 
 ## Template Editor
 
@@ -543,7 +578,7 @@ Custom templates are saved in `~/.conniesuploader/templates.json`. Existing `use
 | `#thumb_url#` | Thumbnail URL for the first image when used directly, and for each image inside per-image formats. |
 | `#direct_url#` | Direct image URL for the first image when used directly, and for each image when the service provides or derives one. |
 | `#gallery_link#` | Gallery URL built from the selected or created gallery. |
-| `#gallery_name#` | Batch title. |
+| `#gallery_name#` | Real gallery name from Gallery Manager or auto-gallery creation when known; otherwise the batch title. |
 | `#gallery_id#` | Gallery ID or hash. |
 | `#cover_images#` | All selected cover images rendered as clickable image blocks. The number of covers follows the batch's selected cover count. |
 | `#cover_image#` | Clickable thumbnail block for the first selected cover image, or the first successful upload when no cover is selected. |
@@ -948,6 +983,7 @@ Saved thread data is stored under:
 | --- | --- |
 | App settings | `user_settings.json` |
 | Custom templates | `~/.conniesuploader/templates.json` |
+| Gallery cache, pinned galleries, and last-used gallery timestamps | `~/.conniesuploader/gallery_cache.json` |
 | Output for current sessions | `Output/` |
 | Persistent output history | `~/.conniesuploader/history/` |
 | Saved ViperGirls posting targets | `~/.conniesuploader/saved_threads.json` |
@@ -1055,7 +1091,10 @@ Start with the symptom you see.
 | Symptom | Most likely cause | First thing to try |
 | --- | --- | --- |
 | Upload button starts but everything fails | Missing sidecar, credentials, host issue, or invalid settings. | Open `View > Execution Log` and read the first red/error line. |
-| Vipr galleries are empty | Vipr credentials missing or login failed. | Save Vipr credentials, select `vipr.im`, click `Refresh Galleries / Login`. |
+| Gallery login fails | Missing, stale, or rejected host credentials. | Open `Tools > Set Credentials`, re-save the selected host's credentials, then click `Refresh from host`. |
+| Gallery list is empty | The host returned no galleries, or the service cannot list galleries. | Confirm the service supports listing, then create a gallery or check the account on the host site. |
+| Gallery row says `Cached` | The live refresh failed and the app is showing remembered local data. | Click `Refresh from host` when the host is reachable, or use the cached row only if the ID/hash is still valid. |
+| Pixhost gallery finalization fails | Pixhost accepted uploads but rejected or missed the final gallery finalize step. | Check Activity, keep the generated links, then retry with fewer workers if the host was busy. |
 | ViperGirls post never happens | Batch target is `Do Not Post` or posting preflight failed. | Select a saved thread in the batch header and run Upload Checks again. |
 | Covers do not appear | Template does not contain a cover placeholder. | Add `#cover_images#` to the template. |
 | Covers repeat in the normal image list | Template may not be using the cover-aware placeholders. | Use `#cover_images#` plus `#all_images#`. |
@@ -1072,13 +1111,46 @@ Open `View > Execution Log` and check the sidecar message. Also verify credentia
 
 Open `Tools > Set Credentials`, fill the service tab, click `Save All`, then restart or retry the upload.
 
-### Vipr galleries do not load
+### Gallery Manager login fails
 
-Confirm `Vipr` credentials in `Tools > Set Credentials`, then select `vipr.im` and click `Refresh Galleries / Login`.
+Gallery Manager uses the credentials for the selected image host only.
+
+- For `vipr.im`, save the Vipr username and password.
+- For `imx.to`, save the IMX username and password. The IMX API key is still needed for uploads, but gallery listing/login uses the username and password.
+- For `pixhost.to`, credentials are not required, but live listing existing Pixhost galleries is not available yet.
+
+After saving credentials, click `Refresh from host`. If IMX still shows a login failure, use `Set IMX Cookie` and paste a current `PHPSESSID` cookie value from your browser session.
+
+### Gallery list is empty
+
+An empty Gallery Manager list can mean different things:
+
+- `No galleries found`: the host responded successfully, but the account has no galleries on that page.
+- `Unsupported gallery operation`: the selected service cannot list existing galleries from the host. Pixhost can create galleries and reuse cached created galleries, but it cannot list all existing Pixhost galleries yet.
+- No visible rows after searching: clear the `Search` field.
+
+Try `Create Gallery` if the host supports creation, or open the host website to confirm the gallery exists under that account.
+
+### Gallery rows are stale or cached
+
+Rows labeled `Cached` came from `~/.conniesuploader/gallery_cache.json`, not from the host. This usually happens when login fails, the network is unavailable, or the host response changed shape.
+
+Cached rows are useful when you already know the gallery ID/hash is still valid. They can be wrong if the gallery was renamed or deleted on the host. Click `Refresh from host` to replace cached data with live data. If a bad cache keeps confusing things, close the app and delete `~/.conniesuploader/gallery_cache.json`; the app will rebuild it after the next successful refresh or gallery creation.
 
 ### IMX gallery login fails
 
 Open `Tools > Manage Galleries`, select `imx.to`, and use the manual cookie option if it appears. You can paste a `PHPSESSID` cookie value when normal login fails.
+
+### Pixhost gallery finalization fails
+
+Pixhost galleries need a finalization step after images upload. If Activity reports a Pixhost finalization failure:
+
+1. Check whether the images themselves uploaded and whether output files were generated.
+2. Open the generated gallery URL if one is available.
+3. If the gallery is missing images, retry with a lower Worker Count or Thread Limit.
+4. Keep the generated post/output text; the image links may still be valid even if the gallery page did not finalize.
+
+This is different from a normal upload failure. Upload failure means an image did not reach Pixhost. Finalization failure means the gallery grouping step failed after upload.
 
 ### The queue is slow with many images
 

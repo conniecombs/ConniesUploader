@@ -10,6 +10,7 @@ from threading import Lock
 import pytest
 
 from modules import config
+from modules.gallery_service import GalleryRecord
 from modules.ui.main_window import UploaderApp
 
 
@@ -127,6 +128,14 @@ class FakeVar:
 
     def set(self, value):
         self.value = value
+
+
+class FakeSettingsView:
+    def __init__(self):
+        self.values = {}
+
+    def set_value(self, service_id, key, value):
+        self.values[(service_id, key)] = value
 
 
 class FakeProgress:
@@ -960,6 +969,168 @@ def test_upload_preflight_reports_ready_summary(tmp_path):
 
 
 @pytest.mark.unit
+def test_gallery_manager_selection_preserves_gallery_metadata():
+    app = UploaderApp.__new__(UploaderApp)
+    app.settings_view = FakeSettingsView()
+    app.var_service = FakeVar("imx.to")
+    app.selected_gallery_by_service = {}
+    swapped = []
+    activity = []
+    app._swap_service_frame = lambda service: swapped.append(service)
+    app.add_activity = lambda message, level="info": activity.append((message, level))
+
+    record = GalleryRecord(
+        service="pixhost.to",
+        id="abc123",
+        name="Site Gallery Name",
+        url="https://pixhost.to/gallery/abc123",
+        upload_hash="upload456",
+    )
+
+    UploaderApp.on_gallery_created(app, "pixhost.to", "abc123", record)
+
+    assert app.settings_view.values[("pixhost.to", "gallery_hash")] == "abc123"
+    assert app.var_service.get() == "pixhost.to"
+    assert swapped == ["pixhost.to"]
+    assert app.selected_gallery_by_service["pixhost.to"] == {
+        "service": "pixhost.to",
+        "id": "abc123",
+        "name": "Site Gallery Name",
+        "url": "https://pixhost.to/gallery/abc123",
+        "upload_hash": "upload456",
+    }
+    assert activity[-1] == (
+        "Selected gallery for pixhost.to: Site Gallery Name (abc123).",
+        "success",
+    )
+
+
+@pytest.mark.unit
+def test_gallery_manager_can_assign_gallery_to_selected_batches(tmp_path):
+    image_path = str(tmp_path / "selected.jpg")
+    group = FakeGroup("Batch Alpha", [image_path])
+
+    app = UploaderApp.__new__(UploaderApp)
+    app.lock = Lock()
+    app.file_widgets = {image_path: {"group": group}}
+    app.selected_files = {image_path}
+    app.var_service = FakeVar("imx.to")
+    app.selected_gallery_by_service = {}
+    swapped = []
+    activity = []
+    app._swap_service_frame = lambda service: swapped.append(service)
+    app.add_activity = lambda message, level="info": activity.append((message, level))
+
+    record = GalleryRecord(
+        service="imx.to",
+        id="IMX_123",
+        name="Actual Thread Gallery",
+        url="https://imx.to/g/IMX_123",
+    )
+
+    UploaderApp.on_gallery_assign_to_selected_batches(app, "imx.to", "IMX_123", record)
+
+    assert UploaderApp.gallery_selected_batch_count(app) == 1
+    assert group.gallery_id == "IMX_123"
+    assert group.gallery_name == "Actual Thread Gallery"
+    assert group.gallery_url == "https://imx.to/g/IMX_123"
+    assert group.gallery_service == "imx.to"
+    assert swapped == ["imx.to"]
+    assert activity[-1] == (
+        "Assigned gallery Actual Thread Gallery (IMX_123) to 1 selected batch.",
+        "success",
+    )
+
+
+@pytest.mark.unit
+def test_upload_preflight_shows_selected_gallery_details_and_validates_hash(tmp_path):
+    image_path = tmp_path / "ready.jpg"
+    image_path.write_bytes(b"fake image")
+
+    app = UploaderApp.__new__(UploaderApp)
+    app.creds = {}
+    app.output_dir = str(tmp_path / "Output")
+    app.central_history_path = str(tmp_path / "history")
+    app.upload_manager = SimpleNamespace(bridge=FakeBridge(alive=True))
+    app.selected_gallery_by_service = {}
+    app.service_plugins = {
+        "pixhost.to": FakePlugin(
+            "pixhost.to",
+            "Pixhost",
+            {
+                "implementation": "go",
+                "credentials": [],
+                "limits": {
+                    "allowed_formats": [".jpg"],
+                    "max_file_size": 1024,
+                },
+            },
+        )
+    }
+
+    issues, summary = UploaderApp._run_upload_preflight(
+        app,
+        {FakeGroup("Batch Alpha", [str(image_path)]): [str(image_path)]},
+        {
+            "service": "pixhost.to",
+            "gallery_hash": "bad-hash",
+            "selected_gallery_name": "Manual Hash",
+        },
+    )
+
+    assert summary == ""
+    assert (
+        'Selected gallery for "Batch Alpha": Manual Hash (bad-hash). '
+        "(https://pixhost.to/gallery/bad-hash)"
+    ) in app.preflight_detail_lines
+    assert 'Gallery selected for "Batch Alpha" has an invalid gallery hash: bad-hash.' in issues
+
+
+@pytest.mark.unit
+def test_upload_preflight_previews_one_gallery_per_folder(tmp_path):
+    first = tmp_path / "first.jpg"
+    second = tmp_path / "second.jpg"
+    first.write_bytes(b"fake image")
+    second.write_bytes(b"fake image")
+
+    app = UploaderApp.__new__(UploaderApp)
+    app.creds = {}
+    app.output_dir = str(tmp_path / "Output")
+    app.central_history_path = str(tmp_path / "history")
+    app.upload_manager = SimpleNamespace(bridge=FakeBridge(alive=True))
+    app.selected_gallery_by_service = {}
+    app.service_plugins = {
+        "pixhost.to": FakePlugin(
+            "pixhost.to",
+            "Pixhost",
+            {
+                "implementation": "go",
+                "credentials": [],
+                "limits": {
+                    "allowed_formats": [".jpg"],
+                    "max_file_size": 1024,
+                },
+            },
+        )
+    }
+
+    issues, summary = UploaderApp._run_upload_preflight(
+        app,
+        {
+            FakeGroup("Batch Alpha", [str(first)]): [str(first)],
+            FakeGroup("Batch Beta", [str(second)]): [str(second)],
+        },
+        {"service": "pixhost.to", "auto_gallery": True},
+    )
+
+    assert issues == []
+    assert "One Gallery Per Folder will create 2 Pixhost galleries before upload: Batch Alpha, Batch Beta." in summary
+    assert app.preflight_detail_lines == [
+        "One Gallery Per Folder will create 2 Pixhost galleries before upload: Batch Alpha, Batch Beta."
+    ]
+
+
+@pytest.mark.unit
 def test_upload_preflight_reports_specific_blockers(tmp_path):
     image_path = tmp_path / "unsupported.bmp"
     image_path.write_bytes(b"fake image")
@@ -1421,6 +1592,113 @@ def test_generate_group_output_populates_supported_template_context(tmp_path):
         "Batch Alpha|1|pixhost.to|My Target|98765"
     )
     assert queued
+
+
+@pytest.mark.unit
+def test_generate_group_output_uses_real_gallery_name_when_available(tmp_path):
+    captured = {}
+
+    class FakeTemplateManager:
+        def apply(self, template_name, context, group_results):
+            captured["context"] = dict(context)
+            return "ok"
+
+    file_path = str(tmp_path / "first.jpg")
+    group = FakeGroup("Batch Alpha", [file_path])
+    group.selected_template = "BBCode"
+    group.selected_thread = "Do Not Post"
+    group.gallery_id = "G123"
+    group.gallery_name = "Real Site Gallery"
+    group.gallery_url = "https://pixhost.to/gallery/G123"
+    group.gallery_service = "pixhost.to"
+
+    app = UploaderApp.__new__(UploaderApp)
+    app.results = [(file_path, "https://img.test/view", "https://img.test/thumb")]
+    app.settings = {"service": "pixhost.to", "pix_thumb": "200"}
+    app.template_mgr = FakeTemplateManager()
+    app.output_dir = str(tmp_path / "Output")
+    app.central_history_path = str(tmp_path / "history")
+    app.current_output_files = []
+    app.clipboard_buffer = []
+    app.saved_threads_data = {}
+    app.auto_poster = SimpleNamespace(queue_post=lambda *args, **kwargs: None)
+    app.lbl_eta = FakeLabel()
+    app.btn_open = FakeFrame()
+    app.var_auto_copy = FakeVar(False)
+    app.var_imx_links = FakeVar(False)
+    app.var_pix_links = FakeVar(False)
+    app.var_turbo_links = FakeVar(False)
+    app.var_vipr_links = FakeVar(False)
+    app.log = lambda _message: None
+    app.add_activity = lambda _message, level="info": None
+
+    UploaderApp.generate_group_output(app, group)
+
+    assert captured["context"]["gallery_name"] == "Real Site Gallery"
+    assert captured["context"]["gallery_link"] == "https://pixhost.to/gallery/G123"
+    assert captured["context"]["gallery_id"] == "G123"
+
+
+@pytest.mark.unit
+def test_selected_pixhost_gallery_with_upload_hash_registers_for_finalization(tmp_path):
+    image_path = str(tmp_path / "ready.jpg")
+    group = FakeGroup("Batch Alpha", [image_path])
+
+    app = UploaderApp.__new__(UploaderApp)
+    app.pix_galleries_to_finalize = []
+    app.selected_gallery_by_service = {
+        "pixhost.to": {
+            "service": "pixhost.to",
+            "id": "abc123",
+            "name": "Site Gallery",
+            "url": "https://pixhost.to/gallery/abc123",
+            "upload_hash": "upload456",
+        }
+    }
+
+    UploaderApp._register_selected_pixhost_galleries_for_finalization(
+        app,
+        {group: [image_path]},
+        {
+            "service": "pixhost.to",
+            "selected_gallery_by_service": app.selected_gallery_by_service,
+        },
+    )
+    UploaderApp._register_selected_pixhost_galleries_for_finalization(
+        app,
+        {group: [image_path]},
+        {
+            "service": "pixhost.to",
+            "selected_gallery_by_service": app.selected_gallery_by_service,
+        },
+    )
+
+    assert app.pix_galleries_to_finalize == [
+        {
+            "gallery_hash": "abc123",
+            "gallery_upload_hash": "upload456",
+            "gallery_url": "https://pixhost.to/gallery/abc123",
+            "gallery_name": "Site Gallery",
+        }
+    ]
+
+
+@pytest.mark.unit
+def test_pixhost_finalization_events_are_added_before_completion():
+    activity = []
+    completed = []
+
+    app = UploaderApp.__new__(UploaderApp)
+    app.add_activity = lambda message, level="info": activity.append((message, level))
+    app._on_upload_complete = lambda: completed.append(True)
+
+    UploaderApp._finish_pixhost_finalization(
+        app,
+        [("Pixhost gallery finalized: Site Gallery (abc123).", "success")],
+    )
+
+    assert activity == [("Pixhost gallery finalized: Site Gallery (abc123).", "success")]
+    assert completed == [True]
 
 
 @pytest.mark.unit

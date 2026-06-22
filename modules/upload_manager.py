@@ -135,6 +135,12 @@ class UploadManager:
                     group_cfg["gallery_id"] = gid
                     group_cfg["gallery_hash"] = gid
                     group_cfg["pix_gallery_hash"] = gid
+                    if getattr(group_obj, "gallery_name", ""):
+                        group_cfg["selected_gallery_name"] = group_obj.gallery_name
+                    if getattr(group_obj, "gallery_url", ""):
+                        group_cfg["selected_gallery_url"] = group_obj.gallery_url
+                    if getattr(group_obj, "gallery_upload_hash", ""):
+                        group_cfg["gallery_upload_hash"] = group_obj.gallery_upload_hash
                     logger.info(f"Group '{group_obj.title}' attached to Gallery ID: {gid}")
                 elif not group_cfg.get("gallery_hash"):
                     manual_hash = (

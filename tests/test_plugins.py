@@ -473,7 +473,10 @@ class TestPixhostGalleryIntegration(unittest.TestCase):
         self.assertEqual(group.gallery_id, "abc123")
         self.assertEqual(config["gallery_hash"], "abc123")
         self.assertEqual(config["gallery_upload_hash"], "upload456")
-        self.assertEqual(context["created_galleries"], [new_gallery])
+        self.assertEqual(
+            context["created_galleries"],
+            [{**new_gallery, "gallery_name": "Test Gallery"}],
+        )
 
     def test_upload_manager_preserves_created_gallery_upload_hash(self):
         import queue

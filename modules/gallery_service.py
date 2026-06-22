@@ -43,6 +43,7 @@ class GalleryResult:
     record: Optional[GalleryRecord] = None
     page: int = 1
     raw: Any = None
+    cached: bool = False
 
     @property
     def ok(self) -> bool:
@@ -566,6 +567,7 @@ class GalleryService:
         record: Optional[GalleryRecord] = None,
         page: int = 1,
         raw: Any = None,
+        cached: bool = False,
     ) -> GalleryResult:
         return GalleryResult(
             status=status,
@@ -575,6 +577,7 @@ class GalleryService:
             record=record,
             page=page,
             raw=raw,
+            cached=cached,
         )
 
 
