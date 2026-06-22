@@ -1,193 +1,380 @@
 # Build Troubleshooting Guide
 
-## Issue: Uploads Don't Work in Built EXE
+This guide covers source-run and packaged-build problems for Connie's Uploader Ultimate.
 
-### Symptoms
-- Built exe is only ~26MB (too small)
-- Uploads fail immediately
-- Log shows "Sidecar executable not found"
+## Quick Rules
 
-### Root Cause
-The Go sidecar (`uploader.exe`) was not properly bundled into the PyInstaller package.
+- Source runs need a sidecar binary in the repo root: `uploader.exe` on Windows or `uploader` on Linux/macOS.
+- Packaged releases bundle the Go sidecar inside the final PyInstaller executable.
+- Use the build scripts before hand-writing PyInstaller commands.
+- If you do build manually, mirror the current build script exactly.
 
-### Solution
+## Supported Toolchain
 
-#### 1. Verify Go Sidecar Exists
-Before running the build script, ensure `uploader.exe` exists in the project root:
+Local builds:
 
-```bash
-# Build Go sidecar manually if needed
-go build -ldflags="-s -w" -o uploader.exe .
+- Python 3.11 or newer. The Windows build script accepts Python 3.11 through 3.13.
+- Go 1.25.9 or newer.
 
-# Verify it was created
-ls -l uploader.exe
-# Should be ~12-15 MB
-```
+CI/release workflows currently use:
 
-#### 2. Clean Previous Build
-Delete old build artifacts that might interfere:
+- Python 3.11
+- Go 1.26.4
 
-```batch
-# Windows
-rmdir /s /q build
-rmdir /s /q dist
-del *.spec
+## Preferred Build Commands
 
-# Linux/Mac
-rm -rf build dist *.spec
-```
-
-#### 3. Rebuild with Clean Flag
-Run the build script with the `--clean` flag:
+Windows:
 
 ```batch
 build_uploader.bat --clean
 ```
 
-#### 4. Verify Built EXE Size
-The final exe should be **40-50 MB**, not 26 MB:
+Linux/macOS:
 
-```
-Components:
-- Python runtime + libraries: ~20 MB
-- uploader.exe (Go sidecar): ~12 MB
-- tkinterdnd2 + dependencies: ~15 MB
-- Total: ~47 MB
+```bash
+./build.sh --clean
 ```
 
-If your exe is only 26 MB, the Go sidecar is missing.
+Makefile:
 
-#### 5. Test Sidecar Inclusion
-Run the diagnostic script:
+```bash
+make clean
+make build
+```
 
-```python
+Non-interactive Windows CI-style build:
+
+```batch
+build_uploader.bat --ci
+```
+
+## Source Run: Sidecar Not Found
+
+### Symptoms
+
+When running `python main.py`, logs show:
+
+```text
+Sidecar executable 'uploader.exe' was not found
+```
+
+### Meaning
+
+This is expected if you start from source before building the Go sidecar. The Python GUI can open, but uploads cannot run until the sidecar exists.
+
+### Fix
+
+Windows:
+
+```powershell
+go build -ldflags="-s -w" -o uploader.exe .
+python main.py
+```
+
+Linux/macOS:
+
+```bash
+go build -ldflags="-s -w" -o uploader .
+python main.py
+```
+
+You can inspect lookup paths with:
+
+```bash
 python scripts/diagnostics/check_sidecar_location.py
 ```
 
-This will show exactly where the script is looking for uploader.exe and whether it's found.
-
-#### 6. Manual PyInstaller Build
-If the automatic build fails, try building manually:
-
-```batch
-# 1. Build Go sidecar
-go build -ldflags="-s -w" -o uploader.exe .
-
-# 2. Verify it exists
-dir uploader.exe
-
-# 3. Run PyInstaller
-pyinstaller ^
-    --noconsole ^
-    --onefile ^
-    --clean ^
-    --name "ConniesUploader" ^
-    --icon "logo.ico" ^
-    --add-data "uploader.exe;." ^
-    --add-data "logo.ico;." ^
-    --collect-all tkinterdnd2 ^
-    main.py
-
-# 4. Verify output
-dir dist\ConniesUploader.exe
-```
-
-## Issue: "go: command not found"
-
-### Solution
-Install Go from https://go.dev/dl/ or let the build script install it automatically.
-
-## Issue: "python: command not found"
-
-### Solution
-Install Python 3.11+ from https://www.python.org/downloads/ or let the build script install it.
-
-## Issue: EXE Crashes Importing `tkinter.tix`
+## Packaged EXE: Sidecar Missing
 
 ### Symptoms
-- The build succeeds, but the executable crashes during startup.
-- The traceback mentions `tkinterdnd2`, `TkinterDnD.py`, and `ImportError: cannot import name 'tix' from 'tkinter'`.
 
-### Root Cause
-Older `tkinterdnd2` versions import the legacy `tkinter.tix` module path, which is not available in current Python/Tkinter runtimes.
+- Uploads fail immediately in `dist/ConniesUploader.exe`.
+- Build verification says `uploader.exe` was not bundled.
+- Packaged executable is unexpectedly tiny.
 
-### Solution
-Install the current pinned dependency and rebuild cleanly:
+### Fix
+
+Run:
+
+```batch
+build_uploader.bat --clean
+```
+
+The Windows build script verifies that:
+
+- `uploader.exe` exists before PyInstaller runs.
+- `uploader.exe` is present inside the PyInstaller archive.
+- `_tkinter.pyd`, Tcl/Tk runtime data, `tcl86t.dll`, `tk86t.dll`, and tkinterdnd2 assets are bundled.
+
+The release workflow uses a minimum final executable threshold of 15 MB to catch obviously incomplete packages. Do not rely on old 40-50 MB size expectations; stripped Go binaries and dependency changes can make final size vary.
+
+## Manual Windows PyInstaller Build
+
+Use this only for debugging. The command should include local hooks, tkinterdnd2 assets, plugin submodules, and explicit active plugin imports.
+
+```batch
+go build -ldflags="-s -w" -o uploader.exe .
+
+pyinstaller ^
+  --noconsole ^
+  --onefile ^
+  --clean ^
+  --noupx ^
+  --name "ConniesUploader" ^
+  --icon "logo.ico" ^
+  --add-data "uploader.exe;." ^
+  --add-data "logo.ico;." ^
+  --additional-hooks-dir "pyinstaller_hooks" ^
+  --collect-all tkinterdnd2 ^
+  --collect-submodules modules.plugins ^
+  --hidden-import modules.plugins.imx ^
+  --hidden-import modules.plugins.pixhost ^
+  --hidden-import modules.plugins.vipr ^
+  --hidden-import modules.plugins.turbo ^
+  --hidden-import modules.plugins.imagebam ^
+  --hidden-import modules.plugins.imgur ^
+  main.py
+```
+
+If a new active plugin is added, update this command, `build_uploader.bat`, `build.sh`, `Makefile`, `.github/workflows/release.yml`, and `tests/test_build_contract.py`.
+
+## Manual Linux/macOS PyInstaller Build
+
+```bash
+go build -ldflags="-s -w" -o uploader .
+
+pyinstaller \
+  --noconsole \
+  --onefile \
+  --clean \
+  --name "ConniesUploader" \
+  --add-binary "uploader:." \
+  --add-data "logo.ico:." \
+  --additional-hooks-dir "pyinstaller_hooks" \
+  --collect-all tkinterdnd2 \
+  --collect-submodules modules.plugins \
+  --hidden-import modules.plugins.imx \
+  --hidden-import modules.plugins.pixhost \
+  --hidden-import modules.plugins.vipr \
+  --hidden-import modules.plugins.turbo \
+  --hidden-import modules.plugins.imagebam \
+  --hidden-import modules.plugins.imgur \
+  main.py
+```
+
+## EXE Crashes Importing `_tkinter`
+
+### Symptoms
+
+The executable shows an unhandled exception like:
+
+```text
+ImportError: DLL load failed while importing _tkinter
+```
+
+### Meaning
+
+PyInstaller did not bundle the Python Tkinter extension or the Tcl/Tk runtime correctly.
+
+### Fix
+
+1. Rebuild with the current script:
+
+```batch
+build_uploader.bat --clean
+```
+
+2. Confirm `pyinstaller_hooks/` exists and the build command includes:
+
+```text
+--additional-hooks-dir "pyinstaller_hooks"
+```
+
+3. Let the build script run its archive verification. It checks for:
+
+- `_tkinter.pyd`
+- `_tcl_data`
+- `_tk_data`
+- `tcl86t.dll`
+- `tk86t.dll`
+
+If any of those checks fail, recreate the virtual environment and rebuild.
+
+```batch
+rmdir /s /q venv
+build_uploader.bat --clean
+```
+
+## EXE Crashes Importing `tkinter.tix`
+
+### Symptoms
+
+The traceback mentions `tkinterdnd2`, `TkinterDnD.py`, and `tkinter.tix`.
+
+### Meaning
+
+An old `tkinterdnd2` version is installed.
+
+### Fix
 
 ```batch
 pip install -r requirements.txt
 build_uploader.bat --clean
 ```
 
-`requirements.txt` should include:
+`requirements.txt` should pin:
 
 ```text
 tkinterdnd2==0.4.3
 ```
 
-## Issue: PyInstaller Fails with "module not found"
+## Plugins Missing In Packaged Build
 
-### Solution
-Ensure virtual environment is activated and all dependencies installed:
+### Symptoms
 
-```batch
-# Recreate venv
-build_uploader.bat --clean
+- The app starts, but services are missing.
+- Logs show plugin import failures.
+- The service dropdown has fewer than the expected active services.
 
-# Or manually:
+### Expected Active Plugins
+
+- `imagebam.com`
+- `imgur.com`
+- `imx.to`
+- `pixhost.to`
+- `turboimagehost`
+- `vipr.im`
+
+### Fix
+
+Ensure the PyInstaller command includes:
+
+```text
+--collect-submodules modules.plugins
+--hidden-import modules.plugins.imx
+--hidden-import modules.plugins.pixhost
+--hidden-import modules.plugins.vipr
+--hidden-import modules.plugins.turbo
+--hidden-import modules.plugins.imagebam
+--hidden-import modules.plugins.imgur
+```
+
+Then run:
+
+```bash
+python scripts/diagnostics/check_plugins.py
+```
+
+## Python Not Found
+
+### Windows
+
+`build_uploader.bat` can install Python 3.11.9 for the current user on 64-bit Windows if no compatible Python is found.
+
+For manual setup, install Python from [python.org](https://www.python.org/downloads/) and enable the Python launcher.
+
+### Linux/macOS
+
+Install Python with your system package manager or pyenv. Then recreate the venv:
+
+```bash
 python -m venv venv
-call venv\Scripts\activate
+source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## Issue: EXE Runs but Shows "Failed to Load Plugin"
+## Go Not Found
 
-This is different from sidecar issues. This means plugins can't be imported.
+### Windows
 
-### Solution
-Ensure the `modules` directory structure is preserved:
+`build_uploader.bat` can install a portable Go 1.25.9 toolchain under `.build-tools/` if no compatible Go is found.
 
-```
-ConniesUploader.exe  (in dist/)
-modules/
-  ├── plugins/
-  │   ├── __init__.py
-  │   ├── imx.py
-  │   ├── pixhost.py
-  │   └── ...
-  └── ...
+### Linux/macOS
+
+Install Go from [go.dev](https://go.dev/dl/) or your package manager.
+
+Verify:
+
+```bash
+go version
+go mod download
+go build -ldflags="-s -w" -o uploader .
 ```
 
-If modules aren't found, add to PyInstaller command:
+## Dependency Installation Fails
+
+Recreate the virtual environment:
+
+Windows:
+
+```batch
+rmdir /s /q venv
+python -m venv venv
+call venv\Scripts\activate
+python -m pip install --upgrade pip
+pip install -r requirements.txt
 ```
---hidden-import=modules.plugins.imx
---hidden-import=modules.plugins.pixhost
+
+Linux/macOS:
+
+```bash
+rm -rf venv
+python -m venv venv
+source venv/bin/activate
+python -m pip install --upgrade pip
+pip install -r requirements.txt
 ```
+
+The pip “new release available” notice is informational and does not mean the build failed.
+
+## Build Cleanup
+
+Use:
+
+```bash
+python scripts/maintenance/clean_generated.py --dry-run
+python scripts/maintenance/clean_generated.py
+```
+
+The cleanup helper removes generated build/test artifacts such as:
+
+- `.coverage`, `.coverage.*`
+- `htmlcov/`
+- `build/`
+- `dist/`
+- `.pytest_cache/`
+- `uploader`, `uploader.exe`
+- `ConniesUploader.spec`
+- `crash_log*.log`
+
+It leaves user data alone unless explicitly told otherwise.
 
 ## Verification Checklist
 
-Before distributing the built exe:
+Before distributing a build:
 
-- [ ] EXE file size is 40-50 MB (not 26 MB)
-- [ ] Run `python scripts/diagnostics/check_sidecar_location.py` and verify sidecar is found
-- [ ] Test upload to at least one service (IMX, Pixhost, etc.)
-- [ ] Check log window for errors
-- [ ] Verify plugins load in Settings > Service dropdown
-- [ ] Test drag-and-drop file adding
-- [ ] Verify gallery creation works
+- [ ] Build completed with the platform script.
+- [ ] Sidecar binary was built.
+- [ ] Packaged executable was created.
+- [ ] Archive verification found the sidecar.
+- [ ] Archive verification found Tk/Tcl runtime files on Windows.
+- [ ] Plugins load and show six active services.
+- [ ] `View > Execution Log` does not show startup import errors.
+- [ ] A one-file upload works.
+- [ ] Drag and drop works.
+- [ ] Gallery Manager opens.
+- [ ] Template Editor opens.
 
-## Getting Help
+## What To Include In A Bug Report
 
-If issues persist:
+Include:
 
-1. Check the log window (View > View Log)
-2. Run from command line to see console output:
-   ```
-   ConniesUploader.exe --console
-   ```
-3. Run `python scripts/diagnostics/check_sidecar_location.py` and save output
-4. Open an issue with:
-   - Build command used
-   - EXE file size
-   - `scripts/diagnostics/check_sidecar_location.py` output
-   - Error messages from log
+- Build command used.
+- Whether this is a source run or packaged executable.
+- Operating system.
+- Python version.
+- Go version.
+- Final executable size, if packaged.
+- `python scripts/diagnostics/check_sidecar_location.py` output for source-run sidecar issues.
+- Relevant `View > Execution Log` output.
+- Screenshot of the error dialog, if present.

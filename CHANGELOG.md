@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added a resizable, searchable, sortable Gallery Manager with copy ID/hash, copy URL, open gallery, pin/favorite, cached-result, and post-create action support.
+- Added persistent gallery caching at `~/.conniesuploader/gallery_cache.json`, including pinned galleries and last-used timestamps.
+- Added normalized gallery records and standardized gallery list/create response states for unsupported services, missing credentials, login failure, empty results, parse failures, and cached fallbacks.
+- Added upload preflight checks for selected galleries and ViperGirls posting targets, including missing credentials, missing targets, invalid thread IDs, and direct actions to open credentials or target management.
+- Added ViperGirls posting previews, optional confirm-before-posting behavior, posting history, post text/error copy actions, and target-thread open actions.
+- Added search, sorting, import/export, bulk export/delete, notes/tags, live thread-title fetching, and last-used tracking for ViperGirls posting targets.
+- Added template storage migration from `user_templates.json` to `~/.conniesuploader/templates.json` with atomic saves and corrupted JSON recovery.
+- Added Template Editor search, import/export, duplicate/rename/delete actions, dirty-state protection, categorized placeholder inserts, raw preview output, rendered preview output, and copy-preview support.
+- Added a proper template parser with nested `[if]...[/if]` conditionals, `[for image]...[/for]` loops, `[for cover]...[/for]` loops, separator options, service/batch/thread placeholders, automatic cover expansion through `#cover_images#`, and ViperGirls-specific posting templates.
+- Added multi-file queue selection with Ctrl-click and Shift-click so users can reorder or apply actions to multiple files at once.
+- Added repository cleanup organization with `scripts/maintenance/`, `scripts/diagnostics/`, generated-artifact cleanup, and clearer source-versus-generated documentation.
+
+### Changed
+
+- Reworked cover handling so selected covers can be rendered automatically, uploaded with the largest host-supported thumbnail size, kept clickable in generated BBCode, and excluded from regular `#all_images#` output.
+- Renamed the Template Editor cover insert control to `Cover{s}` and made repeated presses insert additional cover output without adding a second cover button.
+- Removed the redundant side-panel Add Files entry now that add actions live in the main upload workflow.
+- Moved IMX gallery scraping/session behavior out of the Gallery Manager UI layer and into service/plugin code.
+- Removed confusing gallery credential fallbacks so services no longer reuse unrelated host credentials.
+- Improved upload activity messages for queued ViperGirls posts with batch name, target name, and thread ID.
+- Expanded the user tutorial with current screenshots, dummy-proof walkthrough examples, and an internal mechanics section explaining the Python GUI, Go sidecar, plugins, templates, galleries, output files, and bundled-release behavior.
+
+### Fixed
+
+- Prevented stale gallery refresh responses from overwriting the currently selected service view.
+- Improved inline Gallery Manager errors for missing credentials, login failure, unsupported services, parse failures, and empty gallery lists.
+- Made auto-poster failures clearer for missing credentials, login failure, missing targets, invalid thread IDs, rejected posts, and failed post submissions.
+- Fixed Template Editor toolbar insertions that produced HTML where BBCode output was expected.
+- Fixed `read_text()` calls in build-contract tests to use explicit UTF-8 encoding.
+- Replaced direct `self.__dict__` access in tests with normal `getattr()` usage where applicable.
+
+### Tests
+
+- Added or expanded tests for gallery response normalization, gallery cache persistence and corrupted JSON recovery, stale refresh protection, gallery create/select behavior, upload preflight gallery/posting checks, ViperGirls thread ID parsing and target validation, auto-poster failure states, template migration, template parser edge cases, preview output, validation, import/export, cover loops, and service cover thumbnail overrides.
+
 ---
 
 ## [1.4.0] - 2026-06-20

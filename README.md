@@ -6,7 +6,7 @@
 ![Continuous integration workflow status: passing](https://github.com/conniecombs/ConniesUploader/actions/workflows/ci.yml/badge.svg?branch=main)
 ![Continuous delivery release workflow status: passing](https://github.com/conniecombs/ConniesUploader/actions/workflows/release.yml/badge.svg)
 ![Security scanning workflow status: passing](https://github.com/conniecombs/ConniesUploader/actions/workflows/security.yml/badge.svg?branch=main)
-![Go programming language version 1.25](https://img.shields.io/badge/Go-1.25-00ADD8.svg)
+![Go programming language version 1.25.9 or higher](https://img.shields.io/badge/Go-1.25.9+-00ADD8.svg)
 ![Python version 3.11 or higher required](https://img.shields.io/badge/Python-3.11+-3776AB.svg)
 
 Connie's Uploader Ultimate is a desktop image-uploading tool with a CustomTkinter GUI and a Go sidecar for concurrent uploads. It supports batch uploads, gallery workflows, custom output templates, drag and drop, secure credential storage, and automated release builds for Windows, Linux, and macOS.
@@ -57,12 +57,18 @@ The Template Editor lets users build BBCode, Markdown, HTML, ViperGirls posting,
 
 ![Template Editor with BBCode formatting toolbar, gallery placeholders, editable template text, preview, restore, save, and save-as-new controls](docs/assets/screenshots/template-editor-v140.png)
 
+### Manage Galleries With Clear State
+
+The Gallery Manager can refresh host galleries, search and sort results, pin frequently used galleries, copy IDs or URLs, open known gallery links, assign a selected gallery to uploads, and fall back to clearly labeled cached results when a live refresh fails.
+
+![Gallery Manager showing searchable galleries, pinned state, cache status, and copy/open/select actions](docs/assets/screenshots/gallery-manager.png)
+
 ## Features
 
 - Batch upload images by file or folder, with each folder represented as its own upload group.
 - Upload through the Go sidecar with worker pools, retry handling, rate limiting, and progress events.
 - Select one or more cover images per batch, with optional auto-cover defaults for newly added files.
-- Manage galleries for supported services and optionally create one gallery per folder.
+- Manage galleries for supported services, pin frequently reused galleries, use cached galleries when a live refresh fails, and optionally create one gallery per folder.
 - Generate BBCode, HTML, Markdown, and custom output formats with the template editor.
 - Store credentials through the operating system keyring.
 - Save output files to `Output/` and keep history under `~/.conniesuploader/history/`.
@@ -126,7 +132,7 @@ Each release artifact includes a SHA256 checksum.
 Prerequisites:
 
 - Python 3.11+
-- Go 1.25+
+- Go 1.25.9+ for local builds. CI currently builds with Go 1.26.4.
 
 Windows:
 
@@ -206,6 +212,7 @@ Additional tools are available from the application menus:
 - Session output is written to `Output/`.
 - Persistent output history is written to `~/.conniesuploader/history/`.
 - Custom templates are written to `~/.conniesuploader/templates.json`; legacy `user_templates.json` files are migrated automatically.
+- Gallery cache, pinned galleries, and last-used gallery timestamps are written to `~/.conniesuploader/gallery_cache.json`.
 - Saved ViperGirls posting targets, including fetched thread titles, are written to `~/.conniesuploader/saved_threads.json`.
 - ViperGirls posting history is written to `~/.conniesuploader/posting_history.json`.
 - Runtime crash logs are written to `crash_log.log` when applicable.
@@ -220,7 +227,7 @@ Connie's Uploader uses a hybrid desktop architecture:
 - `modules/sidecar.py` manages the Go sidecar process.
 - `main.go` and `handlers.go` provide the Go sidecar entry point and request handlers.
 - `core/` contains shared Go upload utilities such as validation, retry, rate limiting, HTTP helpers, and output handling.
-- `services/` contains Go service integrations.
+- `services/` contains Go service compatibility helpers and host-specific operations that are not fully expressed as generic upload specs, such as gallery/finalization/posting support.
 - `scripts/maintenance/` contains repository cleanup and maintenance helpers.
 - `scripts/diagnostics/` contains local troubleshooting helpers that are not part of the app runtime.
 - Python and Go communicate through JSON events over standard input and output.
@@ -229,7 +236,7 @@ Generated folders and runtime data are intentionally kept out of source control:
 
 - Build output: `build/`, `dist/`, `uploader`, `uploader.exe`, `ConniesUploader.spec`
 - Test output: `.coverage`, `htmlcov/`, `.pytest_cache/`
-- Local app data: `Output/`, `user_settings.json`, legacy `user_templates.json`
+- Local app data: `Output/`, `user_settings.json`, legacy `user_templates.json`, `~/.conniesuploader/*.json`
 - Runtime diagnostics: `crash_log*.log`
 
 ## CI, Security, and Releases
@@ -240,7 +247,7 @@ GitHub Actions workflows:
 - [Release - Build and Publish](.github/workflows/release.yml)
 - [Security Scanning](.github/workflows/security.yml)
 
-The CI workflow builds the Go sidecar on Windows, Linux, and macOS; runs Go vet and Go tests; installs Python dependencies; runs the Python test suite; checks dependencies with `govulncheck` and `pip-audit`; and runs Go/Python linting.
+The CI workflow builds the Go sidecar on Windows, Linux, and macOS with Go 1.26.4; runs Go vet and Go tests; installs Python dependencies; runs the Python test suite; checks dependencies with `govulncheck` and `pip-audit`; and runs Go/Python linting.
 
 The release workflow builds Windows, Linux, and macOS artifacts, verifies that the sidecar is bundled, calculates SHA256 checksums, packages the artifacts, and publishes a GitHub release.
 
@@ -277,6 +284,7 @@ python scripts/diagnostics/check_sidecar_location.py
 - [Architecture](ARCHITECTURE.md)
 - [Contributing](CONTRIBUTING.md)
 - [Changelog](CHANGELOG.md)
+- [User Tutorial](docs/guides/USER_TUTORIAL.md)
 - [Build Troubleshooting](docs/guides/BUILD_TROUBLESHOOTING.md)
 - [Plugin Creation Guide](docs/guides/PLUGIN_CREATION_GUIDE.md)
 - [Repository Layout](docs/guides/REPOSITORY_LAYOUT.md)
@@ -304,7 +312,7 @@ Open `Tools > ViperGirls Posting History` to copy the failed post text, copy the
 
 **Build fails**
 
-Confirm Python 3.11+ and Go 1.25+ are installed, then rerun the appropriate build script with `--clean`.
+Confirm Python 3.11+ and Go 1.25.9+ are installed, then rerun the appropriate build script with `--clean`.
 
 **Dependency installation fails**
 

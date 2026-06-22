@@ -1,25 +1,29 @@
-# Schema-Based Plugin Development Guide
+# Schema Plugin Guide
 
-## Overview
+The schema system lets image-host plugins declare their settings as data. The app renders the settings UI, restores saved values, extracts configuration, validates field types, and attaches tooltips automatically.
 
-The schema-based plugin system eliminates 60-80% of boilerplate UI code by using declarative JSON-like schemas instead of manual widget creation. This guide shows you how to create or migrate plugins to use the new system.
+Use this guide for plugin settings UI. Use [Plugin Creation Guide](PLUGIN_CREATION_GUIDE.md) for upload request specs and sidecar behavior.
 
-**Benefits:**
-- ✅ 60-80% less code
-- ✅ Built-in validation
-- ✅ Consistent UI appearance
-- ✅ Self-documenting
-- ✅ Easier to maintain
+## Why Use Schemas
 
----
+Schema settings are preferred for active plugins because they:
 
-## Quick Start
+- Keep host settings consistent across services.
+- Remove manual widget boilerplate.
+- Provide built-in required/range validation.
+- Support tooltips through `help`.
+- Support collapsible advanced host settings.
+- Work in source and packaged builds.
 
-### Minimal Plugin Example
+Manual `render_settings()` / `get_configuration()` methods still exist for compatibility, but new plugins should use `settings_schema`.
+
+## Minimal Example
 
 ```python
-from typing import Dict, Any, List
+from typing import Any, Dict, List
+
 from .base import ImageHostPlugin
+
 
 class MyPlugin(ImageHostPlugin):
     @property
@@ -32,62 +36,90 @@ class MyPlugin(ImageHostPlugin):
 
     @property
     def settings_schema(self) -> List[Dict[str, Any]]:
-        """Define your UI declaratively."""
         return [
             {
                 "type": "dropdown",
-                "key": "thumb_size",
+                "key": "thumbnail_size",
                 "label": "Thumbnail Size",
-                "values": ["100", "200", "300"],
-                "default": "200"
+                "values": ["150", "250", "500"],
+                "default": "250",
+                "required": True,
+                "help": "Thumbnail size requested from the image host.",
             },
             {
                 "type": "checkbox",
                 "key": "save_links",
                 "label": "Save Links.txt",
-                "default": False
-            }
+                "default": False,
+                "help": "Also save raw host links beside generated output.",
+            },
         ]
 
-    # UI methods are AUTO-GENERATED from schema
-    # No need to implement render_settings() or get_configuration()!
-
-    # Just implement your upload logic
-    def initialize_session(self, config, creds):
-        return {"client": create_http_client()}
-
-    def upload_file(self, file_path, group, config, context, progress_callback):
-        # Your upload implementation
-        return (viewer_url, thumb_url)
+    def validate_configuration(self, config: Dict[str, Any]) -> List[str]:
+        return []
 ```
 
-**That's it!** The UI is auto-generated from the schema.
+With this schema, the base plugin class auto-generates `render_settings()` and `get_configuration()`.
 
----
+## Field Basics
 
-## Field Types Reference
+Every data field needs:
 
-### 1. Dropdown (Combo Box)
+| Key | Purpose |
+| --- | --- |
+| `type` | Widget type. |
+| `key` | Config key saved/extracted for uploads. |
+| `label` | User-facing label. |
+| `default` | Fallback value when no saved setting exists. |
+
+Common optional keys:
+
+| Key | Purpose |
+| --- | --- |
+| `required` | Adds non-empty validation. |
+| `help` | Tooltip text shown on hover. |
+| `advanced` | Moves the field into collapsed Advanced Host Settings. |
+| `validate` | Custom field-level validation callback. |
+| `value_labels` | Maps stored dropdown values to friendlier display labels. |
+
+## Supported Field Types
+
+### Dropdown
 
 ```python
 {
     "type": "dropdown",
-    "key": "thumb_size",              # Config key
-    "label": "Thumbnail Size",         # Display label
-    "values": ["100", "200", "300"],   # Available options
-    "default": "200",                  # Default value
-    "required": True,                  # Optional: make required
-    "help": "Size in pixels"           # Optional: tooltip (future feature)
+    "key": "thumbnail_size",
+    "label": "Thumbnail Size",
+    "values": ["150", "250", "500"],
+    "default": "250",
+    "required": True,
+    "help": "Thumbnail size requested from the host.",
 }
 ```
 
-**Output:** String value (selected option)
+Dropdown output is a string.
 
-**Use case:** Predefined choices (sizes, formats, types)
+Use `value_labels` when the host wants compact IDs but users should see readable names:
 
----
+```python
+{
+    "type": "dropdown",
+    "key": "thumbnail_size",
+    "label": "Thumbnail Size",
+    "values": ["2", "5", "8"],
+    "value_labels": {
+        "2": "180 px",
+        "5": "500 px",
+        "8": "Original",
+    },
+    "default": "2",
+}
+```
 
-### 2. Checkbox (Boolean)
+The UI shows labels, while extracted config stores the original values.
+
+### Checkbox
 
 ```python
 {
@@ -95,39 +127,29 @@ class MyPlugin(ImageHostPlugin):
     "key": "save_links",
     "label": "Save Links.txt",
     "default": False,
-    "help": "Save upload URLs to file"
+    "help": "Save raw host links in addition to generated output.",
 }
 ```
 
-**Output:** Boolean value (True/False)
+Checkbox output is a Boolean.
 
-**Use case:** Enable/disable features
-
----
-
-### 3. Number (Integer Input)
+### Number
 
 ```python
 {
     "type": "number",
     "key": "cover_count",
-    "label": "Cover Images",
+    "label": "Auto Covers",
     "min": 0,
     "max": 10,
     "default": 0,
-    "required": False
+    "help": "Automatically mark the first N images as covers.",
 }
 ```
 
-**Output:** Integer value
+Number fields render as a constrained dropdown and extract an integer.
 
-**Validation:** Automatically enforces min/max range
-
-**Use case:** Counts, limits, numeric settings
-
----
-
-### 4. Text (Text Entry)
+### Text
 
 ```python
 {
@@ -135,444 +157,36 @@ class MyPlugin(ImageHostPlugin):
     "key": "gallery_hash",
     "label": "Gallery Hash",
     "default": "",
-    "placeholder": "Leave blank for auto",
-    "required": False
+    "placeholder": "Optional",
+    "help": "Use an existing host gallery hash.",
 }
 ```
 
-**Output:** String value
+Text output is a string.
 
-**Use case:** Free-form text input (IDs, names, hashes)
-
----
-
-### 5. Label (Information Display)
+### Label
 
 ```python
 {
     "type": "label",
-    "text": "Requires Authentication",
-    "color": "red"
+    "text": "Requires credentials set from Tools > Set Credentials.",
+    "color": "red",
 }
 ```
 
-**Output:** None (display only)
+Labels are display-only and do not produce config output.
 
-**Use case:** Warnings, instructions, information
-
----
-
-### 6. Separator (Visual Divider)
+### Separator
 
 ```python
 {
-    "type": "separator"
+    "type": "separator",
 }
 ```
 
-**Output:** None (visual only)
+Separators are visual-only and do not produce config output.
 
-**Use case:** Organize complex forms
-
----
-
-### 7. Inline Group (Horizontal Layout)
-
-```python
-{
-    "type": "inline_group",
-    "fields": [
-        {
-            "type": "label",
-            "text": "Auto Covers:",
-            "width": 100
-        },
-        {
-            "type": "dropdown",
-            "key": "cover_count",
-            "values": ["0", "1", "2", "3"],
-            "default": "0",
-            "width": 80
-        }
-    ]
-}
-```
-
-**Output:** Multiple fields in one row
-
-**Use case:** Compact layouts, related fields
-
----
-
-## Complete Example: Pixhost Plugin
-
-### Before (Legacy - 104 lines)
-
-```python
-def render_settings(self, parent, settings):
-    vars = {
-        'content': ctk.StringVar(value=settings.get('pix_content', "Safe")),
-        'thumb': ctk.StringVar(value=settings.get('pix_thumb', "200")),
-        'cover_count': ctk.StringVar(value=str(settings.get('pix_cover_count', "0"))),
-        'links': ctk.BooleanVar(value=settings.get('pix_links', False)),
-        'hash': ctk.StringVar(value=settings.get('pix_gallery_hash', ""))
-    }
-
-    ctk.CTkLabel(parent, text="Content:").pack(anchor="w")
-    MouseWheelComboBox(parent, variable=vars['content'], values=["Safe", "Adult"]).pack(fill="x")
-
-    ctk.CTkLabel(parent, text="Thumb Size:").pack(anchor="w")
-    MouseWheelComboBox(parent, variable=vars['thumb'], values=["150","200","250","300","350","400","450","500"]).pack(fill="x")
-
-    f = ctk.CTkFrame(parent, fg_color="transparent")
-    f.pack(fill="x", pady=5)
-    ctk.CTkLabel(f, text="Auto Covers:", width=60).pack(side="left")
-    MouseWheelComboBox(f, variable=vars['cover_count'], values=[str(i) for i in range(11)], width=80).pack(side="left", padx=5)
-
-    ctk.CTkCheckBox(parent, text="Links.txt", variable=vars['links']).pack(anchor="w", pady=5)
-    ctk.CTkLabel(parent, text="Gallery Hash (Optional):").pack(anchor="w", pady=(10,0))
-    ctk.CTkEntry(parent, textvariable=vars['hash']).pack(fill="x")
-
-    return vars
-
-def get_configuration(self, ui_handle):
-    return {
-        'content': ui_handle['content'].get(),
-        'thumb_size': ui_handle['thumb'].get(),
-        'cover_limit': int(ui_handle['cover_count'].get() or 0),
-        'save_links': ui_handle['links'].get(),
-        'gallery_hash': ui_handle['hash'].get()
-    }
-```
-
-### After (Schema-Based - 50 lines of pure data)
-
-```python
-@property
-def settings_schema(self) -> List[Dict[str, Any]]:
-    return [
-        {
-            "type": "dropdown",
-            "key": "content",
-            "label": "Content Type",
-            "values": ["Safe", "Adult"],
-            "default": "Safe",
-            "required": True
-        },
-        {
-            "type": "dropdown",
-            "key": "thumb_size",
-            "label": "Thumbnail Size",
-            "values": ["150", "200", "250", "300", "350", "400", "450", "500"],
-            "default": "200",
-            "required": True
-        },
-        {
-            "type": "inline_group",
-            "fields": [
-                {"type": "label", "text": "Auto Covers:", "width": 100},
-                {
-                    "type": "dropdown",
-                    "key": "cover_count",
-                    "values": [str(i) for i in range(11)],
-                    "default": "0",
-                    "width": 80
-                }
-            ]
-        },
-        {
-            "type": "checkbox",
-            "key": "save_links",
-            "label": "Save Links.txt",
-            "default": False
-        },
-        {
-            "type": "separator"
-        },
-        {
-            "type": "text",
-            "key": "gallery_hash",
-            "label": "Gallery Hash (Optional)",
-            "default": "",
-            "placeholder": "Leave blank for auto-gallery"
-        }
-    ]
-
-# render_settings() - AUTO-GENERATED
-# get_configuration() - AUTO-GENERATED with validation
-```
-
-**Result:**
-- ❌ 104 lines → ✅ 50 lines (52% reduction)
-- Built-in validation
-- No manual widget management
-- Self-documenting
-
----
-
-## Custom Validation
-
-Add custom validation beyond basic schema validation:
-
-```python
-def validate_configuration(self, config: Dict[str, Any]) -> List[str]:
-    """
-    Custom validation for plugin-specific logic.
-
-    Returns:
-        List of error messages (empty if valid)
-    """
-    errors = []
-
-    # Example: Validate gallery hash format
-    gallery_hash = config.get("gallery_hash", "")
-    if gallery_hash and not gallery_hash.isalnum():
-        errors.append("Gallery hash must be alphanumeric")
-
-    # Example: Validate credentials are available
-    if config.get("requires_auth") and not config.get("username"):
-        errors.append("Username required for authenticated uploads")
-
-    # Example: Cross-field validation
-    if config.get("auto_gallery") and not config.get("gallery_name"):
-        errors.append("Gallery name required when auto-gallery is enabled")
-
-    return errors
-```
-
-**When validation fails:**
-- User sees all error messages in a dialog
-- Upload doesn't start
-- User can fix issues and retry
-
----
-
-## Migration Guide
-
-### Step 1: Identify UI Code
-
-In your legacy plugin, find the `render_settings()` method:
-
-```python
-def render_settings(self, parent, settings):
-    vars = {}
-
-    # Find all the UI code
-    ctk.CTkLabel(...)
-    ctk.CTkEntry(...)
-    MouseWheelComboBox(...)
-
-    return vars
-```
-
-### Step 2: Convert to Schema
-
-For each widget, create a schema field:
-
-| Legacy Code | Schema Field |
-|-------------|--------------|
-| `MouseWheelComboBox(values=["100","200"])` | `{"type": "dropdown", "values": ["100","200"]}` |
-| `ctk.CTkCheckBox(text="Save")` | `{"type": "checkbox", "label": "Save"}` |
-| `ctk.CTkEntry(placeholder="ID")` | `{"type": "text", "placeholder": "ID"}` |
-
-### Step 3: Map Config Keys
-
-In `get_configuration()`, note what keys are returned:
-
-```python
-def get_configuration(self, ui_handle):
-    return {
-        'thumb_size': ui_handle['thumb'].get(),    # Key: thumb_size
-        'save_links': ui_handle['links'].get(),    # Key: save_links
-    }
-```
-
-Use these as `"key"` values in your schema.
-
-### Step 4: Remove UI Code
-
-Delete `render_settings()` and `get_configuration()` methods.
-They're now auto-generated!
-
-### Step 5: Test
-
-```bash
-python main.py
-# Select your service
-# Verify UI renders correctly
-# Verify settings are saved/loaded
-# Test upload functionality
-```
-
----
-
-## Best Practices
-
-### 1. Use Descriptive Labels
-
-```python
-# ❌ Bad
-{"label": "Thumb"}
-
-# ✅ Good
-{"label": "Thumbnail Size"}
-```
-
-### 2. Provide Defaults
-
-```python
-# Always provide sensible defaults
-{
-    "key": "thumb_size",
-    "default": "200"  # Most common size
-}
-```
-
-### 3. Add Help Text (Future Feature)
-
-```python
-{
-    "key": "content",
-    "help": "Safe for work-safe content, Adult for NSFW"
-}
-```
-
-### 4. Use Required Sparingly
-
-```python
-# Only mark truly required fields
-{
-    "key": "api_key",
-    "required": True  # Service won't work without this
-}
-```
-
-### 5. Group Related Fields
-
-```python
-# Use inline_group for compact layouts
-{
-    "type": "inline_group",
-    "fields": [
-        {"type": "label", "text": "Max Size:"},
-        {"type": "dropdown", "key": "max_size", ...}
-    ]
-}
-```
-
-### 6. Order Fields Logically
-
-```python
-return [
-    # 1. Important settings first
-    {"type": "dropdown", "key": "quality", ...},
-
-    # 2. Optional settings
-    {"type": "checkbox", "key": "save_links", ...},
-
-    # 3. Advanced/rare settings last
-    {"type": "separator"},
-    {"type": "text", "key": "custom_endpoint", ...}
-]
-```
-
----
-
-## Backward Compatibility
-
-The schema system is **100% backward compatible**:
-
-- Legacy plugins continue to work unchanged
-- No need to migrate all plugins at once
-- Mix legacy and schema-based plugins in same codebase
-- Base class auto-detects schema and falls back to legacy methods
-
-```python
-class LegacyPlugin(ImageHostPlugin):
-    # No settings_schema property
-
-    # These methods are still called
-    def render_settings(self, parent, settings):
-        # Manual UI code
-        pass
-
-    def get_configuration(self, ui_handle):
-        # Manual extraction
-        pass
-```
-
----
-
-## Testing Your Plugin
-
-### 1. Syntax Check
-
-```bash
-python3 -m py_compile modules/plugins/myplugin.py
-```
-
-### 2. Visual Test
-
-```bash
-python main.py
-# Select your service from dropdown
-# Verify all fields render correctly
-# Check defaults are applied
-# Test field interactions
-```
-
-### 3. Validation Test
-
-```python
-# Test required fields
-# Leave required field empty -> should show error
-
-# Test ranges
-# Enter number outside min/max -> should show error
-
-# Test custom validation
-# Trigger your validate_configuration() logic
-```
-
-### 4. Upload Test
-
-```bash
-# Add test images
-# Configure settings
-# Start upload
-# Verify upload succeeds
-# Check output links
-```
-
----
-
-## Common Patterns
-
-### Pattern 1: Content Type Selector
-
-```python
-{
-    "type": "dropdown",
-    "key": "content_type",
-    "label": "Content Type",
-    "values": ["Safe", "Adult"],
-    "default": "Safe"
-}
-```
-
-### Pattern 2: Thumbnail Size
-
-```python
-{
-    "type": "dropdown",
-    "key": "thumb_size",
-    "label": "Thumbnail Size",
-    "values": ["100", "150", "200", "250", "300"],
-    "default": "200"
-}
-```
-
-### Pattern 3: Cover Images Count
+### Inline Group
 
 ```python
 {
@@ -584,166 +198,206 @@ python main.py
             "key": "cover_count",
             "values": [str(i) for i in range(11)],
             "default": "0",
-            "width": 80
-        }
-    ]
+            "width": 80,
+        },
+    ],
 }
 ```
 
-### Pattern 4: Links.txt Checkbox
+Inline groups currently support labels and dropdowns. Use them sparingly for compact settings that are clearly related.
+
+## Advanced Host Settings
+
+Add `"advanced": True` to move fields into a collapsed `Advanced Host Settings` section:
+
+```python
+{
+    "type": "text",
+    "key": "custom_endpoint",
+    "label": "Custom Endpoint",
+    "default": "",
+    "placeholder": "Leave blank for default",
+    "advanced": True,
+}
+```
+
+Use this for rarely changed or troubleshooting-oriented host options. Do not hide settings that users need for normal uploads.
+
+## Validation
+
+### Built-In Validation
+
+The schema renderer validates:
+
+- Required fields.
+- Number fields with `min` and `max`.
+- Number field type conversion.
+
+When validation fails, `get_configuration()` raises `ValidationError` with all collected errors.
+
+### Field-Level Validation
+
+Use a `validate` callback for one field:
+
+```python
+def validate_gallery_hash(value):
+    if value and not value.replace("-", "").isalnum():
+        return "Gallery Hash may only contain letters, numbers, or hyphens."
+    return None
+
+
+{
+    "type": "text",
+    "key": "gallery_hash",
+    "label": "Gallery Hash",
+    "default": "",
+    "validate": validate_gallery_hash,
+}
+```
+
+The callback may return `None`, a string, or a list of strings.
+
+### Plugin-Level Validation
+
+Use `validate_configuration()` for rules that depend on multiple fields:
+
+```python
+def validate_configuration(self, config: Dict[str, Any]) -> List[str]:
+    errors = []
+    if config.get("one_gallery_per_folder") and config.get("gallery_hash"):
+        errors.append("Do not set Gallery Hash when One Gallery Per Folder is enabled.")
+    return errors
+```
+
+## Common Patterns
+
+### Content Type
+
+```python
+{
+    "type": "dropdown",
+    "key": "content_type",
+    "label": "Content Type",
+    "values": ["Safe", "Adult"],
+    "default": "Safe",
+}
+```
+
+### Thumbnail Size
+
+```python
+{
+    "type": "dropdown",
+    "key": "thumbnail_size",
+    "label": "Thumbnail Size",
+    "values": ["150", "200", "250", "300", "500"],
+    "default": "250",
+}
+```
+
+### Cover Count
+
+```python
+{
+    "type": "number",
+    "key": "cover_count",
+    "label": "Auto Covers",
+    "min": 0,
+    "max": 10,
+    "default": 0,
+}
+```
+
+`cover_count` is the preferred key for automatic cover selection. Selected covers can later be rendered with `#cover_images#` or `[for cover]...[/for]`.
+
+### Existing Gallery
+
+```python
+{
+    "type": "text",
+    "key": "gallery_id",
+    "label": "Gallery ID",
+    "default": "",
+    "placeholder": "Optional",
+}
+```
+
+Use the key that matches the service (`gallery_id`, `gallery_hash`, or another host-specific identifier). Gallery Manager assignment should preserve the real gallery name separately when available.
+
+### Save Raw Links
 
 ```python
 {
     "type": "checkbox",
     "key": "save_links",
     "label": "Save Links.txt",
-    "default": False
+    "default": False,
 }
 ```
 
-### Pattern 5: Gallery ID Input
+## Migration From Manual UI
 
-```python
-{
-    "type": "text",
-    "key": "gallery_id",
-    "label": "Gallery ID (Optional)",
-    "default": "",
-    "placeholder": "Leave blank for auto-gallery"
-}
+1. Find `render_settings()` in the plugin.
+2. List every setting key returned by `get_configuration()`.
+3. Convert each widget into a schema field using the same config key where possible.
+4. Add `value_labels` if old values were host IDs but UI labels were friendlier.
+5. Move cross-field rules into `validate_configuration()`.
+6. Delete manual `render_settings()` and `get_configuration()` unless custom UI is truly required.
+7. Run plugin/schema tests and one source-run upload.
+
+Legacy plugins still work, but active maintained plugins should use schemas so service settings stay consistent.
+
+## Testing Schema Changes
+
+Run:
+
+```bash
+pytest tests/test_plugins.py -v
+pytest tests/test_service_settings_contract.py -v
+pytest tests/ -v
 ```
 
-### Pattern 6: Authentication Warning
+For UI-affecting schema changes, manually check:
 
-```python
-{
-    "type": "label",
-    "text": "⚠️ Requires Credentials (set in Tools)",
-    "color": "red"
-}
-```
-
----
+- Defaults render correctly.
+- Saved settings reload correctly.
+- Tooltips show for `help`.
+- Required errors are readable.
+- Number fields clamp/report invalid values.
+- Advanced settings collapse and expand.
+- Upload Checks report validation problems before upload starts.
 
 ## Troubleshooting
 
-### Error: "ValidationError: [field] is required"
+**Field does not appear**
 
-**Cause:** User didn't fill required field
+Check `type` spelling and make sure the field is not inside an unsupported inline group type.
 
-**Fix:** Either:
-1. Remove `"required": True` if field is optional
-2. Provide a `"default"` value
-3. Tell user to fill the field
+**Value is missing from upload config**
 
-### Error: "Unknown field type: xyz"
+Display-only fields (`label`, `separator`) do not produce config output. Data fields need a `key`.
 
-**Cause:** Typo in `"type"` field
+**Dropdown stores the visible label instead of host value**
 
-**Fix:** Use valid types:
-- dropdown
-- checkbox
-- number
-- text
-- label
-- separator
-- inline_group
+Use `value_labels` with stored values in `values`.
 
-### UI doesn't render
+**Number value is a string**
 
-**Cause:** Schema has syntax error
+Number fields extract integers. Dropdown fields extract strings, even if their values look numeric.
 
-**Fix:** Check:
-- Each field has `"type"` key
-- Data fields have `"key"` key
-- Values are valid JSON (use `"` not `'` for strings in examples)
-- No trailing commas in lists
+**Tooltip does not show**
 
-### Config keys don't match
+Tooltips are attached to labels or checkboxes. Make sure the field has non-empty `help` text and that the widget is not immediately destroyed/re-rendered.
 
-**Cause:** Changed key names during migration
+**Manual UI is still used**
 
-**Fix:** Check `get_configuration()` in legacy plugin for exact key names
+If `settings_schema` returns an empty list, the base class falls back to legacy `render_settings()` and `get_configuration()`.
 
----
+## Related Docs
 
-## Performance Considerations
+- [Plugin Creation Guide](PLUGIN_CREATION_GUIDE.md)
+- [Architecture](../../ARCHITECTURE.md)
+- [Repository Layout](REPOSITORY_LAYOUT.md)
 
-**Schema parsing is fast:**
-- Schemas are parsed once during plugin load
-- UI generation is ~10ms for typical plugin
-- No performance penalty vs manual UI
-
-**Memory usage:**
-- Schema stored as Python dict (~1KB per plugin)
-- Negligible memory impact
-
----
-
-## Future Enhancements
-
-Planned for future phases:
-
-1. **Tooltips** - `"help"` text displayed on hover
-2. **Conditional Fields** - Show/hide based on other values
-3. **Field Dependencies** - Enable/disable based on conditions
-4. **Custom Widgets** - Plugin-specific UI components
-5. **Live Validation** - Validate as user types
-6. **Auto-Documentation** - Generate docs from schema
-
----
-
-## FAQs
-
-**Q: Can I still use manual UI for complex cases?**
-
-A: Yes! Override `render_settings()` and `get_configuration()` to implement custom UI.
-
-**Q: Can I mix schema and manual UI?**
-
-A: Not in the same plugin. Choose one approach per plugin.
-
-**Q: Will this break existing plugins?**
-
-A: No. 100% backward compatible. Legacy plugins work unchanged.
-
-**Q: How do I add a new field type?**
-
-A: Edit `schema_renderer.py` and add a `_render_xyz()` method.
-
-**Q: Can I use this for other UI elements?**
-
-A: Currently only for plugin settings. May expand to other areas in future.
-
----
-
-## Summary
-
-**Before (Legacy):**
-- 40+ lines of manual UI code per plugin
-- Manual variable management
-- Manual validation
-- Repetitive boilerplate
-- Hard to maintain
-
-**After (Schema-Based):**
-- 10-20 lines of declarative data
-- Auto-generated UI
-- Built-in validation
-- Self-documenting
-- Easy to maintain
-
-**To migrate:**
-1. Add `settings_schema` property
-2. Define fields as data
-3. Delete `render_settings()` and `get_configuration()`
-4. Add `validate_configuration()` for custom logic
-5. Test
-
-**That's it!** Your plugin now has less code, better validation, and consistent UI.
-
----
-
-*Guide Version: 1.0*
-*Schema System: Phase 1*
-*Last Updated: 2025-12-31*
+- **Guide Version:** 2.0
+- **Last Updated:** 2026-06-21

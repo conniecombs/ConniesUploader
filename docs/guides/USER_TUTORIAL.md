@@ -339,9 +339,17 @@ ImageBam does not expose a `Links.txt` checkbox in the current main panel.
 
 ### `imgur.com`
 
-The plugin system discovers `imgur.com`, so it can appear in the host dropdown. In the current main window implementation, there is no dedicated Imgur settings panel in the static service settings area. The plugin metadata supports anonymous/authenticated upload concepts, thumbnail sizes, content type, album ID, and titles, but those controls are not exposed in this main settings panel yet.
+The plugin system discovers `imgur.com`, so it can appear in the host dropdown. Imgur supports anonymous uploads with a Client ID or authenticated uploads with an OAuth access token.
 
-If you choose Imgur, verify the behavior with a small test batch before relying on album or content-type settings.
+| Setting | Options | Explanation |
+| --- | --- | --- |
+| `Thumbnail Size` | Small square, Large square, Small, Medium, Large, Huge | Controls the Imgur thumbnail variant used in generated output. |
+| `Content Type` | `Safe`, `NSFW` | Marks content type for upload metadata. |
+| `Save Links.txt` | On/off | Also writes a raw link list file next to the formatted output file. |
+| `Album ID` | Text | Optional Imgur album ID to attach uploaded images to. |
+| `Image Title` | Text | Optional title for uploaded images. |
+
+If you choose Imgur, test one small batch first and confirm your Client ID or access token works before relying on album settings.
 
 ## Credentials
 
@@ -1212,7 +1220,7 @@ Open `Tools > ViperGirls Posting History`. Use `Copy Post` to keep the generated
 
 Most release users should never need to manage the sidecar manually because it is bundled into the final app. If a packaged app reports this error, the build is probably missing its bundled sidecar and should be rebuilt or replaced.
 
-If you are running from source, build or restore `uploader.exe` on Windows, or `uploader` on Linux/macOS. The desktop app communicates with that sidecar for uploads and thumbnail generation.
+If you are running from source, build or restore `uploader.exe` on Windows, or `uploader` on Linux/macOS. The desktop app communicates with that sidecar for upload-related network work, progress events, retries, rate limiting, and host response parsing.
 
 ## Responsible Use
 

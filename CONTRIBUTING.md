@@ -1,267 +1,303 @@
 # Contributing to Connie's Uploader Ultimate
 
-Thank you for your interest in contributing! This document provides guidelines and information for contributors.
+Thank you for helping improve Connie's Uploader Ultimate. This guide explains how to set up the project, make changes safely, test them, and keep documentation current.
 
 ## Code of Conduct
 
-- Be respectful and inclusive
-- Focus on constructive feedback
-- Help maintain a welcoming environment
+- Be respectful and constructive.
+- Keep bug reports and reviews focused on reproducible behavior.
+- Preserve user data and generated files when testing locally.
 
-## Getting Started
+## Development Setup
 
-### Development Setup
+Clone the repository:
 
-1. **Fork and clone the repository:**
 ```bash
 git clone https://github.com/YOUR_USERNAME/ConniesUploader.git
 cd ConniesUploader
 ```
 
-2. **Set up Go development environment:**
+Set up Go:
+
 ```bash
 go mod download
+go build -ldflags="-s -w" -o uploader .
 ```
 
-3. **Set up Python development environment:**
+On Windows, build the sidecar as `uploader.exe`:
+
+```powershell
+go build -ldflags="-s -w" -o uploader.exe .
+```
+
+Set up Python:
+
 ```bash
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-4. **Build the Go backend:**
-```bash
-go build -o uploader .  # On Windows: uploader.exe
+On Windows PowerShell:
+
+```powershell
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+pip install -r requirements.txt
 ```
 
-5. **Run the application:**
+Run the app from source:
+
 ```bash
 python main.py
 ```
 
-## Project Structure
+Prerequisites:
 
-```
+- Python 3.11 or newer. The Windows build script accepts Python 3.11 through 3.13 because the pinned PyInstaller version supports Python `<3.14`.
+- Go 1.25.9 or newer for local builds. CI currently installs Go 1.26.4.
+
+## Project Layout
+
+```text
 ConniesUploader/
-├── main.py                # Python GUI entry point
-├── main.go                # Go sidecar entry point
-├── handlers.go            # Go request handlers
-├── core/                  # Go retry, rate-limit, validation, HTTP, and output utilities
-├── services/              # Go service integrations
-├── modules/               # Python modules
-│   ├── api.py            # API interactions with Go backend
-│   ├── config.py         # Application configuration
-│   ├── controller.py     # Business logic controllers
-│   ├── dnd.py           # Drag and drop functionality
-│   ├── file_handler.py  # File operations and validation
-│   ├── gallery_manager.py # Gallery management UI
-│   ├── settings_manager.py # Settings persistence
-│   ├── template_manager.py # Template system
-│   ├── upload_manager.py # Upload orchestration
-│   ├── utils.py         # Utility functions
-│   ├── viper_api.py     # ViperGirls forum API
-│   ├── widgets.py       # Custom UI widgets
-│   └── plugins/         # Service-specific plugins
-│       ├── base.py
-│       ├── imx.py
-│       ├── imagebam.py
-│       ├── imgur.py
-│       ├── pixhost.py
-│       ├── turbo.py
-│       └── vipr.py
-├── build_uploader.bat    # Windows build script
-├── go.mod               # Go dependencies
-├── requirements.txt     # Python dependencies
-└── LICENSE             # MIT License
+├── main.py                    # Python GUI entry point
+├── main.go                    # Go sidecar entry point
+├── handlers.go                # Go sidecar request handlers
+├── core/                      # Go upload utilities, HTTP runner, retry, rate limits, output
+├── services/                  # Go compatibility/service helpers
+├── modules/
+│   ├── ui/                    # CustomTkinter windows and main app UI
+│   ├── plugins/               # Auto-discovered image-host plugins
+│   ├── gallery_cache.py       # Persistent gallery cache/pin/last-used storage
+│   ├── gallery_manager.py     # Gallery Manager window
+│   ├── gallery_service.py     # Gallery normalization/list/create service layer
+│   ├── sidecar.py             # Go sidecar process bridge
+│   ├── template_manager.py    # Template storage, validation, parser, rendering
+│   ├── upload_manager.py      # Upload job orchestration
+│   └── viper_api.py           # ViperGirls target/history UI and posting helpers
+├── tests/                     # Python test suite
+├── scripts/
+│   ├── diagnostics/           # Local troubleshooting helpers
+│   └── maintenance/           # Cleanup and maintenance helpers
+├── pyinstaller_hooks/         # Local PyInstaller hooks
+├── docs/                      # User, developer, release, and historical docs
+├── .github/workflows/         # CI, release, and security workflows
+├── build_uploader.bat         # Windows build script
+├── build.sh                   # Linux/macOS build script
+├── Makefile                   # Cross-platform build helpers
+├── go.mod                     # Go dependencies
+└── requirements.txt           # Python dependencies
 ```
 
-## How to Contribute
+Generated/user data should stay out of commits:
 
-### Reporting Bugs
+- `build/`, `dist/`, `htmlcov/`, `.coverage*`, `.pytest_cache/`
+- `uploader`, `uploader.exe`, `ConniesUploader.spec`
+- `Output/`, `user_settings.json`, legacy `user_templates.json`
+- `~/.conniesuploader/*.json`
+- `crash_log*.log`
 
-1. Check if the bug has already been reported in [Issues](https://github.com/conniecombs/conniesuploader/issues)
-2. If not, create a new issue with:
-   - Clear title and description
-   - Steps to reproduce
-   - Expected vs actual behavior
-   - Screenshots if applicable
-   - Your environment (OS, Python version, Go version)
-   - Relevant logs from `crash_log.log` or execution log
+Use the cleanup helper when local generated files get noisy:
 
-### Suggesting Features
-
-1. Check existing [Issues](https://github.com/conniecombs/conniesuploader/issues) for similar suggestions
-2. Create a new issue with:
-   - Clear description of the feature
-   - Use case / motivation
-   - Proposed implementation (if you have ideas)
-   - Any relevant mockups or examples
-
-### Pull Requests
-
-1. **Create a feature branch:**
 ```bash
-git checkout -b feature/your-feature-name
+python scripts/maintenance/clean_generated.py --dry-run
+python scripts/maintenance/clean_generated.py
 ```
 
-2. **Make your changes:**
-   - Follow existing code style
-   - Add comments for complex logic
-   - Update documentation as needed
+## Pull Request Workflow
 
-3. **Test your changes:**
-   - Run the application and test affected features
-   - Test on Windows if possible (primary platform)
-   - Check for Python errors and Go compilation issues
+1. Create a feature branch.
 
-4. **Commit your changes:**
+```bash
+git checkout -b feature/short-description
+```
+
+2. Make a focused change.
+
+- Follow existing patterns.
+- Keep refactors separate unless they are needed for the fix.
+- Add or update tests for behavioral changes.
+- Update docs when behavior, setup, UI, workflows, or user-facing text changes.
+
+3. Run relevant checks.
+
+```bash
+go test ./...
+go vet ./...
+pytest tests/ -v
+flake8 main.py modules/ --max-line-length=120 --ignore=E501,W503 --exclude=__pycache__
+```
+
+4. Test the affected workflow manually.
+
+- For UI changes, run `python main.py` and test the exact window/control you changed.
+- For packaging changes, run the platform build script.
+- For upload changes, test one small batch before larger batches.
+- For ViperGirls or gallery changes, test missing credentials and invalid target/gallery states as well as the success path.
+
+5. Commit and open a pull request.
+
 ```bash
 git add .
-git commit -m "Add feature: brief description"
+git commit -m "type: short description"
+git push origin feature/short-description
 ```
 
-5. **Push to your fork:**
-```bash
-git push origin feature/your-feature-name
-```
+PR descriptions should include:
 
-6. **Create a Pull Request:**
-   - Provide clear title and description
-   - Reference any related issues
-   - Explain what changed and why
-   - Include screenshots for UI changes
+- What changed.
+- Why it changed.
+- What was tested.
+- Screenshots for visible UI changes.
+- Any known follow-up work.
 
 ## Coding Standards
 
-### Python Code
+### Python
 
-- **Style**: Follow PEP 8
-- **Imports**: Group standard library, third-party, and local imports
-- **Naming**:
-  - `snake_case` for functions and variables
-  - `PascalCase` for classes
-  - `UPPER_CASE` for constants
-- **Documentation**: Add docstrings for complex functions
-- **Error Handling**: Use try-except blocks appropriately
+- Follow PEP 8 and the local style.
+- Use `snake_case` for functions/variables and `PascalCase` for classes.
+- Prefer explicit error messages over silent failure.
+- Use `getattr()`/`setattr()` for dynamic attributes rather than direct `__dict__` access.
+- Specify `encoding="utf-8"` when reading text files in tests or tooling.
+- Keep UI work on the Tkinter thread and long-running work off the UI thread.
 
-### Go Code
+### Go
 
-- **Style**: Follow Go conventions (use `gofmt`)
-- **Naming**: Use Go naming conventions
-- **Error Handling**: Always handle errors, don't ignore them
-- **Comments**: Add comments for exported functions
+- Run `gofmt`.
+- Handle errors explicitly.
+- Close response bodies.
+- Prefer `regexp.Compile()` with graceful errors for dynamic/plugin-provided patterns.
+- Keep generic runner behavior in `core/` when possible.
+- Add Go service code only when a host workflow cannot be represented reasonably by a plugin HTTP spec.
 
-### UI/UX Guidelines
+### UI
 
-- Maintain consistency with existing UI
-- Test with both Light and Dark themes
-- Ensure responsive layouts
-- Provide user feedback for long operations
-- Add helpful error messages
+- Keep common actions visible and advanced actions tucked behind clear affordances.
+- Use inline error states where the user can act on them.
+- Keep windows resizable when content can grow.
+- Update screenshots and tutorial steps after visible UI changes.
 
-## Adding New Image Hosts
+## Adding or Updating Image Hosts
 
-To add support for a new image hosting service:
+New hosts should be Python plugin-first.
 
-1. **Create a plugin** in `modules/plugins/your_service.py`:
-```python
-from .base import BasePlugin
+1. Add `modules/plugins/yourservice.py`.
+2. Subclass `ImageHostPlugin`.
+3. Define `id`, `name`, `metadata`, and `settings_schema`.
+4. Add `validate_configuration()` for service-specific rules.
+5. Implement `build_http_request()` to return the generic sidecar HTTP spec.
+6. Use `prepare_group()` for per-batch setup such as gallery creation.
+7. Use `finalize_batch()` for service-specific finalization after uploads.
+8. Add tests for generated request shape, validation, and any gallery/finalization behavior.
 
-class YourServicePlugin(BasePlugin):
-    def upload(self, file_path, config):
-        # Implementation
-        pass
-```
+Do not register the plugin in `modules/plugins/__init__.py`; plugin discovery is automatic through `modules/plugin_manager.py`. Modules named `base`, `helpers`, `schema_renderer`, or ending in `_legacy` are skipped.
 
-2. **Add Go sidecar support** only when the generic HTTP runner cannot cover the service:
-   - Prefer defining upload request specs in the Python plugin
-   - Add service-specific Go code under `services/<service>/` when needed
-   - Register new Go services through the sidecar entry point and handlers
+Only add Go code under `services/` when the generic HTTP runner cannot cover the service behavior. Document why Go support is necessary and keep the Go surface narrow.
 
-3. **Add UI components** in `modules/widgets.py`:
-   - Create settings frame
-   - Add configuration options
+## Testing Checklist
 
-4. **Update configuration** in `modules/config.py`:
-   - Add service-specific constants
-   - Add keyring service names if needed
+Run the automated checks that match the change:
 
-5. **Test thoroughly**:
-   - Upload single files
-   - Upload batches
-   - Test gallery creation
-   - Verify output formatting
-
-## Testing
-
-### Manual Testing Checklist
-
-- [ ] Upload single file
-- [ ] Upload multiple files
-- [ ] Upload folder
-- [ ] Create gallery
-- [ ] Template output
-- [ ] Retry failed uploads
-- [ ] Settings persistence
-- [ ] Credential storage
-- [ ] Drag and drop
-- [ ] Dark/Light mode switching
-- [ ] ViperGirls posting (if applicable)
-
-### Building for Testing
-
-**Windows:**
-```batch
-build_uploader.bat
-```
-
-**Manual build:**
 ```bash
-# Build Go backend
+pytest tests/ -v
+go test ./...
+go vet ./...
+flake8 main.py modules/ --max-line-length=120 --ignore=E501,W503 --exclude=__pycache__
+```
+
+Manual workflow checks:
+
+- Add files and folders.
+- Reorder files, including multi-select drag/move behavior.
+- Mark and clear cover images.
+- Upload one small batch.
+- Retry failed uploads when applicable.
+- Create/select galleries when gallery code changed.
+- Preview and save templates when template code changed.
+- Validate ViperGirls targets and inspect posting history when posting code changed.
+- Switch dark/light appearance for UI changes.
+
+## Building for Testing
+
+Preferred platform scripts:
+
+```batch
+build_uploader.bat --clean
+```
+
+```bash
+./build.sh --clean
+```
+
+```bash
+make build
+```
+
+Manual Windows PyInstaller build, matching the current build script:
+
+```batch
 go build -ldflags="-s -w" -o uploader.exe .
 
-# Build Python executable
-pyinstaller --noconsole --onefile --clean --name "ConniesUploader" \
-    --icon "logo.ico" \
-    --add-data "uploader.exe;." \
-    --add-data "logo.ico;." \
-    --collect-all tkinterdnd2 \
-    main.py
+pyinstaller ^
+  --noconsole ^
+  --onefile ^
+  --clean ^
+  --noupx ^
+  --name "ConniesUploader" ^
+  --icon "logo.ico" ^
+  --add-data "uploader.exe;." ^
+  --add-data "logo.ico;." ^
+  --additional-hooks-dir "pyinstaller_hooks" ^
+  --collect-all tkinterdnd2 ^
+  --collect-submodules modules.plugins ^
+  --hidden-import modules.plugins.imx ^
+  --hidden-import modules.plugins.pixhost ^
+  --hidden-import modules.plugins.vipr ^
+  --hidden-import modules.plugins.turbo ^
+  --hidden-import modules.plugins.imagebam ^
+  --hidden-import modules.plugins.imgur ^
+  main.py
 ```
 
-## Version Numbering
+The packaged executable should include the Go sidecar, Tk/Tcl runtime, tkinterdnd2 assets, and all active plugin modules. Use `python scripts/diagnostics/check_sidecar_location.py` when diagnosing source-run sidecar lookup problems.
 
-We follow [Semantic Versioning](https://semver.org/):
+## Documentation Rules
 
-- **MAJOR** version: Incompatible API changes
-- **MINOR** version: New features (backward-compatible)
-- **PATCH** version: Bug fixes (backward-compatible)
+Update documentation when you change:
 
-Update version in `modules/config.py`:
-```python
-APP_VERSION = "X.Y.Z"
-```
+- User-visible workflows or labels.
+- Build, install, or release steps.
+- Plugin architecture or schema behavior.
+- Template syntax/placeholders.
+- Gallery Manager or ViperGirls behavior.
+- Stored file locations or migration behavior.
+- Workflow or dependency versions.
 
-## Documentation
+Useful docs:
 
-When making changes:
+- [README.md](README.md)
+- [CHANGELOG.md](CHANGELOG.md)
+- [ARCHITECTURE.md](ARCHITECTURE.md)
+- [User Tutorial](docs/guides/USER_TUTORIAL.md)
+- [Plugin Creation Guide](docs/guides/PLUGIN_CREATION_GUIDE.md)
+- [Schema Plugin Guide](docs/guides/SCHEMA_PLUGIN_GUIDE.md)
+- [Build Troubleshooting](docs/guides/BUILD_TROUBLESHOOTING.md)
+- [Release Process](docs/releases/RELEASE_PROCESS.md)
 
-- Update README.md if you add features or change usage
-- Update CHANGELOG.md with your changes
-- Add comments for complex code
-- Update docstrings if you change function behavior
+## Versioning
 
-## Questions?
+The project follows [Semantic Versioning](https://semver.org/):
 
-- Open an issue for questions
-- Check existing issues and pull requests
-- Review the code and comments
+- MAJOR: incompatible behavior or packaging changes
+- MINOR: backward-compatible features
+- PATCH: backward-compatible bug fixes
 
-## License
+When preparing a release, update versioned files consistently and document the release in `CHANGELOG.md`.
 
-By contributing, you agree that your contributions will be licensed under the MIT License.
+## Questions
 
----
+Open a GitHub issue for contributor questions that need project-owner input. Include the branch, operating system, Python version, Go version, command output, and relevant logs/screenshots.
 
-Thank you for contributing to Connie's Uploader Ultimate! 🎉
+By contributing, you agree that your contributions are licensed under the MIT License.

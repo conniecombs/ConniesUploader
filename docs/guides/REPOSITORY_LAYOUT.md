@@ -8,6 +8,7 @@ This project keeps source files, developer helpers, generated build output, and 
 - `core/`, `services/`, `handlers.go`, and `main.go` contain the Go sidecar.
 - `tests/` contains the Python test suite.
 - `docs/` contains user, developer, release, and troubleshooting documentation.
+- `docs/assets/screenshots/` contains tutorial and README screenshots.
 - `pyinstaller_hooks/` contains packaging hooks required by the Windows, Linux, and macOS builds.
 
 ## Developer Helpers
@@ -33,6 +34,7 @@ These files and folders are generated locally and should not be committed:
 - `htmlcov/`
 - `.coverage` and `.coverage.*`
 - `.pytest_cache/`
+- `.build-tools/`
 - `uploader` and `uploader.exe`
 - `ConniesUploader` and `ConniesUploader.exe`
 - `ConniesUploader.spec`
@@ -48,4 +50,12 @@ These files are user-specific runtime data and should not be committed:
 - `user_settings.json`
 - legacy `user_templates.json`
 
-The app stores current persistent data under `~/.conniesuploader/`, including templates, ViperGirls targets, posting history, and output history. The cleanup helper leaves local user data alone by default. To remove it intentionally, pass `--include-output` or `--include-user-data`.
+The app stores current persistent data under `~/.conniesuploader/`, including:
+
+- `templates.json`
+- `gallery_cache.json`
+- `saved_threads.json`
+- `posting_history.json`
+- `history/`
+
+The cleanup helper leaves local user data alone by default. To remove it intentionally, pass `--include-output` or `--include-user-data`.
