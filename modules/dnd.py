@@ -124,6 +124,8 @@ class DragDropMixin:
 
         for filepath, row in rows:
             self._configure_drop_color(row, self._row_color_for_file(filepath))
+        if hasattr(self, "_refresh_selection_actions"):
+            self._refresh_selection_actions()
 
     def _set_selected_files(self, filepaths, anchor=None):
         ordered = self._ordered_filepaths()
@@ -216,6 +218,22 @@ class DragDropMixin:
                     return selected_in_group
 
         return [filepath]
+
+    def _selected_files_for_queue_action(self, filepath):
+        selection = set(self._selected_file_set())
+        ordered = self._ordered_filepaths()
+        with self.lock:
+            active_files = set(self.file_widgets)
+
+        if filepath in selection:
+            selected_files = [
+                candidate
+                for candidate in ordered
+                if candidate in selection and candidate in active_files
+            ]
+            if selected_files:
+                return selected_files
+        return [filepath] if filepath in active_files else []
 
     def _prune_selection(self, filepaths):
         removed = set(filepaths)
@@ -680,7 +698,7 @@ class DragDropMixin:
         )
         self.context_menu.add_separator()
         self.context_menu.add_command(
-            label="Delete Batch", command=lambda: self._delete_group(group)
+            label="Remove Batch", command=lambda: self._delete_group(group)
         )
         self.context_menu.tk_popup(event.x_root, event.y_root)
 
@@ -707,14 +725,11 @@ class DragDropMixin:
             command=lambda f=filepath: self._move_file_relative(f, "bottom"),
         )
         self.context_menu.add_separator()
-        selected_files = self._selected_files_for_action(filepath)
+        selected_files = self._selected_files_for_queue_action(filepath)
         selected_label = "Selected Images" if len(selected_files) > 1 else "Image"
         if hasattr(self, "_is_cover_file") and hasattr(self, "_set_cover_for_files"):
-            with self.lock:
-                group = self.file_widgets.get(filepath, {}).get("group")
             all_selected_are_covers = all(
-                self._is_cover_file(selected_file, group)
-                for selected_file in selected_files
+                self._is_cover_file(selected_file) for selected_file in selected_files
             )
             self.context_menu.add_command(
                 label=(
@@ -737,13 +752,18 @@ class DragDropMixin:
                 label="Copy Error", command=lambda: self._copy_file_error(filepath)
             )
             self.context_menu.add_separator()
+        remove_label = (
+            f"Remove {len(selected_files)} Selected Images"
+            if len(selected_files) > 1
+            else "Remove Image"
+        )
         self.context_menu.add_command(
-            label="Delete Image", command=lambda: self._delete_file(filepath)
+            label=remove_label, command=lambda files=selected_files: self._delete_files(files)
         )
         self.context_menu.tk_popup(event.x_root, event.y_root)
 
     def _delete_group(self, group):
-        if messagebox.askyesno("Confirm", f"Delete batch '{group.title}'?"):
+        if messagebox.askyesno("Confirm", f"Remove batch '{group.title}' from the queue?"):
             deleted_files = list(group.files)
             for fp in list(group.files):
                 with self.lock:
@@ -758,33 +778,68 @@ class DragDropMixin:
             group.destroy()
             self._prune_selection(deleted_files)
             if hasattr(self, "add_activity"):
-                self.add_activity(f"Deleted batch: {group.title}.", "warning")
+                self.add_activity(f"Removed batch: {group.title}.", "warning")
             if hasattr(self, "_refresh_queue_state"):
                 self._refresh_queue_state()
 
-    def _delete_file(self, filepath):
-        with self.lock:
-            if filepath not in self.file_widgets:
-                self._clear_highlights()
-                return
-            group = self.file_widgets[filepath]["group"]
-            row = self.file_widgets[filepath]["row"]
-            # Clean up image reference to prevent memory leak
-            img_ref = self.file_widgets[filepath].get("image_ref")
-            if img_ref and img_ref in self.image_refs:
-                self.image_refs.remove(img_ref)
-        if group.winfo_exists():
-            group.remove_file(filepath)
-        row.destroy()
-        with self.lock:
-            del self.file_widgets[filepath]
-        self._prune_selection([filepath])
+    def _delete_files(self, filepaths):
+        if vars(self).get("is_uploading", False):
+            if hasattr(self, "add_activity"):
+                self.add_activity(
+                    "Wait for the current upload to finish before removing images.",
+                    "warning",
+                )
+            return False
+
+        requested = list(dict.fromkeys(filepaths or []))
+        if not requested:
+            return False
+
+        requested_set = set(requested)
+        ordered = [filepath for filepath in self._ordered_filepaths() if filepath in requested_set]
+        removed = []
+        touched_groups = []
+
+        for filepath in ordered:
+            with self.lock:
+                if filepath not in self.file_widgets:
+                    continue
+                group = self.file_widgets[filepath]["group"]
+                row = self.file_widgets[filepath]["row"]
+                # Clean up image reference to prevent memory leak
+                img_ref = self.file_widgets[filepath].get("image_ref")
+                if img_ref and img_ref in self.image_refs:
+                    self.image_refs.remove(img_ref)
+            if group.winfo_exists():
+                group.remove_file(filepath)
+            row.destroy()
+            with self.lock:
+                self.file_widgets.pop(filepath, None)
+            removed.append(filepath)
+            if group not in touched_groups:
+                touched_groups.append(group)
+
+        if not removed:
+            self._clear_highlights()
+            return False
+
+        self._prune_selection(removed)
         self._clear_highlights()
         if hasattr(self, "add_activity"):
-            self.add_activity(f"Removed image: {os.path.basename(filepath)}.", "warning")
-        self._remove_empty_group_if_needed(group)
+            if len(removed) == 1:
+                self.add_activity(f"Removed image: {os.path.basename(removed[0])}.", "warning")
+            else:
+                self.add_activity(f"Removed {len(removed)} images.", "warning")
+        for group in touched_groups:
+            self._remove_empty_group_if_needed(group)
         if hasattr(self, "_refresh_queue_state"):
             self._refresh_queue_state()
+        if hasattr(self, "_refresh_selection_actions"):
+            self._refresh_selection_actions()
+        return True
+
+    def _delete_file(self, filepath):
+        return self._delete_files([filepath])
 
     def _remove_empty_group_if_needed(self, group):
         if not group or getattr(group, "files", None):

@@ -163,7 +163,7 @@ The app validates files before adding them. The default per-file size limit is 5
 
 ## Upload Queue
 
-![Upload queue showing two image batches with thumbnails, templates, post target selectors, progress bars, and remove buttons](../assets/screenshots/batched-upload-queue.png)
+![Upload queue showing two image batches with thumbnails, templates, post target selectors, cover toggles, and progress bars](../assets/screenshots/batched-upload-queue.png)
 
 Each batch header contains:
 
@@ -176,19 +176,21 @@ Each batch header contains:
 
 Each file row contains:
 
+- A compact `Cover` checkbox that marks that image as a cover for templates and cover-size uploads.
 - A thumbnail preview or `[Img]` placeholder.
 - A status label such as `Wait`, `Uploading`, `Done`, `Failed`, or `Timeout`.
 - The file name.
-- A `Set Cover` button that marks that image as a cover for templates and cover-size uploads.
 - A file progress bar.
 
 Queue actions:
 
 - Drag batch headers to reorder batches.
 - Drag file rows to reorder files or move them between batches.
-- Use `Set Cover` on one or more rows to choose cover images manually. Right-click selected rows to mark or clear covers in bulk.
-- Right-click a batch and choose `Delete Batch` to remove it.
-- Right-click a file and choose `Delete Image` to remove that file.
+- Use each row's `Cover` checkbox to choose cover images manually, even when thumbnails are hidden.
+- Select multiple files with `Ctrl+click` or `Shift+click`; the selection bar can mark covers, clear covers, or remove selected files in one action.
+- Press `C` to toggle cover status for selected files, or `Delete` to remove selected files from the queue.
+- Right-click a batch and choose `Remove Batch` to remove it.
+- Right-click a file and choose `Remove Image`, or right-click a selected group and choose `Remove Selected Images`.
 - `Retry Failed` resets failed files to pending and starts another upload pass.
 - `Clear List` removes all batches, queued files, generated progress, and current output references.
 
@@ -210,7 +212,7 @@ The output follows the queue order. If cover images are selected, covers are pla
 Use this when you want 1, 2, 4, or more larger/featured images at the top of a post.
 
 1. Add a batch.
-2. Click `Set Cover` on each image that should be a cover.
+2. Check `Cover` on each image that should be a cover.
 3. Make sure the selected covers are the images you want featured.
 4. Use a template that contains `#cover_images#`.
 5. Start the upload.
@@ -900,7 +902,7 @@ If the preview contains raw `<span>`, `<img>`, or `<a href=...>` tags, switch to
 Use this when each post should show selected covers first.
 
 1. Add the image batch.
-2. Click `Set Cover` on the images that should appear at the top.
+2. Check `Cover` on the images that should appear at the top.
 3. Open `Tools > Template Editor`.
 4. Create or select a ViperGirls template containing this:
 
@@ -1172,7 +1174,7 @@ Check whether `Auto-copy to clipboard` was enabled before upload completion. You
 
 Make sure all three things are true:
 
-1. One or more files are marked with `Set Cover`.
+1. One or more files are marked with the row `Cover` checkbox.
 2. The selected template contains `#cover_images#`, `[for cover]`, `#cover_image#`, or `#cover_url#`.
 3. You previewed or uploaded after marking the covers.
 

@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed confusing gallery credential fallbacks so services no longer reuse unrelated host credentials.
 - Improved upload activity messages for queued ViperGirls posts with batch name, target name, and thread ID.
 - Expanded the user tutorial with current screenshots, dummy-proof walkthrough examples, and an internal mechanics section explaining the Python GUI, Go sidecar, plugins, templates, galleries, output files, and bundled-release behavior.
+- Replaced per-row queue removal controls with selection-aware right-click and keyboard removal, and replaced the old row cover control with a compact `Cover` checkbox that stays available when thumbnails are hidden.
 
 ### Fixed
 

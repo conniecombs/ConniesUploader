@@ -186,7 +186,7 @@ def test_preview_data_uses_storage_thumbnail_value_for_readable_service_label():
 
 
 @pytest.mark.unit
-def test_queue_rows_have_visible_remove_button_and_readable_fallbacks():
+def test_queue_rows_have_compact_cover_toggle_and_readable_fallbacks():
     source = Path("modules/ui/main_window.py").read_text(encoding="utf-8")
 
     assert "preview_requested=True" in source
@@ -194,11 +194,13 @@ def test_queue_rows_have_visible_remove_button_and_readable_fallbacks():
     assert "elif preview_requested:" in source
     assert 'text="No preview"' in source
     assert 'text="Waiting"' in source
-    assert 'text="Set Cover"' in source
-    assert 'text="Remove"' in source
+    assert "cover_toggle = ctk.CTkCheckBox" in source
+    assert 'text="Cover"' in source
+    assert "_set_cover_from_toggle" in source
+    assert "btn_remove =" not in source
     assert 'text="Retry"' in source
-    assert '"remove": btn_remove' in source
-    assert '"cover": btn_cover' in source
+    assert '"cover": cover_toggle' in source
+    assert '"cover_var": cover_var' in source
     assert '"retry": btn_retry' in source
     assert '"error_label": error_label' in source
     assert '"actions": row_actions' in source
@@ -211,9 +213,12 @@ def test_queue_rows_have_visible_remove_button_and_readable_fallbacks():
 def test_queue_rows_use_stable_action_lane_and_wrapping_text():
     source = Path("modules/ui/main_window.py").read_text(encoding="utf-8")
 
-    assert "row_actions = ctk.CTkFrame(row, fg_color=\"transparent\", width=330, height=30)" in source
+    assert 'row_actions = ctk.CTkFrame(row, fg_color="transparent", width=176, height=30)' in source
     assert "row_actions.pack_propagate(False)" in source
-    assert "retry_slot = ctk.CTkFrame(row_actions, fg_color=\"transparent\", width=64, height=30)" in source
+    assert (
+        'retry_slot = ctk.CTkFrame(row_actions, fg_color="transparent", width=64, height=30)'
+        in source
+    )
     assert "retry_slot.pack_propagate(False)" in source
     assert "def update_text_wrap(event):" in source
     assert "filename_label.configure(wraplength=wraplength)" in source
@@ -676,6 +681,39 @@ def test_activity_panel_toggle_hides_and_restores_feed():
 
 
 @pytest.mark.unit
+def test_selection_action_bar_removes_selected_files_as_a_batch():
+    group = FakeGroup("Batch", ["one.jpg", "two.jpg", "three.jpg"])
+    rows = {filepath: FakeFrame() for filepath in group.files}
+    refreshed = []
+    activity = []
+
+    app = UploaderApp.__new__(UploaderApp)
+    app.lock = Lock()
+    app.groups = [group]
+    app.is_uploading = False
+    app.file_widgets = {
+        filepath: {"row": rows[filepath], "group": group} for filepath in group.files
+    }
+    app.image_refs = set()
+    app.selected_files = {"one.jpg", "three.jpg"}
+    app.selection_anchor = "one.jpg"
+    app.highlighted_row = None
+    app._refresh_queue_state = lambda: refreshed.append(True)
+    app.add_activity = lambda message, level="info": activity.append((message, level))
+
+    removed = UploaderApp._delete_selected_files(app)
+
+    assert removed is True
+    assert group.files == ["two.jpg"]
+    assert set(app.file_widgets) == {"two.jpg"}
+    assert app.selected_files == set()
+    assert rows["one.jpg"].destroyed is True
+    assert rows["three.jpg"].destroyed is True
+    assert refreshed
+    assert ("Removed 2 images.", "warning") in activity
+
+
+@pytest.mark.unit
 def test_deleting_last_image_removes_empty_batch():
     row = FakeFrame()
     image_ref = object()
@@ -912,7 +950,8 @@ def test_auto_cover_count_marks_first_images_until_user_changes_selection():
 
     assert group.cover_filepaths() == ["one.jpg", "two.jpg"]
     assert buttons["one.jpg"].options["text"] == "Cover"
-    assert buttons["three.jpg"].options["text"] == "Set Cover"
+    assert buttons["three.jpg"].options["text"] == "Cover"
+    assert buttons["three.jpg"].options["text_color"] == "gray"
 
     group.set_cover_file("three.jpg", True, manual=True)
     app.var_pix_cover_count.set("1")
@@ -2172,5 +2211,21 @@ def test_queue_order_context_menus_expose_reorder_and_sort_actions():
     assert 'label="Sort Batch by Name"' in source
     assert 'label="Sort Batch by Modified Date"' in source
     assert 'label="Reverse Batch Order"' in source
+    assert 'label="Remove Batch"' in source
+    assert "Remove Image" in source
+    assert "Selected Images" in source
     assert "self._retry_file(filepath)" in source
     assert "self._copy_file_error(filepath)" in source
+
+
+@pytest.mark.unit
+def test_queue_selection_bar_exposes_bulk_cover_remove_and_shortcuts():
+    source = Path("modules/ui/main_window.py").read_text(encoding="utf-8")
+
+    assert "self.selection_actions = ctk.CTkFrame" in source
+    assert 'text="Mark Cover"' in source
+    assert 'text="Clear Cover"' in source
+    assert 'text="Remove"' in source
+    assert 'self.bind_all("<Delete>", self._delete_selected_from_key)' in source
+    assert 'self.bind_all("<c>", self._toggle_selected_cover_from_key)' in source
+    assert "def _event_targets_text_input" in source

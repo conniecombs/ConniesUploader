@@ -175,6 +175,10 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         self._create_menu()
         self._create_layout()
         self._apply_settings()
+        self.bind_all("<Delete>", self._delete_selected_from_key)
+        self.bind_all("<BackSpace>", self._delete_selected_from_key)
+        self.bind_all("<c>", self._toggle_selected_cover_from_key)
+        self.bind_all("<C>", self._toggle_selected_cover_from_key)
         self.after(250, self._show_template_recovery_notice)
 
         # Register drag-and-drop on main window
@@ -823,6 +827,42 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         )
         self.btn_add_folder.pack(side="left")
 
+        self.selection_actions = ctk.CTkFrame(right_panel, fg_color="transparent")
+        self.lbl_selection_summary = ctk.CTkLabel(
+            self.selection_actions, text="0 selected", text_color="gray"
+        )
+        self.lbl_selection_summary.pack(side="left", padx=(0, 10))
+        self.btn_selection_mark_cover = ctk.CTkButton(
+            self.selection_actions,
+            text="Mark Cover",
+            command=lambda: self._set_cover_for_selected(True),
+            width=92,
+            height=26,
+            fg_color="gray",
+            hover_color="#666666",
+        )
+        self.btn_selection_mark_cover.pack(side="left", padx=(0, 6))
+        self.btn_selection_clear_cover = ctk.CTkButton(
+            self.selection_actions,
+            text="Clear Cover",
+            command=lambda: self._set_cover_for_selected(False),
+            width=92,
+            height=26,
+            fg_color="gray",
+            hover_color="#666666",
+        )
+        self.btn_selection_clear_cover.pack(side="left", padx=(0, 6))
+        self.btn_selection_remove = ctk.CTkButton(
+            self.selection_actions,
+            text="Remove",
+            command=self._delete_selected_files,
+            width=76,
+            height=26,
+            fg_color="#8E2F2F",
+            hover_color="#6F2424",
+        )
+        self.btn_selection_remove.pack(side="left")
+
         self.list_container = ScrollableFrame(right_panel, width=600)
         self.list_container.pack(fill="both", expand=True, padx=5, pady=5)
         self.file_frame = self.list_container
@@ -968,6 +1008,92 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             if self.queue_actions.winfo_ismapped():
                 self.queue_actions.pack_forget()
 
+    def _set_selection_actions_visible(self, visible: bool) -> None:
+        if "selection_actions" not in self.__dict__:
+            return
+
+        if visible:
+            if not self.selection_actions.winfo_ismapped():
+                pack_kwargs = {"fill": "x", "padx": 5, "pady": (4, 0)}
+                if "list_container" in self.__dict__:
+                    pack_kwargs["before"] = self.list_container
+                self.selection_actions.pack(**pack_kwargs)
+        else:
+            if self.selection_actions.winfo_ismapped():
+                self.selection_actions.pack_forget()
+
+    def _selected_queue_files(self) -> List[str]:
+        selection = set(self.__dict__.get("selected_files", set()) or [])
+        if not selection:
+            return []
+
+        ordered = self._ordered_filepaths()
+        with self.lock:
+            active_files = set(self.file_widgets)
+        return [
+            filepath for filepath in ordered if filepath in selection and filepath in active_files
+        ]
+
+    def _refresh_selection_actions(self) -> None:
+        if "selection_actions" not in self.__dict__:
+            return
+
+        selected_files = self._selected_queue_files()
+        count = len(selected_files)
+        image_label = "image" if count == 1 else "images"
+        self.lbl_selection_summary.configure(text=f"{count} selected {image_label}")
+        self._set_selection_actions_visible(count > 0)
+
+        button_state = "disabled" if getattr(self, "is_uploading", False) else "normal"
+        for button in (
+            self.btn_selection_mark_cover,
+            self.btn_selection_clear_cover,
+            self.btn_selection_remove,
+        ):
+            button.configure(state=button_state)
+
+    def _set_cover_for_selected(self, is_cover: bool) -> None:
+        self._set_cover_for_files(self._selected_queue_files(), is_cover)
+
+    def _delete_selected_files(self) -> bool:
+        return self._delete_files(self._selected_queue_files())
+
+    def _event_targets_text_input(self, event) -> bool:
+        widget = getattr(event, "widget", None)
+        if widget is None:
+            return False
+
+        try:
+            widget_class = str(widget.winfo_class()).lower()
+        except (tk.TclError, AttributeError):
+            widget_class = ""
+        python_class = widget.__class__.__name__.lower()
+        combined = f"{widget_class} {python_class}"
+        return any(
+            token in combined for token in ("entry", "text", "textbox", "spinbox", "combobox")
+        )
+
+    def _delete_selected_from_key(self, event=None):
+        if self._event_targets_text_input(event):
+            return None
+        if self._delete_selected_files():
+            return "break"
+        return None
+
+    def _toggle_selected_cover_from_key(self, event=None):
+        if self._event_targets_text_input(event):
+            return None
+        state = int(getattr(event, "state", 0) or 0)
+        if state & (self._CTRL_MASK | 0x0008):
+            return None
+
+        selected_files = self._selected_queue_files()
+        if not selected_files:
+            return None
+        all_selected_are_covers = all(self._is_cover_file(filepath) for filepath in selected_files)
+        self._set_cover_for_files(selected_files, not all_selected_are_covers)
+        return "break"
+
     def _refresh_queue_state(self) -> None:
         if not hasattr(self, "lbl_file_summary"):
             return
@@ -991,6 +1117,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         queue_is_empty = file_count == 0 and group_count == 0
         self._set_empty_queue_visible(queue_is_empty)
         self._set_queue_actions_visible(not queue_is_empty)
+        self._refresh_selection_actions()
         self._refresh_start_button_state()
 
     def _create_activity_panel(self, parent):
@@ -2978,6 +3105,13 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         is_cover = self._is_cover_file(filepath, group)
         row_data["is_cover"] = is_cover
 
+        cover_var = row_data.get("cover_var")
+        if cover_var:
+            try:
+                cover_var.set(is_cover)
+            except (tk.TclError, AttributeError):
+                pass
+
         button = row_data.get("cover")
         if not button:
             return
@@ -2988,14 +3122,16 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
                     text="Cover",
                     fg_color="#1F6AA5",
                     hover_color="#144870",
+                    border_color="#1F6AA5",
                     text_color="white",
                 )
             else:
                 button.configure(
-                    text="Set Cover",
-                    fg_color="gray",
+                    text="Cover",
+                    fg_color="#1F6AA5",
                     hover_color="#666666",
-                    text_color="white",
+                    border_color="gray",
+                    text_color="gray",
                 )
         except (tk.TclError, AttributeError):
             return
@@ -3041,6 +3177,17 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             row_data = self.file_widgets.get(filepath)
         group = row_data.get("group") if row_data else None
         self._set_cover_for_files([filepath], not self._is_cover_file(filepath, group))
+
+    def _set_cover_from_toggle(self, filepath: str) -> None:
+        with self.lock:
+            row_data = self.file_widgets.get(filepath)
+        if not row_data:
+            return
+
+        cover_var = row_data.get("cover_var")
+        is_cover = bool(cover_var.get()) if cover_var else not self._is_cover_file(filepath)
+        self._set_cover_for_files([filepath], is_cover)
+        self._refresh_cover_button(filepath)
 
     def _preview_group_results(self, group: Any) -> List[Tuple[str, str, str]]:
         results = []
@@ -3501,6 +3648,20 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             text_color="gray",
         )
         drag_handle.pack(side="left", padx=(4, 2), pady=3)
+        cover_var = tk.BooleanVar(value=False)
+        cover_toggle = ctk.CTkCheckBox(
+            row,
+            text="Cover",
+            variable=cover_var,
+            command=lambda f=fp: self._set_cover_from_toggle(f),
+            width=72,
+            height=24,
+            checkbox_width=16,
+            checkbox_height=16,
+            border_width=2,
+            text_color="gray",
+        )
+        cover_toggle.pack(side="left", padx=(2, 4), pady=3)
         img_widget = None
         if pil_image:
             img_widget = ctk.CTkImage(
@@ -3539,29 +3700,9 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
 
         text_frame.bind("<Configure>", update_text_wrap)
 
-        row_actions = ctk.CTkFrame(row, fg_color="transparent", width=330, height=30)
+        row_actions = ctk.CTkFrame(row, fg_color="transparent", width=176, height=30)
         row_actions.pack(side="right", padx=(4, 5))
         row_actions.pack_propagate(False)
-        btn_remove = ctk.CTkButton(
-            row_actions,
-            text="Remove",
-            width=72,
-            height=24,
-            command=lambda f=fp: self._delete_file(f),
-            fg_color="gray",
-            hover_color="#666666",
-        )
-        btn_remove.pack(side="right", padx=(4, 0), pady=3)
-        btn_cover = ctk.CTkButton(
-            row_actions,
-            text="Set Cover",
-            width=76,
-            height=24,
-            command=lambda f=fp: self._toggle_cover_file(f),
-            fg_color="gray",
-            hover_color="#666666",
-        )
-        btn_cover.pack(side="right", padx=(4, 0), pady=3)
         retry_slot = ctk.CTkFrame(row_actions, fg_color="transparent", width=64, height=30)
         retry_slot.pack(side="right", padx=(4, 0))
         retry_slot.pack_propagate(False)
@@ -3591,8 +3732,8 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
                 "error_label": error_label,
                 "actions": row_actions,
                 "retry_slot": retry_slot,
-                "remove": btn_remove,
-                "cover": btn_cover,
+                "cover": cover_toggle,
+                "cover_var": cover_var,
                 "retry": btn_retry,
                 "drag_handle": drag_handle,
                 "error": "",
@@ -3609,7 +3750,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             w.bind("<Button-3>", lambda e, f=fp: self._show_row_context(e, f))
             w.bind("<Button-2>", lambda e, f=fp: self._show_row_context(e, f))
 
-        interactive_widgets = (row_actions, retry_slot, btn_remove, btn_cover, btn_retry, pr)
+        interactive_widgets = (row_actions, retry_slot, cover_toggle, btn_retry, pr)
 
         def bind_row_tree(w):
             if w in interactive_widgets:

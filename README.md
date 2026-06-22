@@ -23,9 +23,9 @@ The main screen opens directly into the upload workflow. New users get a large d
 
 ### Organize Batches Automatically
 
-Folders become separate upload batches with visible thumbnails, per-batch output templates, post targets, progress, and remove actions. Once files are present, the queue-level Add Files and Add Folder buttons move to the top toolbar.
+Folders become separate upload batches with visible thumbnails, per-batch output templates, post targets, progress, compact cover toggles, and selection-aware queue actions. Once files are present, the queue-level Add Files and Add Folder buttons move to the top toolbar.
 
-![Connie's Uploader upload queue showing two image batches with thumbnails, templates, post target selectors, progress bars, and remove buttons](docs/assets/screenshots/batched-upload-queue.png)
+![Connie's Uploader upload queue showing two image batches with thumbnails, templates, post target selectors, cover toggles, and progress bars](docs/assets/screenshots/batched-upload-queue.png)
 
 ### Keep Advanced Controls Out Of The Way
 
