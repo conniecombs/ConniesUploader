@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Moved app settings storage from legacy repo-local `user_settings.json` to `~/.conniesuploader/user_settings.json`, with startup migration that removes legacy settings files from the checkout without printing their contents.
+
 ## [2.0.0] - 2026-06-22
 
 ### Added

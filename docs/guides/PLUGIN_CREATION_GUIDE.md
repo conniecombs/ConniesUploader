@@ -587,7 +587,7 @@ If you add a new active plugin, update the build scripts, release workflow, and 
 ## Related Docs
 
 - [Schema Plugin Guide](SCHEMA_PLUGIN_GUIDE.md)
-- [Architecture](../../ARCHITECTURE.md)
+- [Architecture](../ARCHITECTURE.md)
 - [Build Troubleshooting](BUILD_TROUBLESHOOTING.md)
 - [Repository Layout](REPOSITORY_LAYOUT.md)
 

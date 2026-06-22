@@ -4,6 +4,7 @@
 # modules/settings_manager.py
 import json
 import os
+from datetime import datetime
 from typing import Dict, Any, List
 from loguru import logger
 from . import config
@@ -117,6 +118,7 @@ class SettingsManager:
 
     def __init__(self):
         self.filepath = config.SETTINGS_FILE
+        self._migrate_legacy_repo_settings()
         # UPDATED: Changed booleans (*_cover) to integers (*_cover_count)
         self.defaults = {
             "service": "imx.to",
@@ -161,6 +163,56 @@ class SettingsManager:
             "imx_gallery_id": "",
             "turbo_gallery_id": "",
         }
+
+    @staticmethod
+    def _unique_backup_path(directory: str) -> str:
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        base = os.path.join(directory, f"user_settings.repo-local-{timestamp}.json")
+        if not os.path.exists(base):
+            return base
+        counter = 1
+        while True:
+            candidate = os.path.join(
+                directory,
+                f"user_settings.repo-local-{timestamp}-{counter}.json",
+            )
+            if not os.path.exists(candidate):
+                return candidate
+            counter += 1
+
+    def _migrate_legacy_repo_settings(self) -> None:
+        """Move a legacy repo-local settings file into the user data directory."""
+        legacy_path = getattr(config, "LEGACY_SETTINGS_FILE", None)
+        if not legacy_path:
+            return
+
+        target_path = os.fspath(self.filepath)
+        legacy_path = os.fspath(legacy_path)
+        if os.path.abspath(legacy_path) == os.path.abspath(target_path):
+            return
+        if not os.path.exists(legacy_path):
+            return
+
+        target_dir = os.path.dirname(target_path)
+        os.makedirs(target_dir, exist_ok=True)
+
+        try:
+            if not os.path.exists(target_path):
+                os.replace(legacy_path, target_path)
+                logger.warning(
+                    "Migrated legacy repo-local settings file to user data directory: "
+                    f"{target_path}"
+                )
+                return
+
+            backup_path = self._unique_backup_path(target_dir)
+            os.replace(legacy_path, backup_path)
+            logger.warning(
+                "Moved legacy repo-local settings file out of the repository without "
+                f"overwriting existing settings: {backup_path}"
+            )
+        except OSError as e:
+            logger.error(f"Failed to migrate legacy settings file out of repository: {e}")
 
     def validate_settings(self, data: Dict[str, Any]) -> List[str]:
         """Validate settings against the JSON schema.
@@ -383,6 +435,9 @@ class SettingsManager:
                 logger.warning("Saving without validation (jsonschema not installed)")
 
         try:
+            settings_dir = os.path.dirname(os.fspath(self.filepath))
+            if settings_dir:
+                os.makedirs(settings_dir, exist_ok=True)
             with open(self.filepath, "w") as f:
                 json.dump(data, f, indent=4)
             logger.info(f"Settings saved to {self.filepath}")

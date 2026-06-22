@@ -42,9 +42,10 @@ jobs:
       run: |
         VERSION="${{ steps.get_version.outputs.version }}"
         VERSION_NUM="${VERSION#v}"
-        if [ -f CHANGELOG.md ]; then
-          awk "/## \[$VERSION_NUM\]/,/## \[/" CHANGELOG.md | sed '/## \['"$VERSION_NUM"'\]/d' | sed '/## \[/Q' | head -n -1 > /tmp/release_notes.md
-          if [ ! -s /tmp/release_notes.md ]; then cp CHANGELOG.md /tmp/release_notes.md; fi
+        CHANGELOG_PATH="docs/CHANGELOG.md"
+        if [ -f "$CHANGELOG_PATH" ]; then
+          awk "/## \[$VERSION_NUM\]/,/## \[/" "$CHANGELOG_PATH" | sed '/## \['"$VERSION_NUM"'\]/d' | sed '/## \[/Q' | head -n -1 > /tmp/release_notes.md
+          if [ ! -s /tmp/release_notes.md ]; then cp "$CHANGELOG_PATH" /tmp/release_notes.md; fi
         else
           git log --pretty=format:"- %s (%h)" $(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")..HEAD >> /tmp/release_notes.md
         fi

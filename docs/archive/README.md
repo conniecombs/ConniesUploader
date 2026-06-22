@@ -1,17 +1,17 @@
-# Archive Directory
+# Archived Legacy Plugin Notes
 
-This directory contains deprecated code that has been removed from active use but preserved for historical reference.
+The deprecated code lives in `archive/legacy_plugins/`. It has been removed from active use but preserved for historical reference.
 
 ## Legacy Plugins (Archived: 2026-01-03)
 
 The following plugin files were archived as part of Phase 3 code cleanup:
 
 ### Archived Files
-- `legacy_plugins/imagebam_legacy.py` (92 lines)
-- `legacy_plugins/imx_legacy.py` (74 lines)
-- `legacy_plugins/pixhost_legacy.py` (103 lines)
-- `legacy_plugins/turbo_legacy.py` (103 lines)
-- `legacy_plugins/vipr_legacy.py` (79 lines)
+- `archive/legacy_plugins/imagebam_legacy.py` (92 lines)
+- `archive/legacy_plugins/imx_legacy.py` (74 lines)
+- `archive/legacy_plugins/pixhost_legacy.py` (103 lines)
+- `archive/legacy_plugins/turbo_legacy.py` (103 lines)
+- `archive/legacy_plugins/vipr_legacy.py` (79 lines)
 
 **Total**: 451 lines removed from active codebase
 
@@ -33,7 +33,7 @@ The current active plugins are:
 All legacy configuration keys are still supported for backward compatibility through the `upload_manager.py` mapping system.
 
 ### If You Need to Reference Legacy Code
-1. Check this archive directory
+1. Check `archive/legacy_plugins/`
 2. Review git history: `git log -- archive/legacy_plugins/<filename>`
 3. Compare with current implementation to understand changes
 

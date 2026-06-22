@@ -111,7 +111,7 @@ Released June 22, 2026.
 - Improved ViperGirls target parsing, auto-poster failure reporting, posting-history recovery, and upload preflight blockers.
 - Fixed Template Editor preview, validation, and toolbar output-format behavior for BBCode/forum workflows.
 
-Full history is available in [CHANGELOG.md](CHANGELOG.md).
+Full history is available in [CHANGELOG.md](docs/CHANGELOG.md).
 
 ## Installation
 
@@ -165,7 +165,7 @@ python scripts/maintenance/clean_generated.py --dry-run
 python scripts/maintenance/clean_generated.py
 ```
 
-The cleanup helper removes generated artifacts such as `build/`, `dist/`, `htmlcov/`, coverage files, sidecar binaries, PyInstaller spec files, and crash logs. It leaves `Output/`, `user_settings.json`, and legacy `user_templates.json` alone unless you pass the explicit `--include-output` or `--include-user-data` flags.
+The cleanup helper removes generated artifacts such as `build/`, `dist/`, `htmlcov/`, coverage files, sidecar binaries, PyInstaller spec files, and crash logs. It leaves `Output/` and legacy repo-local user data files alone unless you pass the explicit `--include-output` or `--include-user-data` flags.
 
 Manual development run on Windows PowerShell:
 
@@ -207,7 +207,7 @@ Additional tools are available from the application menus:
 
 ## Configuration and Data
 
-- Application settings are stored in `user_settings.json`.
+- Application settings are stored in `~/.conniesuploader/user_settings.json`; legacy repo-local `user_settings.json` files are migrated there automatically.
 - Credentials are stored through the system keyring.
 - Session output is written to `Output/`.
 - Persistent output history is written to `~/.conniesuploader/history/`.
@@ -236,7 +236,7 @@ Generated folders and runtime data are intentionally kept out of source control:
 
 - Build output: `build/`, `dist/`, `uploader`, `uploader.exe`, `ConniesUploader.spec`
 - Test output: `.coverage`, `htmlcov/`, `.pytest_cache/`
-- Local app data: `Output/`, `user_settings.json`, legacy `user_templates.json`, `~/.conniesuploader/*.json`
+- Local app data: `Output/`, legacy repo-local `user_settings.json` and `user_templates.json`, `~/.conniesuploader/*.json`
 - Runtime diagnostics: `crash_log*.log`
 
 ## CI, Security, and Releases
@@ -281,9 +281,9 @@ python scripts/diagnostics/check_sidecar_location.py
 
 ## Documentation
 
-- [Architecture](ARCHITECTURE.md)
-- [Contributing](CONTRIBUTING.md)
-- [Changelog](CHANGELOG.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Contributing](docs/CONTRIBUTING.md)
+- [Changelog](docs/CHANGELOG.md)
 - [User Tutorial](docs/guides/USER_TUTORIAL.md)
 - [Build Troubleshooting](docs/guides/BUILD_TROUBLESHOOTING.md)
 - [Plugin Creation Guide](docs/guides/PLUGIN_CREATION_GUIDE.md)
@@ -320,7 +320,7 @@ Recreate the virtual environment and reinstall from `requirements.txt`.
 
 ## Contributing
 
-Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, coding standards, and pull request guidance.
+Contributions are welcome. See [CONTRIBUTING.md](docs/CONTRIBUTING.md) for development setup, coding standards, and pull request guidance.
 
 ## License
 

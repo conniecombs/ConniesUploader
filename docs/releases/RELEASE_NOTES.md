@@ -26,10 +26,10 @@ Read the full notes: [RELEASE_NOTES_v2.0.0.md](RELEASE_NOTES_v2.0.0.md)
 | v1.4.0 | 2026-06-20 | User Experience Polish & Safer Upload Controls | [Notes](RELEASE_NOTES_v1.4.0.md) |
 | v1.3.0 | 2026-06-02 | Protocol Hardening & Release Reliability | [Notes](RELEASE_NOTES_v1.3.0.md) |
 | v1.2.4 | 2026-05-20 | CI & Packaging Reliability | [Notes](RELEASE_NOTES_v1.2.4.md) |
-| v1.2.3 | 2026-01-31 | Gallery Logic Fix | See [CHANGELOG.md](../../CHANGELOG.md) |
+| v1.2.3 | 2026-01-31 | Gallery Logic Fix | See [CHANGELOG.md](../CHANGELOG.md) |
 | v1.2.2 | 2026-01-22 | Batch Upload Stability | [Notes](RELEASE_NOTES_v1.2.2.md) |
-| v1.2.1 | 2026-01-18 | Gallery Fix | See [CHANGELOG.md](../../CHANGELOG.md) |
-| v1.2.0 | 2026-01-17 | Stability & Maintenance | See [CHANGELOG.md](../../CHANGELOG.md) |
+| v1.2.1 | 2026-01-18 | Gallery Fix | See [CHANGELOG.md](../CHANGELOG.md) |
+| v1.2.0 | 2026-01-17 | Stability & Maintenance | See [CHANGELOG.md](../CHANGELOG.md) |
 | v1.1.0 | 2026-01-16 | Performance & Polish | [Notes](RELEASE_NOTES_v1.1.0.md) |
 | v1.0.5 | 2026-01-13 | Resilience & Intelligence | [Notes](RELEASE_NOTES_v1.0.5.md) |
 | v1.0.4 | 2026-01-12 | Maintenance | [Notes](release_notes_v1.0.4.md) |

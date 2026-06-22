@@ -40,7 +40,9 @@ IMAGEBAM_GALLERIES_URL = "https://www.imagebam.com/my/galleries"
 SUPPORTED_EXTENSIONS = (".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp")
 # Alias for backward compatibility - centralized extension validation
 VALID_EXTENSIONS = SUPPORTED_EXTENSIONS
-SETTINGS_FILE = "user_settings.json"
+USER_DATA_DIR = os.path.join(os.path.expanduser("~"), ".conniesuploader")
+SETTINGS_FILE = os.path.join(USER_DATA_DIR, "user_settings.json")
+LEGACY_SETTINGS_FILE = os.path.abspath("user_settings.json")
 CRASH_LOG_FILE = "crash_log.log"
 UI_THUMB_SIZE = (40, 40)
 

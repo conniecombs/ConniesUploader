@@ -4,9 +4,11 @@
 import json
 import queue
 import threading
+from pathlib import Path
 
 import pytest
 
+from modules import config
 from modules.credentials_manager import CredentialsManager
 from modules.plugins.imgur import ImgurPlugin
 from modules.plugins.turbo import TurboPlugin
@@ -55,6 +57,60 @@ def test_settings_manager_migrates_global_thread_limit_from_old_imx_threads(tmp_
     loaded = manager.load()
 
     assert loaded["global_thread_limit"] == 7
+
+
+@pytest.mark.unit
+def test_settings_manager_default_path_uses_user_data_dir(tmp_path, monkeypatch):
+    settings_path = tmp_path / ".conniesuploader" / "user_settings.json"
+    legacy_path = tmp_path / "user_settings.json"
+    monkeypatch.setattr(config, "SETTINGS_FILE", str(settings_path))
+    monkeypatch.setattr(config, "LEGACY_SETTINGS_FILE", str(legacy_path))
+
+    manager = SettingsManager()
+    manager.save(manager.defaults)
+
+    assert Path(manager.filepath) == settings_path
+    assert settings_path.exists()
+    assert not legacy_path.exists()
+
+
+@pytest.mark.unit
+def test_settings_manager_migrates_legacy_repo_local_settings(tmp_path, monkeypatch):
+    settings_path = tmp_path / ".conniesuploader" / "user_settings.json"
+    legacy_path = tmp_path / "user_settings.json"
+    legacy_path.write_text(
+        json.dumps({"service": "imx.to", "imx_gallery_id": "legacy-gallery"}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(config, "SETTINGS_FILE", str(settings_path))
+    monkeypatch.setattr(config, "LEGACY_SETTINGS_FILE", str(legacy_path))
+
+    manager = SettingsManager()
+    loaded = manager.load()
+
+    assert settings_path.exists()
+    assert not legacy_path.exists()
+    assert loaded["imx_gallery_id"] == "legacy-gallery"
+
+
+@pytest.mark.unit
+def test_settings_manager_moves_legacy_settings_to_backup_when_current_exists(
+    tmp_path, monkeypatch
+):
+    settings_path = tmp_path / ".conniesuploader" / "user_settings.json"
+    legacy_path = tmp_path / "user_settings.json"
+    settings_path.parent.mkdir()
+    settings_path.write_text(json.dumps({"service": "pixhost.to"}), encoding="utf-8")
+    legacy_path.write_text(json.dumps({"service": "imx.to"}), encoding="utf-8")
+    monkeypatch.setattr(config, "SETTINGS_FILE", str(settings_path))
+    monkeypatch.setattr(config, "LEGACY_SETTINGS_FILE", str(legacy_path))
+
+    manager = SettingsManager()
+    loaded = manager.load()
+
+    assert loaded["service"] == "pixhost.to"
+    assert not legacy_path.exists()
+    assert list(settings_path.parent.glob("user_settings.repo-local-*.json"))
 
 
 @pytest.mark.unit

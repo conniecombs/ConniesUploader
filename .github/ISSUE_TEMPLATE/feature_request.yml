@@ -1,0 +1,85 @@
+name: Feature Request
+description: Suggest an idea for this project
+title: "[FEATURE] "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting an improvement. Please describe the workflow and outcome you want.
+  - type: textarea
+    id: feature-description
+    attributes:
+      label: Feature Description
+      placeholder: A clear and concise description of the feature.
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: Is this related to a problem or friction in the current app?
+      placeholder: I am frustrated when ...
+    validations:
+      required: false
+  - type: textarea
+    id: proposed-solution
+    attributes:
+      label: Proposed Solution
+      placeholder: What would you like to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternative Solutions
+      placeholder: Other approaches you considered.
+    validations:
+      required: false
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use Case
+      description: Who would use it, when, and how often?
+      placeholder: |
+        1. Who would use it?
+        2. When would they use it?
+        3. How often would they use it?
+    validations:
+      required: true
+  - type: textarea
+    id: implementation
+    attributes:
+      label: Implementation Ideas
+      placeholder: Share any ideas, examples, or constraints.
+    validations:
+      required: false
+  - type: checkboxes
+    id: benefits
+    attributes:
+      label: Benefits
+      options:
+        - label: Improved performance
+        - label: Better user experience
+        - label: New upload service support
+        - label: Enhanced reliability
+        - label: Other
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      placeholder: Add screenshots, examples, or related links here.
+    validations:
+      required: false
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I have searched existing issues to ensure this is not a duplicate.
+          required: true
+        - label: I have read the contributing guidelines.
+          required: true
+        - label: This feature aligns with the project's goals.
+          required: true

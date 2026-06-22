@@ -1,6 +1,6 @@
 # Performance Benchmarks
 
-This directory contains performance benchmarks for Connie's Uploader Ultimate.
+The benchmark scripts live in the repository's `benchmarks/` directory. This page documents how to run and interpret them.
 
 ## Available Benchmarks
 

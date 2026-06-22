@@ -396,7 +396,7 @@ If `settings_schema` returns an empty list, the base class falls back to legacy 
 ## Related Docs
 
 - [Plugin Creation Guide](PLUGIN_CREATION_GUIDE.md)
-- [Architecture](../../ARCHITECTURE.md)
+- [Architecture](../ARCHITECTURE.md)
 - [Repository Layout](REPOSITORY_LAYOUT.md)
 
 - **Guide Version:** 2.0

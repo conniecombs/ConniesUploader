@@ -357,7 +357,7 @@ If you choose Imgur, test one small batch first and confirm your Client ID or ac
 
 Open credentials with `Tools > Set Credentials`.
 
-The credentials dialog saves secrets through the operating system keyring instead of storing passwords in `user_settings.json`.
+The credentials dialog saves secrets through the operating system keyring instead of storing passwords in `~/.conniesuploader/user_settings.json`.
 
 Credential tabs:
 
@@ -991,7 +991,7 @@ Saved thread data is stored under:
 
 | Data | Location |
 | --- | --- |
-| App settings | `user_settings.json` |
+| App settings | `~/.conniesuploader/user_settings.json` |
 | Custom templates | `~/.conniesuploader/templates.json` |
 | Gallery cache, pinned galleries, and last-used gallery timestamps | `~/.conniesuploader/gallery_cache.json` |
 | Output for current sessions | `Output/` |
@@ -1066,7 +1066,7 @@ Example:
 | `modules/ui/main_window.py` | Owns the main CustomTkinter window, queue UI, menus, settings controls, preflight checks, and shutdown flow. |
 | `modules/dnd.py` | Handles drag and drop, row selection, reordering, and context-menu queue actions. |
 | `modules/file_handler.py` and `modules/validation.py` | Check file extensions, sizes, paths, and import rules before files enter the queue. |
-| `modules/settings_manager.py` | Loads, saves, normalizes, and validates app settings from `user_settings.json`. |
+| `modules/settings_manager.py` | Loads, saves, normalizes, validates, and migrates app settings under `~/.conniesuploader/user_settings.json`. |
 | `modules/credentials_manager.py` | Reads and writes credentials through the operating system keyring. |
 | `modules/plugin_manager.py` | Discovers available image-host plugins and exposes their metadata to the app. |
 | `modules/plugins/` | Contains the per-host upload rules for Pixhost, IMX, Vipr, TurboImageHost, ImageBam, Imgur, and helpers. |
@@ -1092,7 +1092,7 @@ Most errors tell you which layer failed:
 | Template warning | The output renderer found invalid placeholders, bad conditionals, HTML in a BBCode template, or missing image output. |
 | ViperGirls posting history failure | Upload may have succeeded, but the later forum post failed. Copy the generated post text from history and post manually if needed. |
 
-For the deeper developer version, read [Architecture](../../ARCHITECTURE.md).
+For the deeper developer version, read [Architecture](../ARCHITECTURE.md).
 
 ## Troubleshooting
 

@@ -160,12 +160,12 @@ Regex selectors are supplied by plugin code. They should be compiled with gracef
 
 | Data | Location |
 | --- | --- |
-| App settings | `user_settings.json` |
+| App settings | `~/.conniesuploader/user_settings.json` |
 | Credentials | System keyring |
 | Session output | `Output/` |
 | Persistent output history | `~/.conniesuploader/history/` |
 | Templates | `~/.conniesuploader/templates.json` |
-| Legacy templates | `user_templates.json` migrated automatically |
+| Legacy settings/templates | repo-local `user_settings.json` and `user_templates.json` migrated automatically |
 | Gallery cache/pins/last used | `~/.conniesuploader/gallery_cache.json` |
 | ViperGirls targets | `~/.conniesuploader/saved_threads.json` |
 | ViperGirls posting history | `~/.conniesuploader/posting_history.json` |

@@ -1,7 +1,7 @@
 <!--
 Release Notes Template for Connie's Uploader Ultimate
 
-Use this template when creating a new version section in CHANGELOG.md
+Use this template when creating a new version section in docs/CHANGELOG.md
 The automated release workflow will extract this content for the GitHub Release
 -->
 

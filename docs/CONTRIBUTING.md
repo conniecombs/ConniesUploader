@@ -94,7 +94,7 @@ Generated/user data should stay out of commits:
 
 - `build/`, `dist/`, `htmlcov/`, `.coverage*`, `.pytest_cache/`
 - `uploader`, `uploader.exe`, `ConniesUploader.spec`
-- `Output/`, `user_settings.json`, legacy `user_templates.json`
+- `Output/`, legacy repo-local `user_settings.json`, legacy `user_templates.json`
 - `~/.conniesuploader/*.json`
 - `crash_log*.log`
 
@@ -277,14 +277,14 @@ Update documentation when you change:
 
 Useful docs:
 
-- [README.md](README.md)
+- [README.md](../README.md)
 - [CHANGELOG.md](CHANGELOG.md)
 - [ARCHITECTURE.md](ARCHITECTURE.md)
-- [User Tutorial](docs/guides/USER_TUTORIAL.md)
-- [Plugin Creation Guide](docs/guides/PLUGIN_CREATION_GUIDE.md)
-- [Schema Plugin Guide](docs/guides/SCHEMA_PLUGIN_GUIDE.md)
-- [Build Troubleshooting](docs/guides/BUILD_TROUBLESHOOTING.md)
-- [Release Process](docs/releases/RELEASE_PROCESS.md)
+- [User Tutorial](guides/USER_TUTORIAL.md)
+- [Plugin Creation Guide](guides/PLUGIN_CREATION_GUIDE.md)
+- [Schema Plugin Guide](guides/SCHEMA_PLUGIN_GUIDE.md)
+- [Build Troubleshooting](guides/BUILD_TROUBLESHOOTING.md)
+- [Release Process](releases/RELEASE_PROCESS.md)
 
 ## Versioning
 

@@ -6,8 +6,8 @@ Use the current documentation instead:
 
 - [Documentation Index](../README.md)
 - [README](../../README.md)
-- [Architecture](../../ARCHITECTURE.md)
-- [Contributing](../../CONTRIBUTING.md)
+- [Architecture](../ARCHITECTURE.md)
+- [Contributing](../CONTRIBUTING.md)
 - [User Tutorial](../guides/USER_TUTORIAL.md)
 - [Plugin Creation Guide](../guides/PLUGIN_CREATION_GUIDE.md)
 - [Build Troubleshooting](../guides/BUILD_TROUBLESHOOTING.md)
