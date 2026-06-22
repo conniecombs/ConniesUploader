@@ -1,6 +1,6 @@
 # Connie's Uploader Ultimate
 
-![Project version badge showing v1.4.0](https://img.shields.io/badge/version-1.4.0-blue.svg)
+![Project version badge showing v2.0.0](https://img.shields.io/badge/version-2.0.0-blue.svg)
 ![MIT License badge](https://img.shields.io/badge/license-MIT-green.svg)
 ![Supported platforms: Windows, Linux, and macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)
 ![Continuous integration workflow status: passing](https://github.com/conniecombs/ConniesUploader/actions/workflows/ci.yml/badge.svg?branch=main)
@@ -11,7 +11,7 @@
 
 Connie's Uploader Ultimate is a desktop image-uploading tool with a CustomTkinter GUI and a Go sidecar for concurrent uploads. It supports batch uploads, gallery workflows, custom output templates, drag and drop, secure credential storage, and automated release builds for Windows, Linux, and macOS.
 
-**Latest release:** v1.4.0 "User Experience Polish & Safer Upload Controls" (June 20, 2026)
+**Latest release:** v2.0.0 "Posting, Templates & Gallery Workflows" (June 22, 2026)
 
 ## Screenshots
 
@@ -19,7 +19,7 @@ Connie's Uploader Ultimate is a desktop image-uploading tool with a CustomTkinte
 
 The main screen opens directly into the upload workflow. New users get a large drop zone, centered Add Files and Add Folder actions, and host readiness feedback before they start.
 
-![Connie's Uploader 1.4.0 empty upload queue with Pixhost selected, ready status, and centered Add Files and Add Folder actions](docs/assets/screenshots/empty-drop-zone.png)
+![Connie's Uploader 2.0.0 empty upload queue with Pixhost selected, ready status, and centered Add Files and Add Folder actions](docs/assets/screenshots/empty-drop-zone.png)
 
 ### Organize Batches Automatically
 
@@ -89,27 +89,27 @@ The active upload plugins are:
 
 ## Latest Changelog
 
-### v1.4.0 - User Experience Polish & Safer Upload Controls
+### v2.0.0 - Posting, Templates & Gallery Workflows
 
-Released June 20, 2026.
+Released June 22, 2026.
 
 **Added**
 
-- Added a real empty queue drop zone with primary Add Files and Add Folder actions.
-- Added in-app import checks, upload preflight checks, activity history, and completion summaries.
-- Added inline retry and failed-reason visibility for upload rows.
+- Added ViperGirls posting workflows with saved targets, per-batch target selection, previews, optional confirmation, background posting, and posting history.
+- Added a stronger Template Editor and parser with search, categories, import/export, nested conditionals, image loops, cover loops, and BBCode/HTML warnings.
+- Added a dedicated Gallery Service and persistent Gallery Cache with pins, last-used timestamps, cached fallback display, and richer Gallery Manager controls.
 
 **Changed**
 
-- Moved advanced worker and thread controls into a compact Advanced App Settings section.
-- Rendered service settings from plugin schemas, including Imgur-friendly settings labels.
-- Improved queue readability with clearer states, stable row actions, and reclaimed row space when previews are off.
+- Reworked cover handling so selected covers render separately, use host-specific large thumbnail overrides, and stay out of regular `#all_images#` output.
+- Replaced per-row Remove and Set Cover buttons with a compact `Cover` checkbox, selection-aware right-click actions, and queue keyboard shortcuts.
+- Refreshed architecture, contributor, plugin, schema, build troubleshooting, repository layout, release, and tutorial documentation for the current app.
 
 **Fixed**
 
-- Clamped worker counts to `1-16` and upload thread limits to `1-10` throughout the UI, settings, and upload job path.
-- Ensured `build_uploader.bat --ci` can build the packaged executable automatically.
-- Added recovery options for corrupted local templates.
+- Improved Gallery Manager stale-response protection, inline error states, and cached fallback behavior.
+- Improved ViperGirls target parsing, auto-poster failure reporting, posting-history recovery, and upload preflight blockers.
+- Fixed Template Editor preview, validation, and toolbar output-format behavior for BBCode/forum workflows.
 
 Full history is available in [CHANGELOG.md](CHANGELOG.md).
 
@@ -117,13 +117,13 @@ Full history is available in [CHANGELOG.md](CHANGELOG.md).
 
 ### Download a Release
 
-Download the latest release from [GitHub Releases](https://github.com/conniecombs/ConniesUploader/releases/tag/v1.4.0).
+Download the latest release from [GitHub Releases](https://github.com/conniecombs/ConniesUploader/releases/tag/v2.0.0).
 
 Expected release artifacts:
 
-- `ConniesUploader-v1.4.0-windows-x64.zip`
-- `ConniesUploader-v1.4.0-linux-x64.tar.gz`
-- `ConniesUploader-v1.4.0-macos-x64.zip`
+- `ConniesUploader-v2.0.0-windows-x64.zip`
+- `ConniesUploader-v2.0.0-linux-x64.tar.gz`
+- `ConniesUploader-v2.0.0-macos-x64.zip`
 
 Each release artifact includes a SHA256 checksum.
 

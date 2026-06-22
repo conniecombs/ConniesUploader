@@ -7,43 +7,76 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-06-22
+
 ### Added
 
-- Added a resizable, searchable, sortable Gallery Manager with copy ID/hash, copy URL, open gallery, pin/favorite, cached-result, and post-create action support.
-- Added persistent gallery caching at `~/.conniesuploader/gallery_cache.json`, including pinned galleries and last-used timestamps.
-- Added normalized gallery records and standardized gallery list/create response states for unsupported services, missing credentials, login failure, empty results, parse failures, and cached fallbacks.
-- Added upload preflight checks for selected galleries and ViperGirls posting targets, including missing credentials, missing targets, invalid thread IDs, and direct actions to open credentials or target management.
-- Added ViperGirls posting previews, optional confirm-before-posting behavior, posting history, post text/error copy actions, and target-thread open actions.
-- Added search, sorting, import/export, bulk export/delete, notes/tags, live thread-title fetching, and last-used tracking for ViperGirls posting targets.
-- Added template storage migration from `user_templates.json` to `~/.conniesuploader/templates.json` with atomic saves and corrupted JSON recovery.
-- Added Template Editor search, import/export, duplicate/rename/delete actions, dirty-state protection, categorized placeholder inserts, raw preview output, rendered preview output, and copy-preview support.
-- Added a proper template parser with nested `[if]...[/if]` conditionals, `[for image]...[/for]` loops, `[for cover]...[/for]` loops, separator options, service/batch/thread placeholders, automatic cover expansion through `#cover_images#`, and ViperGirls-specific posting templates.
-- Added multi-file queue selection with Ctrl-click and Shift-click so users can reorder or apply actions to multiple files at once.
-- Added repository cleanup organization with `scripts/maintenance/`, `scripts/diagnostics/`, generated-artifact cleanup, and clearer source-versus-generated documentation.
+- Added the ViperGirls posting workflow, including saved posting targets, per-batch target selection, post previews, optional confirm-before-posting behavior, background posting, target last-used tracking, and persisted posting history.
+- Added a ViperGirls target manager with URL/thread-ID normalization, live thread-title fetching, tags, notes, search, sorting, validation, edit/cancel flows, duplicate detection, selected/all import and export, bulk delete, open-thread actions, and credential health/test-login controls.
+- Added posting-history tools for reviewing attempts, copying generated post text, copying failure details, opening target threads, refreshing the list, and clearing saved history.
+- Added ViperGirls-aware upload checks that validate missing credentials, missing targets, invalid thread IDs, and per-batch posting readiness before upload starts.
+- Added ViperGirls built-in templates and posting context placeholders for batch names, thread names, thread IDs, image counts, upload dates, service names, gallery names, and related forum output.
+- Added template storage migration from repository-local `user_templates.json` to `~/.conniesuploader/templates.json`, including atomic saves, legacy migration, corrupted JSON backup/recovery, and safer default template loading.
+- Added Template Editor search, category filtering, import/export, duplicate, rename, delete, dirty-state protection, categorized placeholder insertion, raw preview output, rendered preview output, and copy-preview support.
+- Added a stronger template parser with nested `[if]...[/if]` conditionals, `[for image]...[/for]` loops, `[for cover]...[/for]` loops, loop separator options, direct image placeholders, automatic `#cover_images#` expansion, `#cover_count#`, and validation for mismatched or unclosed blocks.
+- Added BBCode/HTML mismatch warnings and category-aware output-format resolution so forum templates do not silently save HTML-oriented output.
+- Added a dedicated Gallery Service layer with normalized gallery records/results, service-specific credential handling, IMX gallery HTML parsing, Pixhost gallery creation normalization, and standardized statuses for unsupported services, missing credentials, login failures, empty lists, parse failures, and cached fallbacks.
+- Added a persistent Gallery Cache at `~/.conniesuploader/gallery_cache.json`, including pinned galleries, last-used timestamps, corrupt-cache backups, per-service trimming, cached labels, and fallback display when host refreshes fail.
+- Added a resizable Gallery Manager with search, sorting by name/ID/hash/last used, copy ID/hash, copy URL, open gallery, pin/unpin, cached-result display, refresh-from-host, post-create rendering, and assign-to-batches support.
+- Added upload preflight summaries for selected galleries, one-gallery-per-folder mode, selected Pixhost upload hashes, ViperGirls posting targets, invalid gallery selections, and missing service credentials.
+- Added Pixhost gallery finalization registration when selected galleries include upload hashes.
+- Added cover-specific template output through `#cover_image#`, `#cover_images#`, `[for cover]...[/for]`, and cover count previews.
+- Added host-specific cover thumbnail overrides so selected covers upload with the largest host-supported thumbnail size while normal images keep the user's selected size.
+- Added compact queue selection actions for removing selected images, setting or clearing covers in bulk, and using keyboard shortcuts for queue actions.
+- Added repository organization helpers, including `scripts/maintenance/`, `scripts/diagnostics/`, a generated-artifact cleanup script, and a repository layout guide.
 
 ### Changed
 
-- Reworked cover handling so selected covers can be rendered automatically, uploaded with the largest host-supported thumbnail size, kept clickable in generated BBCode, and excluded from regular `#all_images#` output.
+- Reworked cover handling so selected covers render as clickable full image blocks, are excluded from regular `#all_images#` output, can be ordered before standard images in preview/output, and retain cover state when moved between batches.
 - Renamed the Template Editor cover insert control to `Cover{s}` and made repeated presses insert additional cover output without adding a second cover button.
-- Removed the redundant side-panel Add Files entry now that add actions live in the main upload workflow.
+- Replaced per-row Remove and Set Cover buttons with a narrower action lane, a compact `Cover` checkbox that remains available when thumbnails are hidden, selection-aware right-click actions, and Delete/Backspace/C keyboard shortcuts.
+- Improved queue activity messages for removals, blocked removals during active uploads, queued ViperGirls posts, batch names, target names, and resolved thread IDs.
 - Moved IMX gallery scraping/session behavior out of the Gallery Manager UI layer and into service/plugin code.
-- Removed confusing gallery credential fallbacks so services no longer reuse unrelated host credentials.
-- Improved upload activity messages for queued ViperGirls posts with batch name, target name, and thread ID.
-- Expanded the user tutorial with current screenshots, dummy-proof walkthrough examples, and an internal mechanics section explaining the Python GUI, Go sidecar, plugins, templates, galleries, output files, and bundled-release behavior.
-- Replaced per-row queue removal controls with selection-aware right-click and keyboard removal, and replaced the old row cover control with a compact `Cover` checkbox that stays available when thumbnails are hidden.
+- Removed cross-service gallery credential fallbacks so services no longer reuse unrelated host credentials.
+- Updated Vipr credential access to use the centralized credentials manager and improved Vipr gallery/session handling.
+- Updated Turbo uploads so schema-selected thumbnail sizes are included in multipart requests.
+- Updated Go-side gallery handling so nil gallery slices and unreadable gallery responses are normalized more safely.
+- Updated build and release documentation to describe current Go requirements, generated-artifact cleanup, release placeholders, and tag examples.
+- Expanded the user tutorial with current screenshots, walkthrough examples, ViperGirls posting guidance, template guidance, gallery workflows, troubleshooting, and an internal mechanics section covering the Python GUI, Go sidecar, plugins, templates, galleries, output files, and bundled-release behavior.
+- Refreshed architecture, contributor, plugin, schema, build troubleshooting, repository layout, release process, and historical documentation to match the current 2.0.0-era app structure.
 
 ### Fixed
 
-- Prevented stale gallery refresh responses from overwriting the currently selected service view.
-- Improved inline Gallery Manager errors for missing credentials, login failure, unsupported services, parse failures, and empty gallery lists.
-- Made auto-poster failures clearer for missing credentials, login failure, missing targets, invalid thread IDs, rejected posts, and failed post submissions.
+- Prevented stale Gallery Manager refresh/create responses from overwriting the currently selected service view.
+- Improved inline Gallery Manager errors for missing credentials, login failure, unsupported services, parse failures, empty gallery lists, unreadable responses, and cached fallback states.
+- Fixed auto-poster failure reporting for missing credentials, login failure, missing targets, invalid thread IDs, empty post text, rejected posts, and failed submissions.
+- Fixed posting target parsing so ViperGirls URLs, bare thread IDs, legacy URL records, site titles, notes, tags, and duplicate display names normalize consistently.
+- Fixed posting-history persistence and corrupt-history recovery.
 - Fixed Template Editor toolbar insertions that produced HTML where BBCode output was expected.
+- Fixed template validation for unknown placeholders, required image-output placeholders, duplicate `[else]` blocks, unmatched `[else]`, mismatched nested blocks, unclosed image loops, and unclosed cover loops.
+- Fixed preview rendering so raw and rendered output use the current editor template, resolved output format, selected covers, and callback-provided cover counts.
+- Fixed upload preflight output so selected gallery names, upload hashes, one-gallery-per-folder state, and posting target blockers are displayed before users start an upload.
+- Fixed gallery cache behavior so empty live host results do not incorrectly fall back to stale cache data.
+- Fixed gallery cache sorting, pin persistence, last-used persistence, corrupt JSON backup, and full-record handoff when a gallery is selected.
+- Fixed API wrapper handling for missing or `None` data returned by the Go sidecar.
 - Fixed `read_text()` calls in build-contract tests to use explicit UTF-8 encoding.
 - Replaced direct `self.__dict__` access in tests with normal `getattr()` usage where applicable.
 
+### Removed
+
+- Removed the old repository-local `user_templates.json` seed file now that user templates live under `~/.conniesuploader/`.
+- Removed the redundant side-panel Add Files entry now that add actions live in the main upload workflow.
+- Removed obsolete root-level helper script locations after moving diagnostics and maintenance scripts into dedicated folders.
+- Removed stale screenshot assets that no longer represent the current upload queue or Template Editor.
+- Removed the tracked coverage artifact and scratch test file from the release tree.
+
 ### Tests
 
-- Added or expanded tests for gallery response normalization, gallery cache persistence and corrupted JSON recovery, stale refresh protection, gallery create/select behavior, upload preflight gallery/posting checks, ViperGirls thread ID parsing and target validation, auto-poster failure states, template migration, template parser edge cases, preview output, validation, import/export, cover loops, and service cover thumbnail overrides.
+- Added or expanded tests for ViperGirls thread ID extraction, URL normalization, title parsing, saved target migration, saved target validation, import/export, last-used tracking, posting history, auto-poster success/failure recording, target filtering/sorting, target expansion, and group dropdown refresh behavior.
+- Added or expanded tests for template migration, atomic saves, corrupted JSON recovery, import/export, duplicate/rename helpers, category filtering, default template validation, placeholder validation, nested conditionals, image loops, cover loops, separators, metadata placeholders, HTML-in-BBCode warnings, preview output, and editor toolbar format resolution.
+- Added or expanded tests for gallery response normalization, IMX parsing, sidecar gallery response handling, unsupported service states, service-specific credential checks, Pixhost creation normalization, stale refresh guards, cache persistence, cache fallback behavior, pinning, copy/open actions, gallery selection, filtering, and sorting.
+- Added or expanded tests for upload preflight gallery/posting checks, selected gallery metadata, gallery assignment to selected batches, one-gallery-per-folder previews, Pixhost finalization events, selected cover ordering, compact cover toggles, selection action bars, queue shortcuts, and context menu behavior.
+- Added or expanded tests for plugin gallery refresh behavior, Turbo thumbnail-size propagation, service-specific cover thumbnail overrides, build-contract generated-artifact cleanup coverage, and Vipr Go service behavior.
 
 ---
 

@@ -2,9 +2,9 @@
 
 ## Current Status
 
-- **Product Version:** v1.4.0 plus unreleased user-workflow, template, ViperGirls, and Gallery Manager improvements
+- **Product Version:** v2.0.0
 - **Architecture Version:** v2.6.0
-- **Last Updated:** 2026-06-21
+- **Last Updated:** 2026-06-22
 
 Connie's Uploader Ultimate is a hybrid desktop app:
 

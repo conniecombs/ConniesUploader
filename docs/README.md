@@ -32,6 +32,7 @@ Complete guide to the current documentation for Connie's Uploader Ultimate.
 ## Release Docs
 
 - [Current Release Notes](releases/RELEASE_NOTES.md)
+- [v2.0.0 Release Notes](releases/RELEASE_NOTES_v2.0.0.md)
 - [v1.4.0 Release Notes](releases/RELEASE_NOTES_v1.4.0.md)
 - [v1.3.0 Release Notes](releases/RELEASE_NOTES_v1.3.0.md)
 - [v1.2.4 Release Notes](releases/RELEASE_NOTES_v1.2.4.md)
@@ -82,6 +83,7 @@ docs/
 │   └── USER_TUTORIAL.md
 ├── releases/
 │   ├── RELEASE_NOTES.md
+│   ├── RELEASE_NOTES_v2.0.0.md
 │   ├── RELEASE_NOTES_v1.4.0.md
 │   ├── RELEASE_NOTES_v1.3.0.md
 │   ├── RELEASE_NOTES_v1.2.4.md
@@ -95,6 +97,10 @@ docs/
 ```
 
 ## Recent Documentation Updates
+
+### 2026-06-22
+
+- Published v2.0.0 release metadata and release notes for ViperGirls posting, Template Editor, Gallery Manager, cache, cover, and queue workflow changes.
 
 ### 2026-06-21
 
@@ -118,6 +124,6 @@ docs/
 - Update plugin docs when plugin discovery, schema fields, request specs, or packaging hidden imports change.
 - Keep historical docs clearly separated from current guidance.
 
-- **Last Updated:** 2026-06-21
-- **Documentation Version:** 2.2
-- **Project Version:** v1.4.0 plus unreleased changes
+- **Last Updated:** 2026-06-22
+- **Documentation Version:** 2.3
+- **Project Version:** v2.0.0
