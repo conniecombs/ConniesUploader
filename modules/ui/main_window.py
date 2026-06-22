@@ -2469,6 +2469,20 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
                 self.ui_queue.put(("add", f, None, group_widget, show_previews), timeout=5.0)
             time.sleep(0.001)
 
+    def _increment_firebase_counter(self) -> None:
+        """Increment the global upload counter on Firebase."""
+        url = "https://conniesuploader-default-rtdb.firebaseio.com/upload_count.json"
+        try:
+            import requests
+            resp = requests.get(url, timeout=5)
+            count = resp.json()
+            if not isinstance(count, int):
+                count = 0
+            count += 1
+            requests.put(url, json=count, timeout=5)
+        except Exception as e:
+            logger.debug(f"Failed to increment Firebase counter: {e}")
+
     def start_upload(self) -> None:
         pending_by_group = {}
         for grp in self.groups:
@@ -2590,6 +2604,9 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
                 self.auto_poster.start_processing(
                     is_uploading_callback=lambda: self.is_uploading, cancel_event=self.cancel_event
                 )
+
+            # Increment the global Firebase counter asynchronously
+            threading.Thread(target=self._increment_firebase_counter, daemon=True).start()
 
             self.upload_manager.start_batch(pending_by_group, upload_cfg, self.creds)
 
