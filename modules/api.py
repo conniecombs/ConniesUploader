@@ -59,7 +59,7 @@ def get_vipr_metadata(creds: Dict[str, str]) -> Dict[str, Any]:
 
     if resp.get("status") == "success":
         # Expecting Go to return: { "data": [ {"id": "1", "name": "Folder"}, ... ] }
-        return {"galleries": resp.get("data", [])}
+        return {"galleries": resp.get("data") or []}
 
     return {"galleries": []}
 

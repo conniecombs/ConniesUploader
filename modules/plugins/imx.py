@@ -97,7 +97,7 @@ class ImxPlugin(ImageHostPlugin):
             {
                 "type": "inline_group",
                 "fields": [
-                    {"type": "label", "text": "Cover Images:", "width": 100},
+                    {"type": "label", "text": "Auto Covers:", "width": 100},
                     {
                         "type": "dropdown",
                         "key": "cover_count",
@@ -153,6 +153,9 @@ class ImxPlugin(ImageHostPlugin):
                 if gid:
                     # Store the new Gallery ID in the group object
                     group.gallery_id = gid
+                    group.gallery_name = group.title
+                    group.gallery_url = f"https://imx.to/g/{gid}"
+                    group.gallery_service = "imx.to"
                     # Update the config for this specific batch so the uploader sees it
                     config["gallery_id"] = gid
                     logger.info(f"Created IMX gallery for batch: {group.title} (ID: {gid})")

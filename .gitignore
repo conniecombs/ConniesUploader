@@ -67,11 +67,15 @@ go_installer.zip
 Output/
 *.log
 crash_log.log
+crash_log*.log
 .coverage
+.coverage.*
+coverage.out
 htmlcov/
 
 # User settings and credentials
 user_settings.json
+user_templates.json
 
 # Build directories
 dist/

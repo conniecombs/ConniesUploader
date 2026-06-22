@@ -80,7 +80,7 @@ class PixhostPlugin(ImageHostPlugin):
             {
                 "type": "inline_group",
                 "fields": [
-                    {"type": "label", "text": "Cover Images:", "width": 100},
+                    {"type": "label", "text": "Auto Covers:", "width": 100},
                     {
                         "type": "dropdown",
                         "key": "cover_count",
@@ -198,6 +198,10 @@ class PixhostPlugin(ImageHostPlugin):
                 # Store gallery info on the group object
                 group.pix_data = new_data
                 group.gallery_id = new_data.get("gallery_hash", "")
+                group.gallery_name = new_data.get("gallery_name") or clean_title
+                group.gallery_url = new_data.get("gallery_url", "")
+                group.gallery_service = "pixhost.to"
+                group.gallery_upload_hash = new_data.get("gallery_upload_hash", "")
 
                 # Store gallery_hash in config so it's used for uploads
                 config["gallery_hash"] = group.gallery_id
@@ -206,7 +210,13 @@ class PixhostPlugin(ImageHostPlugin):
                 # Add to context for finalization by UploadManager
                 if "created_galleries" not in context:
                     context["created_galleries"] = []
-                context["created_galleries"].append(new_data)
+                context["created_galleries"].append(
+                    {
+                        **new_data,
+                        "gallery_name": group.gallery_name,
+                        "gallery_url": group.gallery_url,
+                    }
+                )
 
                 logger.info(f"Created Pixhost gallery: {clean_title}")
             else:

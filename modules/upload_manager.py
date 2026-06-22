@@ -27,6 +27,16 @@ SERVICE_THREAD_KEYS = {
 }
 
 
+COVER_THUMBNAIL_OVERRIDES = {
+    "imx.to": {"thumbnail_size": "600", "imx_thumb": "600"},
+    "pixhost.to": {"thumbnail_size": "500", "pix_thumb": "500"},
+    "turboimagehost": {"thumbnail_size": "600", "turbo_thumb": "600"},
+    "vipr.im": {"thumbnail_size": "800x800", "vipr_thumb": "800x800"},
+    "imagebam.com": {"thumbnail_size": "300", "imagebam_thumb": "300"},
+    "imgur.com": {"thumbnail_size": "h", "imgur_thumb": "h"},
+}
+
+
 class UploadManager:
     def __init__(
         self,
@@ -125,6 +135,12 @@ class UploadManager:
                     group_cfg["gallery_id"] = gid
                     group_cfg["gallery_hash"] = gid
                     group_cfg["pix_gallery_hash"] = gid
+                    if getattr(group_obj, "gallery_name", ""):
+                        group_cfg["selected_gallery_name"] = group_obj.gallery_name
+                    if getattr(group_obj, "gallery_url", ""):
+                        group_cfg["selected_gallery_url"] = group_obj.gallery_url
+                    if getattr(group_obj, "gallery_upload_hash", ""):
+                        group_cfg["gallery_upload_hash"] = group_obj.gallery_upload_hash
                     logger.info(f"Group '{group_obj.title}' attached to Gallery ID: {gid}")
                 elif not group_cfg.get("gallery_hash"):
                     manual_hash = (
@@ -134,29 +150,29 @@ class UploadManager:
                         group_cfg["gallery_hash"] = manual_hash
                         logger.info(f"Group '{group_obj.title}' using manual gallery hash: {manual_hash}")
 
-                cover_cnt = self._cover_count_for_service(group_cfg)
-                covers: List[str] = []
-                standards: List[str] = []
+                explicit_covers = self._explicit_cover_files_for_group(group_obj, files)
+                if explicit_covers is None:
+                    cover_cnt = self._cover_count_for_service(group_cfg)
+                    covers = []
+                    standards = []
 
-                for file_path in files:
-                    try:
-                        idx = group_obj.files.index(file_path)
-                        if idx < cover_cnt:
-                            covers.append(file_path)
-                        else:
+                    for file_path in files:
+                        try:
+                            idx = group_obj.files.index(file_path)
+                            if idx < cover_cnt:
+                                covers.append(file_path)
+                            else:
+                                standards.append(file_path)
+                        except ValueError:
                             standards.append(file_path)
-                    except ValueError:
-                        standards.append(file_path)
+                else:
+                    cover_set = set(explicit_covers)
+                    covers = [file_path for file_path in files if file_path in cover_set]
+                    standards = [file_path for file_path in files if file_path not in cover_set]
 
                 if covers:
                     cover_cfg = group_cfg.copy()
-                    cover_cfg["imx_thumb"] = "600"
-                    cover_cfg["pix_thumb"] = "500"
-                    cover_cfg["turbo_thumb"] = "600"
-                    cover_cfg["vipr_thumb"] = "800x800"
-                    cover_cfg["imagebam_thumb"] = "300"
-                    if "pix" in group_cfg.get("service", ""):
-                        cover_cfg["thumbnail_size"] = "500"
+                    self._apply_cover_thumbnail_overrides(cover_cfg)
                     self._send_job(covers, cover_cfg, creds)
 
                 if standards:
@@ -192,6 +208,29 @@ class UploadManager:
                 logger.debug(f"Could not get cover count for {service_id}: {exc}")
 
         return 0
+
+    @staticmethod
+    def _apply_cover_thumbnail_overrides(cfg: Dict[str, Any]) -> Dict[str, Any]:
+        """Force cover jobs to the largest exposed thumbnail size for the active host."""
+        service_id = str(cfg.get("service", ""))
+        overrides = COVER_THUMBNAIL_OVERRIDES.get(service_id, {})
+        cfg.update(overrides)
+        return cfg
+
+    @staticmethod
+    def _explicit_cover_files_for_group(group_obj: Any, files: List[str]) -> List[str] | None:
+        """Return explicit cover selections for UI groups, or None for legacy count mode."""
+        cover_filepaths = getattr(group_obj, "cover_filepaths", None)
+        if callable(cover_filepaths):
+            cover_set = set(cover_filepaths())
+            return [file_path for file_path in files if file_path in cover_set]
+
+        cover_files = getattr(group_obj, "cover_files", None)
+        if cover_files is not None:
+            cover_set = set(cover_files)
+            return [file_path for file_path in files if file_path in cover_set]
+
+        return None
 
     def _send_job(self, file_list: List[str], cfg: Dict[str, Any], creds: Dict[str, str]) -> None:
         service_id = cfg["service"]

@@ -111,7 +111,7 @@ def find_source_files(root_dir: Path) -> Tuple[List[Path], List[Path]]:
 
 def main():
     """Main function to add license headers to all source files."""
-    root_dir = Path(__file__).parent
+    root_dir = Path(__file__).resolve().parents[2]
 
     print("Finding source files...")
     python_files, go_files = find_source_files(root_dir)
@@ -123,22 +123,22 @@ def main():
     print("\nProcessing Python files...")
     for file_path in python_files:
         if add_python_header(file_path):
-            print(f"  ✓ Added header to {file_path.relative_to(root_dir)}")
+            print(f"  [added] {file_path.relative_to(root_dir)}")
             python_modified += 1
         else:
-            print(f"  - Skipped {file_path.relative_to(root_dir)} (already has header)")
+            print(f"  [skip]  {file_path.relative_to(root_dir)} (already has header)")
 
     # Process Go files
     go_modified = 0
     print("\nProcessing Go files...")
     for file_path in go_files:
         if add_go_header(file_path):
-            print(f"  ✓ Added header to {file_path.relative_to(root_dir)}")
+            print(f"  [added] {file_path.relative_to(root_dir)}")
             go_modified += 1
         else:
-            print(f"  - Skipped {file_path.relative_to(root_dir)} (already has header)")
+            print(f"  [skip]  {file_path.relative_to(root_dir)} (already has header)")
 
-    print(f"\n✅ Complete!")
+    print("\nComplete!")
     print(f"   Python files modified: {python_modified}/{len(python_files)}")
     print(f"   Go files modified: {go_modified}/{len(go_files)}")
     print(f"   Total modified: {python_modified + go_modified}/{len(python_files) + len(go_files)}")

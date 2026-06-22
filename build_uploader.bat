@@ -9,7 +9,7 @@ cd /d "%SCRIPT_DIR%" || exit /b 1
 title Connie's Uploader - Build Tool
 
 set "APP_NAME=ConniesUploader"
-set "VERSION=1.4.0"
+set "VERSION=2.0.0"
 set "TOOLS_DIR=%SCRIPT_DIR%.build-tools"
 set "LOCAL_GO=%TOOLS_DIR%\go\bin\go.exe"
 
@@ -374,9 +374,13 @@ if exist "%SCRIPT_DIR%dist" rmdir /s /q "%SCRIPT_DIR%dist"
 if exist "%SCRIPT_DIR%venv" rmdir /s /q "%SCRIPT_DIR%venv"
 if exist "%SCRIPT_DIR%__pycache__" rmdir /s /q "%SCRIPT_DIR%__pycache__"
 if exist "%SCRIPT_DIR%.pytest_cache" rmdir /s /q "%SCRIPT_DIR%.pytest_cache"
+if exist "%SCRIPT_DIR%htmlcov" rmdir /s /q "%SCRIPT_DIR%htmlcov"
 if exist "%SCRIPT_DIR%%APP_NAME%.spec" del /q "%SCRIPT_DIR%%APP_NAME%.spec"
+if exist "%SCRIPT_DIR%.coverage" del /q "%SCRIPT_DIR%.coverage"
+if exist "%SCRIPT_DIR%uploader" del /q "%SCRIPT_DIR%uploader"
 if exist "%SCRIPT_DIR%uploader.exe" del /q "%SCRIPT_DIR%uploader.exe"
 if exist "%SCRIPT_DIR%go_installer.zip" del /q "%SCRIPT_DIR%go_installer.zip"
+for %%F in ("%SCRIPT_DIR%.coverage.*" "%SCRIPT_DIR%crash_log*.log") do if exist "%%~fF" del /q "%%~fF"
 echo [INFO] Clean complete.
 echo.
 exit /b 0

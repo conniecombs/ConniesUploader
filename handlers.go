@@ -234,11 +234,14 @@ func handleLoginVerify(job JobRequest) {
 
 func handleListGalleries(job JobRequest) {
 	ensureInitialized()
-	var galleries []map[string]string
+	galleries := make([]map[string]string, 0)
 	if svc, ok := registry.Get(job.Service); ok {
 		if lister, ok := svc.(services.GalleryLister); ok {
 			galleries = lister.ListGalleries(job.Creds)
 		}
+	}
+	if galleries == nil {
+		galleries = make([]map[string]string, 0)
 	}
 	sendJobEvent(&job, OutputEvent{Type: "data", Data: galleries, Status: "success"})
 }

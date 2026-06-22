@@ -24,6 +24,8 @@ import (
 
 const ServiceID = "vipr.im"
 
+var folderIDPattern = regexp.MustCompile(`[?&;]fld_id=([^&;#'"]+)`)
+
 // Module is the self-contained Vipr.im service plugin.
 // It maintains session state (upload endpoint and session ID) internally.
 type Module struct {
@@ -171,7 +173,7 @@ func (m *Module) doLogin(creds map[string]string) bool {
 		"login":    {creds["vipr_user"]},
 		"password": {creds["vipr_pass"]},
 	}
-	if r, err := m.doRequest(context.Background(), "POST", "https://vipr.im/login.html", strings.NewReader(v.Encode()), "application/x-www-form-urlencoded"); err == nil {
+	if r, err := m.doRequest(context.Background(), "POST", "https://vipr.im/", strings.NewReader(v.Encode()), "application/x-www-form-urlencoded"); err == nil {
 		_ = r.Body.Close()
 	}
 
@@ -211,24 +213,20 @@ func (m *Module) doLogin(creds map[string]string) bool {
 func (m *Module) scrapeGalleries() []map[string]string {
 	resp, err := m.doRequest(context.Background(), "GET", "https://vipr.im/?op=my_files", nil, "")
 	if err != nil {
-		return nil
+		return []map[string]string{}
 	}
 	defer resp.Body.Close()
 	bodyBytes, _ := io.ReadAll(resp.Body)
 
-	var results []map[string]string
+	results := make([]map[string]string, 0)
 	seen := make(map[string]bool)
 	doc, err := goquery.NewDocumentFromReader(bytes.NewReader(bodyBytes))
 	if err != nil {
-		return nil
+		return results
 	}
 	doc.Find("a[href*='fld_id=']").Each(func(_ int, s *goquery.Selection) {
 		href, _ := s.Attr("href")
-		u, _ := url.Parse(href)
-		if u == nil {
-			return
-		}
-		id := u.Query().Get("fld_id")
+		id := folderIDFromHref(href)
 		name := strings.TrimSpace(s.Text())
 		if id != "" && name != "" && !seen[id] {
 			results = append(results, map[string]string{"id": id, "name": name})
@@ -236,6 +234,25 @@ func (m *Module) scrapeGalleries() []map[string]string {
 		}
 	})
 	return results
+}
+
+func folderIDFromHref(href string) string {
+	normalized := strings.ReplaceAll(href, ";", "&")
+	if u, err := url.Parse(normalized); err == nil && u != nil {
+		if id := u.Query().Get("fld_id"); id != "" {
+			return id
+		}
+	}
+
+	matches := folderIDPattern.FindStringSubmatch(href)
+	if len(matches) < 2 {
+		return ""
+	}
+	id, err := url.QueryUnescape(matches[1])
+	if err != nil {
+		return matches[1]
+	}
+	return id
 }
 
 func (m *Module) doRequest(ctx context.Context, method, urlStr string, body io.Reader, contentType string) (*http.Response, error) {

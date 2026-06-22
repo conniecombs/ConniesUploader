@@ -28,18 +28,26 @@ If applicable, add screenshots to help explain your problem.
 ## Environment
 **Desktop:**
  - OS: [e.g. Windows 10, Ubuntu 22.04, macOS 13]
- - Version: [e.g. v1.3.0]
- - Python Version: [e.g. 3.11.5]
- - Go Version: [e.g. 1.25]
+ - App Version: [e.g. v2.0.0 or commit SHA]
+ - Run Type: [Packaged release exe/app or source run with python main.py]
+ - Python Version: [e.g. 3.11.9, if running from source or building locally]
+ - Go Version: [e.g. 1.25.9 or 1.26.4, if running from source or building locally]
+ - Build Command Used: [e.g. build_uploader.bat --clean, if this is a build/package issue]
 
 **Upload Service:**
- - Service: [e.g. Pixhost, IMX, Turbo]
+ - Service: [e.g. Pixhost, IMX, Turbo, Vipr, ImageBam, Imgur]
  - Account Type: [e.g. Free, Premium]
 
 ## Log Output
-Please paste relevant log output here (if available):
+Please paste relevant output from `View > Execution Log`, the terminal, or `crash_log.log` here:
 ```
 [Paste logs here]
+```
+
+For source-run sidecar issues, also include the output of:
+
+```bash
+python scripts/diagnostics/check_sidecar_location.py
 ```
 
 ## Additional Context

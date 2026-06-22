@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-er: MIT
+# SPDX-License-Identifier: MIT
 # Copyright (c) 2025 conniecombs
 
 """
@@ -8,6 +8,9 @@ Run this after building to verify the sidecar is properly bundled.
 """
 import os
 import sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_sidecar_location():
@@ -45,10 +48,9 @@ def test_sidecar_location():
     # Location 3: Current working directory
     locations.append(("Current working directory", os.getcwd()))
 
-    # Location 4: Script directory (development)
+    # Location 4: Repository root (development)
     if not is_frozen:
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        locations.append(("Script directory", script_dir))
+        locations.append(("Repository root", str(REPO_ROOT)))
 
     # Check each location
     found = False
@@ -58,7 +60,7 @@ def test_sidecar_location():
         full_path = os.path.join(path, binary_name)
         exists = os.path.exists(full_path)
 
-        status = "✓ FOUND" if exists else "✗ Not found"
+        status = "[FOUND]" if exists else "[missing]"
         print(f"{idx}. {name}")
         print(f"   Path: {full_path}")
         print(f"   Status: {status}")
@@ -72,12 +74,12 @@ def test_sidecar_location():
 
     print("=" * 60)
     if found:
-        print("✓ SUCCESS: uploader.exe found!")
+        print("SUCCESS: uploader.exe found!")
     else:
-        print("✗ FAILURE: uploader.exe NOT found!")
+        print("FAILURE: uploader.exe NOT found!")
         print()
         print("Troubleshooting:")
-        print("1. Ensure you built uploader.exe with: go build uploader.go")
+        print('1. Ensure you built uploader.exe with: go build -ldflags="-s -w" -o uploader.exe .')
         print("2. Check PyInstaller command includes: --add-data 'uploader.exe;.'")
         print("3. Verify uploader.exe exists in project root before building")
         print("4. Try deleting dist/ and build/ folders and rebuilding")

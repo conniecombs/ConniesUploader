@@ -13,7 +13,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 APP_NAME="ConniesUploader"
-VERSION="1.4.0"
+VERSION="2.0.0"
 PYTHON_MIN_MINOR=11
 PYTHON_MAX_MINOR=13
 GO_VERSION_MIN="1.25.9"
@@ -292,8 +292,20 @@ show_success() {
 
 clean_build() {
     echo "Cleaning build artifacts..."
-    rm -rf build dist __pycache__ .pytest_cache
-    rm -f "$APP_NAME.spec" uploader uploader.exe
+    local clean_python="$PYTHON_CMD"
+    if [ -z "$clean_python" ]; then
+        if command -v python3 >/dev/null 2>&1; then
+            clean_python="python3"
+        elif command -v python >/dev/null 2>&1; then
+            clean_python="python"
+        fi
+    fi
+    if [ -n "$clean_python" ]; then
+        "$clean_python" scripts/maintenance/clean_generated.py
+    else
+        rm -rf build dist htmlcov __pycache__ .pytest_cache
+        rm -f "$APP_NAME.spec" uploader uploader.exe .coverage .coverage.* crash_log*.log
+    fi
     echo "Clean complete!"
 }
 

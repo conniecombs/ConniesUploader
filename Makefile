@@ -22,7 +22,7 @@ endif
 GO_FLAGS := -ldflags="-s -w"
 PYINSTALLER_FLAGS := --noconsole --onefile --clean
 APP_NAME := ConniesUploader
-VERSION := 1.4.0
+VERSION := 2.0.0
 
 # Default target
 all: build
@@ -47,9 +47,7 @@ help:
 # Clean build artifacts
 clean:
 	@echo "Cleaning build artifacts..."
-	rm -rf build dist *.spec __pycache__ .pytest_cache
-	rm -f $(GO_OUTPUT)
-	@echo "Clean complete!"
+	$(PYTHON) scripts/maintenance/clean_generated.py
 
 # Install Python dependencies
 install-deps:

@@ -1,110 +1,74 @@
 # Documentation Archive
 
-This directory contains historical documentation that provides context about the project's development but is no longer part of active documentation.
+This directory contains historical documentation from earlier development phases. These files are preserved for context, but they are not current user or contributor guidance.
 
-**Archived**: 2026-01-10
-**Reason**: Documentation consolidation to improve maintainability and reduce information overload
+- **Archived:** 2026-01-10
+- **Archive reviewed:** 2026-06-21
+- **Current documentation index:** [docs/README.md](../README.md)
 
----
+## Current Docs To Use Instead
+
+| Need | Current document |
+| --- | --- |
+| Install or use the app | [README.md](../../README.md) |
+| Full user walkthrough | [User Tutorial](../guides/USER_TUTORIAL.md) |
+| Current architecture | [ARCHITECTURE.md](../../ARCHITECTURE.md) |
+| Contributing | [CONTRIBUTING.md](../../CONTRIBUTING.md) |
+| Create or maintain plugins | [Plugin Creation Guide](../guides/PLUGIN_CREATION_GUIDE.md) |
+| Plugin settings schemas | [Schema Plugin Guide](../guides/SCHEMA_PLUGIN_GUIDE.md) |
+| Build/package troubleshooting | [Build Troubleshooting](../guides/BUILD_TROUBLESHOOTING.md) |
+| Release process | [Release Process](../releases/RELEASE_PROCESS.md) |
+| Current change history | [CHANGELOG.md](../../CHANGELOG.md) |
+
+`REMAINING_ISSUES.md` is retained at the repository root as an older tracker/status document. Treat active GitHub issues, pull requests, and `CHANGELOG.md` as the current source of truth for ongoing work.
 
 ## Archived Documents
 
 ### Phase Implementation Summaries
-Historical records of the 6 implementation phases:
-- **PHASE1_IMPLEMENTATION_SUMMARY.md** - Schema-based plugin UI implementation
-- **PHASE2_METADATA_SYSTEM.md** - Plugin metadata system
-- **PHASE3_AUTO_DISCOVERY.md** - Automatic plugin discovery
-- **PHASE4_STANDARD_CONFIG_KEYS.md** - Configuration standardization
-- **PHASE5_HELPER_UTILITIES.md** - Helper function implementations
-- **PHASE6_TESTING_FRAMEWORK.md** - Testing framework setup
+
+- [PHASE1_IMPLEMENTATION_SUMMARY.md](PHASE1_IMPLEMENTATION_SUMMARY.md)
+- [PHASE2_METADATA_SYSTEM.md](PHASE2_METADATA_SYSTEM.md)
+- [PHASE3_AUTO_DISCOVERY.md](PHASE3_AUTO_DISCOVERY.md)
+- [PHASE4_STANDARD_CONFIG_KEYS.md](PHASE4_STANDARD_CONFIG_KEYS.md)
+- [PHASE5_HELPER_UTILITIES.md](PHASE5_HELPER_UTILITIES.md)
+- [PHASE6_TESTING_FRAMEWORK.md](PHASE6_TESTING_FRAMEWORK.md)
 
 ### Analysis Documents
-Deep-dive technical analyses from the development process:
-- **PLUGIN_ARCHITECTURE_ANALYSIS.md** - Detailed plugin system analysis (1026 lines)
-- **CONFIG_KEY_ANALYSIS.md** - Configuration key standardization analysis
-- **PHASE5_PATTERN_ANALYSIS.md** - Code pattern analysis
 
-### Release & PR Documents
-One-time release and pull request documentation:
-- **RELEASE_PREPARATION_SUMMARY.md** - v1.0.0 release preparation
-- **PR_DESCRIPTION.md** - Historical PR description
-- **PR_SUBMISSION_SUMMARY.md** - PR submission guide
-- **BUILD_VERIFICATION_REPORT.md** - Build verification for release
+- [PLUGIN_ARCHITECTURE_ANALYSIS.md](PLUGIN_ARCHITECTURE_ANALYSIS.md)
+- [CONFIG_KEY_ANALYSIS.md](CONFIG_KEY_ANALYSIS.md)
+- [PHASE5_PATTERN_ANALYSIS.md](PHASE5_PATTERN_ANALYSIS.md)
+- [IMPLEMENTATION_ANALYSIS.md](IMPLEMENTATION_ANALYSIS.md)
+- [CODE_REVIEW_VALIDATION.md](CODE_REVIEW_VALIDATION.md)
+
+### Release And Pull Request Documents
+
+- [RELEASE_PREPARATION_SUMMARY.md](RELEASE_PREPARATION_SUMMARY.md)
+- [PR_DESCRIPTION.md](PR_DESCRIPTION.md)
+- [PR_SUBMISSION_SUMMARY.md](PR_SUBMISSION_SUMMARY.md)
+- [BUILD_VERIFICATION_REPORT.md](BUILD_VERIFICATION_REPORT.md)
 
 ### Testing Documentation
-Historical testing documentation:
-- **MOCK_UPLOAD_TESTING.md** - Upload testing procedures
 
-### Critical Fixes
-Documentation of major bug fixes:
-- **STDERR_DEADLOCK_FIX.md** - Resolution of stderr pipe deadlock
-- **CRITICAL_FIX_UPLOAD_DEADLOCK.md** - Upload worker pool deadlock fix
-- **REFACTORING_PLAN.md** - Major refactoring strategy
+- [MOCK_UPLOAD_TESTING.md](MOCK_UPLOAD_TESTING.md)
+- [TEST_RESULTS.md](TEST_RESULTS.md)
 
----
+### Critical Fixes And Refactoring Notes
 
-## Why These Were Archived
+- [STDERR_DEADLOCK_FIX.md](STDERR_DEADLOCK_FIX.md)
+- [CRITICAL_FIX_UPLOAD_DEADLOCK.md](CRITICAL_FIX_UPLOAD_DEADLOCK.md)
+- [DRAG_DROP_FIX_SUMMARY.md](DRAG_DROP_FIX_SUMMARY.md)
+- [REFACTORING_PLAN.md](REFACTORING_PLAN.md)
+- [IMPROVEMENTS.md](IMPROVEMENTS.md)
+- [FEATURES.md](FEATURES.md)
+- [PROJECT_STATUS.md](PROJECT_STATUS.md)
 
-### Historical Context
-These documents provided valuable context during active development but are no longer necessary for:
-- New contributors getting started
-- Users installing and using the application
-- Developers creating new plugins
-- Maintainers making releases
+### Obsolete Index
 
-### Information in Active Docs
-The key information from these documents has been consolidated into:
-- **[ARCHITECTURE.md](../../ARCHITECTURE.md)** - Current architecture (includes v2.4.0 migration status)
-- **[README.md](../../README.md)** - Complete project overview and current state
-- **[PROJECT_STATUS.md](../../PROJECT_STATUS.md)** - Current project health
-- **[REMAINING_ISSUES.md](../../REMAINING_ISSUES.md)** - Technical debt tracker
+- [DOCUMENTATION.md](DOCUMENTATION.md) is an obsolete v1.0-era documentation index kept only as a redirect for old links.
 
-### Documentation Philosophy
-We follow these principles:
-1. **Single Source of Truth** - Avoid duplicating information
-2. **Maintainability** - Fewer docs = easier to keep current
-3. **Discoverability** - Clear navigation via DOCUMENTATION.md
-4. **Historical Preservation** - Archive rather than delete
+## Why These Files Are Archived
 
----
+These documents captured useful context during active development, but many contain old version numbers, old coverage values, old repository names, old plugin registration advice, or old build assumptions. Keeping them here preserves the history without making users or contributors sort through stale guidance.
 
-## Should You Read These?
-
-### ✅ Yes, if you want to:
-- Understand the historical evolution of the architecture
-- Learn about specific problems that were solved during development
-- Research why certain design decisions were made
-- Write a blog post or case study about the project
-
-### ❌ No, if you want to:
-- Get started as a contributor → See [CONTRIBUTING.md](../../CONTRIBUTING.md)
-- Create a plugin → See [PLUGIN_CREATION_GUIDE.md](../../PLUGIN_CREATION_GUIDE.md)
-- Understand current architecture → See [ARCHITECTURE.md](../../ARCHITECTURE.md)
-- Install the application → See [README.md](../../README.md)
-
----
-
-## Document Retention Policy
-
-### These documents are:
-- ✅ Preserved in git history
-- ✅ Still accessible via the repository
-- ✅ Available for reference when needed
-- ✅ No longer cluttering the root directory
-
-### We will NOT delete them because:
-- They provide valuable historical context
-- They document important architectural decisions
-- They explain problem-solving approaches
-- They may be useful for future similar projects
-
----
-
-**For current documentation, see**: [DOCUMENTATION.md](../../DOCUMENTATION.md)
-
-**For project status, see**: [PROJECT_STATUS.md](../../PROJECT_STATUS.md)
-
----
-
-*Archived: 2026-01-10*
-*Maintained by: conniecombs*
+Use this archive when researching why a design changed, how an old bug was fixed, or what earlier implementation phases looked like. For current behavior, use the active docs listed at the top of this file.

@@ -115,7 +115,7 @@ sha256sum ConniesUploader  # or shasum -a 256 on macOS
 
 <!-- Additional information for this release -->
 
-- **Go Version:** 1.25+ required
+- **Go Version:** 1.25.9+ required for local builds; CI currently builds with Go 1.26.4
 - **Python Version:** 3.11+ required
 - **Tested On:** Windows 11, Ubuntu 22.04, macOS 13+
 

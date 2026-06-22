@@ -473,7 +473,10 @@ class TestPixhostGalleryIntegration(unittest.TestCase):
         self.assertEqual(group.gallery_id, "abc123")
         self.assertEqual(config["gallery_hash"], "abc123")
         self.assertEqual(config["gallery_upload_hash"], "upload456")
-        self.assertEqual(context["created_galleries"], [new_gallery])
+        self.assertEqual(
+            context["created_galleries"],
+            [{**new_gallery, "gallery_name": "Test Gallery"}],
+        )
 
     def test_upload_manager_preserves_created_gallery_upload_hash(self):
         import queue
@@ -606,6 +609,82 @@ class TestImgurHttpSpec(unittest.TestCase):
 
         self.assertEqual(errors, [])
         self.assertEqual(config["thumbnail_size"], "m")
+
+
+class TestViprPlugin(unittest.TestCase):
+    """Test Vipr-specific plugin behavior."""
+
+    def test_gallery_refresh_uses_centralized_credentials(self):
+        from modules.plugins import vipr
+
+        class ImmediateThread:
+            def __init__(self, target, daemon=False):
+                self.target = target
+                self.daemon = daemon
+
+            def start(self):
+                self.target()
+
+        plugin = vipr.ViprPlugin()
+        plugin.cb_gallery = Mock()
+        plugin.cb_gallery.get.return_value = "None"
+        parent = Mock()
+        parent.after.side_effect = lambda _delay, callback: callback()
+
+        with (
+            patch.object(vipr.CredentialsManager, "load_all_credentials") as load_credentials,
+            patch.object(vipr.api, "get_vipr_metadata") as get_metadata,
+            patch.object(vipr.threading, "Thread", ImmediateThread),
+        ):
+            load_credentials.return_value = {
+                "vipr_user": " johngrimm ",
+                "vipr_pass": " secret ",
+            }
+            get_metadata.return_value = {
+                "galleries": [{"name": "First Gallery", "id": "123"}]
+            }
+
+            plugin._refresh_galleries(parent)
+
+        get_metadata.assert_called_once_with(
+            {"vipr_user": "johngrimm", "vipr_pass": "secret"}
+        )
+        plugin.cb_gallery.configure.assert_called_once_with(values=["None", "First Gallery"])
+        self.assertEqual(plugin.vipr_galleries_map, {"First Gallery": "123"})
+
+    def test_gallery_refresh_treats_null_gallery_response_as_empty(self):
+        from modules.plugins import vipr
+
+        class ImmediateThread:
+            def __init__(self, target, daemon=False):
+                self.target = target
+                self.daemon = daemon
+
+            def start(self):
+                self.target()
+
+        plugin = vipr.ViprPlugin()
+        plugin.cb_gallery = Mock()
+        plugin.cb_gallery.get.return_value = "Old Gallery"
+        parent = Mock()
+        parent.after.side_effect = lambda _delay, callback: callback()
+
+        with (
+            patch.object(vipr.CredentialsManager, "load_all_credentials") as load_credentials,
+            patch.object(vipr.api, "get_vipr_metadata") as get_metadata,
+            patch.object(vipr.threading, "Thread", ImmediateThread),
+        ):
+            load_credentials.return_value = {
+                "vipr_user": "johngrimm",
+                "vipr_pass": "secret",
+            }
+            get_metadata.return_value = {"galleries": None}
+
+            plugin._refresh_galleries(parent)
+
+        plugin.cb_gallery.configure.assert_called_once_with(values=["None"])
+        plugin.cb_gallery.set.assert_called_once_with("None")
+        self.assertEqual(plugin.vipr_galleries_map, {})
 
 
 class TestPluginMetadata(unittest.TestCase):

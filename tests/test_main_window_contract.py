@@ -10,6 +10,7 @@ from threading import Lock
 import pytest
 
 from modules import config
+from modules.gallery_service import GalleryRecord
 from modules.ui.main_window import UploaderApp
 
 
@@ -58,6 +59,8 @@ class FakeGroup(FakeFrame):
         super().__init__()
         self.title = title
         self.files = list(files or [])
+        self.cover_files = []
+        self.cover_selection_manual = False
 
     def add_file(self, filepath):
         if filepath not in self.files:
@@ -66,6 +69,34 @@ class FakeGroup(FakeFrame):
     def remove_file(self, filepath):
         if filepath in self.files:
             self.files.remove(filepath)
+        if filepath in self.cover_files:
+            self.cover_files.remove(filepath)
+
+    def is_cover_file(self, filepath):
+        return filepath in self.cover_files
+
+    def set_cover_file(self, filepath, is_cover=True, manual=True):
+        if filepath not in self.files:
+            return False
+        changed = False
+        if is_cover and filepath not in self.cover_files:
+            self.cover_files.append(filepath)
+            changed = True
+        elif not is_cover and filepath in self.cover_files:
+            self.cover_files.remove(filepath)
+            changed = True
+        if manual:
+            self.cover_selection_manual = True
+        return changed
+
+    def auto_select_covers(self, count):
+        if self.cover_selection_manual:
+            return
+        self.cover_files = self.files[: int(count)]
+
+    def cover_filepaths(self):
+        cover_set = set(self.cover_files)
+        return [filepath for filepath in self.files if filepath in cover_set]
 
 
 class FakeBridge:
@@ -97,6 +128,14 @@ class FakeVar:
 
     def set(self, value):
         self.value = value
+
+
+class FakeSettingsView:
+    def __init__(self):
+        self.values = {}
+
+    def set_value(self, service_id, key, value):
+        self.values[(service_id, key)] = value
 
 
 class FakeProgress:
@@ -138,15 +177,16 @@ def test_preview_data_uses_storage_thumbnail_value_for_readable_service_label():
     app.var_service = FakeVar("imgur.com")
     app.settings_view = FakeSettingsView()
 
-    files, title, size = UploaderApp.get_preview_data(app)
+    files, title, size, cover_count = UploaderApp.get_preview_data(app)
 
     assert files == ["image.jpg"]
     assert title == "Batch"
     assert size == "m"
+    assert cover_count == 0
 
 
 @pytest.mark.unit
-def test_queue_rows_have_visible_remove_button_and_readable_fallbacks():
+def test_queue_rows_have_compact_cover_toggle_and_readable_fallbacks():
     source = Path("modules/ui/main_window.py").read_text(encoding="utf-8")
 
     assert "preview_requested=True" in source
@@ -154,9 +194,13 @@ def test_queue_rows_have_visible_remove_button_and_readable_fallbacks():
     assert "elif preview_requested:" in source
     assert 'text="No preview"' in source
     assert 'text="Waiting"' in source
-    assert 'text="Remove"' in source
+    assert "cover_toggle = ctk.CTkCheckBox" in source
+    assert 'text="Cover"' in source
+    assert "_set_cover_from_toggle" in source
+    assert "btn_remove =" not in source
     assert 'text="Retry"' in source
-    assert '"remove": btn_remove' in source
+    assert '"cover": cover_toggle' in source
+    assert '"cover_var": cover_var' in source
     assert '"retry": btn_retry' in source
     assert '"error_label": error_label' in source
     assert '"actions": row_actions' in source
@@ -169,9 +213,12 @@ def test_queue_rows_have_visible_remove_button_and_readable_fallbacks():
 def test_queue_rows_use_stable_action_lane_and_wrapping_text():
     source = Path("modules/ui/main_window.py").read_text(encoding="utf-8")
 
-    assert "row_actions = ctk.CTkFrame(row, fg_color=\"transparent\", width=250, height=30)" in source
+    assert 'row_actions = ctk.CTkFrame(row, fg_color="transparent", width=176, height=30)' in source
     assert "row_actions.pack_propagate(False)" in source
-    assert "retry_slot = ctk.CTkFrame(row_actions, fg_color=\"transparent\", width=64, height=30)" in source
+    assert (
+        'retry_slot = ctk.CTkFrame(row_actions, fg_color="transparent", width=64, height=30)'
+        in source
+    )
     assert "retry_slot.pack_propagate(False)" in source
     assert "def update_text_wrap(event):" in source
     assert "filename_label.configure(wraplength=wraplength)" in source
@@ -227,6 +274,7 @@ def test_gather_settings_clamps_worker_and_changed_global_thread_limit():
         setattr(app, var_name, FakeVar(default))
     app.settings = {}
     app.var_auto_copy = FakeVar(False)
+    app.var_confirm_before_posting = FakeVar(True)
     app.var_auto_gallery = FakeVar(False)
     app.var_show_previews = FakeVar(True)
     app.var_separate_batches = FakeVar(False)
@@ -236,6 +284,7 @@ def test_gather_settings_clamps_worker_and_changed_global_thread_limit():
 
     assert gathered["global_worker_count"] == config.MAX_WORKER_COUNT
     assert gathered["global_thread_limit"] == config.MAX_THREAD_COUNT
+    assert gathered["confirm_before_posting"] is True
     assert app.var_global_worker_count.get() == config.MAX_WORKER_COUNT
     for thread_key, var_name, default in UploaderApp._service_thread_var_specs():
         assert gathered[thread_key] == default
@@ -391,7 +440,7 @@ def test_start_button_disabled_until_pending_files_exist():
 
     UploaderApp._refresh_start_button_state(app)
 
-    assert app.btn_start.options["text"] == "Add Files to Upload"
+    assert app.btn_start.options["text"] == "Start Upload"
     assert app.btn_start.options["state"] == "disabled"
     assert app.btn_start.options["fg_color"] == "#5A5A5A"
 
@@ -632,6 +681,39 @@ def test_activity_panel_toggle_hides_and_restores_feed():
 
 
 @pytest.mark.unit
+def test_selection_action_bar_removes_selected_files_as_a_batch():
+    group = FakeGroup("Batch", ["one.jpg", "two.jpg", "three.jpg"])
+    rows = {filepath: FakeFrame() for filepath in group.files}
+    refreshed = []
+    activity = []
+
+    app = UploaderApp.__new__(UploaderApp)
+    app.lock = Lock()
+    app.groups = [group]
+    app.is_uploading = False
+    app.file_widgets = {
+        filepath: {"row": rows[filepath], "group": group} for filepath in group.files
+    }
+    app.image_refs = set()
+    app.selected_files = {"one.jpg", "three.jpg"}
+    app.selection_anchor = "one.jpg"
+    app.highlighted_row = None
+    app._refresh_queue_state = lambda: refreshed.append(True)
+    app.add_activity = lambda message, level="info": activity.append((message, level))
+
+    removed = UploaderApp._delete_selected_files(app)
+
+    assert removed is True
+    assert group.files == ["two.jpg"]
+    assert set(app.file_widgets) == {"two.jpg"}
+    assert app.selected_files == set()
+    assert rows["one.jpg"].destroyed is True
+    assert rows["three.jpg"].destroyed is True
+    assert refreshed
+    assert ("Removed 2 images.", "warning") in activity
+
+
+@pytest.mark.unit
 def test_deleting_last_image_removes_empty_batch():
     row = FakeFrame()
     image_ref = object()
@@ -852,6 +934,45 @@ def test_sort_group_files_updates_upload_order_by_name_modified_and_reverse(tmp_
 
 
 @pytest.mark.unit
+def test_auto_cover_count_marks_first_images_until_user_changes_selection():
+    group = FakeGroup("Batch", ["one.jpg", "two.jpg", "three.jpg"])
+    buttons = {filepath: FakeFrame() for filepath in group.files}
+
+    app = UploaderApp.__new__(UploaderApp)
+    app.lock = Lock()
+    app.file_widgets = {
+        filepath: {"group": group, "cover": buttons[filepath]} for filepath in group.files
+    }
+    app.var_service = FakeVar("pixhost.to")
+    app.var_pix_cover_count = FakeVar("2")
+
+    UploaderApp._apply_auto_covers_to_group(app, group)
+
+    assert group.cover_filepaths() == ["one.jpg", "two.jpg"]
+    assert buttons["one.jpg"].options["text"] == "Cover"
+    assert buttons["three.jpg"].options["text"] == "Cover"
+    assert buttons["three.jpg"].options["text_color"] == "gray"
+
+    group.set_cover_file("three.jpg", True, manual=True)
+    app.var_pix_cover_count.set("1")
+    UploaderApp._apply_auto_covers_to_group(app, group)
+
+    assert group.cover_filepaths() == ["one.jpg", "two.jpg", "three.jpg"]
+
+
+@pytest.mark.unit
+def test_selected_cover_files_are_ordered_first_for_preview_output():
+    group = FakeGroup("Batch", ["one.jpg", "two.jpg", "three.jpg"])
+    group.set_cover_file("three.jpg", True, manual=True)
+
+    app = UploaderApp.__new__(UploaderApp)
+
+    preview = UploaderApp._preview_group_results(app, group)
+
+    assert preview[0][0] == "https://preview.invalid/three/viewer"
+
+
+@pytest.mark.unit
 def test_upload_preflight_reports_ready_summary(tmp_path):
     image_path = tmp_path / "ready.jpg"
     image_path.write_bytes(b"fake image")
@@ -884,6 +1005,168 @@ def test_upload_preflight_reports_ready_summary(tmp_path):
 
     assert issues == []
     assert summary == "Pixhost ready - 1 file in 1 batch. Output will copy to clipboard."
+
+
+@pytest.mark.unit
+def test_gallery_manager_selection_preserves_gallery_metadata():
+    app = UploaderApp.__new__(UploaderApp)
+    app.settings_view = FakeSettingsView()
+    app.var_service = FakeVar("imx.to")
+    app.selected_gallery_by_service = {}
+    swapped = []
+    activity = []
+    app._swap_service_frame = lambda service: swapped.append(service)
+    app.add_activity = lambda message, level="info": activity.append((message, level))
+
+    record = GalleryRecord(
+        service="pixhost.to",
+        id="abc123",
+        name="Site Gallery Name",
+        url="https://pixhost.to/gallery/abc123",
+        upload_hash="upload456",
+    )
+
+    UploaderApp.on_gallery_created(app, "pixhost.to", "abc123", record)
+
+    assert app.settings_view.values[("pixhost.to", "gallery_hash")] == "abc123"
+    assert app.var_service.get() == "pixhost.to"
+    assert swapped == ["pixhost.to"]
+    assert app.selected_gallery_by_service["pixhost.to"] == {
+        "service": "pixhost.to",
+        "id": "abc123",
+        "name": "Site Gallery Name",
+        "url": "https://pixhost.to/gallery/abc123",
+        "upload_hash": "upload456",
+    }
+    assert activity[-1] == (
+        "Selected gallery for pixhost.to: Site Gallery Name (abc123).",
+        "success",
+    )
+
+
+@pytest.mark.unit
+def test_gallery_manager_can_assign_gallery_to_selected_batches(tmp_path):
+    image_path = str(tmp_path / "selected.jpg")
+    group = FakeGroup("Batch Alpha", [image_path])
+
+    app = UploaderApp.__new__(UploaderApp)
+    app.lock = Lock()
+    app.file_widgets = {image_path: {"group": group}}
+    app.selected_files = {image_path}
+    app.var_service = FakeVar("imx.to")
+    app.selected_gallery_by_service = {}
+    swapped = []
+    activity = []
+    app._swap_service_frame = lambda service: swapped.append(service)
+    app.add_activity = lambda message, level="info": activity.append((message, level))
+
+    record = GalleryRecord(
+        service="imx.to",
+        id="IMX_123",
+        name="Actual Thread Gallery",
+        url="https://imx.to/g/IMX_123",
+    )
+
+    UploaderApp.on_gallery_assign_to_selected_batches(app, "imx.to", "IMX_123", record)
+
+    assert UploaderApp.gallery_selected_batch_count(app) == 1
+    assert group.gallery_id == "IMX_123"
+    assert group.gallery_name == "Actual Thread Gallery"
+    assert group.gallery_url == "https://imx.to/g/IMX_123"
+    assert group.gallery_service == "imx.to"
+    assert swapped == ["imx.to"]
+    assert activity[-1] == (
+        "Assigned gallery Actual Thread Gallery (IMX_123) to 1 selected batch.",
+        "success",
+    )
+
+
+@pytest.mark.unit
+def test_upload_preflight_shows_selected_gallery_details_and_validates_hash(tmp_path):
+    image_path = tmp_path / "ready.jpg"
+    image_path.write_bytes(b"fake image")
+
+    app = UploaderApp.__new__(UploaderApp)
+    app.creds = {}
+    app.output_dir = str(tmp_path / "Output")
+    app.central_history_path = str(tmp_path / "history")
+    app.upload_manager = SimpleNamespace(bridge=FakeBridge(alive=True))
+    app.selected_gallery_by_service = {}
+    app.service_plugins = {
+        "pixhost.to": FakePlugin(
+            "pixhost.to",
+            "Pixhost",
+            {
+                "implementation": "go",
+                "credentials": [],
+                "limits": {
+                    "allowed_formats": [".jpg"],
+                    "max_file_size": 1024,
+                },
+            },
+        )
+    }
+
+    issues, summary = UploaderApp._run_upload_preflight(
+        app,
+        {FakeGroup("Batch Alpha", [str(image_path)]): [str(image_path)]},
+        {
+            "service": "pixhost.to",
+            "gallery_hash": "bad-hash",
+            "selected_gallery_name": "Manual Hash",
+        },
+    )
+
+    assert summary == ""
+    assert (
+        'Selected gallery for "Batch Alpha": Manual Hash (bad-hash). '
+        "(https://pixhost.to/gallery/bad-hash)"
+    ) in app.preflight_detail_lines
+    assert 'Gallery selected for "Batch Alpha" has an invalid gallery hash: bad-hash.' in issues
+
+
+@pytest.mark.unit
+def test_upload_preflight_previews_one_gallery_per_folder(tmp_path):
+    first = tmp_path / "first.jpg"
+    second = tmp_path / "second.jpg"
+    first.write_bytes(b"fake image")
+    second.write_bytes(b"fake image")
+
+    app = UploaderApp.__new__(UploaderApp)
+    app.creds = {}
+    app.output_dir = str(tmp_path / "Output")
+    app.central_history_path = str(tmp_path / "history")
+    app.upload_manager = SimpleNamespace(bridge=FakeBridge(alive=True))
+    app.selected_gallery_by_service = {}
+    app.service_plugins = {
+        "pixhost.to": FakePlugin(
+            "pixhost.to",
+            "Pixhost",
+            {
+                "implementation": "go",
+                "credentials": [],
+                "limits": {
+                    "allowed_formats": [".jpg"],
+                    "max_file_size": 1024,
+                },
+            },
+        )
+    }
+
+    issues, summary = UploaderApp._run_upload_preflight(
+        app,
+        {
+            FakeGroup("Batch Alpha", [str(first)]): [str(first)],
+            FakeGroup("Batch Beta", [str(second)]): [str(second)],
+        },
+        {"service": "pixhost.to", "auto_gallery": True},
+    )
+
+    assert issues == []
+    assert "One Gallery Per Folder will create 2 Pixhost galleries before upload: Batch Alpha, Batch Beta." in summary
+    assert app.preflight_detail_lines == [
+        "One Gallery Per Folder will create 2 Pixhost galleries before upload: Batch Alpha, Batch Beta."
+    ]
 
 
 @pytest.mark.unit
@@ -930,6 +1213,121 @@ def test_upload_preflight_reports_specific_blockers(tmp_path):
     )
     assert app.preflight_action_files == [str(image_path)]
     assert "Some queued files are not ready:" in app.preflight_action_file_issue_texts
+
+
+@pytest.mark.unit
+def test_upload_preflight_reports_vipergirls_posting_blockers(tmp_path, monkeypatch):
+    image_path = tmp_path / "ready.jpg"
+    image_path.write_bytes(b"fake image")
+
+    missing_group = FakeGroup("Missing Batch", [str(image_path)])
+    missing_group.selected_thread = "Deleted Target"
+    invalid_group = FakeGroup("Invalid Batch", [str(image_path)])
+    invalid_group.selected_thread = "Bad Target"
+    ignored_group = FakeGroup("No Post Batch", [str(image_path)])
+    ignored_group.selected_thread = "Do Not Post"
+
+    app = UploaderApp.__new__(UploaderApp)
+    app.creds = {}
+    app.output_dir = str(tmp_path / "Output")
+    app.central_history_path = str(tmp_path / "history")
+    app.upload_manager = SimpleNamespace(bridge=FakeBridge(alive=True))
+    app.service_plugins = {
+        "pixhost.to": FakePlugin(
+            "pixhost.to",
+            "Pixhost",
+            {
+                "implementation": "go",
+                "credentials": [],
+                "limits": {
+                    "allowed_formats": [".jpg"],
+                    "max_file_size": 1024,
+                },
+            },
+        )
+    }
+    monkeypatch.setattr(
+        "modules.ui.main_window.viper_api.load_saved_threads",
+        lambda: {
+            "Bad Target": {
+                "url": "https://vipergirls.to/not-a-thread",
+                "thread_id": "",
+            }
+        },
+    )
+
+    issues, summary = UploaderApp._run_upload_preflight(
+        app,
+        {
+            missing_group: [str(image_path)],
+            invalid_group: [str(image_path)],
+            ignored_group: [str(image_path)],
+        },
+        {"service": "pixhost.to"},
+    )
+
+    assert summary == ""
+    assert (
+        "ViperGirls posting needs username and password. "
+        "Set them in Tools > Set Credentials."
+    ) in issues
+    assert (
+        'ViperGirls target "Deleted Target" selected for "Missing Batch" no longer exists.'
+        in issues
+    )
+    assert (
+        'ViperGirls target "Bad Target" selected for "Invalid Batch" has no usable thread ID.'
+        in issues
+    )
+    assert app.preflight_action_viper_targets is True
+
+
+@pytest.mark.unit
+def test_upload_preflight_accepts_valid_vipergirls_posting_target(tmp_path, monkeypatch):
+    image_path = tmp_path / "ready.jpg"
+    image_path.write_bytes(b"fake image")
+
+    group = FakeGroup("Ready Batch", [str(image_path)])
+    group.selected_thread = "Ready Target"
+
+    app = UploaderApp.__new__(UploaderApp)
+    app.creds = {"vg_user": "user", "vg_pass": "password"}
+    app.output_dir = str(tmp_path / "Output")
+    app.central_history_path = str(tmp_path / "history")
+    app.upload_manager = SimpleNamespace(bridge=FakeBridge(alive=True))
+    app.service_plugins = {
+        "pixhost.to": FakePlugin(
+            "pixhost.to",
+            "Pixhost",
+            {
+                "implementation": "go",
+                "credentials": [],
+                "limits": {
+                    "allowed_formats": [".jpg"],
+                    "max_file_size": 1024,
+                },
+            },
+        )
+    }
+    monkeypatch.setattr(
+        "modules.ui.main_window.viper_api.load_saved_threads",
+        lambda: {
+            "Ready Target": {
+                "url": "https://vipergirls.to/threads/12345-title",
+                "thread_id": "12345",
+            }
+        },
+    )
+
+    issues, summary = UploaderApp._run_upload_preflight(
+        app,
+        {group: [str(image_path)]},
+        {"service": "pixhost.to"},
+    )
+
+    assert issues == []
+    assert summary.startswith("Pixhost ready - 1 file in 1 batch.")
+    assert app.preflight_action_viper_targets is False
 
 
 @pytest.mark.unit
@@ -1028,9 +1426,18 @@ def test_upload_checks_offer_action_buttons():
     source = Path("modules/ui/main_window.py").read_text(encoding="utf-8")
 
     assert "Set Credentials" in source
+    assert "Manage ViperGirls Targets" in source
     assert "Remove Invalid Files" in source
     assert "Open Problem Folder" in source
     assert "Try Upload Again" in source
+
+
+@pytest.mark.unit
+def test_batch_header_offers_vipergirls_post_preview_action():
+    source = Path("modules/widgets.py").read_text(encoding="utf-8")
+
+    assert "post_preview_callback" in source
+    assert 'text="Preview Post"' in source
 
 
 @pytest.mark.unit
@@ -1038,11 +1445,13 @@ def test_upload_checks_show_only_relevant_actions():
     app = UploaderApp.__new__(UploaderApp)
     app.upload_checks_actions = FakeFrame()
     app.btn_upload_checks_credentials = FakeFrame()
+    app.btn_upload_checks_viper_targets = FakeFrame()
     app.btn_upload_checks_remove_files = FakeFrame()
     app.btn_upload_checks_open_folder = FakeFrame()
     app.btn_upload_checks_retry = FakeFrame()
     app.preflight_action_files = []
     app.preflight_action_folders = []
+    app.preflight_action_viper_targets = False
 
     UploaderApp._refresh_upload_check_actions(
         app, ["Output folder is not writable: permission denied"]
@@ -1050,6 +1459,7 @@ def test_upload_checks_show_only_relevant_actions():
 
     assert app.upload_checks_actions.mapped is True
     assert app.btn_upload_checks_credentials.mapped is False
+    assert app.btn_upload_checks_viper_targets.mapped is False
     assert app.btn_upload_checks_remove_files.mapped is False
     assert app.btn_upload_checks_open_folder.mapped is False
     assert app.btn_upload_checks_retry.mapped is True
@@ -1058,6 +1468,7 @@ def test_upload_checks_show_only_relevant_actions():
 
     app.preflight_action_files = ["bad.bmp"]
     app.preflight_action_folders = [{"label": "Output folder", "path": "R:\\missing"}]
+    app.preflight_action_viper_targets = True
 
     UploaderApp._refresh_upload_check_actions(
         app, ["Imgur requires a Client ID or Access Token."]
@@ -1065,20 +1476,324 @@ def test_upload_checks_show_only_relevant_actions():
 
     assert app.btn_upload_checks_credentials.mapped is True
     assert app.btn_upload_checks_credentials.options["state"] == "normal"
+    assert app.btn_upload_checks_viper_targets.mapped is True
+    assert app.btn_upload_checks_viper_targets.options["state"] == "normal"
     assert app.btn_upload_checks_remove_files.mapped is True
     assert app.btn_upload_checks_open_folder.mapped is True
     assert app.btn_upload_checks_retry.mapped is True
 
     app.preflight_action_files = []
     app.preflight_action_folders = []
+    app.preflight_action_viper_targets = False
 
     UploaderApp._refresh_upload_check_actions(app, [])
 
     assert app.upload_checks_actions.mapped is False
     assert app.btn_upload_checks_credentials.mapped is False
+    assert app.btn_upload_checks_viper_targets.mapped is False
     assert app.btn_upload_checks_remove_files.mapped is False
     assert app.btn_upload_checks_open_folder.mapped is False
     assert app.btn_upload_checks_retry.mapped is False
+
+
+@pytest.mark.unit
+def test_vipergirls_queue_activity_includes_batch_target_and_thread_id():
+    group = FakeGroup("Batch Alpha")
+    app = UploaderApp.__new__(UploaderApp)
+    app.saved_threads_data = {
+        "My Target": {
+            "url": "https://vipergirls.to/threads/98765-title",
+            "thread_id": "98765",
+        }
+    }
+
+    message, level = UploaderApp._vipergirls_queue_activity(app, group, "My Target")
+
+    assert message == 'Queued ViperGirls post for "Batch Alpha" to "My Target" (thread 98765).'
+    assert level == "info"
+
+
+@pytest.mark.unit
+def test_vipergirls_post_preview_uses_batch_target_thread_and_template_text():
+    class FakeTemplateManager:
+        def apply(self, template_name, context, group_results):
+            assert template_name == "BBCode"
+            assert context["gallery_name"] == "Batch Alpha"
+            assert context["thumb_size"] == "200"
+            assert context["batch_name"] == "Batch Alpha"
+            assert context["image_count"] == 1
+            assert context["service"] == "pixhost.to"
+            assert context["thread_name"] == "My Target"
+            assert context["thread_id"] == "98765"
+            assert context["upload_date"]
+            return (
+                f"{context['batch_name']} [{context['thread_id']}] "
+                f"{context['image_count']} -> {group_results[0][0]}"
+            )
+
+    group = FakeGroup("Batch Alpha", ["R:\\Images\\first image.jpg"])
+    group.selected_thread = "My Target"
+    group.selected_template = "BBCode"
+
+    app = UploaderApp.__new__(UploaderApp)
+    app.settings = {"service": "pixhost.to", "pix_thumb": "200"}
+    app.template_mgr = FakeTemplateManager()
+    app.saved_threads_data = {
+        "My Target": {
+            "url": "https://vipergirls.to/threads/98765-title",
+            "thread_id": "98765",
+        }
+    }
+
+    preview = UploaderApp._vipergirls_post_preview_data(app, group)
+
+    assert preview["batch_name"] == "Batch Alpha"
+    assert preview["target_name"] == "My Target"
+    assert preview["thread_id"] == "98765"
+    assert "Batch Alpha [98765] 1 -> https://preview.invalid/first_image/viewer" in preview["content"]
+    assert preview["issues"] == []
+
+
+@pytest.mark.unit
+def test_generate_group_output_populates_supported_template_context(tmp_path):
+    captured = {}
+
+    class FakeTemplateManager:
+        def apply(self, template_name, context, group_results):
+            captured["template_name"] = template_name
+            captured["context"] = dict(context)
+            captured["group_results"] = list(group_results)
+            return (
+                f"{context['batch_name']}|{context['image_count']}|"
+                f"{context['service']}|{context['thread_name']}|{context['thread_id']}"
+            )
+
+    file_path = str(tmp_path / "first.jpg")
+    group = FakeGroup("Batch Alpha", [file_path])
+    group.selected_template = "BBCode"
+    group.selected_thread = "My Target"
+    group.gallery_id = "G123"
+    group.batch_index = 0
+
+    queued = []
+    activity = []
+    output_dir = tmp_path / "Output"
+    history_dir = tmp_path / "history"
+    history_dir.mkdir()
+
+    app = UploaderApp.__new__(UploaderApp)
+    app.results = [(file_path, "https://img.test/view", "https://img.test/thumb")]
+    app.settings = {"service": "pixhost.to", "pix_thumb": "200"}
+    app.template_mgr = FakeTemplateManager()
+    app.output_dir = str(output_dir)
+    app.central_history_path = str(history_dir)
+    app.current_output_files = []
+    app.clipboard_buffer = []
+    app.saved_threads_data = {
+        "My Target": {
+            "url": "https://vipergirls.to/threads/98765-title",
+            "thread_id": "98765",
+        }
+    }
+    app.auto_poster = SimpleNamespace(
+        queue_post=lambda *args, **kwargs: queued.append((args, kwargs))
+    )
+    app.lbl_eta = FakeLabel()
+    app.btn_open = FakeFrame()
+    app.var_auto_copy = FakeVar(False)
+    app.var_imx_links = FakeVar(False)
+    app.var_pix_links = FakeVar(False)
+    app.var_turbo_links = FakeVar(False)
+    app.var_vipr_links = FakeVar(False)
+    app.log = lambda _message: None
+    app.add_activity = lambda message, level="info": activity.append((message, level))
+
+    UploaderApp.generate_group_output(app, group)
+
+    context = captured["context"]
+    assert captured["template_name"] == "BBCode"
+    assert captured["group_results"] == [
+        ("https://img.test/view", "https://img.test/thumb", "https://img.test/view")
+    ]
+    assert context["gallery_link"] == "https://pixhost.to/gallery/G123"
+    assert context["gallery_name"] == "Batch Alpha"
+    assert context["gallery_id"] == "G123"
+    assert context["cover_url"] == "https://img.test/thumb"
+    assert context["thumb_size"] == "200"
+    assert context["batch_name"] == "Batch Alpha"
+    assert context["image_count"] == 1
+    assert context["service"] == "pixhost.to"
+    assert context["thread_name"] == "My Target"
+    assert context["thread_id"] == "98765"
+    assert context["upload_date"]
+    assert len(app.current_output_files) == 1
+    assert Path(app.current_output_files[0]).read_text(encoding="utf-8") == (
+        "Batch Alpha|1|pixhost.to|My Target|98765"
+    )
+    assert queued
+
+
+@pytest.mark.unit
+def test_generate_group_output_uses_real_gallery_name_when_available(tmp_path):
+    captured = {}
+
+    class FakeTemplateManager:
+        def apply(self, template_name, context, group_results):
+            captured["context"] = dict(context)
+            return "ok"
+
+    file_path = str(tmp_path / "first.jpg")
+    group = FakeGroup("Batch Alpha", [file_path])
+    group.selected_template = "BBCode"
+    group.selected_thread = "Do Not Post"
+    group.gallery_id = "G123"
+    group.gallery_name = "Real Site Gallery"
+    group.gallery_url = "https://pixhost.to/gallery/G123"
+    group.gallery_service = "pixhost.to"
+
+    app = UploaderApp.__new__(UploaderApp)
+    app.results = [(file_path, "https://img.test/view", "https://img.test/thumb")]
+    app.settings = {"service": "pixhost.to", "pix_thumb": "200"}
+    app.template_mgr = FakeTemplateManager()
+    app.output_dir = str(tmp_path / "Output")
+    app.central_history_path = str(tmp_path / "history")
+    app.current_output_files = []
+    app.clipboard_buffer = []
+    app.saved_threads_data = {}
+    app.auto_poster = SimpleNamespace(queue_post=lambda *args, **kwargs: None)
+    app.lbl_eta = FakeLabel()
+    app.btn_open = FakeFrame()
+    app.var_auto_copy = FakeVar(False)
+    app.var_imx_links = FakeVar(False)
+    app.var_pix_links = FakeVar(False)
+    app.var_turbo_links = FakeVar(False)
+    app.var_vipr_links = FakeVar(False)
+    app.log = lambda _message: None
+    app.add_activity = lambda _message, level="info": None
+
+    UploaderApp.generate_group_output(app, group)
+
+    assert captured["context"]["gallery_name"] == "Real Site Gallery"
+    assert captured["context"]["gallery_link"] == "https://pixhost.to/gallery/G123"
+    assert captured["context"]["gallery_id"] == "G123"
+
+
+@pytest.mark.unit
+def test_selected_pixhost_gallery_with_upload_hash_registers_for_finalization(tmp_path):
+    image_path = str(tmp_path / "ready.jpg")
+    group = FakeGroup("Batch Alpha", [image_path])
+
+    app = UploaderApp.__new__(UploaderApp)
+    app.pix_galleries_to_finalize = []
+    app.selected_gallery_by_service = {
+        "pixhost.to": {
+            "service": "pixhost.to",
+            "id": "abc123",
+            "name": "Site Gallery",
+            "url": "https://pixhost.to/gallery/abc123",
+            "upload_hash": "upload456",
+        }
+    }
+
+    UploaderApp._register_selected_pixhost_galleries_for_finalization(
+        app,
+        {group: [image_path]},
+        {
+            "service": "pixhost.to",
+            "selected_gallery_by_service": app.selected_gallery_by_service,
+        },
+    )
+    UploaderApp._register_selected_pixhost_galleries_for_finalization(
+        app,
+        {group: [image_path]},
+        {
+            "service": "pixhost.to",
+            "selected_gallery_by_service": app.selected_gallery_by_service,
+        },
+    )
+
+    assert app.pix_galleries_to_finalize == [
+        {
+            "gallery_hash": "abc123",
+            "gallery_upload_hash": "upload456",
+            "gallery_url": "https://pixhost.to/gallery/abc123",
+            "gallery_name": "Site Gallery",
+        }
+    ]
+
+
+@pytest.mark.unit
+def test_pixhost_finalization_events_are_added_before_completion():
+    activity = []
+    completed = []
+
+    app = UploaderApp.__new__(UploaderApp)
+    app.add_activity = lambda message, level="info": activity.append((message, level))
+    app._on_upload_complete = lambda: completed.append(True)
+
+    UploaderApp._finish_pixhost_finalization(
+        app,
+        [("Pixhost gallery finalized: Site Gallery (abc123).", "success")],
+    )
+
+    assert activity == [("Pixhost gallery finalized: Site Gallery (abc123).", "success")]
+    assert completed == [True]
+
+
+@pytest.mark.unit
+def test_generate_group_output_uses_selected_covers_before_standard_images(tmp_path):
+    captured = {}
+
+    class FakeTemplateManager:
+        def apply(self, template_name, context, group_results):
+            captured["group_results"] = list(group_results)
+            captured["context"] = dict(context)
+            return "ok"
+
+    first = str(tmp_path / "first.jpg")
+    second = str(tmp_path / "second.jpg")
+    third = str(tmp_path / "third.jpg")
+    group = FakeGroup("Batch", [first, second, third])
+    group.selected_template = "BBCode"
+    group.selected_thread = "Do Not Post"
+    group.gallery_id = ""
+    group.set_cover_file(third, True, manual=True)
+
+    output_dir = tmp_path / "Output"
+    history_dir = tmp_path / "history"
+    history_dir.mkdir()
+
+    app = UploaderApp.__new__(UploaderApp)
+    app.results = [
+        (first, "https://img.test/first", "https://img.test/t-first"),
+        (second, "https://img.test/second", "https://img.test/t-second"),
+        (third, "https://img.test/third", "https://img.test/t-third"),
+    ]
+    app.settings = {"service": "pixhost.to", "pix_thumb": "200"}
+    app.template_mgr = FakeTemplateManager()
+    app.output_dir = str(output_dir)
+    app.central_history_path = str(history_dir)
+    app.current_output_files = []
+    app.clipboard_buffer = []
+    app.saved_threads_data = {}
+    app.lbl_eta = FakeLabel()
+    app.btn_open = FakeFrame()
+    app.var_auto_copy = FakeVar(False)
+    app.var_imx_links = FakeVar(False)
+    app.var_pix_links = FakeVar(False)
+    app.var_turbo_links = FakeVar(False)
+    app.var_vipr_links = FakeVar(False)
+    app.log = lambda _message: None
+    app.add_activity = lambda *args, **kwargs: None
+
+    UploaderApp.generate_group_output(app, group)
+
+    assert captured["group_results"][0] == (
+        "https://img.test/third",
+        "https://img.test/t-third",
+        "https://img.test/third",
+    )
+    assert captured["context"]["cover_url"] == "https://img.test/t-third"
 
 
 @pytest.mark.unit
@@ -1496,5 +2211,21 @@ def test_queue_order_context_menus_expose_reorder_and_sort_actions():
     assert 'label="Sort Batch by Name"' in source
     assert 'label="Sort Batch by Modified Date"' in source
     assert 'label="Reverse Batch Order"' in source
+    assert 'label="Remove Batch"' in source
+    assert "Remove Image" in source
+    assert "Selected Images" in source
     assert "self._retry_file(filepath)" in source
     assert "self._copy_file_error(filepath)" in source
+
+
+@pytest.mark.unit
+def test_queue_selection_bar_exposes_bulk_cover_remove_and_shortcuts():
+    source = Path("modules/ui/main_window.py").read_text(encoding="utf-8")
+
+    assert "self.selection_actions = ctk.CTkFrame" in source
+    assert 'text="Mark Cover"' in source
+    assert 'text="Clear Cover"' in source
+    assert 'text="Remove"' in source
+    assert 'self.bind_all("<Delete>", self._delete_selected_from_key)' in source
+    assert 'self.bind_all("<c>", self._toggle_selected_cover_from_key)' in source
+    assert "def _event_targets_text_input" in source
