@@ -40,7 +40,7 @@ COVER_THUMBNAIL_OVERRIDES = {
 class UploadManager:
     def __init__(
         self,
-        progress_queue: "queue.Queue[Tuple[str, str, str]]",
+        progress_queue: "queue.Queue[Tuple[str, str | None, Any]]",
         result_queue: "queue.Queue[Tuple[str, str, str]]",
         cancel_event: threading.Event,
     ) -> None:
@@ -149,6 +149,16 @@ class UploadManager:
                     if manual_hash:
                         group_cfg["gallery_hash"] = manual_hash
                         logger.info(f"Group '{group_obj.title}' using manual gallery hash: {manual_hash}")
+
+                if service_id == "turboimagehost":
+                    for attr_name, config_key in (
+                        ("turbo_gallery_create", "turbo_gallery_create"),
+                        ("turbo_gallery_name", "turbo_gallery_name"),
+                        ("turbo_upload_id", "turbo_upload_id"),
+                    ):
+                        value = getattr(group_obj, attr_name, None)
+                        if value not in (None, ""):
+                            group_cfg[config_key] = value
 
                 explicit_covers = self._explicit_cover_files_for_group(group_obj, files)
                 if explicit_covers is None:
@@ -311,6 +321,9 @@ class UploadManager:
 
                 if evt == "status":
                     self.progress_queue.put(("status", fp, data.get("status")))
+
+                elif evt == "progress":
+                    self.progress_queue.put(("prog", fp, data.get("data", data)))
 
                 elif evt == "result":
                     url = data.get("url")

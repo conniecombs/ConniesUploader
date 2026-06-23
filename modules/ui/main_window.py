@@ -794,15 +794,6 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         self.btn_stop.pack(fill="x", pady=5)
         self._configure_stop_button(False)
 
-        util_grid = ctk.CTkFrame(btn_frame, fg_color="transparent")
-        util_grid.pack(fill="x")
-        ctk.CTkButton(util_grid, text="Retry Failed", command=self.retry_failed, width=100).pack(
-            side="left", padx=2
-        )
-        ctk.CTkButton(util_grid, text="Clear List", command=self.clear_list, width=100).pack(
-            side="right", padx=2
-        )
-
         right_panel = ctk.CTkFrame(main_container)
         right_panel.pack(side="right", fill="both", expand=True)
 
@@ -818,6 +809,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         self.lbl_file_summary.pack(anchor="w")
 
         self.queue_actions = ctk.CTkFrame(queue_toolbar, fg_color="transparent")
+        self.queue_actions.pack(side="right", padx=(10, 0))
         self.btn_add_files = ctk.CTkButton(
             self.queue_actions, text="Add Files", command=self.add_files, width=110
         )
@@ -825,7 +817,15 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         self.btn_add_folder = ctk.CTkButton(
             self.queue_actions, text="Add Folder", command=self.add_folder, width=110
         )
-        self.btn_add_folder.pack(side="left")
+        self.btn_add_folder.pack(side="left", padx=(0, 6))
+        self.btn_retry_failed = ctk.CTkButton(
+            self.queue_actions, text="Retry Failed", command=self.retry_failed, width=110
+        )
+        self.btn_retry_failed.pack(side="left", padx=(0, 6))
+        self.btn_clear_list = ctk.CTkButton(
+            self.queue_actions, text="Clear List", command=self.clear_list, width=100
+        )
+        self.btn_clear_list.pack(side="left")
 
         self.selection_actions = ctk.CTkFrame(right_panel, fg_color="transparent")
         self.lbl_selection_summary = ctk.CTkLabel(
@@ -971,20 +971,11 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         ).pack(pady=(0, 6))
         ctk.CTkLabel(
             self.empty_queue_frame,
-            text="Drag files or folders here, or choose an option below.",
+            text="Drag files or folders here.",
             text_color="gray",
             wraplength=520,
             justify="center",
         ).pack(pady=(0, 14))
-
-        empty_actions = ctk.CTkFrame(self.empty_queue_frame, fg_color="transparent")
-        empty_actions.pack()
-        ctk.CTkButton(
-            empty_actions, text="Add Files", command=self.add_files, width=120
-        ).pack(side="left", padx=5)
-        ctk.CTkButton(
-            empty_actions, text="Add Folder", command=self.add_folder, width=120
-        ).pack(side="left", padx=5)
 
     def _set_empty_queue_visible(self, visible: bool) -> None:
         if not hasattr(self, "empty_queue_frame"):
@@ -1001,12 +992,8 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         if "queue_actions" not in self.__dict__:
             return
 
-        if visible:
-            if not self.queue_actions.winfo_ismapped():
-                self.queue_actions.pack(side="right", padx=(10, 0))
-        else:
-            if self.queue_actions.winfo_ismapped():
-                self.queue_actions.pack_forget()
+        if not self.queue_actions.winfo_ismapped():
+            self.queue_actions.pack(side="right", padx=(10, 0))
 
     def _set_selection_actions_visible(self, visible: bool) -> None:
         if "selection_actions" not in self.__dict__:
@@ -1368,23 +1355,6 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         self.import_checks_body = ctk.CTkFrame(self.import_checks_panel, fg_color="transparent")
         self.import_checks_body.pack(fill="x", padx=10, pady=(0, 8))
 
-        actions = ctk.CTkFrame(self.import_checks_panel, fg_color="transparent")
-        actions.pack(fill="x", padx=10, pady=(0, 8))
-        ctk.CTkButton(
-            actions,
-            text="Add Files",
-            command=self.add_files,
-            width=110,
-            height=28,
-        ).pack(side="left", padx=(0, 6))
-        ctk.CTkButton(
-            actions,
-            text="Add Folder",
-            command=self.add_folder,
-            width=110,
-            height=28,
-        ).pack(side="left", padx=6)
-
     def _set_import_checks(self, issues: List[str]) -> None:
         self.import_check_issues = [str(issue) for issue in issues if str(issue).strip()]
         if "import_checks_panel" in self.__dict__:
@@ -1504,13 +1474,6 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             width=110,
             height=28,
         )
-        self.btn_completion_retry = ctk.CTkButton(
-            self.completion_actions,
-            text="Retry Failed",
-            command=self._retry_failed_from_completion,
-            width=110,
-            height=28,
-        )
 
     def _add_inline_completion_detail(self, parent, label: str):
         row = ctk.CTkFrame(parent, fg_color="transparent")
@@ -1531,7 +1494,6 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         for button_name in (
             "btn_completion_open",
             "btn_completion_copy",
-            "btn_completion_retry",
         ):
             button = getattr(self, button_name, None)
             if button and button.winfo_ismapped():
@@ -1609,8 +1571,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
     def _refresh_completion_actions(self, summary: Dict[str, Any]) -> None:
         show_open = bool(summary.get("output_files"))
         show_copy = bool(summary.get("has_copy_text"))
-        show_retry = bool(summary.get("failed_count"))
-        show_actions = show_open or show_copy or show_retry
+        show_actions = show_open or show_copy
 
         if show_actions:
             if not self.completion_actions.winfo_ismapped():
@@ -1630,12 +1591,6 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             side="left",
             padx=6,
         )
-        self._set_completion_action_visible(
-            self.btn_completion_retry,
-            show_retry,
-            side="left",
-            padx=6,
-        )
 
     def _copy_completion_again(self) -> None:
         summary = getattr(self, "current_completion_summary", None)
@@ -1651,10 +1606,6 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             summary["feedback"] = "No output text was available to copy."
             self.add_activity("No output text was available to copy.", "warning")
         self._set_completion_summary(summary)
-
-    def _retry_failed_from_completion(self) -> None:
-        self._set_completion_summary(None)
-        self.retry_failed()
 
     def _preflight_issues_need_credentials(self, issues: List[str]) -> bool:
         credential_words = ("credential", "client id", "access token", "password", "api key")
@@ -2833,7 +2784,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         pending_by_group: Dict[Any, List[str]],
         issues: List[str],
     ) -> str:
-        supported = {"imx.to", "pixhost.to"}
+        supported = {"imx.to", "pixhost.to", "turboimagehost"}
         if plugin.id not in supported:
             issues.append(
                 f"One Gallery Per Folder is not implemented for {plugin.name}. "
@@ -3640,7 +3591,9 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
                             else:
                                 w["status"].configure(text=self._friendly_row_status(status_text))
                         elif k == "prog":
-                            w["prog"].set(v)
+                            progress_value = self._normalize_progress_value(v)
+                            if progress_value is not None:
+                                w["prog"].set(progress_value)
                 prog_limit -= 1
         except queue.Empty:
             pass
@@ -3879,6 +3832,10 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         normalized = text.lower()
         if normalized in {"queued", "queue"}:
             return "Queued"
+        if "wait" in normalized:
+            return "Waiting"
+        if "prepar" in normalized:
+            return "Preparing"
         if "upload" in normalized:
             return "Uploading"
         if "start" in normalized:
@@ -3888,6 +3845,29 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         if normalized == "failed" or normalized.startswith("error"):
             return "Failed"
         return text
+
+    def _normalize_progress_value(self, value: Any) -> Optional[float]:
+        raw_value = value
+        if isinstance(value, dict):
+            raw_value = value.get("percentage")
+            if raw_value is None:
+                raw_value = value.get("progress")
+            if raw_value is None:
+                bytes_done = value.get("bytes_transferred")
+                total_bytes = value.get("total_bytes")
+                try:
+                    raw_value = (float(bytes_done) / float(total_bytes)) * 100.0
+                except (TypeError, ValueError, ZeroDivisionError):
+                    return None
+
+        try:
+            progress = float(raw_value)
+        except (TypeError, ValueError):
+            return None
+
+        if progress > 1.0:
+            progress /= 100.0
+        return max(0.0, min(1.0, progress))
 
     def _update_group_progress(self, fp):
         with self.lock:

@@ -29,6 +29,73 @@ const (
 	maxThumbWidth     = 512
 )
 
+type serviceUploadLimiter struct {
+	mu     sync.Mutex
+	cond   *sync.Cond
+	active int
+	limit  int
+}
+
+var serviceUploadLimiters = struct {
+	mu       sync.Mutex
+	limiters map[string]*serviceUploadLimiter
+}{
+	limiters: make(map[string]*serviceUploadLimiter),
+}
+
+func newServiceUploadLimiter(limit int) *serviceUploadLimiter {
+	limiter := &serviceUploadLimiter{limit: limit}
+	limiter.cond = sync.NewCond(&limiter.mu)
+	return limiter
+}
+
+func getServiceUploadLimiter(service string, limit int) *serviceUploadLimiter {
+	if service == "" {
+		service = "__default__"
+	}
+	if limit < 1 {
+		limit = 1
+	}
+
+	serviceUploadLimiters.mu.Lock()
+	limiter := serviceUploadLimiters.limiters[service]
+	if limiter == nil {
+		limiter = newServiceUploadLimiter(limit)
+		serviceUploadLimiters.limiters[service] = limiter
+	}
+	serviceUploadLimiters.mu.Unlock()
+
+	limiter.setLimit(limit)
+	return limiter
+}
+
+func (l *serviceUploadLimiter) setLimit(limit int) {
+	l.mu.Lock()
+	if l.limit != limit {
+		l.limit = limit
+		l.cond.Broadcast()
+	}
+	l.mu.Unlock()
+}
+
+func (l *serviceUploadLimiter) acquire() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for l.active >= l.limit {
+		l.cond.Wait()
+	}
+	l.active++
+}
+
+func (l *serviceUploadLimiter) release() {
+	l.mu.Lock()
+	if l.active > 0 {
+		l.active--
+	}
+	l.cond.Broadcast()
+	l.mu.Unlock()
+}
+
 func handleJob(job JobRequest) {
 	ensureInitialized()
 	defer func() {
@@ -76,15 +143,36 @@ func handleJob(job JobRequest) {
 // ---------------------------------------------------------------------------
 
 func handleUpload(job JobRequest) {
+	processUploadFiles(job, processFile)
+}
+
+func processUploadFiles(job JobRequest, processor func(string, *JobRequest)) {
 	filesChan := make(chan string, len(job.Files))
 	maxWorkers := workerLimit(job.Config)
+	limiter := getServiceUploadLimiter(job.Service, maxWorkers)
 	var wg sync.WaitGroup
 	for i := 0; i < maxWorkers; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for fp := range filesChan {
-				processFile(fp, &job)
+				sendJobEvent(&job, OutputEvent{Type: "status", FilePath: fp, Status: "Waiting"})
+				limiter.acquire()
+				func() {
+					defer limiter.release()
+					sendJobEvent(&job, OutputEvent{
+						Type:     "log",
+						FilePath: fp,
+						Msg: fmt.Sprintf(
+							"Upload slot acquired: %s (service %s, limit %d)",
+							filepath.Base(fp),
+							job.Service,
+							maxWorkers,
+						),
+					})
+					sendJobEvent(&job, OutputEvent{Type: "status", FilePath: fp, Status: "Preparing"})
+					processor(fp, &job)
+				}()
 			}
 		}()
 	}
@@ -101,24 +189,7 @@ func handleHttpUpload(job JobRequest) {
 		sendJobEvent(&job, OutputEvent{Type: "error", Msg: "http_upload requires http_spec field"})
 		return
 	}
-	filesChan := make(chan string, len(job.Files))
-	maxWorkers := workerLimit(job.Config)
-	var wg sync.WaitGroup
-	for i := 0; i < maxWorkers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for fp := range filesChan {
-				processFileGeneric(fp, &job)
-			}
-		}()
-	}
-	for _, f := range job.Files {
-		filesChan <- f
-	}
-	close(filesChan)
-	wg.Wait()
-	sendJobEvent(&job, OutputEvent{Type: "batch_complete", Status: "done"})
+	processUploadFiles(job, processFileGeneric)
 }
 
 func processFile(fp string, job *JobRequest) {
@@ -133,7 +204,7 @@ func processFile(fp string, job *JobRequest) {
 	resultChan := make(chan result, 1)
 
 	go func() {
-		sendJobEvent(job, OutputEvent{Type: "status", FilePath: fp, Status: "Uploading"})
+		sendJobEvent(job, OutputEvent{Type: "status", FilePath: fp, Status: "Preparing"})
 		cfg := job.RetryConfig
 		if cfg == nil {
 			cfg = getDefaultRetryConfig()
@@ -149,6 +220,7 @@ func processFile(fp string, job *JobRequest) {
 			if !ok {
 				return ur{}, 0, fmt.Errorf("service %s does not support upload", job.Service)
 			}
+			sendJobEvent(job, OutputEvent{Type: "status", FilePath: fp, Status: "Uploading"})
 			imgURL, thumb, err := uploader.Upload(ctx, fp, job)
 			return ur{imgURL, thumb}, extractStatusCode(err), err
 		}, log.WithField("file", filepath.Base(fp)))
@@ -185,7 +257,7 @@ func processFileGeneric(fp string, job *JobRequest) {
 	resultChan := make(chan result, 1)
 
 	go func() {
-		sendJobEvent(job, OutputEvent{Type: "status", FilePath: fp, Status: "Uploading"})
+		sendJobEvent(job, OutputEvent{Type: "status", FilePath: fp, Status: "Preparing"})
 		imgURL, thumb, err := executeHttpUpload(ctx, fp, job)
 
 		select {

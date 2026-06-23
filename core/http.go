@@ -79,10 +79,14 @@ func ExecuteHttpUpload(ctx context.Context, client *http.Client, fp string, job 
 		return "", "", fmt.Errorf("no http_spec")
 	}
 	if job.Service != "" {
+		emitUploadStatus(job, fp, "Waiting")
+		emitUploadLog(job, fp, fmt.Sprintf("Waiting for rate limit: %s", filepath.Base(fp)))
 		if err := WaitForRateLimit(ctx, job.Service); err != nil {
 			return "", "", err
 		}
+		emitUploadLog(job, fp, fmt.Sprintf("Rate limit cleared: %s", filepath.Base(fp)))
 	}
+	emitUploadStatus(job, fp, "Preparing")
 
 	extractedValues := make(map[string]string)
 	for k, v := range job.Creds {
@@ -97,10 +101,13 @@ func ExecuteHttpUpload(ctx context.Context, client *http.Client, fp string, job 
 	var sessionClient *http.Client
 	if spec.PreRequest != nil {
 		var err error
+		emitUploadStatus(job, fp, "Preparing")
+		emitUploadLog(job, fp, fmt.Sprintf("Preparing session data: %s", filepath.Base(fp)))
 		preValues, preClient, err := executePreRequestWithRetryConfig(ctx, client, spec.PreRequest, retryConfig)
 		if err != nil {
 			return "", "", err
 		}
+		emitUploadLog(job, fp, fmt.Sprintf("Session data ready: %s", filepath.Base(fp)))
 		for k, v := range preValues {
 			extractedValues[k] = v
 		}
@@ -142,7 +149,7 @@ func ExecuteHttpUpload(ctx context.Context, client *http.Client, fp string, job 
 							_ = f.Close()
 							return err
 						}
-						pw2 := NewProgressWriter(part, fi.Size(), fp)
+						pw2 := NewProgressWriter(part, fi.Size(), fp, job.ID)
 						_, copyErr := io.Copy(pw2, f)
 						_ = f.Close()
 						if copyErr != nil {
@@ -190,6 +197,8 @@ func ExecuteHttpUpload(ctx context.Context, client *http.Client, fp string, job 
 		if sessionClient != nil {
 			useClient = sessionClient
 		}
+		emitUploadStatus(job, fp, "Uploading")
+		emitUploadLog(job, fp, fmt.Sprintf("HTTP upload request started: %s", filepath.Base(fp)))
 		resp, err := useClient.Do(req)
 		if err != nil {
 			return uploadResult{}, 0, err
@@ -210,6 +219,22 @@ func ExecuteHttpUpload(ctx context.Context, client *http.Client, fp string, job 
 		return "", "", err
 	}
 	return res.URL, res.Thumb, nil
+}
+
+func emitUploadStatus(job *JobRequest, fp string, status string) {
+	event := OutputEvent{Type: "status", FilePath: fp, Status: status}
+	if job != nil {
+		event.ID = job.ID
+	}
+	SendJSON(event)
+}
+
+func emitUploadLog(job *JobRequest, fp string, msg string) {
+	event := OutputEvent{Type: "log", FilePath: fp, Msg: msg}
+	if job != nil {
+		event.ID = job.ID
+	}
+	SendJSON(event)
 }
 
 func retryConfigForJob(job *JobRequest) *RetryConfig {

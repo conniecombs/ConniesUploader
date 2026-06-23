@@ -9,7 +9,10 @@ Go-based upload plugin (upload handled by Go sidecar).
 Python side manages UI, configuration validation, and optional authentication.
 """
 
-from typing import Dict, Any, List
+import re
+import secrets
+import string
+from typing import Dict, Any, List, Optional
 from .base import ImageHostPlugin
 from . import helpers
 
@@ -58,8 +61,8 @@ class TurboPlugin(ImageHostPlugin):
                 },
             ],
             "limits": {
-                "max_file_size": 50 * 1024 * 1024,  # 50MB
-                "allowed_formats": [".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"],
+                "max_file_size": 35 * 1024 * 1024,
+                "allowed_formats": [".jpg", ".jpeg", ".png", ".gif"],
                 "rate_limit": "Moderate (respectful use)",
                 "max_resolution": (15000, 15000),
                 "min_resolution": (1, 1),
@@ -125,93 +128,45 @@ class TurboPlugin(ImageHostPlugin):
 
         return errors
 
-    # NEW: Generic HTTP request builder with session management (Phase 3)
+    def prepare_group(
+        self, group, config: Dict[str, Any], context: Dict[str, Any], creds: Dict[str, Any]
+    ) -> None:
+        """Attach Turbo gallery metadata for One Gallery Per Folder uploads."""
+        if not config.get("auto_gallery"):
+            return
+
+        gallery_name = self._safe_gallery_name(getattr(group, "title", "") or "Gallery")
+        upload_id = self._upload_id()
+        group.turbo_gallery_create = True
+        group.turbo_gallery_name = gallery_name
+        group.turbo_upload_id = upload_id
+        group.gallery_name = gallery_name
+        group.gallery_service = self.id
+
+    @staticmethod
+    def _safe_gallery_name(title: str) -> str:
+        cleaned = re.sub(r"[^a-zA-Z0-9_ -]+", " ", str(title or "Gallery"))
+        cleaned = re.sub(r"\s+", " ", cleaned).strip(" -_")
+        if len(cleaned) < 2:
+            cleaned = "Gallery"
+        return cleaned[:20].strip() or "Gallery"
+
+    @staticmethod
+    def _upload_id() -> str:
+        alphabet = string.ascii_lowercase + string.digits
+        return "".join(secrets.choice(alphabet) for _ in range(20))
+
     def build_http_request(
         self, file_path: str, config: Dict[str, Any], creds: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    ) -> Optional[Dict[str, Any]]:
         """
-        Build HTTP request specification for TurboImageHost upload with session management.
-        Uses Phase 3 multi-step pre-request hooks:
-        1. Optional POST to /login (if credentials provided)
-        2. GET / to extract upload endpoint from JavaScript
+        Use the dedicated Go Turbo uploader.
+
+        TurboImageHost expects FineUploader metadata fields and may return a
+        newUrl response that needs service-specific scraping. Returning None
+        makes UploadManager fall back to the registered Go service module.
         """
-        import random
-        import string
-
-        # Generate random upload ID
-        upload_id = "".join(random.choices(string.ascii_letters + string.digits, k=12))
-
-        # Base endpoint (will be overridden by extracted endpoint)
-        base_endpoint = "https://www.turboimagehost.com/upload_html5.tu"
-
-        # Build upload URL with query parameters
-        upload_url = f"{base_endpoint}?upload_id={upload_id}&js_on=1&utype=reg&upload_type=file"
-        thumb_size = str(config.get("thumbnail_size") or config.get("turbo_thumb", "180"))
-
-        # Check if credentials are provided
-        has_credentials = bool(creds.get("turbo_user") and creds.get("turbo_pass"))
-
-        # Build pre-request spec
-        pre_request_spec = {
-            "action": "get_endpoint",
-            "url": "https://www.turboimagehost.com/",
-            "method": "GET",
-            "headers": {},
-            "form_fields": {},
-            "use_cookies": True,
-            "extract_fields": {
-                "endpoint": "regex:endpoint:\\s*'([^']+)'"  # Regex pattern to extract endpoint from JavaScript
-            },
-            "response_type": "html",
-        }
-
-        # If credentials provided, add login step before endpoint extraction
-        if has_credentials:
-            pre_request_spec = {
-                "action": "login",
-                "url": "https://www.turboimagehost.com/login",
-                "method": "POST",
-                "headers": {},
-                "form_fields": {
-                    "username": creds.get("turbo_user", ""),
-                    "password": creds.get("turbo_pass", ""),
-                    "login": "Login",
-                },
-                "use_cookies": True,
-                "extract_fields": {},  # No extraction from login POST
-                "response_type": "html",
-                # Step 2: GET homepage to extract upload endpoint
-                "follow_up_request": {
-                    "action": "get_endpoint",
-                    "url": "https://www.turboimagehost.com/",
-                    "method": "GET",
-                    "headers": {},
-                    "form_fields": {},
-                    "use_cookies": True,
-                    "extract_fields": {
-                        "endpoint": "regex:endpoint:\\s*'([^']+)'"  # Regex to extract endpoint
-                    },
-                    "response_type": "html",
-                },
-            }
-
-        return {
-            "url": upload_url,
-            "method": "POST",
-            "headers": {},
-            "pre_request": pre_request_spec,
-            "multipart_fields": {
-                "qqfile": {"type": "file", "value": file_path},
-                "thumb_size": {"type": "text", "value": thumb_size},
-            },
-            "response_parser": {
-                "type": "json",
-                "status_path": "success",
-                "success_value": "true",
-                "url_template": "https://www.turboimagehost.com/p/{id}/{filename}.html",
-                # Turbo returns {"success":true,"id":"xyz"}, construct URL from ID + filename
-            },
-        }
+        return None
 
     # --- Upload Implementation (Go sidecar handles uploads) ---
 

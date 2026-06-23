@@ -869,7 +869,7 @@ class TemplateManager:
             processed_full.append(self._replace_placeholders(item_str, image_data))
         data["all_full_images"] = " ".join(processed_full)
         data["cover_count"] = len(covers_extracted)
-        data["cover_images"] = "\n".join(
+        data["cover_images"] = " ".join(
             self._replace_placeholders(
                 img_fmt,
                 {
