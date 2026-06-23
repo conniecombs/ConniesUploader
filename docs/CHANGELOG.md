@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Expanded the user tutorial's Template Editor guide with a safer editing workflow, rendering model, conditional syntax reference, image/cover loop guidance, separator examples, and troubleshooting notes.
+
 ### Fixed
 
 - Moved app settings storage from legacy repo-local `user_settings.json` to `~/.conniesuploader/user_settings.json`, with startup migration that removes legacy settings files from the checkout without printing their contents.

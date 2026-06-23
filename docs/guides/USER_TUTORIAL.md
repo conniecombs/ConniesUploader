@@ -553,9 +553,46 @@ Safe custom starter:
 | `Save Current` | Saves changes to the currently selected template name. |
 | `Save As New...` | Creates a new named template. |
 
-The editor warns before switching templates or closing if the current template has unsaved changes. Templates are validated before saving so empty templates, unknown `#placeholder#` values, unclosed `[if]` or `[for image]` blocks, and templates without image output placeholders are blocked.
+The editor warns before switching templates or closing if the current template has unsaved changes. Templates are validated before saving so empty templates, unknown `#placeholder#` values, duplicate or unmatched `[else]` tags, unclosed `[if]`, `[for image]`, or `[for cover]` blocks, and templates without image output placeholders are blocked.
 
 If preview data is not available, the editor explains what is missing instead of failing silently. Add at least one image to the upload queue before using browser preview or copying preview output.
+
+### A Safe Template Editing Workflow
+
+When you are learning the editor, work from a copy instead of editing a built-in template in place.
+
+1. Add a small test batch to the queue.
+2. Open `Tools > Template Editor`.
+3. Choose the closest built-in template.
+4. Click `Duplicate` or `Save As New...`.
+5. Make one change at a time.
+6. Use `Copy Preview Output` for fast checks.
+7. Use `Preview in Browser` when you need to inspect rendered links and images.
+8. Save only after the preview output looks right.
+
+This workflow is especially helpful for conditionals and loops because one missing closing tag can change the entire output below it.
+
+### How Template Rendering Works
+
+A template is made from three kinds of content:
+
+| Content type | Example | What happens |
+| --- | --- | --- |
+| Literal text | `[center]`, `Open Gallery`, blank lines | Kept as typed. |
+| Placeholders | `#batch_name#`, `#gallery_link#`, `#all_images#` | Replaced with upload, gallery, batch, service, or posting data. |
+| Template blocks | `[if gallery_link]...[/if]`, `[for image]...[/for]` | Resolved by Connie's Uploader before output is saved or posted. |
+
+The final forum, Markdown, or HTML output should not contain raw app template tags such as `[if gallery_link]` or `[for image]`. Those tags are instructions for Connie's Uploader, not BBCode that ViperGirls or another forum understands.
+
+Some image placeholders behave differently depending on where they appear:
+
+| Location | `#image_url#`, `#thumb_url#`, `#direct_url#` mean |
+| --- | --- |
+| Outside a loop | The first image in the rendered batch. |
+| Inside `[for image]` | The current regular image for that loop pass. |
+| Inside `[for cover]` | The current selected cover image for that loop pass. |
+
+Use `#all_images#`, `#all_full_images#`, and `#cover_images#` when the built-in formatting is good enough. Use loops when you need control over every image block.
 
 ### Built-In Templates
 
@@ -612,77 +649,193 @@ ViperGirls and forum templates are treated as BBCode templates by the editor too
 
 ### Template Conditionals
 
-Templates support simple conditional blocks:
+Use a conditional when a line, link, label, or whole section should appear only when certain upload data exists.
+
+Basic shape:
 
 ```text
-[if gallery_link]
-[url=#gallery_link#]Open Gallery[/url]
+[if placeholder_name]
+content to show when the placeholder has a value
 [/if]
 ```
 
-These `[if]`, `[else]`, and `[/if]` tags are Connie's Uploader template syntax, not ViperGirls BBCode. The app resolves them before saving output or posting to ViperGirls, so raw conditional tags should not appear in forum posts.
+Recommended form:
 
-Conditionals can be nested:
+```bbcode
+[if gallery_link][url=#gallery_link#]Open Gallery[/url][/if]
+```
+
+The condition name is the placeholder name without `#`. `[if #gallery_link#]` also works, but `[if gallery_link]` is easier to read.
+
+Truth checks match when the value is not empty after trimming spaces:
+
+| Goal | Use |
+| --- | --- |
+| Show a gallery link only when one exists | `[if gallery_link]...[/if]` |
+| Show gallery ID text only when an ID exists | `[if gallery_id]...[/if]` |
+| Show ViperGirls target details only when a thread is selected | `[if thread_id]...[/if]` |
+| Show optional thread name text | `[if thread_name]...[/if]` |
+
+Conditionals can also include an `[else]` branch:
+
+```bbcode
+[b]Gallery:[/b] [if gallery_link][url=#gallery_link#]#gallery_name#[/url][else]No gallery link[/if]
+```
+
+Use exact comparisons when you need a specific value:
 
 ```text
+[if gallery_id=PREV_123]This is the preview gallery.[/if]
+[if thread_id=12345]Posting to the main thread.[/if]
+[if gallery_name="Weekend Set"]Named gallery matched.[/if]
+```
+
+Comparison values are exact after surrounding quotes are removed. They are not wildcards, regular expressions, or partial matches.
+
+Conditionals can be nested. Close the inner conditional before continuing the outer one:
+
+```bbcode
 [if gallery_link]
 [url=#gallery_link#]Open Gallery[/url]
-[if thread_id]Posting to thread #thread_id#[/if]
+[if thread_id]
+[size=1]Target: #thread_name# (thread #thread_id#)[/size]
+[/if]
 [else]
-No gallery created
+No gallery was created for #batch_name#.
 [/if]
 ```
 
-You can also compare values:
+Useful conditional patterns:
 
-```text
-[if gallery_id=PREV_123]Preview gallery[/if]
+```bbcode
+[if gallery_link]
+[url=#gallery_link#][b]Open Full Gallery[/b][/url]
+
+[/if]
 ```
 
-Conditionals may include an else branch:
-
-```text
-[if gallery_link]Gallery ready[else]No gallery[/if]
+```bbcode
+[if thread_id]
+[size=1]Posted to #thread_name# (#thread_id#)[/size]
+[/if]
 ```
 
-### Template Image Loops
-
-Use `[for image]...[/for]` when you want full control over each image instead of using `#all_images#` or `#all_full_images#`.
-
-```text
-[for image separator=newline]
-[url=#image_url#][img]#thumb_url#[/img][/url]
-[/for]
+```bbcode
+[if direct_url][img]#direct_url#[/img][else][url=#image_url#][img]#thumb_url#[/img][/url][/if]
 ```
 
-Inside an image loop, `#image_url#`, `#thumb_url#`, and `#direct_url#` refer to the current image. Other placeholders such as `#batch_name#`, `#service#`, `#thread_name#`, and `#thread_id#` remain available.
+The last pattern is most useful inside an image loop, where `#direct_url#`, `#image_url#`, and `#thumb_url#` refer to the current image.
 
-Use `[for cover]...[/for]` when you want the same control for selected cover images:
+Keep these limits in mind:
 
-```text
+| Need | Supported? | What to do |
+| --- | --- | --- |
+| Value exists | Yes | `[if gallery_link]...[/if]` |
+| Value equals exact text | Yes | `[if gallery_id=abc123]...[/if]` |
+| Fallback content | Yes | `[if gallery_link]Link[else]No link[/if]` |
+| Nested checks | Yes | Put one `[if]...[/if]` inside another. |
+| `and`, `or`, `not`, `contains`, `>`, `<` | No | Split the logic into simpler blocks or use exact comparisons. |
+
+Numeric placeholders are still treated as text for truth checks. For example, `cover_count` can be `0`, and `0` still counts as a non-empty value. If you need a specific count, use an exact comparison such as `[if cover_count=1]`. If you simply want covers to appear when selected, use `#cover_images#` or `[for cover]...[/for]`; both render nothing when no covers are selected.
+
+### Template Image And Cover Loops
+
+Use a loop when you want to design the repeated output for each image yourself.
+
+The normal shortcut:
+
+```bbcode
+#all_images#
+```
+
+The equivalent custom image loop:
+
+```bbcode
+[for image separator=space][url=#image_url#][img]#thumb_url#[/img][/url][/for]
+```
+
+An image loop runs once for each regular image in the batch. Inside the loop:
+
+| Placeholder | Meaning inside `[for image]` |
+| --- | --- |
+| `#image_url#` | Viewer/page URL for the current image. |
+| `#thumb_url#` | Thumbnail URL for the current image. |
+| `#direct_url#` | Direct image URL for the current image, when the service provides or derives one. |
+| `#batch_name#`, `#service#`, `#gallery_link#`, `#thread_id#` | Still refer to the overall batch/posting context. |
+
+Do not put `#all_images#` inside `[for image]`. That repeats the entire image list once for every image. Use the per-image placeholders instead.
+
+A cover loop works the same way, but runs over selected cover images:
+
+```bbcode
 [for cover separator=blankline]
 [url=#image_url#][img]#thumb_url#[/img][/url]
 [/for]
 ```
 
-Inside a cover loop, image placeholders refer to the current cover image. The loop runs once for each selected cover.
+Inside `[for cover]`, the image placeholders refer to the current cover. If no covers are selected, the loop outputs nothing.
+
+When a template uses `#cover_images#`, `[for cover]`, `#cover_image#`, or `#cover_url#`, selected covers are treated as covers first and are excluded from regular `#all_images#` and `[for image]` output. This prevents the same upload from appearing once as a cover and again in the main grid.
 
 Supported separators:
 
-| Separator | Output between image blocks |
+| Separator | Output between loop blocks |
 | --- | --- |
+| No separator option | One line break, the same as `separator=newline`. |
 | `separator=space` | One space. |
-| `separator=newline` | One line break. |
-| `separator=blankline` | A blank line. |
-| `separator=none` | No separator. |
+| `separator=newline` or `separator=line` | One line break. |
+| `separator=blankline` or `separator=blank` | A blank line. |
+| `separator=comma` | Comma plus space. |
+| `separator=none` or `separator=empty` | No separator. |
 | `separator=", "` | A custom quoted separator. |
+| `sep=" \| "` | Same as `separator`, shorter to type. |
+| `separator="\n---\n"` | Custom separator using escaped line breaks. |
 
-Conditionals also work inside loops:
+Spacing tip: the separator is inserted between complete loop blocks. If your loop body already starts or ends with blank lines, a `blankline` separator can produce more vertical space than expected.
 
-```text
+Common loop patterns:
+
+```bbcode
+[center][for image separator=space][url=#image_url#][img]#thumb_url#[/img][/url][/for][/center]
+```
+
+```bbcode
 [for image separator=blankline]
-[if direct_url][img]#direct_url#[/img][else][url=#image_url#]#image_url#[/url][/if]
+[if direct_url][img]#direct_url#[/img][else][url=#image_url#][img]#thumb_url#[/img][/url][/if]
 [/for]
+```
+
+```bbcode
+[center][b]#batch_name#[/b]
+
+[for cover separator=blankline]
+[url=#image_url#][img]#thumb_url#[/img][/url]
+[/for]
+
+[for image separator=space][url=#image_url#][img]#thumb_url#[/img][/url][/for][/center]
+```
+
+```markdown
+[for image separator=newline]
+[![Image](#thumb_url#)](#image_url#)
+[/for]
+```
+
+Loops and conditionals can be combined freely. The most common pattern is a conditional inside a loop, used as a fallback when one URL type is missing:
+
+```bbcode
+[for image separator=blankline]
+[if direct_url][img]#direct_url#[/img][else][url=#image_url#][img]#thumb_url#[/img][/url][/if]
+[/for]
+```
+
+You can also put a loop inside a conditional:
+
+```bbcode
+[if gallery_link]
+[url=#gallery_link#]Open Gallery[/url]
+
+[/if][for image separator=space][url=#image_url#][img]#thumb_url#[/img][/url][/for]
 ```
 
 ### Copy-Paste Template Examples
@@ -794,7 +947,12 @@ Choose or save the template under an HTML template/category when you want toolba
 | Typing `#cover_url#` when you want a clickable image | Only the raw thumbnail URL appears. | Use `#cover_image#` for one fixed cover or `#cover_images#` for all selected covers. |
 | Forgetting `[/if]` | Save/preview validation fails. | Add the missing closing tag. |
 | Forgetting `[/for]` | Save/preview validation fails. | Add the missing closing tag. |
+| Adding `[else]` inside a loop without an `[if]` | Save/preview validation fails. | Put `[else]` only inside `[if]...[/if]`. |
+| Adding two `[else]` branches to one conditional | Save/preview validation fails. | Split the logic into separate conditionals. |
 | Using an unknown placeholder like `#folder#` | Save/preview validation fails. | Use `#batch_name#` for the folder/batch title. |
+| Putting `#all_images#` inside `[for image]` | The whole image list repeats once per image. | Use `#image_url#`, `#thumb_url#`, or `#direct_url#` inside loops. |
+| Expecting `[if cover_count]` to mean one or more covers | `0` still counts as a non-empty text value. | Use `#cover_images#` or `[for cover]...[/for]`, which render nothing when no covers are selected. |
+| Using `[for image]` and wondering why covers are missing | Cover-aware templates reserve selected covers for cover output. | Use `[for cover]...[/for]` for covers and `[for image]...[/for]` for the remaining images. |
 | Expecting `[if]` to work on ViperGirls directly | ViperGirls does not understand app template tags. | Let Connie's Uploader render the template before posting. Raw `[if]` tags should not appear in final output. |
 
 ## Output Files
