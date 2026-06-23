@@ -22,6 +22,20 @@ type Uploader interface {
 	Upload(ctx context.Context, fp string, job *core.JobRequest) (string, string, error)
 }
 
+// BatchUploadResult is the per-file outcome from a deferred batch upload.
+type BatchUploadResult struct {
+	URL   string
+	Thumb string
+	Err   error
+}
+
+// DeferredBatchUploader is implemented by services that must upload all files
+// first and resolve final links after the host publishes a batch result page.
+type DeferredBatchUploader interface {
+	UploadDeferred(ctx context.Context, fp string, job *core.JobRequest) error
+	ResolveDeferredBatch(ctx context.Context, files []string, job *core.JobRequest) map[string]BatchUploadResult
+}
+
 // Authenticator is implemented by services that require a login step.
 type Authenticator interface {
 	Login(creds map[string]string) bool

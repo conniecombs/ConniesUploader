@@ -43,6 +43,7 @@ VALID_EXTENSIONS = SUPPORTED_EXTENSIONS
 USER_DATA_DIR = os.path.join(os.path.expanduser("~"), ".conniesuploader")
 SETTINGS_FILE = os.path.join(USER_DATA_DIR, "user_settings.json")
 LEGACY_SETTINGS_FILE = os.path.abspath("user_settings.json")
+ACTIVITY_LOG_FILE = os.path.join(USER_DATA_DIR, "activity.log")
 CRASH_LOG_FILE = "crash_log.log"
 UI_THUMB_SIZE = (40, 40)
 

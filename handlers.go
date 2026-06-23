@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/disintegration/imaging"
@@ -143,7 +144,147 @@ func handleJob(job JobRequest) {
 // ---------------------------------------------------------------------------
 
 func handleUpload(job JobRequest) {
+	if shouldUseDeferredBatchUpload(job) {
+		processDeferredBatchUpload(job)
+		return
+	}
 	processUploadFiles(job, processFile)
+}
+
+func shouldUseDeferredBatchUpload(job JobRequest) bool {
+	return shouldUseTurboGalleryCreateUpload(job)
+}
+
+func shouldUseTurboGalleryCreateUpload(job JobRequest) bool {
+	if job.Service != "turboimagehost" {
+		return false
+	}
+	return configBool(job.Config, "turbo_gallery_create", "gallery_create")
+}
+
+func processDeferredBatchUpload(job JobRequest) {
+	ensureInitialized()
+	if job.Config == nil {
+		job.Config = map[string]string{}
+	}
+	if job.Config["turbo_upload_id"] == "" && job.Config["upload_id"] == "" {
+		uploadID := core.RandomString(20)
+		job.Config["turbo_upload_id"] = uploadID
+		job.Config["upload_id"] = uploadID
+	}
+
+	svc, ok := registry.Get(job.Service)
+	if !ok {
+		for _, fp := range job.Files {
+			sendJobEvent(&job, OutputEvent{Type: "status", FilePath: fp, Status: "Failed"})
+			sendJobEvent(&job, OutputEvent{Type: "error", FilePath: fp, Msg: fmt.Sprintf("unknown service: %s", job.Service)})
+		}
+		sendJobEvent(&job, OutputEvent{Type: "batch_complete", Status: "done"})
+		return
+	}
+	uploader, ok := svc.(services.DeferredBatchUploader)
+	if !ok {
+		processUploadFiles(job, processFile)
+		return
+	}
+
+	filesChan := make(chan string, len(job.Files))
+	maxWorkers := workerLimit(job.Config)
+	if shouldUseTurboGalleryCreateUpload(job) {
+		maxWorkers = 1
+	}
+	limiter := getServiceUploadLimiter(job.Service, maxWorkers)
+	cfg := job.RetryConfig
+	if cfg == nil {
+		cfg = getDefaultRetryConfig()
+	}
+
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	uploadedFiles := make([]string, 0, len(job.Files))
+	uploadErrors := make(map[string]error)
+
+	for i := 0; i < maxWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for fp := range filesChan {
+				sendJobEvent(&job, OutputEvent{Type: "status", FilePath: fp, Status: "Waiting"})
+				limiter.acquire()
+				func() {
+					defer limiter.release()
+					sendJobEvent(&job, OutputEvent{
+						Type:     "log",
+						FilePath: fp,
+						Msg: fmt.Sprintf(
+							"Turbo batch upload slot acquired: %s (service %s, limit %d)",
+							filepath.Base(fp),
+							job.Service,
+							maxWorkers,
+						),
+					})
+					sendJobEvent(&job, OutputEvent{Type: "status", FilePath: fp, Status: "Preparing"})
+
+					ctx, cancel := context.WithTimeout(context.Background(), core.ClientTimeout)
+					defer cancel()
+					_, err := retryWithBackoff(ctx, cfg, func() (struct{}, int, error) {
+						sendJobEvent(&job, OutputEvent{Type: "status", FilePath: fp, Status: "Uploading"})
+						err := uploader.UploadDeferred(ctx, fp, &job)
+						return struct{}{}, extractStatusCode(err), err
+					}, log.WithField("file", filepath.Base(fp)))
+
+					mu.Lock()
+					defer mu.Unlock()
+					if err != nil {
+						uploadErrors[fp] = err
+					} else {
+						uploadedFiles = append(uploadedFiles, fp)
+					}
+				}()
+			}
+		}()
+	}
+
+	for _, f := range job.Files {
+		filesChan <- f
+	}
+	close(filesChan)
+	wg.Wait()
+
+	for _, fp := range job.Files {
+		if err, ok := uploadErrors[fp]; ok {
+			sendJobEvent(&job, OutputEvent{Type: "status", FilePath: fp, Status: "Failed"})
+			sendJobEvent(&job, OutputEvent{Type: "error", FilePath: fp, Msg: err.Error()})
+		}
+	}
+
+	if len(uploadedFiles) > 0 {
+		for _, fp := range uploadedFiles {
+			sendJobEvent(&job, OutputEvent{Type: "status", FilePath: fp, Status: "Resolving"})
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), core.ClientTimeout)
+		results := uploader.ResolveDeferredBatch(ctx, uploadedFiles, &job)
+		cancel()
+
+		for _, fp := range uploadedFiles {
+			res := results[fp]
+			if res.Err != nil {
+				sendJobEvent(&job, OutputEvent{Type: "status", FilePath: fp, Status: "Failed"})
+				sendJobEvent(&job, OutputEvent{Type: "error", FilePath: fp, Msg: res.Err.Error()})
+				continue
+			}
+			if strings.TrimSpace(res.URL) == "" {
+				sendJobEvent(&job, OutputEvent{Type: "status", FilePath: fp, Status: "Failed"})
+				sendJobEvent(&job, OutputEvent{Type: "error", FilePath: fp, Msg: "turbo batch resolver returned an empty image link"})
+				continue
+			}
+			sendJobEvent(&job, OutputEvent{Type: "result", FilePath: fp, Url: res.URL, Thumb: res.Thumb})
+			sendJobEvent(&job, OutputEvent{Type: "status", FilePath: fp, Status: "Done"})
+		}
+	}
+
+	sendJobEvent(&job, OutputEvent{Type: "batch_complete", Status: "done"})
 }
 
 func processUploadFiles(job JobRequest, processor func(string, *JobRequest)) {
@@ -460,6 +601,16 @@ func workerLimit(config map[string]string) int {
 		return w
 	}
 	return 2
+}
+
+func configBool(config map[string]string, keys ...string) bool {
+	for _, key := range keys {
+		value := strings.ToLower(strings.TrimSpace(config[key]))
+		if value == "1" || value == "true" || value == "yes" || value == "on" {
+			return true
+		}
+	}
+	return false
 }
 
 func sendJobEvent(job *JobRequest, event OutputEvent) {

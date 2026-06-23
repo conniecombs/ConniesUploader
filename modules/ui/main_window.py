@@ -101,6 +101,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         self.results = []
         self.log_cache = []
         self.activity_events = []
+        self.activity_log_file = config.ACTIVITY_LOG_FILE
         self.preflight_issues = []
         self.preflight_action_files = []
         self.preflight_action_file_issue_texts = []
@@ -118,7 +119,6 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         self.current_completion_summary = None
         self.pix_galleries_to_finalize = []
         self.output_dir = "Output"
-        self.activity_visible = True
         self._template_recovery_notice_shown = False
 
     def _init_state(self):
@@ -294,6 +294,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         view_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="View", menu=view_menu)
         view_menu.add_command(label="Execution Log", command=self.toggle_log)
+        view_menu.add_command(label="Activity Terminal", command=self.open_activity_terminal)
         view_menu.add_separator()
         view_menu.add_checkbutton(
             label="Show Image Previews",
@@ -870,10 +871,10 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         self._create_import_checks_panel(right_panel)
         self._create_upload_checks_panel(right_panel)
         self._create_completion_panel(right_panel)
-        self._create_activity_panel(right_panel)
         self._refresh_queue_state()
 
         footer = ctk.CTkFrame(right_panel, height=40, fg_color="transparent")
+        self.queue_footer = footer
         footer.pack(fill="x", padx=5, pady=5)
         self.lbl_eta = ctk.CTkLabel(footer, text="Ready...", text_color="gray")
         self.lbl_eta.pack(anchor="w")
@@ -1107,40 +1108,11 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         self._refresh_selection_actions()
         self._refresh_start_button_state()
 
-    def _create_activity_panel(self, parent):
-        panel = ctk.CTkFrame(parent)
-        panel.pack(fill="x", padx=5, pady=(0, 5))
-        self.activity_panel = panel
-
-        header = ctk.CTkFrame(panel, fg_color="transparent")
-        header.pack(fill="x", padx=10, pady=(8, 2))
-        ctk.CTkLabel(header, text="Activity", font=("Segoe UI", 13, "bold")).pack(side="left")
-        self.btn_activity_toggle = ctk.CTkButton(
-            header,
-            text="Hide",
-            command=self.toggle_activity_panel,
-            width=70,
-            fg_color="gray",
-            hover_color="#666666",
-        )
-        self.btn_activity_toggle.pack(side="right")
-
-        self.activity_frame = ctk.CTkScrollableFrame(panel, height=115, fg_color="transparent")
-        self.activity_frame.pack(fill="x", padx=8, pady=(0, 8))
-        self._render_activity_events()
-
-    def toggle_activity_panel(self) -> None:
-        self.activity_visible = not getattr(self, "activity_visible", True)
-        if self.activity_visible:
-            if "activity_frame" in self.__dict__ and not self.activity_frame.winfo_ismapped():
-                self.activity_frame.pack(fill="x", padx=8, pady=(0, 8))
-            if "btn_activity_toggle" in self.__dict__:
-                self.btn_activity_toggle.configure(text="Hide")
-        else:
-            if "activity_frame" in self.__dict__ and self.activity_frame.winfo_ismapped():
-                self.activity_frame.pack_forget()
-            if "btn_activity_toggle" in self.__dict__:
-                self.btn_activity_toggle.configure(text="Show")
+    def _queue_panel_pack_kwargs(self) -> Dict[str, Any]:
+        pack_kwargs: Dict[str, Any] = {"fill": "x", "padx": 5, "pady": (0, 5)}
+        if "queue_footer" in self.__dict__:
+            pack_kwargs["before"] = self.queue_footer
+        return pack_kwargs
 
     def _create_upload_checks_panel(self, parent) -> None:
         self.upload_checks_panel = ctk.CTkFrame(parent, border_width=1, border_color="#FFB340")
@@ -1225,10 +1197,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             return
 
         if not self.upload_checks_panel.winfo_ismapped():
-            pack_kwargs = {"fill": "x", "padx": 5, "pady": (0, 5)}
-            if "activity_panel" in self.__dict__:
-                pack_kwargs["before"] = self.activity_panel
-            self.upload_checks_panel.pack(**pack_kwargs)
+            self.upload_checks_panel.pack(**self._queue_panel_pack_kwargs())
 
         count = len(issues)
         issue_label = "issue" if count == 1 else "issues"
@@ -1368,10 +1337,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             return
 
         if not self.import_checks_panel.winfo_ismapped():
-            pack_kwargs = {"fill": "x", "padx": 5, "pady": (0, 5)}
-            if "activity_panel" in self.__dict__:
-                pack_kwargs["before"] = self.activity_panel
-            self.import_checks_panel.pack(**pack_kwargs)
+            self.import_checks_panel.pack(**self._queue_panel_pack_kwargs())
 
         count = len(issues)
         issue_label = "issue" if count == 1 else "issues"
@@ -1512,10 +1478,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         title = "Upload Finished with Issues" if failed_count else "Upload Complete"
 
         if not self.completion_panel.winfo_ismapped():
-            pack_kwargs = {"fill": "x", "padx": 5, "pady": (0, 5)}
-            if "activity_panel" in self.__dict__:
-                pack_kwargs["before"] = self.activity_panel
-            self.completion_panel.pack(**pack_kwargs)
+            self.completion_panel.pack(**self._queue_panel_pack_kwargs())
 
         self.completion_panel.configure(border_color=accent_color)
         self.lbl_completion_title.configure(text=title, text_color=accent_color)
@@ -1697,48 +1660,48 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         event = {"time": timestamp, "message": str(message), "level": level}
         self.activity_events.append(event)
         self.activity_events = self.activity_events[-80:]
+        self._append_activity_log(event)
 
-        if "activity_frame" in self.__dict__:
-            try:
-                self._render_activity_events()
-            except (tk.TclError, AttributeError) as exc:
-                logger.debug(f"Could not render activity event: {exc}")
-
-    def _render_activity_events(self) -> None:
-        if "activity_frame" not in self.__dict__:
+    def _append_activity_log(self, event: Dict[str, str]) -> None:
+        log_path = self.__dict__.get("activity_log_file")
+        if not log_path:
             return
 
-        for child in self.activity_frame.winfo_children():
-            child.destroy()
+        try:
+            log_dir = os.path.dirname(log_path)
+            if log_dir:
+                os.makedirs(log_dir, exist_ok=True)
+            line = f"{event['time']} [{event.get('level', 'info').upper()}] {event['message']}\n"
+            with open(log_path, "a", encoding="utf-8") as log_file:
+                log_file.write(line)
+        except OSError as exc:
+            logger.debug(f"Could not write activity log: {exc}")
 
-        if not self.activity_events:
-            ctk.CTkLabel(
-                self.activity_frame,
-                text="Activity will appear here as files move through the upload.",
-                text_color="gray",
-                wraplength=620,
-                justify="left",
-            ).pack(anchor="w", padx=4, pady=4)
+    def open_activity_terminal(self) -> None:
+        log_path = self.__dict__.get("activity_log_file") or config.ACTIVITY_LOG_FILE
+        self.activity_log_file = log_path
+        try:
+            log_dir = os.path.dirname(log_path)
+            if log_dir:
+                os.makedirs(log_dir, exist_ok=True)
+            open(log_path, "a", encoding="utf-8").close()
+        except OSError as exc:
+            messagebox.showerror("Activity Terminal", f"Could not create activity log:\n\n{exc}")
             return
 
-        colors = {
-            "success": "#34C759",
-            "warning": "#FFB340",
-            "error": "#FF3B30",
-            "info": "gray",
-        }
-        for event in reversed(self.activity_events[-30:]):
-            row = ctk.CTkFrame(self.activity_frame, fg_color="transparent")
-            row.pack(fill="x", padx=2, pady=1)
-            ctk.CTkLabel(row, text=event["time"], width=64, text_color="gray").pack(side="left")
-            ctk.CTkLabel(
-                row,
-                text=event["message"],
-                text_color=colors.get(event.get("level"), "gray"),
-                anchor="w",
-                justify="left",
-                wraplength=610,
-            ).pack(side="left", fill="x", expand=True)
+        escaped_path = log_path.replace("'", "''")
+        command = (
+            f"Write-Host 'Connie''s Uploader activity log'; "
+            f"Write-Host '{escaped_path}'; "
+            f"Get-Content -LiteralPath '{escaped_path}' -Wait"
+        )
+        try:
+            subprocess.Popen(
+                ["powershell.exe", "-NoExit", "-Command", command],
+                creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0),
+            )
+        except OSError as exc:
+            messagebox.showerror("Activity Terminal", f"Could not open PowerShell:\n\n{exc}")
 
     def _create_host_readiness_panel(self) -> None:
         self.host_readiness_frame = ctk.CTkFrame(self.settings_frame_container)

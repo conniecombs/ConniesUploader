@@ -6,6 +6,8 @@ package turbo
 
 import (
 	"context"
+	"crypto/sha1"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"html"
@@ -20,8 +22,10 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/conniecombs/GolangVersion/core"
+	"github.com/conniecombs/GolangVersion/services"
 )
 
 const (
@@ -31,6 +35,19 @@ const (
 	turboUploadURL = "https://www.turboimagehost.com/upload_html5.tu"
 )
 
+var turboResultPollDelays = []time.Duration{
+	500 * time.Millisecond,
+	time.Second,
+	2 * time.Second,
+	3 * time.Second,
+	5 * time.Second,
+	5 * time.Second,
+	5 * time.Second,
+	5 * time.Second,
+	5 * time.Second,
+	5 * time.Second,
+}
+
 // Module is the self-contained TurboImageHost service plugin.
 // It discovers and caches the upload endpoint after login.
 type Module struct {
@@ -38,6 +55,11 @@ type Module struct {
 
 	mu       sync.RWMutex
 	endpoint string
+}
+
+type turboUploadResponse struct {
+	NewURL string
+	ID     string
 }
 
 // New constructs a Turbo module wired to the shared HTTP client.
@@ -54,8 +76,88 @@ func (m *Module) Login(creds map[string]string) bool {
 
 // Upload implements services.Uploader.
 func (m *Module) Upload(ctx context.Context, fp string, job *core.JobRequest) (string, string, error) {
-	if err := core.WaitForRateLimit(ctx, ServiceID); err != nil {
+	res, err := m.uploadHTML5(ctx, fp, job)
+	if err != nil {
 		return "", "", err
+	}
+
+	if res.NewURL != "" {
+		return m.scrapeBBCode(ctx, resolveTurboURL(res.NewURL), filepath.Base(fp))
+	}
+	if res.ID != "" {
+		u := fmt.Sprintf("https://www.turboimagehost.com/p/%s/%s.html", res.ID, turboUploadFileName(fp, job.Config))
+		return u, u, nil
+	}
+	return "", "", fmt.Errorf("turbo upload: no URL in response")
+}
+
+// UploadDeferred uploads one file without resolving the batch result page.
+func (m *Module) UploadDeferred(ctx context.Context, fp string, job *core.JobRequest) error {
+	_, err := m.uploadHTML5(ctx, fp, job)
+	return err
+}
+
+// ResolveDeferredBatch resolves Turbo gallery uploads after all files are sent.
+func (m *Module) ResolveDeferredBatch(ctx context.Context, files []string, job *core.JobRequest) map[string]services.BatchUploadResult {
+	results := make(map[string]services.BatchUploadResult, len(files))
+	if len(files) == 0 {
+		return results
+	}
+
+	uploadID := ensureTurboUploadID(job.Config)
+	resultURL := turboResultPageURL(uploadID)
+	pending := make(map[string]struct{}, len(files))
+	for _, fp := range files {
+		pending[fp] = struct{}{}
+	}
+
+	var lastErr error
+	attempts := 1 + len(turboResultPollDelays)
+	for attempt := 0; attempt < attempts && len(pending) > 0; attempt++ {
+		if attempt > 0 {
+			delay := turboResultPollDelays[attempt-1]
+			select {
+			case <-time.After(delay):
+			case <-ctx.Done():
+				lastErr = ctx.Err()
+				break
+			}
+		}
+
+		links, err := m.fetchTurboResultLinks(ctx, resultURL)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		for fp := range pending {
+			if link, ok := findTurboResultLink(links, turboUploadFileName(fp, job.Config)); ok {
+				results[fp] = services.BatchUploadResult{URL: link.imageURL, Thumb: link.thumbURL}
+				delete(pending, fp)
+			}
+		}
+		if len(pending) > 0 {
+			lastErr = fmt.Errorf("turbo result page is missing %d image link(s)", len(pending))
+		}
+	}
+
+	for fp := range pending {
+		if lastErr != nil {
+			results[fp] = services.BatchUploadResult{
+				Err: fmt.Errorf("turbo result page did not contain an image link for %s after waiting for Turbo to publish the batch result page: %w", filepath.Base(fp), lastErr),
+			}
+		} else {
+			results[fp] = services.BatchUploadResult{
+				Err: fmt.Errorf("turbo result page did not contain an image link for %s after waiting for Turbo to publish the batch result page", filepath.Base(fp)),
+			}
+		}
+	}
+	return results
+}
+
+func (m *Module) uploadHTML5(ctx context.Context, fp string, job *core.JobRequest) (turboUploadResponse, error) {
+	if err := core.WaitForRateLimit(ctx, ServiceID); err != nil {
+		return turboUploadResponse{}, err
 	}
 
 	m.mu.RLock()
@@ -65,7 +167,7 @@ func (m *Module) Upload(ctx context.Context, fp string, job *core.JobRequest) (s
 
 	if needsLogin {
 		if !m.doLogin(job.Creds) && strings.TrimSpace(job.Creds["turbo_user"]) != "" {
-			return "", "", fmt.Errorf("turbo login failed")
+			return turboUploadResponse{}, fmt.Errorf("turbo login failed")
 		}
 		m.mu.RLock()
 		endp = m.endpoint
@@ -77,9 +179,10 @@ func (m *Module) Upload(ctx context.Context, fp string, job *core.JobRequest) (s
 
 	fi, err := os.Stat(fp)
 	if err != nil {
-		return "", "", err
+		return turboUploadResponse{}, err
 	}
-	uploadID := turboUploadID(job.Config)
+	uploadID := ensureTurboUploadID(job.Config)
+	uploadName := turboUploadFileName(fp, job.Config)
 
 	pr, pw := io.Pipe()
 	writer := multipart.NewWriter(pw)
@@ -89,12 +192,11 @@ func (m *Module) Upload(ctx context.Context, fp string, job *core.JobRequest) (s
 
 		_ = writer.WriteField("upload_id", uploadID)
 		_ = writer.WriteField("qquuid", core.RandomString(32))
-		_ = writer.WriteField("qqfilename", filepath.Base(fp))
+		_ = writer.WriteField("qqfilename", uploadName)
 		_ = writer.WriteField("qqtotalfilesize", fmt.Sprintf("%d", fi.Size()))
 		_ = writer.WriteField("imcontent", turboContentValue(job.Config))
 		_ = writer.WriteField("thumb_size", turboThumbSize(job.Config))
 		if turboConfigEnabled(job.Config, "turbo_gallery_create", "gallery_create") {
-			_ = writer.WriteField("galleryC", "1")
 			if name := strings.TrimSpace(firstConfigValue(job.Config, "turbo_gallery_name", "gallery_name", "selected_gallery_name")); name != "" {
 				_ = writer.WriteField("galleryN", name)
 			}
@@ -103,7 +205,7 @@ func (m *Module) Upload(ctx context.Context, fp string, job *core.JobRequest) (s
 		}
 
 		h := make(textproto.MIMEHeader)
-		h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="qqfile"; filename="%s"`, core.QuoteEscape(filepath.Base(fp))))
+		h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="qqfile"; filename="%s"`, core.QuoteEscape(uploadName)))
 		h.Set("Content-Type", "application/octet-stream")
 		part, _ := writer.CreatePart(h)
 
@@ -122,12 +224,12 @@ func (m *Module) Upload(ctx context.Context, fp string, job *core.JobRequest) (s
 
 	resp, err := m.doRequest(ctx, "POST", endp, pr, writer.FormDataContentType())
 	if err != nil {
-		return "", "", err
+		return turboUploadResponse{}, err
 	}
 	raw, _ := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", "", fmt.Errorf("turbo upload HTTP %d: %s", resp.StatusCode, responseSnippet(raw))
+		return turboUploadResponse{}, fmt.Errorf("turbo upload HTTP %d: %s", resp.StatusCode, responseSnippet(raw))
 	}
 
 	var res struct {
@@ -139,26 +241,22 @@ func (m *Module) Upload(ctx context.Context, fp string, job *core.JobRequest) (s
 		Message string `json:"message"`
 	}
 	if err := json.Unmarshal(raw, &res); err != nil {
-		return "", "", fmt.Errorf("turbo upload returned invalid JSON: %w: %s", err, responseSnippet(raw))
+		return turboUploadResponse{}, fmt.Errorf("turbo upload returned invalid JSON: %w: %s", err, responseSnippet(raw))
 	}
 
 	if !res.Success {
 		if msg := strings.TrimSpace(firstNonEmpty(res.Error, res.Message)); msg != "" {
-			return "", "", fmt.Errorf("turbo upload failed: %s", msg)
+			return turboUploadResponse{}, fmt.Errorf("turbo upload failed: %s", msg)
 		}
-		return "", "", fmt.Errorf("turbo upload failed: %s", responseSnippet(raw))
+		return turboUploadResponse{}, fmt.Errorf("turbo upload failed: %s", responseSnippet(raw))
 	}
 	if res.NewURL == "" {
 		res.NewURL = res.NewURL2
 	}
-	if res.NewURL != "" {
-		return m.scrapeBBCode(resolveTurboURL(res.NewURL), filepath.Base(fp))
+	if res.NewURL == "" && res.ID == "" {
+		return turboUploadResponse{}, fmt.Errorf("turbo upload: no URL in response: %s", responseSnippet(raw))
 	}
-	if res.ID != "" {
-		u := fmt.Sprintf("https://www.turboimagehost.com/p/%s/%s.html", res.ID, filepath.Base(fp))
-		return u, u, nil
-	}
-	return "", "", fmt.Errorf("turbo upload: no URL in response: %s", responseSnippet(raw))
+	return turboUploadResponse{NewURL: res.NewURL, ID: res.ID}, nil
 }
 
 // --- internal ---
@@ -200,20 +298,66 @@ func (m *Module) doLogin(creds map[string]string) bool {
 	return true
 }
 
-func (m *Module) scrapeBBCode(urlStr, fileName string) (string, string, error) {
-	resp, err := m.doRequest(context.Background(), "GET", urlStr, nil, "")
+func (m *Module) scrapeBBCode(ctx context.Context, urlStr, fileName string) (string, string, error) {
+	isUploadResultPage := strings.Contains(urlStr, "html5_upload_result.tu")
+	attempts := 1
+	if isUploadResultPage {
+		attempts += len(turboResultPollDelays)
+	}
+
+	var lastErr error
+	for attempt := 0; attempt < attempts; attempt++ {
+		if attempt > 0 {
+			delay := turboResultPollDelays[attempt-1]
+			select {
+			case <-time.After(delay):
+			case <-ctx.Done():
+				return "", "", ctx.Err()
+			}
+		}
+
+		links, err := m.fetchTurboResultLinks(ctx, urlStr)
+		if err != nil {
+			lastErr = err
+			if !isUploadResultPage {
+				return urlStr, urlStr, nil
+			}
+			continue
+		}
+
+		if link, ok := findTurboResultLink(links, fileName); ok {
+			return link.imageURL, link.thumbURL, nil
+		}
+		if fileName == "" && len(links) == 1 {
+			return links[0].imageURL, links[0].thumbURL, nil
+		}
+		if !isUploadResultPage {
+			return urlStr, urlStr, nil
+		}
+		lastErr = fmt.Errorf("turbo result page did not contain an image link for %s", fileName)
+	}
+
+	if lastErr != nil {
+		return "", "", fmt.Errorf("%w after waiting for Turbo to publish the result page", lastErr)
+	}
+	return "", "", fmt.Errorf("turbo result page did not contain an image link for %s after waiting for Turbo to publish the result page", fileName)
+}
+
+func (m *Module) fetchTurboResultLinks(ctx context.Context, urlStr string) ([]turboResultLink, error) {
+	resp, err := m.doRequest(ctx, "GET", urlStr, nil, "")
 	if err != nil {
-		return urlStr, urlStr, nil
+		return nil, err
 	}
 	defer resp.Body.Close()
-	b, _ := io.ReadAll(resp.Body)
-	if imageURL, thumbURL, ok := extractTurboResultLink(string(b), fileName); ok {
-		return imageURL, thumbURL, nil
+
+	b, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		return nil, readErr
 	}
-	if strings.Contains(urlStr, "html5_upload_result.tu") {
-		return "", "", fmt.Errorf("turbo result page did not contain an image link for %s", fileName)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("turbo result page HTTP %d: %s", resp.StatusCode, responseSnippet(b))
 	}
-	return urlStr, urlStr, nil
+	return extractTurboResultLinks(string(b)), nil
 }
 
 func (m *Module) doRequest(ctx context.Context, method, urlStr string, body io.Reader, contentType string) (*http.Response, error) {
@@ -255,6 +399,24 @@ func turboUploadID(config map[string]string) string {
 	return core.RandomString(20)
 }
 
+func ensureTurboUploadID(config map[string]string) string {
+	if config == nil {
+		return core.RandomString(20)
+	}
+	if uploadID := firstConfigValue(config, "turbo_upload_id", "upload_id"); uploadID != "" {
+		return uploadID
+	}
+	uploadID := core.RandomString(20)
+	config["turbo_upload_id"] = uploadID
+	config["upload_id"] = uploadID
+	return uploadID
+}
+
+func turboResultPageURL(uploadID string) string {
+	values := url.Values{"upload_id": {uploadID}}
+	return turboBaseURL + "html5_upload_result.tu?" + values.Encode()
+}
+
 func turboContentValue(config map[string]string) string {
 	raw := strings.ToLower(firstConfigValue(config, "content_type", "turbo_content", "imcontent"))
 	switch raw {
@@ -273,6 +435,25 @@ func turboThumbSize(config map[string]string) string {
 		return "150"
 	}
 	return value
+}
+
+func turboUploadFileName(fp string, config map[string]string) string {
+	if override := firstConfigValue(config, "turbo_upload_filename", "qqfilename"); override != "" {
+		return override
+	}
+	if turboConfigEnabled(config, "turbo_gallery_create", "gallery_create") {
+		return turboStableGalleryFileName(fp)
+	}
+	return filepath.Base(fp)
+}
+
+func turboStableGalleryFileName(fp string) string {
+	ext := strings.ToLower(filepath.Ext(fp))
+	if ext == "" {
+		ext = ".jpg"
+	}
+	sum := sha1.Sum([]byte(strings.ToLower(filepath.ToSlash(fp))))
+	return "cu_" + hex.EncodeToString(sum[:])[:16] + ext
 }
 
 func turboConfigEnabled(config map[string]string, keys ...string) bool {
@@ -296,22 +477,37 @@ type turboResultLink struct {
 }
 
 func extractTurboResultLink(rawHTML string, fileName string) (string, string, bool) {
-	links := append(extractTurboBBCodeLinks(rawHTML), extractTurboThumbLinks(rawHTML)...)
+	links := extractTurboResultLinks(rawHTML)
 	if len(links) == 0 {
 		return "", "", false
 	}
 
-	if fileName != "" {
-		for _, link := range links {
-			if turboLinkMatchesFile(link, fileName) {
-				return link.imageURL, link.thumbURL, true
-			}
-		}
+	if link, ok := findTurboResultLink(links, fileName); ok {
+		return link.imageURL, link.thumbURL, true
 	}
 	if len(links) == 1 {
 		return links[0].imageURL, links[0].thumbURL, true
 	}
 	return "", "", false
+}
+
+func extractTurboResultLinks(rawHTML string) []turboResultLink {
+	return append(extractTurboBBCodeLinks(rawHTML), extractTurboThumbLinks(rawHTML)...)
+}
+
+func findTurboResultLink(links []turboResultLink, fileName string) (turboResultLink, bool) {
+	if fileName == "" {
+		if len(links) == 1 {
+			return links[0], true
+		}
+		return turboResultLink{}, false
+	}
+	for _, link := range links {
+		if turboLinkMatchesFile(link, fileName) {
+			return link, true
+		}
+	}
+	return turboResultLink{}, false
 }
 
 func extractTurboBBCodeLinks(rawHTML string) []turboResultLink {
