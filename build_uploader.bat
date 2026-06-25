@@ -139,12 +139,13 @@ echo.
 
 REM --- Build Go Sidecar ---
 echo [3/6] Building Go sidecar...
-if not exist "%SCRIPT_DIR%go.mod" (
-    echo [ERROR] go.mod not found!
+cd backend
+if not exist "go.mod" (
+    echo [ERROR] go.mod not found in backend!
     exit /b 1
 )
-if not exist "%SCRIPT_DIR%main.go" (
-    echo [ERROR] main.go not found!
+if not exist "main.go" (
+    echo [ERROR] main.go not found in backend!
     exit /b 1
 )
 
@@ -161,11 +162,12 @@ if "%ARCH%"=="32" (
     set "GOARCH=amd64"
 )
 
-"%GO_EXE%" build -ldflags="-s -w" -o "%SCRIPT_DIR%uploader.exe" .
+"%GO_EXE%" build -ldflags="-s -w" -o "..\uploader.exe" .
 if errorlevel 1 (
     echo [ERROR] Go build failed!
     exit /b 1
 )
+cd ..
 if not exist "%SCRIPT_DIR%uploader.exe" (
     echo [ERROR] Go build did not create uploader.exe!
     exit /b 1
@@ -175,8 +177,8 @@ echo.
 
 REM --- Setup Python Environment ---
 echo [4/6] Setting up Python environment...
-if not exist "%SCRIPT_DIR%requirements.txt" (
-    echo [ERROR] requirements.txt not found!
+if not exist "%SCRIPT_DIR%frontend\requirements.txt" (
+    echo [ERROR] frontend\requirements.txt not found!
     exit /b 1
 )
 
@@ -221,7 +223,7 @@ if errorlevel 1 (
     echo [ERROR] pip upgrade failed!
     exit /b 1
 )
-"%VENV_PYTHON%" -m pip install -r "%SCRIPT_DIR%requirements.txt"
+"%VENV_PYTHON%" -m pip install -r "%SCRIPT_DIR%frontend\requirements.txt"
 if errorlevel 1 (
     echo [ERROR] Python dependency install failed!
     exit /b 1
@@ -236,11 +238,15 @@ if not exist "%SCRIPT_DIR%uploader.exe" (
 )
 if exist "%SCRIPT_DIR%dist\%APP_NAME%.exe" del /q "%SCRIPT_DIR%dist\%APP_NAME%.exe"
 
+cd frontend
 "%VENV_PYTHON%" -m PyInstaller --noconsole --onefile --clean --noupx --name "%APP_NAME%" ^
-    --icon "logo.ico" ^
-    --add-data "uploader.exe;." ^
-    --add-data "logo.ico;." ^
-    --additional-hooks-dir "pyinstaller_hooks" ^
+    --icon "..\packaging\logo.ico" ^
+    --add-data "..\uploader.exe;." ^
+    --add-data "..\packaging\logo.ico;." ^
+    --additional-hooks-dir "..\packaging\pyinstaller_hooks" ^
+    --distpath "..\dist" ^
+    --workpath "..\build" ^
+    --specpath "..\packaging" ^
     --collect-all tkinterdnd2 ^
     --collect-submodules modules.plugins ^
     --hidden-import modules.plugins.imx ^
@@ -252,9 +258,11 @@ if exist "%SCRIPT_DIR%dist\%APP_NAME%.exe" del /q "%SCRIPT_DIR%dist\%APP_NAME%.e
     main.py
 
 if errorlevel 1 (
+    cd ..
     echo [ERROR] PyInstaller failed!
     exit /b 1
 )
+cd ..
 if not exist "%SCRIPT_DIR%dist\%APP_NAME%.exe" (
     echo [ERROR] Build failed! dist\%APP_NAME%.exe was not created.
     exit /b 1
@@ -375,12 +383,13 @@ if exist "%SCRIPT_DIR%venv" rmdir /s /q "%SCRIPT_DIR%venv"
 if exist "%SCRIPT_DIR%__pycache__" rmdir /s /q "%SCRIPT_DIR%__pycache__"
 if exist "%SCRIPT_DIR%.pytest_cache" rmdir /s /q "%SCRIPT_DIR%.pytest_cache"
 if exist "%SCRIPT_DIR%htmlcov" rmdir /s /q "%SCRIPT_DIR%htmlcov"
-if exist "%SCRIPT_DIR%%APP_NAME%.spec" del /q "%SCRIPT_DIR%%APP_NAME%.spec"
-if exist "%SCRIPT_DIR%.coverage" del /q "%SCRIPT_DIR%.coverage"
+if exist "%SCRIPT_DIR%packaging\%APP_NAME%.spec" del /q "%SCRIPT_DIR%packaging\%APP_NAME%.spec"
+if exist "%SCRIPT_DIR%frontend\.coverage" del /q "%SCRIPT_DIR%frontend\.coverage"
 if exist "%SCRIPT_DIR%uploader" del /q "%SCRIPT_DIR%uploader"
 if exist "%SCRIPT_DIR%uploader.exe" del /q "%SCRIPT_DIR%uploader.exe"
 if exist "%SCRIPT_DIR%go_installer.zip" del /q "%SCRIPT_DIR%go_installer.zip"
-for %%F in ("%SCRIPT_DIR%.coverage.*" "%SCRIPT_DIR%crash_log*.log") do if exist "%%~fF" del /q "%%~fF"
+for %%F in ("%SCRIPT_DIR%frontend\.coverage.*" "%SCRIPT_DIR%logs\crash_log*.log") do if exist "%%~fF" del /q "%%~fF"
+for %%F in ("%SCRIPT_DIR%crash_log*.log") do if exist "%%~fF" del /q "%%~fF"
 echo [INFO] Clean complete.
 echo.
 exit /b 0

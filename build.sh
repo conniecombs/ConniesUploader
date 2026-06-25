@@ -121,7 +121,7 @@ check_python() {
 
     if ! find_python; then
         print_error "Compatible Python not found."
-        echo "Need Python 3.$PYTHON_MIN_MINOR through 3.$PYTHON_MAX_MINOR because requirements.txt pins pyinstaller==6.11.1."
+        echo "Need Python 3.$PYTHON_MIN_MINOR through 3.$PYTHON_MAX_MINOR because frontend/requirements.txt pins pyinstaller==6.11.1."
         echo "Install Python 3.11, 3.12, or 3.13 and rerun this script."
         exit 1
     fi
@@ -153,12 +153,14 @@ check_go() {
 build_go_sidecar() {
     print_step "3/6" "Building Go sidecar..."
 
+    cd backend
+
     if [ ! -f "go.mod" ]; then
-        print_error "go.mod not found!"
+        print_error "go.mod not found in backend!"
         exit 1
     fi
     if [ ! -f "main.go" ]; then
-        print_error "main.go not found!"
+        print_error "main.go not found in backend!"
         exit 1
     fi
 
@@ -166,7 +168,9 @@ build_go_sidecar() {
     go mod download
 
     echo "  - Compiling optimized binary..."
-    go build -ldflags="-s -w" -o "$SIDECAR_NAME" .
+    go build -ldflags="-s -w" -o "../$SIDECAR_NAME" .
+
+    cd ..
 
     if [ ! -f "$SIDECAR_NAME" ]; then
         print_error "Failed to build uploader binary!"
@@ -180,8 +184,8 @@ build_go_sidecar() {
 setup_python_env() {
     print_step "4/6" "Setting up Python environment..."
 
-    if [ ! -f "requirements.txt" ]; then
-        print_error "requirements.txt not found!"
+    if [ ! -f "frontend/requirements.txt" ]; then
+        print_error "frontend/requirements.txt not found!"
         exit 1
     fi
 
@@ -204,7 +208,7 @@ setup_python_env() {
 
     echo "  - Installing Python dependencies..."
     "$VENV_PYTHON" -m pip install --upgrade pip
-    "$VENV_PYTHON" -m pip install -r requirements.txt
+    "$VENV_PYTHON" -m pip install -r frontend/requirements.txt
 
     echo "  - Python environment ready"
 }
@@ -218,12 +222,16 @@ build_executable() {
     fi
 
     echo "  - Packaging with PyInstaller..."
+    cd frontend
     "$VENV_PYTHON" -m PyInstaller --noconsole --onefile --clean \
         --name "$APP_NAME" \
-        --icon "logo.ico" \
-        --add-data "$SIDECAR_NAME$ADD_DATA_SEP." \
-        --add-data "logo.ico$ADD_DATA_SEP." \
-        --additional-hooks-dir "pyinstaller_hooks" \
+        --icon "../packaging/logo.ico" \
+        --add-data "../$SIDECAR_NAME$ADD_DATA_SEP." \
+        --add-data "../packaging/logo.ico$ADD_DATA_SEP." \
+        --additional-hooks-dir "../packaging/pyinstaller_hooks" \
+        --distpath "../dist" \
+        --workpath "../build" \
+        --specpath "../packaging" \
         --collect-all tkinterdnd2 \
         --collect-submodules modules.plugins \
         --hidden-import modules.plugins.imx \
@@ -233,6 +241,7 @@ build_executable() {
         --hidden-import modules.plugins.imagebam \
         --hidden-import modules.plugins.imgur \
         main.py
+    cd ..
 
     if [ ! -f "$DIST_EXE" ]; then
         print_error "Build failed! No executable found in dist/ folder."
@@ -303,8 +312,8 @@ clean_build() {
     if [ -n "$clean_python" ]; then
         "$clean_python" scripts/maintenance/clean_generated.py
     else
-        rm -rf build dist htmlcov __pycache__ .pytest_cache
-        rm -f "$APP_NAME.spec" uploader uploader.exe .coverage .coverage.* crash_log*.log
+        rm -rf build dist htmlcov __pycache__ .pytest_cache frontend/__pycache__ frontend/.pytest_cache frontend/htmlcov backend/__debug_bin
+        rm -f "packaging/$APP_NAME.spec" uploader uploader.exe .coverage .coverage.* logs/crash_log*.log crash_log*.log
     fi
     echo "Clean complete!"
 }

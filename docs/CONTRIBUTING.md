@@ -20,19 +20,24 @@ cd ConniesUploader
 Set up Go:
 
 ```bash
+cd backend
 go mod download
-go build -ldflags="-s -w" -o uploader .
+go build -ldflags="-s -w" -o ../uploader .
+cd ..
 ```
 
 On Windows, build the sidecar as `uploader.exe`:
 
 ```powershell
-go build -ldflags="-s -w" -o uploader.exe .
+cd backend
+go build -ldflags="-s -w" -o ../uploader.exe .
+cd ..
 ```
 
 Set up Python:
 
 ```bash
+cd frontend
 python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
@@ -41,6 +46,7 @@ pip install -r requirements.txt
 On Windows PowerShell:
 
 ```powershell
+cd frontend
 python -m venv venv
 .\venv\Scripts\Activate.ps1
 pip install -r requirements.txt
@@ -49,6 +55,7 @@ pip install -r requirements.txt
 Run the app from source:
 
 ```bash
+cd frontend
 python main.py
 ```
 
@@ -61,39 +68,43 @@ Prerequisites:
 
 ```text
 ConniesUploader/
-├── main.py                    # Python GUI entry point
-├── main.go                    # Go sidecar entry point
-├── handlers.go                # Go sidecar request handlers
-├── core/                      # Go upload utilities, HTTP runner, retry, rate limits, output
-├── services/                  # Go compatibility/service helpers
-├── modules/
-│   ├── ui/                    # CustomTkinter windows and main app UI
-│   ├── plugins/               # Auto-discovered image-host plugins
-│   ├── gallery_cache.py       # Persistent gallery cache/pin/last-used storage
-│   ├── gallery_manager.py     # Gallery Manager window
-│   ├── gallery_service.py     # Gallery normalization/list/create service layer
-│   ├── sidecar.py             # Go sidecar process bridge
-│   ├── template_manager.py    # Template storage, validation, parser, rendering
-│   ├── upload_manager.py      # Upload job orchestration
-│   └── viper_api.py           # ViperGirls target/history UI and posting helpers
-├── tests/                     # Python test suite
+├── frontend/
+│   ├── main.py                    # Python GUI entry point
+│   ├── modules/
+│   │   ├── ui/                    # CustomTkinter windows and main app UI
+│   │   ├── plugins/               # Auto-discovered image-host plugins
+│   │   ├── gallery_cache.py       # Persistent gallery cache/pin/last-used storage
+│   │   ├── gallery_manager.py     # Gallery Manager window
+│   │   ├── gallery_service.py     # Gallery normalization/list/create service layer
+│   │   ├── sidecar.py             # Go sidecar process bridge
+│   │   ├── template_manager.py    # Template storage, validation, parser, rendering
+│   │   ├── upload_manager.py      # Upload job orchestration
+│   │   └── viper_api.py           # ViperGirls target/history UI and posting helpers
+│   └── tests/                     # Python test suite
+├── backend/
+│   ├── main.go                    # Go sidecar entry point
+│   ├── handlers.go                # Go sidecar request handlers
+│   ├── core/                      # Go upload utilities, HTTP runner, retry, rate limits, output
+│   └── go.mod                     # Go dependencies
 ├── scripts/
 │   ├── diagnostics/           # Local troubleshooting helpers
 │   └── maintenance/           # Cleanup and maintenance helpers
-├── pyinstaller_hooks/         # Local PyInstaller hooks
+├── packaging/
+│   └── pyinstaller_hooks/         # Local PyInstaller hooks
+├── logs/                      # Execution logs
 ├── docs/                      # User, developer, release, and historical docs
 ├── .github/workflows/         # CI, release, and security workflows
 ├── build_uploader.bat         # Windows build script
 ├── build.sh                   # Linux/macOS build script
 ├── Makefile                   # Cross-platform build helpers
-├── go.mod                     # Go dependencies
-└── requirements.txt           # Python dependencies
+├── backend/go.mod             # Go dependencies
+└── frontend/requirements.txt  # Python dependencies
 ```
 
 Generated/user data should stay out of commits:
 
 - `build/`, `dist/`, `htmlcov/`, `.coverage*`, `.pytest_cache/`
-- `uploader`, `uploader.exe`, `ConniesUploader.spec`
+- `uploader`, `uploader.exe`, `packaging/ConniesUploader.spec`
 - `Output/`, legacy repo-local `user_settings.json`, legacy `user_templates.json`
 - `~/.conniesuploader/*.json`
 - `crash_log*.log`
@@ -123,15 +134,15 @@ git checkout -b feature/short-description
 3. Run relevant checks.
 
 ```bash
-go test ./...
-go vet ./...
-pytest tests/ -v
-flake8 main.py modules/ --max-line-length=120 --ignore=E501,W503 --exclude=__pycache__
+(cd backend && go test ./...)
+(cd backend && go vet ./...)
+(cd frontend && pytest tests/ -v)
+(cd frontend && flake8 main.py modules/ --max-line-length=120 --ignore=E501,W503 --exclude=__pycache__)
 ```
 
 4. Test the affected workflow manually.
 
-- For UI changes, run `python main.py` and test the exact window/control you changed.
+- For UI changes, run `cd frontend && python main.py` and test the exact window/control you changed.
 - For packaging changes, run the platform build script.
 - For upload changes, test one small batch before larger batches.
 - For ViperGirls or gallery changes, test missing credentials and invalid target/gallery states as well as the success path.
@@ -183,7 +194,7 @@ PR descriptions should include:
 
 New hosts should be Python plugin-first.
 
-1. Add `modules/plugins/yourservice.py`.
+1. Add `frontend/modules/plugins/yourservice.py`.
 2. Subclass `ImageHostPlugin`.
 3. Define `id`, `name`, `metadata`, and `settings_schema`.
 4. Add `validate_configuration()` for service-specific rules.
@@ -192,19 +203,19 @@ New hosts should be Python plugin-first.
 7. Use `finalize_batch()` for service-specific finalization after uploads.
 8. Add tests for generated request shape, validation, and any gallery/finalization behavior.
 
-Do not register the plugin in `modules/plugins/__init__.py`; plugin discovery is automatic through `modules/plugin_manager.py`. Modules named `base`, `helpers`, `schema_renderer`, or ending in `_legacy` are skipped.
+Do not register the plugin in `frontend/modules/plugins/__init__.py`; plugin discovery is automatic through `frontend/modules/plugin_manager.py`. Modules named `base`, `helpers`, `schema_renderer`, or ending in `_legacy` are skipped.
 
-Only add Go code under `services/` when the generic HTTP runner cannot cover the service behavior. Document why Go support is necessary and keep the Go surface narrow.
+Only add Go code when the generic HTTP runner cannot cover the behavior. The Go sidecar should remain host-agnostic.
 
 ## Testing Checklist
 
 Run the automated checks that match the change:
 
 ```bash
-pytest tests/ -v
-go test ./...
-go vet ./...
-flake8 main.py modules/ --max-line-length=120 --ignore=E501,W503 --exclude=__pycache__
+(cd frontend && pytest tests/ -v)
+(cd backend && go test ./...)
+(cd backend && go vet ./...)
+(cd frontend && flake8 main.py modules/ --max-line-length=120 --ignore=E501,W503 --exclude=__pycache__)
 ```
 
 Manual workflow checks:
@@ -238,7 +249,9 @@ make build
 Manual Windows PyInstaller build, matching the current build script:
 
 ```batch
-go build -ldflags="-s -w" -o uploader.exe .
+cd backend
+go build -ldflags="-s -w" -o ../uploader.exe .
+cd ..
 
 pyinstaller ^
   --noconsole ^
@@ -246,10 +259,10 @@ pyinstaller ^
   --clean ^
   --noupx ^
   --name "ConniesUploader" ^
-  --icon "logo.ico" ^
+  --icon "packaging/logo.ico" ^
   --add-data "uploader.exe;." ^
-  --add-data "logo.ico;." ^
-  --additional-hooks-dir "pyinstaller_hooks" ^
+  --add-data "packaging/logo.ico;." ^
+  --additional-hooks-dir "packaging/pyinstaller_hooks" ^
   --collect-all tkinterdnd2 ^
   --collect-submodules modules.plugins ^
   --hidden-import modules.plugins.imx ^
@@ -258,7 +271,10 @@ pyinstaller ^
   --hidden-import modules.plugins.turbo ^
   --hidden-import modules.plugins.imagebam ^
   --hidden-import modules.plugins.imgur ^
-  main.py
+  --workpath build ^
+  --distpath dist ^
+  --specpath packaging ^
+  frontend/main.py
 ```
 
 The packaged executable should include the Go sidecar, Tk/Tcl runtime, tkinterdnd2 assets, and all active plugin modules. Use `python scripts/diagnostics/check_sidecar_location.py` when diagnosing source-run sidecar lookup problems.

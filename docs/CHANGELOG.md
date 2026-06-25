@@ -10,6 +10,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Expanded the user tutorial's Template Editor guide with a safer editing workflow, rendering model, conditional syntax reference, image/cover loop guidance, separator examples, and troubleshooting notes.
+- **Architecture:** Completed migration from Go service modules to a pure generic HTTP runner. The `backend/services/` directory has been removed entirely. All host-specific logic (gallery creation, login flows, forum posting, upload construction) now lives in Python plugins as declarative HTTP request specs.
+- Added `http_request` action to Go sidecar for standalone (non-upload) HTTP operations like login, gallery creation, and forum posting.
+- Added `http_batch_resolve` action to Go sidecar for deferred batch result polling.
+- Moved post scheduler from `services/vipergirls/scheduler.go` to `core/scheduler.go` with a generic `PostFunc` callback.
+- Updated `api.py` to build generic HTTP specs instead of using service-specific sidecar actions.
+- Updated `turbo.py` plugin with a full `build_http_request()` implementation replacing the legacy Go fallback.
+- Updated `viper_api.py` login and post methods to use generic HTTP request specs.
+- Updated `gallery_service.py` to use generic HTTP request specs for gallery operations.
+- Removed legacy `upload` action (replaced by `http_upload`), `login`, `verify`, `create_gallery`, `finalize_gallery`, `list_galleries`, `viper_login`, and `viper_post` actions from Go sidecar.
 
 ### Fixed
 

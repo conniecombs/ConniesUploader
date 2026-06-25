@@ -53,27 +53,30 @@ clean:
 install-deps:
 	@echo "Installing Python dependencies..."
 	$(PYTHON) -m pip install --upgrade pip
-	$(PYTHON) -m pip install -r requirements.txt
+	$(PYTHON) -m pip install -r frontend/requirements.txt
 	@echo "Dependencies installed!"
 
 # Build Go sidecar
 build-go:
 	@echo "Building Go sidecar..."
 	@echo "  - Running go mod tidy..."
-	go mod tidy
+	cd backend && go mod tidy
 	@echo "  - Compiling optimized binary..."
-	go build $(GO_FLAGS) -o $(GO_OUTPUT) .
+	cd backend && go build $(GO_FLAGS) -o ../$(GO_OUTPUT) .
 	@echo "Go sidecar built: $(GO_OUTPUT)"
 
 # Build Python application with PyInstaller
 build-python: build-go
 	@echo "Building Python application..."
-	pyinstaller $(PYINSTALLER_FLAGS) \
+	cd frontend && pyinstaller $(PYINSTALLER_FLAGS) \
 		--name "$(APP_NAME)" \
-		--icon "logo.ico" \
-		--add-data "$(GO_OUTPUT)$(if $(filter Windows,$(DETECTED_OS)),;.,:)" \
-		--add-data "logo.ico$(if $(filter Windows,$(DETECTED_OS)),;.,:)" \
-		--additional-hooks-dir "pyinstaller_hooks" \
+		--icon "../packaging/logo.ico" \
+		--add-data "../$(GO_OUTPUT)$(if $(filter Windows,$(DETECTED_OS)),;.,:)" \
+		--add-data "../packaging/logo.ico$(if $(filter Windows,$(DETECTED_OS)),;.,:)" \
+		--additional-hooks-dir "../packaging/pyinstaller_hooks" \
+		--distpath "../dist" \
+		--workpath "../build" \
+		--specpath "../packaging" \
 		--collect-all tkinterdnd2 \
 		--collect-submodules modules.plugins \
 		--hidden-import modules.plugins.imx \
@@ -98,7 +101,8 @@ package: build-python
 # Run tests
 test:
 	@echo "Running tests..."
-	$(PYTHON) -m pytest tests/ -v
+	cd frontend && $(PYTHON) -m pytest tests/ -v
+	cd backend && go test ./...
 	@echo "Tests complete!"
 
 # Setup development environment
@@ -109,7 +113,7 @@ dev:
 		$(PYTHON) -m venv venv; \
 	fi
 	@echo "Installing dependencies..."
-	$(VENV_BIN)/pip install -r requirements.txt
+	$(VENV_BIN)/pip install -r frontend/requirements.txt
 	@echo "Building Go sidecar..."
 	$(MAKE) build-go
 	@echo "Development environment ready!"
@@ -121,4 +125,4 @@ quick: build-go build-python
 # Run the application (for testing)
 run: build-go
 	@echo "Running application..."
-	$(PYTHON) main.py
+	cd frontend && $(PYTHON) main.py

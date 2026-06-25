@@ -29,14 +29,24 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v5
 
+    - name: Set up Go
+      if: matrix.language == 'go'
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.26.4'
+        check-latest: true
+        cache-dependency-path: backend/go.sum
+
     - name: Initialize CodeQL
       uses: github/codeql-action/init@v4
       with:
         languages: ${{ matrix.language }}
         queries: security-extended
 
-    - name: Autobuild
-      uses: github/codeql-action/autobuild@v4
+    - name: Build Go module for CodeQL
+      if: matrix.language == 'go'
+      run: go build ./...
+      working-directory: backend
 
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v4
@@ -60,11 +70,13 @@ jobs:
       with:
         go-version: '1.26.4'
         check-latest: true
+        cache-dependency-path: backend/go.sum
 
     - name: Run gosec
-      uses: securego/gosec@master
-      with:
-        args: '-fmt sarif -out gosec-results.sarif ./...'
+      run: |
+        go install github.com/securego/gosec/v2/cmd/gosec@latest
+        gosec -fmt sarif -out ../gosec-results.sarif ./...
+      working-directory: backend
 
     - name: Upload SARIF file
       uses: github/codeql-action/upload-sarif@v4
@@ -86,12 +98,14 @@ jobs:
       with:
         go-version: '1.26.4'
         check-latest: true
+        cache-dependency-path: backend/go.sum
 
     - name: Install govulncheck
       run: go install golang.org/x/vuln/cmd/govulncheck@latest
 
     - name: Run govulncheck
       run: govulncheck ./...
+      working-directory: backend
 
   # Python security scanning
   bandit:
@@ -114,7 +128,7 @@ jobs:
       run: pip install bandit[sarif]
 
     - name: Run Bandit
-      run: bandit -r main.py modules/ --severity-level medium -f sarif -o bandit-results.sarif
+      run: bandit -r frontend/main.py frontend/modules/ --severity-level medium -f sarif -o bandit-results.sarif
 
     - name: Upload SARIF file
       uses: github/codeql-action/upload-sarif@v4
@@ -135,12 +149,14 @@ jobs:
       uses: actions/setup-python@v6
       with:
         python-version: '3.11'
+        cache: 'pip'
+        cache-dependency-path: frontend/requirements.txt
 
     - name: Install pip-audit
       run: python -m pip install pip-audit==2.10.0
 
     - name: Check dependencies
-      run: pip-audit -r requirements.txt -f json -o pip-audit-report.json
+      run: pip-audit -r frontend/requirements.txt -f json -o pip-audit-report.json
 
     - name: Upload pip-audit report
       uses: actions/upload-artifact@v6

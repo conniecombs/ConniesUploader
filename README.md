@@ -170,7 +170,10 @@ The cleanup helper removes generated artifacts such as `build/`, `dist/`, `htmlc
 Manual development run on Windows PowerShell:
 
 ```powershell
-go build -ldflags="-s -w" -o uploader.exe .
+cd backend
+go build -ldflags="-s -w" -o ../uploader.exe .
+cd ..
+cd frontend
 python -m venv venv
 .\venv\Scripts\Activate.ps1
 pip install -r requirements.txt
@@ -180,7 +183,10 @@ python main.py
 Manual development run on Linux/macOS:
 
 ```bash
-go build -ldflags="-s -w" -o uploader .
+cd backend
+go build -ldflags="-s -w" -o ../uploader .
+cd ..
+cd frontend
 python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
@@ -221,20 +227,17 @@ Additional tools are available from the application menus:
 
 Connie's Uploader uses a hybrid desktop architecture:
 
-- `main.py` starts the Python GUI.
-- `modules/ui/` contains the CustomTkinter interface.
-- `modules/plugins/` contains service plugins and plugin helpers.
-- `modules/sidecar.py` manages the Go sidecar process.
-- `main.go` and `handlers.go` provide the Go sidecar entry point and request handlers.
-- `core/` contains shared Go upload utilities such as validation, retry, rate limiting, HTTP helpers, and output handling.
-- `services/` contains Go service compatibility helpers and host-specific operations that are not fully expressed as generic upload specs, such as gallery/finalization/posting support.
+- `frontend/` contains the Python GUI (`main.py`) and all `modules/`.
+- `backend/` contains the Go sidecar (`main.go`, `handlers.go`), along with the generic `core/` HTTP runner.
+- `packaging/` contains PyInstaller build assets and custom hooks.
+- `logs/` contains the application logs.
 - `scripts/maintenance/` contains repository cleanup and maintenance helpers.
 - `scripts/diagnostics/` contains local troubleshooting helpers that are not part of the app runtime.
 - Python and Go communicate through JSON events over standard input and output.
 
 Generated folders and runtime data are intentionally kept out of source control:
 
-- Build output: `build/`, `dist/`, `uploader`, `uploader.exe`, `ConniesUploader.spec`
+- Build output: `build/`, `dist/`, `uploader`, `uploader.exe`, `packaging/ConniesUploader.spec`
 - Test output: `.coverage`, `htmlcov/`, `.pytest_cache/`
 - Local app data: `Output/`, legacy repo-local `user_settings.json` and `user_templates.json`, `~/.conniesuploader/*.json`
 - Runtime diagnostics: `crash_log*.log`
@@ -258,9 +261,9 @@ The security workflow runs CodeQL, gosec, govulncheck, Bandit, pip-audit, depend
 Common commands:
 
 ```bash
-go test ./...
-pytest tests/ -v
-flake8 main.py modules/ --max-line-length=120 --ignore=E501,W503 --exclude=__pycache__
+(cd backend && go test ./...)
+(cd frontend && pytest tests/ -v)
+(cd frontend && flake8 main.py modules/ --max-line-length=120 --ignore=E501,W503 --exclude=__pycache__)
 ```
 
 Build helpers:
@@ -296,7 +299,7 @@ python scripts/diagnostics/check_sidecar_location.py
 
 **`uploader.exe` or `uploader` not found**
 
-Build the Go sidecar with `go build -ldflags="-s -w" -o uploader.exe .` on Windows or `go build -ldflags="-s -w" -o uploader .` on Linux/macOS.
+Build the Go sidecar with `cd backend && go build -ldflags="-s -w" -o ../uploader.exe .` on Windows or `cd backend && go build -ldflags="-s -w" -o ../uploader .` on Linux/macOS.
 
 **Uploads fail immediately**
 
@@ -316,7 +319,7 @@ Confirm Python 3.11+ and Go 1.25.9+ are installed, then rerun the appropriate bu
 
 **Dependency installation fails**
 
-Recreate the virtual environment and reinstall from `requirements.txt`.
+Recreate the virtual environment and reinstall from `frontend/requirements.txt`.
 
 ## Contributing
 

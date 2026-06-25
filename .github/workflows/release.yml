@@ -72,17 +72,20 @@ jobs:
         go-version: '1.26.4'
         check-latest: true
         cache: true
+        cache-dependency-path: backend/go.sum
 
     - name: Set up Python
       uses: actions/setup-python@v6
       with:
         python-version: '3.11'
         cache: 'pip'
+        cache-dependency-path: frontend/requirements.txt
 
     - name: Build Go sidecar
       run: |
+        cd backend
         go mod download
-        go build -v -ldflags="-s -w" -o uploader.exe .
+        go build -v -ldflags="-s -w" -o ../uploader.exe .
 
     - name: Verify Go sidecar
       run: |
@@ -96,15 +99,17 @@ jobs:
     - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
+        pip install -r frontend/requirements.txt
 
     - name: Create PyInstaller Spec
       run: |
+        cd frontend
         pyi-makespec --noconsole --onefile --name "ConniesUploader" `
-          --icon "logo.ico" `
-          --add-binary "uploader.exe;." `
-          --add-data "logo.ico;." `
-          --additional-hooks-dir "pyinstaller_hooks" `
+          --specpath "../packaging" `
+          --icon "../packaging/logo.ico" `
+          --add-binary "../uploader.exe;." `
+          --add-data "../packaging/logo.ico;." `
+          --additional-hooks-dir "../packaging/pyinstaller_hooks" `
           --collect-all tkinterdnd2 `
           --collect-submodules modules.plugins `
           --hidden-import modules.plugins.imx `
@@ -118,7 +123,8 @@ jobs:
 
     - name: Build from Spec
       run: |
-        pyinstaller --clean ConniesUploader.spec
+        cd frontend
+        pyinstaller --distpath ../dist --workpath ../build --clean ../packaging/ConniesUploader.spec
 
     - name: Verify build and bundling
       run: |
@@ -170,29 +176,34 @@ jobs:
         go-version: '1.26.4'
         check-latest: true
         cache: true
+        cache-dependency-path: backend/go.sum
 
     - name: Set up Python
       uses: actions/setup-python@v6
       with:
         python-version: '3.11'
         cache: 'pip'
+        cache-dependency-path: frontend/requirements.txt
 
     - name: Build Go sidecar
       run: |
+        cd backend
         go mod download
-        go build -v -ldflags="-s -w" -o uploader .
+        go build -v -ldflags="-s -w" -o ../uploader .
 
     - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
+        pip install -r frontend/requirements.txt
 
     - name: Build with PyInstaller
       run: |
+        cd frontend
         pyinstaller --noconsole --onefile --clean --name "ConniesUploader" \
-          --add-binary "uploader:." \
-          --add-data "logo.ico:." \
-          --additional-hooks-dir "pyinstaller_hooks" \
+          --distpath ../dist --workpath ../build \
+          --add-binary "../uploader:." \
+          --add-data "../packaging/logo.ico:." \
+          --additional-hooks-dir "../packaging/pyinstaller_hooks" \
           --collect-all tkinterdnd2 \
           --collect-submodules modules.plugins \
           --hidden-import modules.plugins.imx \
@@ -254,29 +265,34 @@ jobs:
         go-version: '1.26.4'
         check-latest: true
         cache: true
+        cache-dependency-path: backend/go.sum
 
     - name: Set up Python
       uses: actions/setup-python@v6
       with:
         python-version: '3.11'
         cache: 'pip'
+        cache-dependency-path: frontend/requirements.txt
 
     - name: Build Go sidecar
       run: |
+        cd backend
         go mod download
-        go build -v -ldflags="-s -w" -o uploader .
+        go build -v -ldflags="-s -w" -o ../uploader .
 
     - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
+        pip install -r frontend/requirements.txt
 
     - name: Build with PyInstaller
       run: |
+        cd frontend
         pyinstaller --noconsole --onefile --clean --name "ConniesUploader" \
-          --add-binary "uploader:." \
-          --add-data "logo.ico:." \
-          --additional-hooks-dir "pyinstaller_hooks" \
+          --distpath ../dist --workpath ../build \
+          --add-binary "../uploader:." \
+          --add-data "../packaging/logo.ico:." \
+          --additional-hooks-dir "../packaging/pyinstaller_hooks" \
           --collect-all tkinterdnd2 \
           --collect-submodules modules.plugins \
           --hidden-import modules.plugins.imx \

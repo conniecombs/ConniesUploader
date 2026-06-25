@@ -14,12 +14,12 @@ Use this guide when you want to:
 - Add gallery creation/finalization support.
 - Debug generic HTTP runner request specs.
 
-For the declarative UI field format only, see [Schema Plugin Guide](SCHEMA_PLUGIN_GUIDE.md).
+For the declarative UI field format only, see [Schema Plugin Guide](frontend/docs/SCHEMA_PLUGIN_GUIDE.md).
 
 ## Current Architecture
 
 ```text
-modules/plugins/<service>.py
+frontend/modules/plugins/<service>.py
   -> ImageHostPlugin metadata/settings_schema/validation
   -> build_http_request()
   -> UploadManager sends http_spec to Go sidecar
@@ -46,20 +46,20 @@ The Go sidecar supports:
 
 Current active plugins:
 
-- `modules/plugins/imagebam.py`
-- `modules/plugins/imgur.py`
-- `modules/plugins/imx.py`
-- `modules/plugins/pixhost.py`
-- `modules/plugins/turbo.py`
-- `modules/plugins/vipr.py`
+- `frontend/modules/plugins/imagebam.py`
+- `frontend/modules/plugins/imgur.py`
+- `frontend/modules/plugins/imx.py`
+- `frontend/modules/plugins/pixhost.py`
+- `frontend/modules/plugins/turbo.py`
+- `frontend/modules/plugins/vipr.py`
 
 There is also a legacy Pixhost file ending in `_legacy`; the plugin manager intentionally skips `_legacy` modules.
 
 ## Plugin Discovery
 
-Plugins are discovered automatically by `modules/plugin_manager.py` using `pkgutil.iter_modules(modules.plugins.__path__)`.
+Plugins are discovered automatically by `frontend/modules/plugin_manager.py` using `pkgutil.iter_modules(modules.plugins.__path__)`.
 
-You do not need to edit `modules/plugins/__init__.py`; that file is not required for registering plugins.
+You do not need to edit `frontend/modules/plugins/__init__.py`; that file is not required for registering plugins.
 
 The plugin manager skips:
 
@@ -530,14 +530,18 @@ pytest tests/test_build_contract.py -v
 1. Run from source with a built sidecar.
 
 ```bash
-go build -ldflags="-s -w" -o uploader .
+cd backend
+go build -ldflags="-s -w" -o ../uploader .
+cd ..
 python main.py
 ```
 
 On Windows:
 
 ```powershell
-go build -ldflags="-s -w" -o uploader.exe .
+cd backend
+go build -ldflags="-s -w" -o ../uploader.exe .
+cd ..
 python main.py
 ```
 
@@ -570,7 +574,7 @@ If you add a new active plugin, update the build scripts, release workflow, and 
 
 ## Checklist
 
-- [ ] Plugin file added under `modules/plugins/`.
+- [ ] Plugin file added under `frontend/modules/plugins/`.
 - [ ] Class inherits from `ImageHostPlugin`.
 - [ ] `id` is unique and stable.
 - [ ] `metadata` describes credentials, features, and limits.

@@ -4,17 +4,17 @@
 
 - **Product Version:** v2.0.0
 - **Architecture Version:** v2.6.0
-- **Last Updated:** 2026-06-22
+- **Last Updated:** 2026-06-25
 
 Connie's Uploader Ultimate is a hybrid desktop app:
 
 - Python owns the GUI, user settings, plugin discovery, templates, galleries, ViperGirls posting, and output generation.
-- Go runs as a local sidecar process and owns concurrent upload execution, rate limiting, retries, HTTP request execution, response parsing, and host-specific compatibility paths that still need Go support.
+- Go runs as a local sidecar process and owns concurrent upload execution, rate limiting, retries, generic HTTP request execution, response parsing, cookie/session management, and scheduled post timing.
 - Python and Go communicate through JSON events over standard input and standard output.
 
-The primary upload model is plugin-driven. Active Python plugins build generic HTTP request specifications with `build_http_request()`, and the Go sidecar executes those specs through the generic HTTP runner. This means most upload host changes happen in Python plugin files, without recompiling Go.
+The upload model is entirely plugin-driven. Python plugins build generic HTTP request specifications with `build_http_request()`, and the Go sidecar executes those specs through the generic HTTP runner. All host-specific logic lives in Python plugin files. The Go sidecar has no knowledge of any specific image host — it is a "dumb and fast" HTTP runner.
 
-The old split-brain problem is resolved for normal upload flows, but the Go `services/` directory is not empty by design. It still contains compatibility helpers and host-specific operations that are not fully represented as generic upload specs, such as gallery support, Pixhost finalization, ViperGirls posting support, and legacy fallback paths. Treat Go as a mostly generic runner with a small support layer, not as a place to add first-choice upload logic for new hosts.
+Go also manages a post scheduler for ViperGirls timed posts, using the same generic HTTP request mechanism to execute posts when their scheduled time arrives.
 
 ## Active Services
 
@@ -32,13 +32,13 @@ Plugin discovery is automatic through `modules/plugin_manager.py`, which scans `
 ## Runtime Flow
 
 ```text
-main.py
+main.py (in frontend/)
   -> modules/ui/main_window.py
   -> modules/plugin_manager.py
   -> modules/plugins/<service>.py
   -> modules/upload_manager.py
   -> modules/sidecar.py
-  -> Go sidecar: main.go, handlers.go, core/, services/
+  -> Go sidecar (in backend/): main.go, handlers.go, core/
   -> sidecar events back to Python
   -> output generation, history, optional ViperGirls posting
 ```
@@ -56,18 +56,18 @@ For a typical upload:
 
 ### GUI and Workflow
 
-- Main app shell and queue: `modules/ui/main_window.py`
-- Drag and drop/file scanning: `modules/dnd.py`, `modules/file_handler.py`
-- Settings persistence: `modules/settings_manager.py`
-- Credentials: `modules/credentials.py`
-- Upload orchestration: `modules/upload_manager.py`
-- Sidecar lifecycle/events: `modules/sidecar.py`
+- Main app shell and queue: `frontend/modules/ui/main_window.py`
+- Drag and drop/file scanning: `frontend/modules/dnd.py`, `frontend/modules/file_handler.py`
+- Settings persistence: `frontend/modules/settings_manager.py`
+- Credentials: `frontend/modules/credentials_manager.py`
+- Upload orchestration: `frontend/modules/upload_manager.py`
+- Sidecar lifecycle/events: `frontend/modules/sidecar.py`
 
 The GUI keeps user-facing controls synchronized with the upload job model. Worker Count is clamped to `1-16`, Thread Limit is clamped to `1-10`, and upload checks prevent or warn on invalid preflight state before starting work.
 
 ### Plugins
 
-Plugins live in `modules/plugins/` and inherit from `ImageHostPlugin`.
+Plugins live in `frontend/modules/plugins/` and inherit from `ImageHostPlugin`.
 
 Recommended plugin responsibilities:
 
@@ -82,7 +82,7 @@ Legacy `initialize_session()` and `upload_file()` hooks remain for compatibility
 
 ### Templates and Output
 
-`modules/template_manager.py` stores custom templates at `~/.conniesuploader/templates.json` and migrates legacy `user_templates.json` files automatically.
+`frontend/modules/template_manager.py` stores custom templates at `~/.conniesuploader/templates.json` and migrates legacy `user_templates.json` files automatically.
 
 The template engine supports:
 
@@ -134,16 +134,20 @@ Go owns:
 - Rate limiting
 - Retry behavior
 - Multipart upload construction
-- Generic HTTP request execution
+- Generic HTTP request execution (uploads and standalone requests)
 - Pre-request/follow-up chains
 - Cookie/session handling
 - Response parsing for JSON, HTML selectors, regex extraction, and URL templates
-- Host-specific support that has not been moved into generic specs
+- Scheduled post timing via `core/scheduler.go`
+- Batch resolve polling for deferred upload workflows
+
+Go does **not** contain any host-specific knowledge. All service-specific behavior is defined by Python plugins through generic HTTP request specs.
 
 ### Generic HTTP Runner
 
-The generic runner supports:
+The generic runner supports two action types:
 
+**`http_upload`** — File upload with multipart construction:
 - Upload request specs from Python plugins
 - Multi-step pre-requests and follow-up requests
 - Shared cookies for login/session workflows
@@ -153,6 +157,18 @@ The generic runner supports:
 - Regex extraction with `regex:` selectors
 - URL and thumbnail templates
 - Correlated request IDs so stale sidecar events do not satisfy the wrong upload
+
+**`http_request`** — Standalone (non-file) HTTP requests:
+- Login flows, gallery creation, forum posting, and other non-upload operations
+- Form-encoded POST requests with value substitution
+- Response field extraction (JSON and regex)
+- Success checking (contains, equals, not_empty, regex)
+- Pre-request chains for session setup
+
+**`http_batch_resolve`** — Deferred batch result polling:
+- Polls a result page with configurable delays
+- Extracts per-file links using regex patterns
+- Matches extracted links to original filenames
 
 Regex selectors are supplied by plugin code. They should be compiled with graceful errors rather than process panics; this remains a fault-tolerance hardening item when touching the Go parser.
 
@@ -202,10 +218,10 @@ Known hardening opportunities:
 
 Current coverage includes both Python and Go tests:
 
-- `pytest tests/ -v`
-- `go test ./...`
-- `go vet ./...`
-- `flake8 main.py modules/ --max-line-length=120 --ignore=E501,W503 --exclude=__pycache__`
+- `cd frontend && pytest tests/ -v`
+- `cd backend && go test ./...`
+- `cd backend && go vet ./...`
+- `cd frontend && flake8 main.py modules/ --max-line-length=120 --ignore=E501,W503 --exclude=__pycache__`
 - CI also runs `govulncheck`, `pip-audit`, and Go/Python linting.
 
 Important tested areas include plugin discovery, schema rendering, settings validation, sidecar behavior, template parsing/migration, Gallery Manager normalization/cache behavior, ViperGirls target/history behavior, upload preflight checks, build contracts, and Go-side upload helpers.
@@ -214,15 +230,15 @@ Important tested areas include plugin discovery, schema rendering, settings vali
 
 Preferred path:
 
-1. Create `modules/plugins/yourservice.py`.
+1. Create `frontend/modules/plugins/yourservice.py`.
 2. Subclass `ImageHostPlugin`.
 3. Add `id`, `name`, `metadata`, and `settings_schema`.
 4. Implement `validate_configuration()` if the schema cannot express all rules.
 5. Implement `build_http_request()` to return a generic sidecar spec.
 6. Add focused tests for config validation and generated request shape.
-7. Run `pytest tests/ -v` and `go test ./...`.
+7. Run `cd frontend && pytest tests/ -v` and `cd backend && go test ./...`.
 
-Only add Go service code when the generic runner cannot reasonably express the host behavior. When Go support is required, keep it narrow and document why it is not represented as a plugin spec.
+Only add Go code when the generic runner cannot reasonably express the host behavior (e.g., new response parsing strategies). The Go sidecar should remain a generic, host-agnostic HTTP runner.
 
 ## Roadmap
 
@@ -230,7 +246,7 @@ Near-term hardening:
 
 - Gracefully handle malformed plugin regex patterns in Go.
 - Add Go-side path bounds validation for upload file paths.
-- Continue pruning redundant legacy service paths after confirming Python specs cover every active workflow.
 - Keep documentation and screenshots synchronized with the current UI.
+- Consider stricter plugin trust/sandboxing if third-party plugin loading becomes a supported user feature.
 
-The current architecture is production-usable and plugin-forward, with the important caveat that the Go sidecar still contains some host-specific support code for workflows outside the generic upload spec.
+The current architecture is production-usable and fully plugin-driven. The Go sidecar is a pure generic HTTP runner with no host-specific code.

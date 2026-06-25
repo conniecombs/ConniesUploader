@@ -67,14 +67,20 @@ This is expected if you start from source before building the Go sidecar. The Py
 Windows:
 
 ```powershell
-go build -ldflags="-s -w" -o uploader.exe .
+cd backend
+go build -ldflags="-s -w" -o ../uploader.exe .
+cd ..
+cd frontend
 python main.py
 ```
 
 Linux/macOS:
 
 ```bash
-go build -ldflags="-s -w" -o uploader .
+cd backend
+go build -ldflags="-s -w" -o ../uploader .
+cd ..
+cd frontend
 python main.py
 ```
 
@@ -113,7 +119,9 @@ The release workflow uses a minimum final executable threshold of 15 MB to catch
 Use this only for debugging. The command should include local hooks, tkinterdnd2 assets, plugin submodules, and explicit active plugin imports.
 
 ```batch
-go build -ldflags="-s -w" -o uploader.exe .
+cd backend
+go build -ldflags="-s -w" -o ../uploader.exe .
+cd ..
 
 pyinstaller ^
   --noconsole ^
@@ -121,10 +129,10 @@ pyinstaller ^
   --clean ^
   --noupx ^
   --name "ConniesUploader" ^
-  --icon "logo.ico" ^
+  --icon "packaging/logo.ico" ^
   --add-data "uploader.exe;." ^
-  --add-data "logo.ico;." ^
-  --additional-hooks-dir "pyinstaller_hooks" ^
+  --add-data "packaging/logo.ico;." ^
+  --additional-hooks-dir "packaging/pyinstaller_hooks" ^
   --collect-all tkinterdnd2 ^
   --collect-submodules modules.plugins ^
   --hidden-import modules.plugins.imx ^
@@ -133,7 +141,10 @@ pyinstaller ^
   --hidden-import modules.plugins.turbo ^
   --hidden-import modules.plugins.imagebam ^
   --hidden-import modules.plugins.imgur ^
-  main.py
+  --workpath build ^
+  --distpath dist ^
+  --specpath packaging ^
+  frontend/main.py
 ```
 
 If a new active plugin is added, update this command, `build_uploader.bat`, `build.sh`, `Makefile`, `.github/workflows/release.yml`, and `tests/test_build_contract.py`.
@@ -141,7 +152,9 @@ If a new active plugin is added, update this command, `build_uploader.bat`, `bui
 ## Manual Linux/macOS PyInstaller Build
 
 ```bash
-go build -ldflags="-s -w" -o uploader .
+cd backend
+go build -ldflags="-s -w" -o ../uploader .
+cd ..
 
 pyinstaller \
   --noconsole \
@@ -149,8 +162,8 @@ pyinstaller \
   --clean \
   --name "ConniesUploader" \
   --add-binary "uploader:." \
-  --add-data "logo.ico:." \
-  --additional-hooks-dir "pyinstaller_hooks" \
+  --add-data "packaging/logo.ico:." \
+  --additional-hooks-dir "packaging/pyinstaller_hooks" \
   --collect-all tkinterdnd2 \
   --collect-submodules modules.plugins \
   --hidden-import modules.plugins.imx \
@@ -159,7 +172,10 @@ pyinstaller \
   --hidden-import modules.plugins.turbo \
   --hidden-import modules.plugins.imagebam \
   --hidden-import modules.plugins.imgur \
-  main.py
+  --workpath build \
+  --distpath dist \
+  --specpath packaging \
+  frontend/main.py
 ```
 
 ## EXE Crashes Importing `_tkinter`
@@ -184,10 +200,10 @@ PyInstaller did not bundle the Python Tkinter extension or the Tcl/Tk runtime co
 build_uploader.bat --clean
 ```
 
-2. Confirm `pyinstaller_hooks/` exists and the build command includes:
+2. Confirm `packaging/pyinstaller_hooks/` exists and the build command includes:
 
 ```text
---additional-hooks-dir "pyinstaller_hooks"
+--additional-hooks-dir "packaging/pyinstaller_hooks"
 ```
 
 3. Let the build script run its archive verification. It checks for:
@@ -218,14 +234,14 @@ An old `tkinterdnd2` version is installed.
 ### Fix
 
 ```batch
-pip install -r requirements.txt
+pip install -r frontend/requirements.txt
 build_uploader.bat --clean
 ```
 
-`requirements.txt` should pin:
+`frontend/requirements.txt` should pin:
 
 ```text
-tkinterdnd2==0.4.3
+tkinterdnd2==0.5.0
 ```
 
 ## Plugins Missing In Packaged Build
@@ -280,7 +296,7 @@ Install Python with your system package manager or pyenv. Then recreate the venv
 ```bash
 python -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt
+pip install -r frontend/requirements.txt
 ```
 
 ## Go Not Found
@@ -297,8 +313,8 @@ Verify:
 
 ```bash
 go version
-go mod download
-go build -ldflags="-s -w" -o uploader .
+(cd backend && go mod download)
+(cd backend && go build -ldflags="-s -w" -o ../uploader .)
 ```
 
 ## Dependency Installation Fails
@@ -312,7 +328,7 @@ rmdir /s /q venv
 python -m venv venv
 call venv\Scripts\activate
 python -m pip install --upgrade pip
-pip install -r requirements.txt
+pip install -r frontend/requirements.txt
 ```
 
 Linux/macOS:
@@ -322,7 +338,7 @@ rm -rf venv
 python -m venv venv
 source venv/bin/activate
 python -m pip install --upgrade pip
-pip install -r requirements.txt
+pip install -r frontend/requirements.txt
 ```
 
 The pip “new release available” notice is informational and does not mean the build failed.
@@ -344,7 +360,7 @@ The cleanup helper removes generated build/test artifacts such as:
 - `dist/`
 - `.pytest_cache/`
 - `uploader`, `uploader.exe`
-- `ConniesUploader.spec`
+- `packaging/ConniesUploader.spec`
 - `crash_log*.log`
 
 It leaves user data alone unless explicitly told otherwise.

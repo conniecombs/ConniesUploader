@@ -17,6 +17,9 @@ DEFAULT_DIRS = (
     "dist",
     "htmlcov",
     ".pytest_cache",
+    "frontend/htmlcov",
+    "frontend/.pytest_cache",
+    "backend/.pytest_cache",
 )
 
 DEFAULT_FILES = (
@@ -27,11 +30,17 @@ DEFAULT_FILES = (
     "ConniesUploader",
     "ConniesUploader.exe",
     "ConniesUploader.spec",
+    "frontend/.coverage",
+    "backend/coverage.out",
+    "packaging/ConniesUploader.spec",
 )
 
 DEFAULT_PATTERNS = (
     ".coverage.*",
     "crash_log*.log",
+    "frontend/.coverage.*",
+    "frontend/crash_log*.log",
+    "logs/crash_log*.log",
 )
 
 OPTIONAL_USER_DIRS = (

@@ -63,7 +63,7 @@
 ### Testing & Quality Assurance
 
 #### **Issue #1: No Go Tests** ✅ **COMPLETED** (2026-01-13)
-- **Files**: Go sidecar split across `main.go`, `handlers.go`, `core/`, and `services/`
+- **Files**: Go sidecar split across `main.go`, `handlers.go`, and `core/`
 - **Status**: **30.0% test coverage achieved** (up from 12.5%)
 - **Test Files Created**:
   - `uploader_coverage_test.go` (766 lines) - Rate limiting, gallery operations, HTTP workflows
@@ -302,7 +302,7 @@
 - **Actual Effort**: 0.5 days
 
 #### **Issue #12: Inconsistent Naming Conventions** ✅ **COMPLETED** (2026-01-16)
-- **Files**: `main.go`, `handlers.go`, `core/`, `services/`, `uploader_helpers_test.go`
+- **Files**: `main.go`, `handlers.go`, `core/`, `uploader_helpers_test.go`
 - **Status**: Applied gofmt to standardize Go code formatting
 - **Changes**:
   - Standardized struct field alignment and spacing
@@ -722,7 +722,7 @@
 **Actual Effort**: 0.5 days (Go) + already complete (Python)
 
 #### **Issue #35: Hardcoded User Agent** ✅ **COMPLETED** (2026-01-16)
-- **File**: `core/types.go`, `core/http.go`, and `services/`
+- **File**: `core/types.go` and `core/http.go`
 - **Status**: User agent is now configurable via config map
 - **Changes**:
   - Renamed `UserAgent` constant to `DefaultUserAgent`
