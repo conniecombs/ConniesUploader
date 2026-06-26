@@ -641,7 +641,13 @@ class TestViprPlugin(unittest.TestCase):
                 "vipr_pass": " secret ",
             }
             get_metadata.return_value = {
-                "galleries": [{"name": "First Gallery", "id": "123"}]
+                "galleries": [
+                    {
+                        "name": "First Gallery",
+                        "id": "123",
+                        "url": "https://vipr.im/p/user/123/First%20Gallery",
+                    }
+                ]
             }
 
             plugin._refresh_galleries(parent)
@@ -651,6 +657,10 @@ class TestViprPlugin(unittest.TestCase):
         )
         plugin.cb_gallery.configure.assert_called_once_with(values=["None", "First Gallery"])
         self.assertEqual(plugin.vipr_galleries_map, {"First Gallery": "123"})
+        self.assertEqual(
+            plugin.vipr_gallery_urls_map,
+            {"First Gallery": "https://vipr.im/p/user/123/First%20Gallery"},
+        )
 
     def test_gallery_refresh_treats_null_gallery_response_as_empty(self):
         from modules.plugins import vipr
@@ -685,6 +695,79 @@ class TestViprPlugin(unittest.TestCase):
         plugin.cb_gallery.configure.assert_called_once_with(values=["None"])
         plugin.cb_gallery.set.assert_called_once_with("None")
         self.assertEqual(plugin.vipr_galleries_map, {})
+
+    def test_prepare_group_creates_vipr_gallery_for_auto_gallery(self):
+        from modules.plugins import vipr
+
+        plugin = vipr.ViprPlugin()
+        group = Mock()
+        group.title = "[Batch Gallery]"
+        config = {"auto_gallery": True}
+        created = {
+            "id": "104999",
+            "name": "Batch Gallery",
+            "url": "https://vipr.im/p/johngrimm/104999/Batch%20Gallery",
+        }
+
+        with patch.object(vipr.api, "create_vipr_gallery", return_value=created) as create:
+            plugin.prepare_group(
+                group,
+                config,
+                {},
+                {"vipr_user": "user", "vipr_pass": "secret"},
+            )
+
+        create.assert_called_once_with(
+            {"vipr_user": "user", "vipr_pass": "secret"}, "Batch Gallery"
+        )
+        self.assertEqual(group.gallery_id, "104999")
+        self.assertEqual(group.gallery_name, "Batch Gallery")
+        self.assertEqual(
+            group.gallery_url, "https://vipr.im/p/johngrimm/104999/Batch%20Gallery"
+        )
+        self.assertEqual(group.gallery_service, "vipr.im")
+        self.assertEqual(config["vipr_gal_id"], "104999")
+        self.assertEqual(config["selected_gallery_url"], group.gallery_url)
+
+    def test_build_http_request_uses_selected_vipr_gallery_and_dynamic_endpoint(self):
+        from modules.plugins import vipr
+
+        plugin = vipr.ViprPlugin()
+
+        request = plugin.build_http_request(
+            "/tmp/image.jpg",
+            {
+                "vipr_gal_id": "old",
+                "selected_gallery_id": "104999",
+                "thumbnail_size": "250x250",
+            },
+            {"vipr_user": "user", "vipr_pass": "secret"},
+        )
+
+        fields = request["multipart_fields"]
+        self.assertEqual(fields["fld_id"]["value"], "104999")
+        self.assertEqual(fields["thumb_size"]["value"], "250x250")
+        self.assertEqual(fields["per_row"]["value"], "750")
+        self.assertEqual(fields["sdomain"]["value"], "vipr.im")
+        endpoint = request["pre_request"]["follow_up_request"]["extract_fields"]["endpoint"]
+        self.assertIn("regex:", endpoint)
+        self.assertIn("cgi-bin/upload\\.cgi", endpoint)
+        self.assertNotEqual(endpoint, "form[action*='upload.cgi']")
+
+    def test_build_http_request_prefers_group_gallery_id_over_saved_vipr_id(self):
+        from modules.plugins import vipr
+
+        plugin = vipr.ViprPlugin()
+
+        request = plugin.build_http_request(
+            "/tmp/image.jpg",
+            {"gallery_id": "created-for-group", "vipr_gal_id": "saved-selection"},
+            {"vipr_user": "user", "vipr_pass": "secret"},
+        )
+
+        self.assertEqual(
+            request["multipart_fields"]["fld_id"]["value"], "created-for-group"
+        )
 
 
 class TestPluginMetadata(unittest.TestCase):

@@ -256,14 +256,77 @@ def get_vipr_metadata(creds: Dict[str, str]) -> Dict[str, Any]:
 
     resp = execute_generic_request(spec, timeout=30, service="vipr.im")
 
-    # Parse gallery links from the response body in Python.
     galleries = []
     if resp.get("status") == "success":
         data = resp.get("data", {})
         body = data.get("response_body", "") if isinstance(data, dict) else ""
-        import re
 
-        for match in re.finditer(r'fld_id=(\d+)[^>]*>([^<]+)', body):
-            galleries.append({"id": match.group(1), "name": match.group(2).strip()})
+        from modules.gallery_service import parse_vipr_gallery_html
+
+        galleries = parse_vipr_gallery_html(body)
 
     return {"galleries": galleries}
+
+
+def create_vipr_gallery(creds: Dict[str, str], name: str) -> Optional[Dict[str, str]]:
+    """Create a named Vipr gallery/folder through the File Manager form."""
+    name = (name or "").strip()
+    if not name:
+        return None
+
+    spec = {
+        "url": "https://vipr.im/",
+        "method": "POST",
+        "use_cookies": True,
+        "response_type": "html",
+        "form_fields": {
+            "op": "my_files",
+            "fld_id": "0",
+            "sort_field": "file_created",
+            "sort_order": "down",
+            "export_mode": "",
+            "domain": "vipr.im",
+            "create_new_folder": name,
+        },
+        "extract_fields": {
+            "response_body": "regex:(<body[\\s\\S]*</body>)",
+        },
+        "pre_request": {
+            "action": "vipr_login",
+            "url": "https://vipr.im/",
+            "method": "POST",
+            "form_fields": {
+                "op": "login",
+                "login": creds.get("vipr_user", ""),
+                "password": creds.get("vipr_pass", ""),
+            },
+            "use_cookies": True,
+            "response_type": "html",
+            "extract_fields": {},
+        },
+    }
+
+    resp = execute_generic_request(spec, timeout=30, service="vipr.im")
+    if resp.get("status") != "success":
+        logger.warning(f"Failed to create Vipr gallery: {resp.get('msg', 'unknown error')}")
+        return None
+
+    data = resp.get("data")
+    body = data.get("response_body", "") if isinstance(data, dict) else ""
+
+    from modules.gallery_service import parse_vipr_gallery_html
+
+    raw_records = parse_vipr_gallery_html(body)
+    raw = next((record for record in raw_records if record.get("name") == name), None)
+    if not raw or not raw.get("id"):
+        logger.warning("Vipr gallery was created, but its folder ID could not be parsed")
+        return None
+
+    return {
+        "id": str(raw.get("id") or ""),
+        "name": str(raw.get("name") or name),
+        "url": str(raw.get("url") or ""),
+        "gallery_id": str(raw.get("id") or ""),
+        "gallery_name": str(raw.get("name") or name),
+        "gallery_url": str(raw.get("url") or ""),
+    }

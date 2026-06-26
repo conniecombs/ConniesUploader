@@ -9,6 +9,7 @@ from modules.gallery_service import (
     GalleryStatus,
     normalize_gallery_record,
     parse_imx_gallery_html,
+    parse_vipr_gallery_html,
 )
 
 
@@ -105,6 +106,36 @@ def test_parse_imx_gallery_html_counts_unparseable_gallery_candidates():
     assert candidates == 1
 
 
+def test_parse_vipr_gallery_html_pairs_folder_ids_with_public_urls():
+    html = """
+    <body>
+      <a href="?op=my_files;fld_id=104485">0000010101</a>
+      <a href="https://vipr.im/p/johngrimm/104485/0000010101" class="pub"></a>
+      <a href="?op=fld_edit;fld_id=104485" class="edit"></a>
+      <a href="?op=my_files&fld_id=0&del_folder=104485" class="delete"></a>
+      <a href="?op=my_files;fld_id=37973">00Unsorted</a>
+      <a href="https://vipr.im/p/johngrimm/37973/00Unsorted" class="pub"></a>
+    </body>
+    """
+
+    records = parse_vipr_gallery_html(html)
+
+    assert records == [
+        {
+            "id": "104485",
+            "name": "0000010101",
+            "url": "https://vipr.im/p/johngrimm/104485/0000010101",
+            "username": "johngrimm",
+        },
+        {
+            "id": "37973",
+            "name": "00Unsorted",
+            "url": "https://vipr.im/p/johngrimm/37973/00Unsorted",
+            "username": "johngrimm",
+        },
+    ]
+
+
 def test_list_galleries_normalizes_sidecar_gallery_response_and_sends_credentials():
     bridge = FakeBridge(
         {
@@ -146,7 +177,12 @@ def test_list_galleries_parses_vipr_generic_html_response():
         {
             "status": "success",
             "data": {
-                "response_body": '<body><a href="?op=my_files&fld_id=42">Vipr Folder</a></body>',
+                "response_body": """
+                <body>
+                  <a href="?op=my_files;fld_id=42">Vipr Folder</a>
+                  <a href="https://vipr.im/p/user/42/Vipr%20Folder" class="pub"></a>
+                </body>
+                """,
             },
         }
     )
@@ -157,6 +193,7 @@ def test_list_galleries_parses_vipr_generic_html_response():
     assert result.status == GalleryStatus.SUCCESS
     assert result.records[0].id == "42"
     assert result.records[0].name == "Vipr Folder"
+    assert result.records[0].url == "https://vipr.im/p/user/42/Vipr%20Folder"
 
 
 def test_gallery_response_parsing_reports_unreadable_and_failed_shapes():
@@ -281,6 +318,46 @@ def test_create_gallery_maps_login_failures_to_login_failed_status():
     result = service.create_gallery("vipr.im", "Private Folder")
 
     assert result.status == GalleryStatus.LOGIN_FAILED
+
+
+def test_create_vipr_gallery_posts_file_manager_form_and_parses_created_folder():
+    bridge = FakeBridge(
+        {
+            "status": "success",
+            "data": {
+                "response_body": """
+                <body>
+                  <a href="?op=my_files;fld_id=104999">New Folder</a>
+                  <a href="https://vipr.im/p/johngrimm/104999/New%20Folder" class="pub"></a>
+                </body>
+                """,
+            },
+        }
+    )
+    service = GalleryService(bridge, {"vipr_user": "user", "vipr_pass": "pass"})
+
+    result = service.create_gallery("vipr.im", "New Folder")
+
+    assert result.status == GalleryStatus.SUCCESS
+    assert result.record == GalleryRecord(
+        service="vipr.im",
+        id="104999",
+        name="New Folder",
+        url="https://vipr.im/p/johngrimm/104999/New%20Folder",
+        raw={
+            "id": "104999",
+            "name": "New Folder",
+            "url": "https://vipr.im/p/johngrimm/104999/New%20Folder",
+            "username": "johngrimm",
+        },
+    )
+    payload = bridge.calls[0][0]
+    spec = payload["generic_spec"]
+    assert spec["url"] == "https://vipr.im/"
+    assert spec["method"] == "POST"
+    assert spec["form_fields"]["op"] == "my_files"
+    assert spec["form_fields"]["create_new_folder"] == "New Folder"
+    assert spec["pre_request"]["form_fields"]["login"] == "user"
 
 
 def test_gallery_manager_stale_request_guards():

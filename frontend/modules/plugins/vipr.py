@@ -25,6 +25,7 @@ class ViprPlugin(ImageHostPlugin):
 
     def __init__(self):
         self.vipr_galleries_map = {}
+        self.vipr_gallery_urls_map = {}
         self.cb_gallery = None
 
     @property
@@ -129,6 +130,10 @@ class ViprPlugin(ImageHostPlugin):
         gal_name = config.get("vipr_gallery_name", "")
         gal_id = self.vipr_galleries_map.get(gal_name, "0")
         config["vipr_gal_id"] = gal_id
+        gallery_url = self.vipr_gallery_urls_map.get(gal_name, "")
+        if gallery_url:
+            config["vipr_gallery_url"] = gallery_url
+            config["selected_gallery_url"] = gallery_url
 
         return errors
 
@@ -183,6 +188,10 @@ class ViprPlugin(ImageHostPlugin):
             # Map gallery name to ID
             gal_id = self.vipr_galleries_map.get(gal_name, "0")
             config["vipr_gal_id"] = gal_id
+            gallery_url = self.vipr_gallery_urls_map.get(gal_name, "")
+            if gallery_url:
+                config["vipr_gallery_url"] = gallery_url
+                config["selected_gallery_url"] = gallery_url
 
         # Add custom validation
         custom_errors = self.validate_configuration(config)
@@ -213,6 +222,11 @@ class ViprPlugin(ImageHostPlugin):
                 galleries = (meta.get("galleries") if meta else None) or []
                 self.vipr_galleries_map = {
                     g["name"]: g["id"] for g in galleries if g.get("name") and g.get("id")
+                }
+                self.vipr_gallery_urls_map = {
+                    g["name"]: g.get("url", "")
+                    for g in galleries
+                    if g.get("name") and g.get("url")
                 }
                 names = ["None"] + list(self.vipr_galleries_map.keys())
                 self._set_gallery_options(parent_widget, names)
@@ -251,6 +265,37 @@ class ViprPlugin(ImageHostPlugin):
         except Exception as exc:
             logger.debug(f"Could not schedule Vipr gallery dropdown update: {exc}")
 
+    def prepare_group(
+        self, group, config: Dict[str, Any], context: Dict[str, Any], creds: Dict[str, Any]
+    ) -> None:
+        """Create one Vipr folder per batch when auto-gallery is enabled."""
+        if not config.get("auto_gallery"):
+            return
+
+        clean_title = (
+            str(getattr(group, "title", "") or "Gallery")
+            .replace("[", "")
+            .replace("]", "")
+            .strip()
+        )
+        new_data = api.create_vipr_gallery(creds, clean_title)
+        if not new_data:
+            logger.warning(
+                f"Failed to create Vipr gallery for: {getattr(group, 'title', clean_title)}"
+            )
+            return
+
+        group.gallery_id = new_data.get("id") or new_data.get("gallery_id") or ""
+        group.gallery_name = new_data.get("name") or new_data.get("gallery_name") or clean_title
+        group.gallery_url = new_data.get("url") or new_data.get("gallery_url") or ""
+        group.gallery_service = self.id
+        config["vipr_gal_id"] = group.gallery_id
+        config["vipr_gallery_name"] = group.gallery_name
+        if group.gallery_url:
+            config["vipr_gallery_url"] = group.gallery_url
+            config["selected_gallery_url"] = group.gallery_url
+        logger.info(f"Created Vipr gallery: {group.gallery_name} ({group.gallery_id})")
+
     # NEW: Generic HTTP request builder with session management (Phase 3)
     def build_http_request(
         self, file_path: str, config: Dict[str, Any], creds: Dict[str, Any]
@@ -270,6 +315,7 @@ class ViprPlugin(ImageHostPlugin):
         # Base endpoint (will be overridden if pre-request extracts custom endpoint)
         base_endpoint = "https://vipr.im/cgi-bin/upload.cgi"
         upload_url = f"{base_endpoint}?upload_id={upload_id}&js_on=1&utype=reg&upload_type=file"
+        gallery_id = self._gallery_id_from_config(config)
 
         return {
             "url": upload_url,
@@ -298,7 +344,10 @@ class ViprPlugin(ImageHostPlugin):
                     "use_cookies": True,  # Use cookies from step 1
                     "extract_fields": {
                         "sess_id": "input[name='sess_id']",  # Extract session ID
-                        "endpoint": "form[action*='upload.cgi']",  # Extract upload endpoint
+                        "endpoint": (
+                            r"regex:<form[^>]+action=[\"']"
+                            r"([^\"']+/cgi-bin/upload\.cgi)\?upload_id="
+                        ),
                     },
                     "response_type": "html",
                 },
@@ -311,7 +360,9 @@ class ViprPlugin(ImageHostPlugin):
                     "type": "text",
                     "value": str(config.get("thumbnail_size", "170x170")),
                 },
-                "fld_id": {"type": "text", "value": str(config.get("vipr_gal_id", "0"))},
+                "per_row": {"type": "text", "value": str(config.get("per_row", "750"))},
+                "sdomain": {"type": "text", "value": str(config.get("sdomain", "vipr.im"))},
+                "fld_id": {"type": "text", "value": gallery_id},
                 "tos": {"type": "text", "value": "1"},
                 "submit_btn": {"type": "text", "value": "Upload"},
             },
@@ -321,6 +372,14 @@ class ViprPlugin(ImageHostPlugin):
                 "thumb_path": "input[name='thumb_url']",  # CSS selector for thumbnail URL
             },
         }
+
+    @staticmethod
+    def _gallery_id_from_config(config: Dict[str, Any]) -> str:
+        for key in ("gallery_id", "selected_gallery_id", "vipr_gal_id", "vipr_gallery_id"):
+            value = str(config.get(key) or "").strip()
+            if value and value not in {"0", "None"}:
+                return value
+        return "0"
 
     # Go-based upload - stubs for abstract methods (uploads handled by Go sidecar)
     def initialize_session(self, config: Dict[str, Any], creds: Dict[str, Any]) -> Dict[str, Any]:

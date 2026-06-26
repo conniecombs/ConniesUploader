@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import re
 from typing import Any, Dict, List, Mapping, Optional, Tuple
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urljoin, urlparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -69,7 +69,7 @@ def gallery_url_for_service(service: str, gallery_id: str) -> str:
     if service == "pixhost.to":
         return f"https://pixhost.to/gallery/{gallery_id}"
     if service == "vipr.im":
-        return f"https://vipr.im/f/{gallery_id}"
+        return ""
     return ""
 
 
@@ -146,6 +146,67 @@ def _extract_imx_gallery_id(href: str) -> str:
     tail = path.split(marker, 1)[1]
     gallery_id = tail.split("/", 1)[0].split("?", 1)[0].strip()
     return gallery_id if gallery_id.replace("_", "").isalnum() else ""
+
+
+def parse_vipr_gallery_html(html: str) -> List[Dict[str, Any]]:
+    """Parse Vipr File Manager folder rows into gallery records.
+
+    Vipr models galleries as account folders. The File Manager exposes a
+    private folder link (``?op=my_files;fld_id=123``) and, next to it, the
+    public gallery URL (``/p/<user>/<id>/<name>``).
+    """
+    soup = BeautifulSoup(html or "", "html.parser")
+    records_by_id: Dict[str, Dict[str, Any]] = {}
+    order: List[str] = []
+
+    for link in soup.find_all("a", href=True):
+        href = str(link.get("href") or "")
+        folder_id = _extract_vipr_folder_id(href)
+        if folder_id:
+            name = link.get_text(" ", strip=True)
+            if folder_id not in records_by_id:
+                records_by_id[folder_id] = {"id": folder_id, "name": name or folder_id}
+                order.append(folder_id)
+            elif name:
+                records_by_id[folder_id]["name"] = name
+            continue
+
+        public_id, username, url_name = _extract_vipr_public_gallery(href)
+        if not public_id:
+            continue
+
+        record = records_by_id.setdefault(
+            public_id, {"id": public_id, "name": url_name or public_id}
+        )
+        if public_id not in order:
+            order.append(public_id)
+        record["url"] = urljoin("https://vipr.im/", href)
+        if username:
+            record["username"] = username
+        if url_name and record.get("name") == public_id:
+            record["name"] = url_name
+
+    return [records_by_id[gallery_id] for gallery_id in order if gallery_id != "0"]
+
+
+def _extract_vipr_folder_id(href: str) -> str:
+    if "op=my_files" not in href or "del_folder=" in href:
+        return ""
+    match = re.search(r"[?;&]fld_id=(\d+)", href)
+    if not match:
+        return ""
+    folder_id = match.group(1).strip()
+    return "" if folder_id == "0" else folder_id
+
+
+def _extract_vipr_public_gallery(href: str) -> Tuple[str, str, str]:
+    match = re.search(r"(?:^|/)p/([^/?#]+)/(\d+)(?:/([^?#]+))?", href)
+    if not match:
+        return "", "", ""
+    username = unquote(match.group(1).strip())
+    gallery_id = match.group(2).strip()
+    name = unquote((match.group(3) or "").strip())
+    return gallery_id, username, name
 
 
 class GalleryService:
@@ -309,12 +370,13 @@ class GalleryService:
         if not body:
             return resp
 
-        galleries = []
-        for match in re.finditer(r'fld_id=(\d+)[^>]*>([^<]+)', body):
-            galleries.append({"id": match.group(1), "name": match.group(2).strip()})
+        galleries = parse_vipr_gallery_html(body)
         return {**resp, "data": galleries}
 
     def _create_sidecar_gallery(self, service: str, name: str) -> GalleryResult:
+        if service == "vipr.im":
+            return self._create_vipr_gallery(name)
+
         try:
             if service == "pixhost.to":
                 resp = self.bridge.request_sync(
@@ -397,6 +459,82 @@ class GalleryService:
             GalleryStatus.SUCCESS,
             f"Created gallery '{record.name}' ({record.id}).",
             service,
+            records=[record],
+            record=record,
+            raw=resp,
+        )
+
+    def _create_vipr_gallery(self, name: str) -> GalleryResult:
+        try:
+            resp = self.bridge.request_sync(
+                {
+                    "action": "http_request",
+                    "service": "vipr.im",
+                    "generic_spec": {
+                        "url": "https://vipr.im/",
+                        "method": "POST",
+                        "use_cookies": True,
+                        "response_type": "html",
+                        "form_fields": {
+                            "op": "my_files",
+                            "fld_id": "0",
+                            "sort_field": "file_created",
+                            "sort_order": "down",
+                            "export_mode": "",
+                            "domain": "vipr.im",
+                            "create_new_folder": name,
+                        },
+                        "extract_fields": {
+                            "response_body": "regex:(<body[\\s\\S]*</body>)",
+                        },
+                        "pre_request": {
+                            "action": "vipr_login",
+                            "url": "https://vipr.im/",
+                            "method": "POST",
+                            "form_fields": {
+                                "op": "login",
+                                "login": self.creds.get("vipr_user", ""),
+                                "password": self.creds.get("vipr_pass", ""),
+                            },
+                            "use_cookies": True,
+                            "response_type": "html",
+                            "extract_fields": {},
+                        },
+                    },
+                },
+                timeout=20,
+            )
+        except Exception as exc:
+            logger.error(f"Failed to create Vipr gallery: {exc}")
+            return self._result(GalleryStatus.ERROR, str(exc), "vipr.im")
+
+        if not isinstance(resp, dict):
+            return self._result(
+                GalleryStatus.PARSE_FAILED,
+                "Gallery creation returned an unreadable response.",
+                "vipr.im",
+                raw=resp,
+            )
+        if resp.get("status") != "success":
+            return self._failure_from_response("vipr.im", resp)
+
+        data = resp.get("data")
+        body = str(data.get("response_body", "") or "") if isinstance(data, dict) else ""
+        raw_records = parse_vipr_gallery_html(body)
+        raw = next((record for record in raw_records if record.get("name") == name), None)
+
+        record = normalize_gallery_record("vipr.im", raw or {})
+        if not record:
+            return self._result(
+                GalleryStatus.PARSE_FAILED,
+                "Vipr.im created the gallery, but its folder ID could not be parsed.",
+                "vipr.im",
+                raw=resp,
+            )
+        return self._result(
+            GalleryStatus.SUCCESS,
+            f"Created gallery '{record.name}' ({record.id}).",
+            "vipr.im",
             records=[record],
             record=record,
             raw=resp,
