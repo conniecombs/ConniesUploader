@@ -1,4 +1,4 @@
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from modules.gallery_cache import GalleryCache
 from modules.gallery_manager import GalleryManager
@@ -8,6 +8,7 @@ from modules.gallery_service import (
     GalleryService,
     GalleryStatus,
     normalize_gallery_record,
+    parse_imagebam_gallery_options,
     parse_imx_gallery_html,
     parse_vipr_gallery_html,
 )
@@ -50,6 +51,31 @@ class FakeWidget:
 
     def winfo_children(self):
         return []
+
+
+class FakeResponse:
+    def __init__(self, text="", status_code=200, url="https://imx.to/"):
+        self.text = text
+        self.status_code = status_code
+        self.url = url
+
+
+class FakeImxSession:
+    def __init__(self):
+        self.headers = {}
+        self.cookies = Mock()
+        self.get_calls = []
+        self.post_calls = []
+
+    def get(self, url, timeout=0):
+        self.get_calls.append((url, timeout))
+        return FakeResponse("", url=url)
+
+    def post(self, url, data=None, timeout=0):
+        self.post_calls.append((url, dict(data or {}), timeout))
+        if url.endswith("/login.php"):
+            return FakeResponse("Welcome johngrimm", url="https://imx.to/user/dashboard")
+        return FakeResponse("", url="https://imx.to/user/gallery/edit?id=abc123")
 
 
 def test_normalize_gallery_record_uses_standard_shape_and_service_url():
@@ -136,6 +162,24 @@ def test_parse_vipr_gallery_html_pairs_folder_ids_with_public_urls():
     ]
 
 
+def test_parse_imagebam_gallery_options_uses_numeric_upload_tokens():
+    html = """
+    <select data-uploader-gallery-option-value-select name="gallery">
+      <option value="default">Select Gallery or Create New</option>
+      <option value="-1">Create New Gallery</option>
+      <option value="787200">Existing Gallery</option>
+      <option value="787201">Second Gallery</option>
+    </select>
+    """
+
+    records = parse_imagebam_gallery_options(html)
+
+    assert records == [
+        {"id": "787200", "name": "Existing Gallery"},
+        {"id": "787201", "name": "Second Gallery"},
+    ]
+
+
 def test_list_galleries_normalizes_sidecar_gallery_response_and_sends_credentials():
     bridge = FakeBridge(
         {
@@ -194,6 +238,42 @@ def test_list_galleries_parses_vipr_generic_html_response():
     assert result.records[0].id == "42"
     assert result.records[0].name == "Vipr Folder"
     assert result.records[0].url == "https://vipr.im/p/user/42/Vipr%20Folder"
+
+
+def test_list_galleries_parses_imagebam_upload_gallery_dropdown():
+    bridge = FakeBridge(
+        {
+            "status": "success",
+            "data": {
+                "response_body": """
+                <body>
+                  <select data-uploader-gallery-option-value-select name="gallery">
+                    <option value="default">Select Gallery or Create New</option>
+                    <option value="490670">DL Katia 01</option>
+                  </select>
+                </body>
+                """,
+            },
+        }
+    )
+    service = GalleryService(
+        bridge, {"imagebam_user": "user", "imagebam_pass": "pass"}
+    )
+
+    result = service.list_galleries("imagebam.com")
+
+    assert result.status == GalleryStatus.SUCCESS
+    assert result.records[0] == GalleryRecord(
+        service="imagebam.com",
+        id="490670",
+        name="DL Katia 01",
+        raw={"id": "490670", "name": "DL Katia 01"},
+    )
+    payload = bridge.calls[0][0]
+    assert payload["service"] == "imagebam.com"
+    assert payload["generic_spec"]["pre_request"]["follow_up_request"]["form_fields"][
+        "email"
+    ] == "user"
 
 
 def test_gallery_response_parsing_reports_unreadable_and_failed_shapes():
@@ -286,6 +366,11 @@ def test_gallery_credential_validation_is_service_specific():
     service.set_imx_php_session("manual-session")
     assert service._missing_credentials("imx.to") == ""
 
+    service = GalleryService(bridge, {"imagebam_user": "user"})
+    result = service.list_galleries("imagebam.com")
+    assert result.status == GalleryStatus.MISSING_CREDENTIALS
+    assert "ImageBam password" in result.message
+
 
 def test_create_gallery_normalizes_pixhost_success_response():
     bridge = FakeBridge(
@@ -309,6 +394,43 @@ def test_create_gallery_normalizes_pixhost_success_response():
     payload = bridge.calls[0][0]
     assert payload["action"] == "http_request"
     assert payload["generic_spec"]["form_fields"] == {"gallery_name": "Created Gallery"}
+
+
+def test_create_imx_gallery_uses_live_login_and_add_gallery_forms(monkeypatch):
+    fake_session = FakeImxSession()
+    monkeypatch.setattr(
+        "modules.gallery_service.requests.Session", lambda: fake_session
+    )
+    service = GalleryService(
+        FakeBridge(), {"imx_user": "user", "imx_pass": "secret"}
+    )
+
+    result = service.create_gallery("imx.to", "Batch Gallery")
+
+    assert result.status == GalleryStatus.SUCCESS
+    assert result.record == GalleryRecord(
+        service="imx.to",
+        id="abc123",
+        name="Batch Gallery",
+        url="https://imx.to/g/abc123",
+        raw={"id": "abc123", "name": "Batch Gallery"},
+    )
+    assert fake_session.get_calls[0][0] == "https://imx.to/login.php"
+    assert fake_session.post_calls[0] == (
+        "https://imx.to/login.php",
+        {
+            "usr_email": "user",
+            "pwd": "secret",
+            "doLogin": "Login",
+            "remember": "1",
+        },
+        10,
+    )
+    assert fake_session.post_calls[1] == (
+        "https://imx.to/user/gallery/add",
+        {"gallery_name": "Batch Gallery", "submit_new_gallery": "Add"},
+        15,
+    )
 
 
 def test_create_gallery_maps_login_failures_to_login_failed_status():

@@ -243,6 +243,94 @@ func TestParseHttpResponseSupportsHTMLAndTemplates(t *testing.T) {
 	}
 }
 
+func TestExecuteHttpUploadFollowsViprUploadResultForm(t *testing.T) {
+	tmpDir := t.TempDir()
+	imagePath := tmpDir + "/vipr-upload.jpg"
+	if err := createTestImage(imagePath); err != nil {
+		t.Fatalf("Failed to create test image: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/upload":
+			if err := r.ParseMultipartForm(10 << 20); err != nil {
+				t.Fatalf("ParseMultipartForm failed: %v", err)
+			}
+			if _, _, err := r.FormFile("file_0"); err != nil {
+				t.Fatalf("file_0 missing: %v", err)
+			}
+			_, _ = w.Write([]byte(`<HTML><BODY><Form name='F1' action='/result' target='_parent' method='POST'>
+				<textarea name='fn'>abc123</textarea>
+				<textarea name='st'>OK</textarea>
+				<textarea name='op'>upload_result</textarea>
+				<textarea name='per_row'>750</textarea>
+				</Form></BODY></HTML>`))
+		case "/result":
+			if err := r.ParseForm(); err != nil {
+				t.Fatalf("ParseForm failed: %v", err)
+			}
+			if got := r.FormValue("fn"); got != "abc123" {
+				t.Fatalf("fn = %q, want abc123", got)
+			}
+			if got := r.FormValue("op"); got != "upload_result" {
+				t.Fatalf("op = %q, want upload_result", got)
+			}
+			_, _ = w.Write([]byte(`<textarea id="tl1">[URL=https://vipr.im/abc123][IMG]https://i6.vipr.im/th/123/abc123.jpg[/IMG][/URL]</textarea>`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	job := &JobRequest{
+		Action:  "http_upload",
+		Service: "vipr.im",
+		Files:   []string{imagePath},
+		Config:  map[string]string{"threads": "1"},
+		Creds:   map[string]string{},
+		HttpSpec: &HttpRequestSpec{
+			URL:    server.URL + "/upload",
+			Method: "POST",
+			MultipartFields: map[string]MultipartField{
+				"file_0": {Type: "file", Value: imagePath},
+			},
+			ResponseParser: ResponseParserSpec{
+				Type: "html",
+				FollowUpRequest: &core.ResponseFollowUpSpec{
+					URL:          server.URL + "/result",
+					Method:       "POST",
+					ResponseType: "html",
+					ExtractFields: map[string]string{
+						"fn":      "textarea[name='fn']",
+						"st":      "textarea[name='st']",
+						"op":      "textarea[name='op']",
+						"per_row": "textarea[name='per_row']",
+					},
+					FormFields: map[string]string{
+						"fn":      "{fn}",
+						"st":      "{st}",
+						"op":      "{op}",
+						"per_row": "{per_row}",
+					},
+				},
+				URLPath:   `regex:(?is)\[URL=(https?://vipr\.im/[^\]\s]+)\]\s*\[IMG\]`,
+				ThumbPath: `regex:(?is)\[IMG\](https?://[^\[]+?)\[/IMG\]`,
+			},
+		},
+	}
+
+	result, err := core.ExecuteHttpUploadWithData(context.Background(), server.Client(), imagePath, job)
+	if err != nil {
+		t.Fatalf("ExecuteHttpUploadWithData failed: %v", err)
+	}
+	if result.URL != "https://vipr.im/abc123" {
+		t.Fatalf("url = %q", result.URL)
+	}
+	if result.Thumb != "https://i6.vipr.im/th/123/abc123.jpg" {
+		t.Fatalf("thumb = %q", result.Thumb)
+	}
+}
+
 func TestExecuteHttpUploadResolvesTurboResultPageThumbnail(t *testing.T) {
 	tmpDir := t.TempDir()
 	imagePath := tmpDir + "/turbo-upload.jpg"

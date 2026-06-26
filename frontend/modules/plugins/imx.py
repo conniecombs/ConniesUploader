@@ -202,8 +202,8 @@ class ImxPlugin(ImageHostPlugin):
             "thumbnail_format": {"type": "text", "value": thumb_format},
         }
 
-        # Add gallery ID if specified
-        gallery_id = config.get("gallery_id", "").strip()
+        # Add gallery ID if specified.
+        gallery_id = self._gallery_id_from_config(config)
         if gallery_id:
             multipart_fields["gallery_id"] = {"type": "text", "value": gallery_id}
 
@@ -211,7 +211,7 @@ class ImxPlugin(ImageHostPlugin):
             "url": "https://api.imx.to/v1/upload.php",
             "method": "POST",
             "headers": {
-                "X-API-KEY": creds.get("imx_api", ""),
+                "X-API-Key": creds.get("imx_api", ""),
             },
             "multipart_fields": multipart_fields,
             "response_parser": {
@@ -222,6 +222,14 @@ class ImxPlugin(ImageHostPlugin):
                 "success_value": "success",
             },
         }
+
+    @staticmethod
+    def _gallery_id_from_config(config: Dict[str, Any]) -> str:
+        for key in ("gallery_id", "selected_gallery_id", "imx_gallery_id"):
+            value = str(config.get(key) or "").strip()
+            if value:
+                return value
+        return ""
 
     def initialize_session(self, config: Dict[str, Any], creds: Dict[str, Any]) -> Dict[str, Any]:
         return {}

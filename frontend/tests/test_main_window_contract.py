@@ -1117,6 +1117,18 @@ def test_upload_preflight_shows_selected_gallery_details_and_validates_hash(tmp_
 
 
 @pytest.mark.unit
+def test_gallery_id_from_url_extracts_pixhost_hash():
+    assert (
+        UploaderApp._gallery_id_from_url("pixhost.to", "https://pixhost.to/gallery/tXgDH")
+        == "tXgDH"
+    )
+    assert (
+        UploaderApp._gallery_id_from_url("pixhost.to", "https://pixhost.to/galleries/tXgDH")
+        == "tXgDH"
+    )
+
+
+@pytest.mark.unit
 def test_upload_preflight_previews_one_gallery_per_folder(tmp_path):
     first = tmp_path / "first.jpg"
     second = tmp_path / "second.jpg"
@@ -1158,6 +1170,47 @@ def test_upload_preflight_previews_one_gallery_per_folder(tmp_path):
     assert app.preflight_detail_lines == [
         "One Gallery Per Folder will create 2 Pixhost galleries before upload: Batch Alpha, Batch Beta."
     ]
+
+
+@pytest.mark.unit
+def test_upload_preflight_allows_vipr_one_gallery_per_folder(tmp_path):
+    image_path = tmp_path / "ready.jpg"
+    image_path.write_bytes(b"fake image")
+
+    app = UploaderApp.__new__(UploaderApp)
+    app.creds = {"vipr_user": "user", "vipr_pass": "secret"}
+    app.output_dir = str(tmp_path / "Output")
+    app.central_history_path = str(tmp_path / "history")
+    app.upload_manager = SimpleNamespace(bridge=FakeBridge(alive=True))
+    app.selected_gallery_by_service = {}
+    app.service_plugins = {
+        "vipr.im": FakePlugin(
+            "vipr.im",
+            "Vipr.im",
+            {
+                "implementation": "go",
+                "credentials": [
+                    {"key": "vipr_user", "label": "Username", "required": True},
+                    {"key": "vipr_pass", "label": "Password", "required": True},
+                ],
+                "limits": {
+                    "allowed_formats": [".jpg"],
+                    "max_file_size": 1024,
+                },
+            },
+        )
+    }
+
+    issues, summary = UploaderApp._run_upload_preflight(
+        app,
+        {FakeGroup("Batch Alpha", [str(image_path)]): [str(image_path)]},
+        {"service": "vipr.im", "auto_gallery": True},
+    )
+
+    assert issues == []
+    detail = "One Gallery Per Folder will create 1 Vipr.im gallery before upload: Batch Alpha."
+    assert detail in summary
+    assert app.preflight_detail_lines == [detail]
 
 
 @pytest.mark.unit

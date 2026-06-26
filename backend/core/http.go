@@ -228,7 +228,7 @@ func ExecuteHttpUploadWithData(ctx context.Context, client *http.Client, fp stri
 			}
 		}
 
-		urlStr, thumbStr, err := ParseHttpResponse(resp, &spec.ResponseParser, fp)
+		urlStr, thumbStr, err := ParseHttpResponseWithClient(ctx, useClient, resp, &spec.ResponseParser, fp)
 		return uploadResult{URL: urlStr, Thumb: thumbStr}, resp.StatusCode, err
 	}, logger)
 
@@ -410,7 +410,24 @@ func ParseHttpResponse(resp *http.Response, parser *ResponseParserSpec, fp strin
 	if err != nil {
 		return "", "", err
 	}
+	return parseHttpResponseBody(bodyBytes, parser, fp)
+}
 
+func ParseHttpResponseWithClient(ctx context.Context, client *http.Client, resp *http.Response, parser *ResponseParserSpec, fp string) (string, string, error) {
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", "", err
+	}
+	if parser != nil && parser.FollowUpRequest != nil {
+		bodyBytes, err = executeResponseFollowUp(ctx, client, resp, bodyBytes, parser.FollowUpRequest)
+		if err != nil {
+			return "", "", err
+		}
+	}
+	return parseHttpResponseBody(bodyBytes, parser, fp)
+}
+
+func parseHttpResponseBody(bodyBytes []byte, parser *ResponseParserSpec, fp string) (string, string, error) {
 	switch strings.ToLower(parser.Type) {
 	case "", "json":
 		var data map[string]interface{}
@@ -449,6 +466,80 @@ func ParseHttpResponse(resp *http.Response, parser *ResponseParserSpec, fp strin
 	default:
 		return "", "", fmt.Errorf("unsupported parser type: %s", parser.Type)
 	}
+}
+
+func executeResponseFollowUp(ctx context.Context, client *http.Client, resp *http.Response, bodyBytes []byte, spec *ResponseFollowUpSpec) ([]byte, error) {
+	if spec == nil {
+		return bodyBytes, nil
+	}
+	if client == nil {
+		client = http.DefaultClient
+	}
+
+	values := make(map[string]string)
+	if len(spec.ExtractFields) > 0 {
+		extracted, err := extractFields(bodyBytes, spec.ResponseType, spec.ExtractFields)
+		if err != nil {
+			return nil, fmt.Errorf("response follow-up field extraction failed: %w", err)
+		}
+		for key, value := range extracted {
+			values[key] = value
+		}
+	}
+
+	method := spec.Method
+	if method == "" {
+		method = http.MethodPost
+	}
+
+	targetURL := spec.URL
+	if targetURL == "" && resp != nil && resp.Request != nil && resp.Request.URL != nil {
+		targetURL = resp.Request.URL.String()
+	}
+	if resp != nil && resp.Request != nil && resp.Request.URL != nil {
+		base := resp.Request.URL
+		if parsed, err := url.Parse(targetURL); err == nil {
+			targetURL = base.ResolveReference(parsed).String()
+		}
+	}
+	targetURL = substituteValues(targetURL, values)
+
+	form := url.Values{}
+	for key, value := range spec.FormFields {
+		form.Set(key, substituteValues(value, values))
+	}
+	if len(form) == 0 {
+		for key, value := range values {
+			form.Set(key, value)
+		}
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, targetURL, strings.NewReader(form.Encode()))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", DefaultUserAgent)
+	if len(form) > 0 {
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	}
+	for key, value := range spec.Headers {
+		req.Header.Set(key, substituteValues(value, values))
+	}
+
+	nextResp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer nextResp.Body.Close()
+
+	nextBody, err := io.ReadAll(nextResp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if nextResp.StatusCode < 200 || nextResp.StatusCode >= 300 {
+		return nil, fmt.Errorf("response follow-up HTTP %d: %s", nextResp.StatusCode, strings.TrimSpace(string(nextBody)))
+	}
+	return nextBody, nil
 }
 
 // GetJSONValue extracts a scalar value from nested JSON using dot-notation.

@@ -78,13 +78,23 @@ type MultipartField struct {
 }
 
 type ResponseParserSpec struct {
-	Type          string `json:"type"`
-	URLPath       string `json:"url_path"`
-	ThumbPath     string `json:"thumb_path"`
-	StatusPath    string `json:"status_path"`
-	SuccessValue  string `json:"success_value"`
-	URLTemplate   string `json:"url_template,omitempty"`
-	ThumbTemplate string `json:"thumb_template,omitempty"`
+	Type            string                `json:"type"`
+	URLPath         string                `json:"url_path"`
+	ThumbPath       string                `json:"thumb_path"`
+	StatusPath      string                `json:"status_path"`
+	SuccessValue    string                `json:"success_value"`
+	URLTemplate     string                `json:"url_template,omitempty"`
+	ThumbTemplate   string                `json:"thumb_template,omitempty"`
+	FollowUpRequest *ResponseFollowUpSpec `json:"follow_up_request,omitempty"`
+}
+
+type ResponseFollowUpSpec struct {
+	URL           string            `json:"url"`
+	Method        string            `json:"method"`
+	Headers       map[string]string `json:"headers,omitempty"`
+	FormFields    map[string]string `json:"form_fields,omitempty"`
+	ExtractFields map[string]string `json:"extract_fields,omitempty"`
+	ResponseType  string            `json:"response_type,omitempty"`
 }
 
 type OutputEvent struct {

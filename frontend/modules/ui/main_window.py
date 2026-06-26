@@ -657,6 +657,8 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             settings_view.set_value("pixhost.to", "gallery_hash", gid)
         elif service == "vipr.im":
             self._apply_vipr_gallery_selection(record_data)
+        elif service == "imagebam.com":
+            settings_view.set_value("imagebam.com", "gallery_id", gid)
 
     def _apply_vipr_gallery_selection(self, record_data: Dict[str, str]) -> None:
         name = record_data["name"]
@@ -1898,6 +1900,17 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
                     "message": "IMX.to needs username and password for One Gallery Per Folder.",
                     "action_required": True,
                 }
+        if plugin.id == "imagebam.com" and auto_gallery:
+            has_gallery_login = all(
+                str(creds.get(key, "") or "").strip()
+                for key in ("imagebam_user", "imagebam_pass")
+            )
+            if not has_gallery_login:
+                return {
+                    "level": "error",
+                    "message": "ImageBam needs username and password for One Gallery Per Folder.",
+                    "action_required": True,
+                }
 
         credentials = plugin.metadata.get("credentials", [])
         optional_credentials = [item for item in credentials if not item.get("required")]
@@ -2745,6 +2758,16 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
                     "One Gallery Per Folder for IMX.to requires IMX username and password."
                 )
 
+        if plugin.id == "imagebam.com" and cfg.get("auto_gallery"):
+            has_gallery_login = all(
+                str(self.creds.get(key, "") or "").strip()
+                for key in ("imagebam_user", "imagebam_pass")
+            )
+            if not has_gallery_login:
+                issues.append(
+                    "One Gallery Per Folder for ImageBam requires ImageBam username and password."
+                )
+
     def _preflight_check_files(
         self,
         plugin,
@@ -2871,11 +2894,11 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         pending_by_group: Dict[Any, List[str]],
         issues: List[str],
     ) -> str:
-        supported = {"imx.to", "pixhost.to", "turboimagehost"}
+        supported = {"imx.to", "pixhost.to", "turboimagehost", "vipr.im", "imagebam.com"}
         if plugin.id not in supported:
             issues.append(
                 f"One Gallery Per Folder is not implemented for {plugin.name}. "
-                "Turn it off or choose IMX.to/Pixhost.to."
+                "Turn it off or choose IMX.to/Pixhost.to/Vipr/ImageBam."
             )
             return ""
 
@@ -3040,6 +3063,12 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
     def _gallery_id_from_url(service_id: str, gallery_url: str) -> str:
         if service_id == "turboimagehost" and "/album/" in gallery_url:
             return gallery_url.split("/album/", 1)[1].split("/", 1)[0].strip()
+        if service_id == "imagebam.com" and "/view/" in gallery_url:
+            return gallery_url.split("/view/", 1)[1].split("/", 1)[0].strip()
+        if service_id == "pixhost.to":
+            for marker in ("/gallery/", "/galleries/"):
+                if marker in gallery_url:
+                    return gallery_url.split(marker, 1)[1].split("/", 1)[0].strip()
         return ""
 
     def _apply_result_gallery_url(self, filepath: str, gallery_url: Any) -> None:
@@ -3053,7 +3082,7 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             return
 
         service_id = str(getattr(group, "gallery_service", "") or self.settings.get("service", ""))
-        if service_id != "turboimagehost":
+        if service_id not in {"turboimagehost", "imagebam.com"}:
             return
 
         old_url = str(getattr(group, "gallery_url", "") or "").strip()
@@ -3065,7 +3094,11 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
             group.gallery_name = self._batch_display_name(group)
 
         if old_url != clean_url:
-            self.add_activity(f"Turbo gallery URL captured for {self._batch_display_name(group)}.", "info")
+            label = "Turbo" if service_id == "turboimagehost" else "ImageBam"
+            self.add_activity(
+                f"{label} gallery URL captured for {self._batch_display_name(group)}.",
+                "info",
+            )
 
     def _gallery_name_for_group(self, group: Any, service_id: str, cfg: Dict[str, Any]) -> str:
         gallery = self._gallery_for_group(group, service_id, cfg)

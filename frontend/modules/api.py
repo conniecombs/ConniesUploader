@@ -151,7 +151,7 @@ def finalize_pixhost_gallery(
 def create_imx_gallery(
     user: str, pwd: str, name: str, client: Any = None
 ) -> Optional[str]:
-    """Create a gallery on IMX service.
+    """Create a gallery on IMX service using the live account form contract.
 
     Args:
         user: IMX username
@@ -162,41 +162,20 @@ def create_imx_gallery(
     Returns:
         Gallery ID if successful, None otherwise.
     """
-    spec = {
-        "url": "https://imx.to/user/gallery/add",
-        "method": "POST",
-        "form_fields": {
-            "gal_name": name,
-            "gal_descr": "",
-        },
-        "use_cookies": True,
-        "response_type": "html",
-        "extract_fields": {
-            "gallery_id": "regex:gal_id=(\\d+)",
-        },
-        "pre_request": {
-            "action": "imx_login",
-            "url": "https://imx.to/login.php",
-            "method": "POST",
-            "form_fields": {
-                "op": "login",
-                "login": user,
-                "password": pwd,
-            },
-            "use_cookies": True,
-            "response_type": "html",
-            "extract_fields": {},
-        },
-    }
+    from modules.gallery_service import GalleryService
 
-    resp = execute_generic_request(spec, timeout=30, service="imx.to")
+    service = GalleryService(
+        bridge=None,
+        creds={
+            "imx_user": user,
+            "imx_pass": pwd,
+        },
+    )
+    result = service.create_gallery("imx.to", name)
+    if result.ok and result.record:
+        return result.record.id
 
-    if resp.get("status") == "success":
-        data = resp.get("data")
-        if isinstance(data, dict):
-            return data.get("gallery_id")
-
-    logger.warning(f"Failed to create IMX gallery: {resp.get('msg', 'unknown error')}")
+    logger.warning(f"Failed to create IMX gallery: {result.message}")
     return None
 
 

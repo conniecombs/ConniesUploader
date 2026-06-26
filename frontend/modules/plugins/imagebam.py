@@ -11,6 +11,7 @@ Python side manages UI and configuration validation.
 
 from typing import Dict, Any, List
 from .base import ImageHostPlugin
+from loguru import logger
 
 
 class ImageBamPlugin(ImageHostPlugin):
@@ -84,115 +85,206 @@ class ImageBamPlugin(ImageHostPlugin):
                 "default": "180",
                 "required": True,
             },
+            {
+                "type": "separator",
+                "advanced": True,
+            },
+            {
+                "type": "text",
+                "key": "gallery_id",
+                "label": "Gallery Token (Optional)",
+                "default": "",
+                "placeholder": "Numeric ImageBam gallery token",
+                "advanced": True,
+            },
         ]
 
-    # NEW: Generic HTTP request builder with complex session management (Phase 3)
+    def prepare_group(
+        self, group, config: Dict[str, Any], context: Dict[str, Any], creds: Dict[str, Any]
+    ) -> None:
+        """Attach a per-batch gallery title for ImageBam's upload-session flow."""
+        if not config.get("auto_gallery"):
+            return
+
+        if not (creds.get("imagebam_user") and creds.get("imagebam_pass")):
+            logger.warning("ImageBam credentials not set - cannot create auto-gallery")
+            return
+
+        title = str(getattr(group, "title", "") or "Gallery").strip() or "Gallery"
+        group.imagebam_gallery_title = title
+        group.gallery_name = title
+        group.gallery_service = self.id
+        config["imagebam_gallery_title"] = title
+        logger.info(f"ImageBam gallery will be created during upload: {title}")
+
     def build_http_request(
         self, file_path: str, config: Dict[str, Any], creds: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
-        Build HTTP request specification for ImageBam upload with complex session management.
-        Uses Phase 3 multi-step pre-request hooks (4 steps):
-        1. GET /auth/login to get login CSRF token
-        2. POST /auth/login with credentials and CSRF
-        3. GET / to get API CSRF token
-        4. POST /upload/session to get upload token (requires CSRF header)
+        Build HTTP request specification for ImageBam's current Dropzone uploader.
+
+        The live site first creates an upload session, then uploads the file as
+        ``files[0]`` with ``_token`` and ``data=<upload token>`` multipart fields.
         """
-        # Map content type and thumbnail size
-        content_type_map = {"Safe": "1", "Adult": "0"}
+        content_type_map = {"Safe": "sfw", "Adult": "nsfw"}
         thumb_size_map = {"100": "1", "180": "2", "250": "3", "300": "4"}
 
-        content_type_id = content_type_map.get(config.get("content_type", "Safe"), "1")
-        # Convert thumbnail_size to string (UI may pass int or str)
+        content_type_id = content_type_map.get(config.get("content_type", "Safe"), "sfw")
         thumb_size_value = str(config.get("thumbnail_size", "180"))
         thumb_size_id = thumb_size_map.get(thumb_size_value, "2")
+        session_fields = self._session_form_fields(config, content_type_id, thumb_size_id)
 
-        # Check if credentials are provided
-        has_credentials = bool(creds.get("imagebam_user") and creds.get("imagebam_pass"))
-
-        # Build complex 4-step pre-request chain
-        pre_request_spec = None
-
-        if has_credentials:
-            # Step 1: GET login page to extract CSRF token
-            pre_request_spec = {
-                "action": "get_login_csrf",
-                "url": "https://www.imagebam.com/auth/login",
-                "method": "GET",
-                "headers": {},
-                "form_fields": {},
-                "use_cookies": True,
-                "extract_fields": {
-                    "login_token": "input[name='_token']"  # Extract CSRF token from login form
-                },
-                "response_type": "html",
-                # Step 2: POST login with extracted CSRF
-                "follow_up_request": {
-                    "action": "submit_login",
-                    "url": "https://www.imagebam.com/auth/login",
-                    "method": "POST",
-                    "headers": {},
-                    "form_fields": {
-                        "_token": "{login_token}",  # Will be substituted with extracted value
-                        "email": creds.get("imagebam_user", ""),
-                        "password": creds.get("imagebam_pass", ""),
-                        "remember": "on",
-                    },
-                    "use_cookies": True,
-                    "extract_fields": {},
-                    "response_type": "html",
-                    # Step 3: GET homepage to extract API CSRF token
-                    "follow_up_request": {
-                        "action": "get_api_csrf",
-                        "url": "https://www.imagebam.com/",
-                        "method": "GET",
-                        "headers": {},
-                        "form_fields": {},
-                        "use_cookies": True,
-                        "extract_fields": {
-                            "csrf_token": "meta[name='csrf-token']"  # Extract CSRF for API
-                        },
-                        "response_type": "html",
-                        # Step 4: POST to get upload session token
-                        "follow_up_request": {
-                            "action": "get_upload_token",
-                            "url": "https://www.imagebam.com/upload/session",
-                            "method": "POST",
-                            "headers": {
-                                "X-Requested-With": "XMLHttpRequest",
-                                "X-CSRF-TOKEN": "{csrf_token}",  # Use extracted CSRF
-                                "Content-Type": "application/x-www-form-urlencoded",
-                            },
-                            "form_fields": {
-                                "content_type": content_type_id,
-                                "thumbnail_size": thumb_size_id,
-                            },
-                            "use_cookies": True,
-                            "extract_fields": {
-                                "upload_token": "data"  # Extract upload token from JSON response
-                            },
-                            "response_type": "json",
-                        },
-                    },
-                },
-            }
+        pre_request_spec = self._build_pre_request(session_fields, creds)
 
         return {
             "url": "https://www.imagebam.com/upload",
             "method": "POST",
-            "headers": {},
+            "headers": {
+                "Accept": "application/json",
+                "Cache-Control": "no-cache",
+                "X-Requested-With": "XMLHttpRequest",
+            },
             "pre_request": pre_request_spec,
             "multipart_fields": {
                 "files[0]": {"type": "file", "value": file_path},
-                "upload_session": {
+                "_token": {
+                    "type": "dynamic",
+                    "value": "csrf_token",
+                },
+                "data": {
                     "type": "dynamic",
                     "value": "upload_token",
-                },  # Use extracted upload token
+                },
             },
             "response_parser": {
                 "type": "json",
-                "url_path": "files.0.sourceUrl",  # ImageBam response: {"files":[{"sourceUrl":"...","thumbUrl":"..."}]}
-                "thumb_path": "files.0.thumbUrl",
+                "url_path": "success",
+                "thumb_path": "",
+            },
+            "resolve_spec": {
+                "result_url": "{url}",
+                "poll_delays_ms": [1000, 2000, 4000],
+                "link_extractor": (
+                    r"\[URL=(?P<image_url>https://www\.imagebam\.com/view/[^\]]+)"
+                    r"\]\[IMG\](?P<thumb_url>https://thumbs\d+\.imagebam\.com/[^\]]+)"
+                    r"\[/IMG\]\[/URL\]"
+                ),
+                "gallery_extractor": "a#gallery-name",
+                "file_match_mode": "single",
+            },
+        }
+
+    @staticmethod
+    def _gallery_id_from_config(config: Dict[str, Any]) -> str:
+        for key in ("gallery_id", "selected_gallery_id", "imagebam_gallery_id"):
+            value = str(config.get(key) or "").strip()
+            if value and value not in {"0", "None", "default", "-1"}:
+                return value
+        return ""
+
+    @staticmethod
+    def _gallery_title_from_config(config: Dict[str, Any]) -> str:
+        for key in ("imagebam_gallery_title", "gallery_title", "selected_gallery_name"):
+            value = str(config.get(key) or "").strip()
+            if value:
+                return value
+        return ""
+
+    def _session_form_fields(
+        self, config: Dict[str, Any], content_type_id: str, thumb_size_id: str
+    ) -> Dict[str, str]:
+        fields = {
+            "thumbnail_size": thumb_size_id,
+            "content_type": content_type_id,
+            "comments_enabled": "false",
+        }
+
+        gallery_id = self._gallery_id_from_config(config)
+        gallery_title = self._gallery_title_from_config(config)
+        if gallery_id:
+            fields.update(
+                {
+                    "gallery": "true",
+                    "gallery_token": gallery_id,
+                    "gallery_title": "",
+                }
+            )
+        elif gallery_title:
+            fields.update(
+                {
+                    "gallery": "true",
+                    "gallery_token": "",
+                    "gallery_title": gallery_title,
+                }
+            )
+
+        return fields
+
+    @staticmethod
+    def _upload_session_request(session_fields: Dict[str, str]) -> Dict[str, Any]:
+        return {
+            "action": "get_upload_token",
+            "url": "https://www.imagebam.com/upload/session",
+            "method": "POST",
+            "headers": {
+                "X-Requested-With": "XMLHttpRequest",
+                "X-CSRF-TOKEN": "{csrf_token}",
+                "Accept": "application/json",
+            },
+            "form_fields": session_fields,
+            "use_cookies": True,
+            "extract_fields": {
+                "upload_token": "data",
+                "imagebam_session": "session",
+            },
+            "response_type": "json",
+        }
+
+    def _build_pre_request(self, session_fields: Dict[str, str], creds: Dict[str, Any]) -> Dict[str, Any]:
+        upload_session = self._upload_session_request(session_fields)
+        get_api_csrf = {
+            "action": "get_api_csrf",
+            "url": "https://www.imagebam.com/",
+            "method": "GET",
+            "headers": {},
+            "form_fields": {},
+            "use_cookies": True,
+            "extract_fields": {
+                "csrf_token": "meta[name='csrf-token']",
+            },
+            "response_type": "html",
+            "follow_up_request": upload_session,
+        }
+
+        if not (creds.get("imagebam_user") and creds.get("imagebam_pass")):
+            return get_api_csrf
+
+        return {
+            "action": "get_login_csrf",
+            "url": "https://www.imagebam.com/auth/login",
+            "method": "GET",
+            "headers": {},
+            "form_fields": {},
+            "use_cookies": True,
+            "extract_fields": {
+                "login_token": "input[name='_token']",
+            },
+            "response_type": "html",
+            "follow_up_request": {
+                "action": "submit_login",
+                "url": "https://www.imagebam.com/auth/login",
+                "method": "POST",
+                "headers": {},
+                "form_fields": {
+                    "_token": "{login_token}",
+                    "email": creds.get("imagebam_user", ""),
+                    "password": creds.get("imagebam_pass", ""),
+                    "remember": "on",
+                },
+                "use_cookies": True,
+                "extract_fields": {},
+                "response_type": "html",
+                "follow_up_request": get_api_csrf,
             },
         }
 
@@ -201,12 +293,6 @@ class ImageBamPlugin(ImageHostPlugin):
     def initialize_session(self, config: Dict[str, Any], creds: Dict[str, Any]) -> Dict[str, Any]:
         """Stub - Go sidecar handles session initialization."""
         return {}
-
-    def prepare_group(
-        self, group, config: Dict[str, Any], context: Dict[str, Any], creds: Dict[str, Any]
-    ) -> None:
-        """Stub - Go sidecar handles session via build_http_request()."""
-        pass
 
     def upload_file(
         self,

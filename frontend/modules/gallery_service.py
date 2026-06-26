@@ -55,9 +55,10 @@ SERVICE_LABELS = {
     "imx.to": "IMX.to",
     "pixhost.to": "Pixhost.to",
     "vipr.im": "Vipr.im",
+    "imagebam.com": "ImageBam",
 }
 
-LIST_SUPPORTED = {"imx.to", "vipr.im"}
+LIST_SUPPORTED = {"imx.to", "vipr.im", "imagebam.com"}
 CREATE_SUPPORTED = {"imx.to", "pixhost.to", "vipr.im"}
 
 
@@ -70,6 +71,8 @@ def gallery_url_for_service(service: str, gallery_id: str) -> str:
         return f"https://pixhost.to/gallery/{gallery_id}"
     if service == "vipr.im":
         return ""
+    if service == "imagebam.com" and gallery_id and not gallery_id.isdigit():
+        return f"https://www.imagebam.com/view/{gallery_id}"
     return ""
 
 
@@ -209,6 +212,40 @@ def _extract_vipr_public_gallery(href: str) -> Tuple[str, str, str]:
     return gallery_id, username, name
 
 
+def parse_imagebam_gallery_options(html: str) -> List[Dict[str, Any]]:
+    """Parse ImageBam upload gallery options into upload-token records.
+
+    ImageBam exposes numeric gallery tokens in the upload form. Public gallery
+    pages use separate short IDs, so the numeric token is the correct value for
+    assigning uploads to an existing gallery.
+    """
+    soup = BeautifulSoup(html or "", "html.parser")
+    select = soup.select_one("[data-uploader-gallery-option-value-select]")
+    if select is None:
+        select = soup.select_one("select[name='gallery']")
+    if select is None:
+        return []
+
+    records: List[Dict[str, Any]] = []
+    seen = set()
+    for option in select.find_all("option"):
+        gallery_id = str(option.get("value") or "").strip()
+        if not gallery_id or gallery_id in {"default", "-1"} or gallery_id in seen:
+            continue
+        name = option.get_text(" ", strip=True)
+        if not name:
+            continue
+        records.append(
+            {
+                "id": gallery_id,
+                "name": name,
+            }
+        )
+        seen.add(gallery_id)
+
+    return records
+
+
 class GalleryService:
     """Normalize gallery operations across sidecar-backed and direct flows."""
 
@@ -251,6 +288,8 @@ class GalleryService:
 
         if service == "imx.to":
             return self._list_imx_galleries(page)
+        if service == "imagebam.com":
+            return self._list_imagebam_galleries(page)
 
         return self._list_sidecar_galleries(service, page)
 
@@ -294,6 +333,14 @@ class GalleryService:
                 missing.append("Vipr username")
             if not str(self.creds.get("vipr_pass", "") or "").strip():
                 missing.append("Vipr password")
+            return " and ".join(missing)
+
+        if service == "imagebam.com":
+            missing = []
+            if not str(self.creds.get("imagebam_user", "") or "").strip():
+                missing.append("ImageBam username")
+            if not str(self.creds.get("imagebam_pass", "") or "").strip():
+                missing.append("ImageBam password")
             return " and ".join(missing)
 
         return ""
@@ -352,6 +399,94 @@ class GalleryService:
             return self._result(GalleryStatus.ERROR, str(exc), service, page=page)
 
         return self._records_from_sidecar_response(service, resp, page=page)
+
+    def _list_imagebam_galleries(self, page: int) -> GalleryResult:
+        try:
+            resp = self.bridge.request_sync(
+                {
+                    "action": "http_request",
+                    "service": "imagebam.com",
+                    "generic_spec": {
+                        "url": "https://www.imagebam.com/",
+                        "method": "GET",
+                        "use_cookies": True,
+                        "response_type": "html",
+                        "extract_fields": {
+                            "response_body": "regex:(<body[\\s\\S]*</body>)",
+                        },
+                        "pre_request": self._imagebam_login_pre_request(),
+                    },
+                },
+                timeout=30,
+            )
+        except Exception as exc:
+            logger.error(f"Failed to list ImageBam galleries: {exc}")
+            return self._result(GalleryStatus.ERROR, str(exc), "imagebam.com", page=page)
+
+        return self._normalize_imagebam_gallery_response(resp, page)
+
+    def _imagebam_login_pre_request(self) -> Dict[str, Any]:
+        return {
+            "action": "get_login_csrf",
+            "url": "https://www.imagebam.com/auth/login",
+            "method": "GET",
+            "headers": {},
+            "form_fields": {},
+            "use_cookies": True,
+            "extract_fields": {
+                "login_token": "input[name='_token']",
+            },
+            "response_type": "html",
+            "follow_up_request": {
+                "action": "submit_login",
+                "url": "https://www.imagebam.com/auth/login",
+                "method": "POST",
+                "headers": {},
+                "form_fields": {
+                    "_token": "{login_token}",
+                    "email": self.creds.get("imagebam_user", ""),
+                    "password": self.creds.get("imagebam_pass", ""),
+                    "remember": "on",
+                },
+                "use_cookies": True,
+                "extract_fields": {},
+                "response_type": "html",
+            },
+        }
+
+    def _normalize_imagebam_gallery_response(self, resp: Any, page: int) -> GalleryResult:
+        if not isinstance(resp, dict):
+            return self._result(
+                GalleryStatus.PARSE_FAILED,
+                "Gallery list returned an unreadable response.",
+                "imagebam.com",
+                page=page,
+                raw=resp,
+            )
+        if resp.get("type") == "error" or resp.get("status") == "failed":
+            return self._failure_from_response("imagebam.com", resp, page=page)
+
+        data = resp.get("data")
+        body = str(data.get("response_body", "") or "") if isinstance(data, dict) else ""
+        if not body:
+            return self._result(
+                GalleryStatus.PARSE_FAILED,
+                "ImageBam gallery page did not return the uploader gallery list.",
+                "imagebam.com",
+                page=page,
+                raw=resp,
+            )
+
+        raw_records = parse_imagebam_gallery_options(body)
+        if not raw_records:
+            return self._result(
+                GalleryStatus.EMPTY,
+                "No galleries found for ImageBam.",
+                "imagebam.com",
+                page=page,
+                raw=resp,
+            )
+        return self._records_from_raw("imagebam.com", raw_records, page=page, raw=resp)
 
     def _normalize_vipr_gallery_response(self, resp: Any) -> Any:
         if not isinstance(resp, dict):

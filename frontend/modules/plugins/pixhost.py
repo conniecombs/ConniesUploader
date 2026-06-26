@@ -31,7 +31,7 @@ class PixhostPlugin(ImageHostPlugin):
     def metadata(self) -> Dict[str, Any]:
         """Plugin metadata for Pixhost.to"""
         return {
-            "version": "2.0.1",
+            "version": "2.0.2",
             "author": "Connie's Uploader Team",
             "description": "Upload images to Pixhost.to with gallery support and cover image handling",
             "website": "https://pixhost.to",
@@ -45,8 +45,8 @@ class PixhostPlugin(ImageHostPlugin):
             },
             "credentials": [],  # No credentials required
             "limits": {
-                "max_file_size": 50 * 1024 * 1024,  # 50MB
-                "allowed_formats": [".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"],
+                "max_file_size": 10 * 1024 * 1024,
+                "allowed_formats": [".jpg", ".jpeg", ".png", ".gif"],
                 "rate_limit": "Unlimited (respectful use)",
                 "max_resolution": (15000, 15000),
                 "min_resolution": (1, 1),

@@ -368,8 +368,25 @@ class ViprPlugin(ImageHostPlugin):
             },
             "response_parser": {
                 "type": "html",
-                "url_path": "input[name='link_url']",  # CSS selector for image URL
-                "thumb_path": "input[name='thumb_url']",  # CSS selector for thumbnail URL
+                "follow_up_request": {
+                    "url": "https://vipr.im/",
+                    "method": "POST",
+                    "response_type": "html",
+                    "extract_fields": {
+                        "fn": "textarea[name='fn']",
+                        "st": "textarea[name='st']",
+                        "op": "textarea[name='op']",
+                        "per_row": "textarea[name='per_row']",
+                    },
+                    "form_fields": {
+                        "fn": "{fn}",
+                        "st": "{st}",
+                        "op": "{op}",
+                        "per_row": "{per_row}",
+                    },
+                },
+                "url_path": r"regex:(?is)\[URL=(https?://vipr\.im/[^\]\s]+)\]\s*\[IMG\]",
+                "thumb_path": r"regex:(?is)\[IMG\](https?://[^\[]+?)\[/IMG\]",
             },
         }
 

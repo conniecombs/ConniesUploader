@@ -160,6 +160,11 @@ class UploadManager:
                         if value not in (None, ""):
                             group_cfg[config_key] = value
 
+                if service_id == "imagebam.com":
+                    gallery_title = getattr(group_obj, "imagebam_gallery_title", None)
+                    if gallery_title not in (None, ""):
+                        group_cfg["imagebam_gallery_title"] = gallery_title
+
                 explicit_covers = self._explicit_cover_files_for_group(group_obj, files)
                 if explicit_covers is None:
                     cover_cnt = self._cover_count_for_service(group_cfg)

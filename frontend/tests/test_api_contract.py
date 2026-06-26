@@ -18,6 +18,25 @@ def test_vipr_metadata_normalizes_null_sidecar_data():
     assert metadata == {"galleries": []}
 
 
+def test_create_imx_gallery_uses_gallery_service_live_form_flow():
+    record = Mock(id="abc123")
+    result = Mock(ok=True, record=record)
+
+    with patch("modules.gallery_service.GalleryService") as service_cls:
+        service_cls.return_value.create_gallery.return_value = result
+
+        gallery_id = api.create_imx_gallery("user", "secret", "Batch Gallery")
+
+    assert gallery_id == "abc123"
+    service_cls.assert_called_once_with(
+        bridge=None,
+        creds={"imx_user": "user", "imx_pass": "secret"},
+    )
+    service_cls.return_value.create_gallery.assert_called_once_with(
+        "imx.to", "Batch Gallery"
+    )
+
+
 def test_vipr_metadata_parses_file_manager_public_gallery_urls():
     bridge = Mock()
     bridge.request_sync.return_value = {

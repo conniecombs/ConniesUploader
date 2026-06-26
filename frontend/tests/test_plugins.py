@@ -433,6 +433,14 @@ class TestPluginSchemas(unittest.TestCase):
 class TestPixhostGalleryIntegration(unittest.TestCase):
     """Test Pixhost gallery metadata plumbing."""
 
+    def test_metadata_matches_live_api_limits(self):
+        from modules.plugins.pixhost import PixhostPlugin
+
+        limits = PixhostPlugin().metadata["limits"]
+
+        self.assertEqual(limits["max_file_size"], 10 * 1024 * 1024)
+        self.assertEqual(limits["allowed_formats"], [".jpg", ".jpeg", ".png", ".gif"])
+
     def test_build_http_request_includes_gallery_upload_hash(self):
         from modules.plugins.pixhost import PixhostPlugin
 
@@ -559,6 +567,71 @@ class TestUploadManagerJobConfig(unittest.TestCase):
 
         self.assertEqual(too_high["threads"], 10)
         self.assertEqual(too_low["threads"], 1)
+
+
+class TestImxPlugin(unittest.TestCase):
+    """Test IMX-specific plugin behavior."""
+
+    def test_prepare_group_creates_imx_gallery_for_auto_gallery(self):
+        from modules.plugins import imx
+
+        plugin = imx.ImxPlugin()
+        group = Mock()
+        group.title = "Batch Gallery"
+        config = {"auto_gallery": True}
+
+        with patch.object(imx.api, "create_imx_gallery", return_value="abc123") as create:
+            plugin.prepare_group(
+                group,
+                config,
+                {},
+                {"imx_user": "user", "imx_pass": "secret"},
+            )
+
+        create.assert_called_once_with("user", "secret", "Batch Gallery")
+        self.assertEqual(group.gallery_id, "abc123")
+        self.assertEqual(group.gallery_name, "Batch Gallery")
+        self.assertEqual(group.gallery_url, "https://imx.to/g/abc123")
+        self.assertEqual(group.gallery_service, "imx.to")
+        self.assertEqual(config["gallery_id"], "abc123")
+
+    def test_build_http_request_uses_documented_api_header_and_selected_gallery(self):
+        from modules.plugins import imx
+
+        plugin = imx.ImxPlugin()
+
+        request = plugin.build_http_request(
+            "/tmp/image.jpg",
+            {
+                "selected_gallery_id": "selected123",
+                "thumbnail_size": "600",
+                "thumbnail_format": "Square",
+            },
+            {"imx_api": "api-key"},
+        )
+
+        fields = request["multipart_fields"]
+        self.assertEqual(request["url"], "https://api.imx.to/v1/upload.php")
+        self.assertEqual(request["headers"]["X-API-Key"], "api-key")
+        self.assertNotIn("X-API-KEY", request["headers"])
+        self.assertEqual(fields["gallery_id"]["value"], "selected123")
+        self.assertEqual(fields["thumbnail_size"]["value"], "5")
+        self.assertEqual(fields["thumbnail_format"]["value"], "3")
+        self.assertEqual(request["response_parser"]["url_path"], "data.image_url")
+        self.assertEqual(request["response_parser"]["thumb_path"], "data.thumbnail_url")
+
+    def test_build_http_request_prefers_group_gallery_id_over_selected_gallery(self):
+        from modules.plugins import imx
+
+        plugin = imx.ImxPlugin()
+
+        request = plugin.build_http_request(
+            "/tmp/image.jpg",
+            {"gallery_id": "group123", "selected_gallery_id": "selected123"},
+            {"imx_api": "api-key"},
+        )
+
+        self.assertEqual(request["multipart_fields"]["gallery_id"]["value"], "group123")
 
 
 class TestImgurHttpSpec(unittest.TestCase):
@@ -753,6 +826,13 @@ class TestViprPlugin(unittest.TestCase):
         self.assertIn("regex:", endpoint)
         self.assertIn("cgi-bin/upload\\.cgi", endpoint)
         self.assertNotEqual(endpoint, "form[action*='upload.cgi']")
+        parser = request["response_parser"]
+        follow_up = parser["follow_up_request"]
+        self.assertEqual(follow_up["url"], "https://vipr.im/")
+        self.assertEqual(follow_up["form_fields"]["fn"], "{fn}")
+        self.assertEqual(follow_up["extract_fields"]["fn"], "textarea[name='fn']")
+        self.assertIn("vipr\\.im", parser["url_path"])
+        self.assertIn("[IMG", parser["thumb_path"])
 
     def test_build_http_request_prefers_group_gallery_id_over_saved_vipr_id(self):
         from modules.plugins import vipr
@@ -768,6 +848,106 @@ class TestViprPlugin(unittest.TestCase):
         self.assertEqual(
             request["multipart_fields"]["fld_id"]["value"], "created-for-group"
         )
+
+
+class TestImageBamPlugin(unittest.TestCase):
+    """Test ImageBam's live upload-session contract."""
+
+    def test_build_http_request_uses_live_dropzone_fields(self):
+        from modules.plugins.imagebam import ImageBamPlugin
+
+        plugin = ImageBamPlugin()
+
+        request = plugin.build_http_request(
+            "/tmp/image.jpg",
+            {
+                "content_type": "Safe",
+                "thumbnail_size": "180",
+                "selected_gallery_id": "490670",
+            },
+            {"imagebam_user": "user", "imagebam_pass": "secret"},
+        )
+
+        self.assertEqual(request["url"], "https://www.imagebam.com/upload")
+        self.assertEqual(request["headers"]["X-Requested-With"], "XMLHttpRequest")
+        fields = request["multipart_fields"]
+        self.assertEqual(fields["files[0]"]["value"], "/tmp/image.jpg")
+        self.assertEqual(fields["_token"]["value"], "csrf_token")
+        self.assertEqual(fields["data"]["value"], "upload_token")
+        self.assertNotIn("upload_session", fields)
+
+        session_request = (
+            request["pre_request"]["follow_up_request"]["follow_up_request"][
+                "follow_up_request"
+            ]
+        )
+        self.assertEqual(session_request["url"], "https://www.imagebam.com/upload/session")
+        self.assertEqual(
+            session_request["form_fields"],
+            {
+                "thumbnail_size": "2",
+                "content_type": "sfw",
+                "comments_enabled": "false",
+                "gallery": "true",
+                "gallery_token": "490670",
+                "gallery_title": "",
+            },
+        )
+        self.assertEqual(request["response_parser"]["url_path"], "success")
+        self.assertEqual(request["response_parser"]["thumb_path"], "")
+        self.assertEqual(request["resolve_spec"]["result_url"], "{url}")
+        self.assertEqual(request["resolve_spec"]["gallery_extractor"], "a#gallery-name")
+        self.assertEqual(request["resolve_spec"]["file_match_mode"], "single")
+        self.assertIn("thumb_url", request["resolve_spec"]["link_extractor"])
+
+    def test_build_http_request_can_create_gallery_during_session(self):
+        from modules.plugins.imagebam import ImageBamPlugin
+
+        plugin = ImageBamPlugin()
+
+        request = plugin.build_http_request(
+            "/tmp/image.jpg",
+            {
+                "content_type": "Adult",
+                "thumbnail_size": "300",
+                "imagebam_gallery_title": "Batch Gallery",
+            },
+            {},
+        )
+
+        self.assertEqual(request["pre_request"]["action"], "get_api_csrf")
+        session_request = request["pre_request"]["follow_up_request"]
+        self.assertEqual(
+            session_request["form_fields"],
+            {
+                "thumbnail_size": "4",
+                "content_type": "nsfw",
+                "comments_enabled": "false",
+                "gallery": "true",
+                "gallery_token": "",
+                "gallery_title": "Batch Gallery",
+            },
+        )
+
+    def test_prepare_group_sets_imagebam_gallery_title_for_auto_gallery(self):
+        from modules.plugins.imagebam import ImageBamPlugin
+
+        plugin = ImageBamPlugin()
+        group = Mock()
+        group.title = "Batch Gallery"
+        config = {"auto_gallery": True}
+
+        plugin.prepare_group(
+            group,
+            config,
+            {},
+            {"imagebam_user": "user", "imagebam_pass": "secret"},
+        )
+
+        self.assertEqual(group.imagebam_gallery_title, "Batch Gallery")
+        self.assertEqual(group.gallery_name, "Batch Gallery")
+        self.assertEqual(group.gallery_service, "imagebam.com")
+        self.assertEqual(config["imagebam_gallery_title"], "Batch Gallery")
 
 
 class TestPluginMetadata(unittest.TestCase):
