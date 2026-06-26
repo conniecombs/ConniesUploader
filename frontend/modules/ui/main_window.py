@@ -1066,6 +1066,13 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         elif self.queue_actions.winfo_ismapped():
             self.queue_actions.pack_forget()
 
+    def _refresh_queue_action_buttons(self, queue_is_empty: bool) -> None:
+        clear_state = "disabled" if queue_is_empty else "normal"
+        if "btn_clear_list" in self.__dict__:
+            self.btn_clear_list.configure(state=clear_state)
+        if "btn_retry_failed" in self.__dict__:
+            self.btn_retry_failed.configure(state=clear_state)
+
     def _set_selection_actions_visible(self, visible: bool) -> None:
         if "selection_actions" not in self.__dict__:
             return
@@ -1174,7 +1181,8 @@ class UploaderApp(ctk.CTk, TkinterDnD.DnDWrapper, DragDropMixin):
         self.lbl_file_summary.configure(text=summary)
         queue_is_empty = file_count == 0 and group_count == 0
         self._set_empty_queue_visible(queue_is_empty)
-        self._set_queue_actions_visible(not queue_is_empty)
+        self._set_queue_actions_visible(True)
+        self._refresh_queue_action_buttons(queue_is_empty)
         self._refresh_selection_actions()
         self._refresh_start_button_state()
 

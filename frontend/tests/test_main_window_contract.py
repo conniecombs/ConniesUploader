@@ -642,12 +642,16 @@ def test_refresh_queue_state_updates_summary_and_empty_state():
     app.lbl_file_summary = FakeLabel()
     app.empty_queue_frame = FakeFrame()
     app.queue_actions = FakeFrame()
+    app.btn_retry_failed = FakeFrame()
+    app.btn_clear_list = FakeFrame()
 
     UploaderApp._refresh_queue_state(app)
 
     assert app.lbl_file_summary.text == "No files added"
     assert app.empty_queue_frame.mapped is True
-    assert app.queue_actions.mapped is False
+    assert app.queue_actions.mapped is True
+    assert app.btn_retry_failed.options["state"] == "disabled"
+    assert app.btn_clear_list.options["state"] == "disabled"
 
     app.file_widgets = {"one.jpg": {}, "two.jpg": {}}
     app.groups = [object()]
@@ -657,6 +661,8 @@ def test_refresh_queue_state_updates_summary_and_empty_state():
     assert app.lbl_file_summary.text == "2 files in 1 batch"
     assert app.empty_queue_frame.mapped is False
     assert app.queue_actions.mapped is True
+    assert app.btn_retry_failed.options["state"] == "normal"
+    assert app.btn_clear_list.options["state"] == "normal"
 
 
 @pytest.mark.unit

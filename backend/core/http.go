@@ -589,15 +589,35 @@ func preRequestClient(base *http.Client, useCookies bool) *http.Client {
 	if !useCookies {
 		return base
 	}
-	jar, _ := cookiejar.New(nil)
+	var jar http.CookieJar
+	if base != nil {
+		jar = base.Jar
+	}
+	if jar == nil {
+		jar, _ = cookiejar.New(nil)
+	}
+	var transport http.RoundTripper
+	var checkRedirect func(req *http.Request, via []*http.Request) error
+	if base != nil {
+		transport = base.Transport
+		checkRedirect = base.CheckRedirect
+	}
 	return &http.Client{
-		Timeout: PreRequestTimeout,
-		Jar:     jar,
-		Transport: &http.Transport{
+		Timeout:       PreRequestTimeout,
+		Jar:           jar,
+		CheckRedirect: checkRedirect,
+		Transport: firstNonNilTransport(transport, &http.Transport{
 			MaxIdleConnsPerHost:   10,
 			ResponseHeaderTimeout: PreRequestHeaderTimeout,
-		},
+		}),
 	}
+}
+
+func firstNonNilTransport(primary http.RoundTripper, fallback http.RoundTripper) http.RoundTripper {
+	if primary != nil {
+		return primary
+	}
+	return fallback
 }
 
 func extractFields(body []byte, responseType string, fields map[string]string) (map[string]string, error) {
