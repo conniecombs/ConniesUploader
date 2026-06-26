@@ -140,9 +140,10 @@ type GenericHttpRequestSpec struct {
 
 // SuccessCheck defines how to verify a generic request succeeded.
 type SuccessCheck struct {
-	Field string `json:"field"` // field name in extracted values
-	Match string `json:"match"` // substring, regex pattern, or exact value
-	Type  string `json:"type"`  // "contains", "regex", "equals", "not_empty"
+	Field string         `json:"field"`         // field name in extracted values
+	Match string         `json:"match"`         // substring, regex pattern, or exact value
+	Type  string         `json:"type"`          // "contains", "regex", "equals", "not_empty", "any"
+	Any   []SuccessCheck `json:"any,omitempty"` // nested checks; one must pass
 }
 
 // BatchResolveSpec describes how to poll a result page and extract

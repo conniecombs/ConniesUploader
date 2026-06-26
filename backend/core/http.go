@@ -874,6 +874,9 @@ func ExecuteGenericRequest(ctx context.Context, client *http.Client, spec *Gener
 		// Store raw body for success checking.
 		extracted["__response_body__"] = string(bodyBytes)
 		extracted["__status_code__"] = fmt.Sprintf("%d", resp.StatusCode)
+		if resp.Request != nil && resp.Request.URL != nil {
+			extracted["__final_url__"] = resp.Request.URL.String()
+		}
 
 		return reqResult{Extracted: extracted}, resp.StatusCode, nil
 	}, logger)
@@ -901,6 +904,22 @@ func ExecuteGenericRequest(ctx context.Context, client *http.Client, spec *Gener
 func checkSuccess(check *SuccessCheck, values map[string]string) error {
 	if check == nil {
 		return nil
+	}
+
+	if len(check.Any) > 0 {
+		failures := make([]string, 0, len(check.Any))
+		for i := range check.Any {
+			if err := checkSuccess(&check.Any[i], values); err == nil {
+				return nil
+			} else {
+				failures = append(failures, err.Error())
+			}
+		}
+		return fmt.Errorf(
+			"success check failed: none of %d conditions matched (%s)",
+			len(check.Any),
+			strings.Join(failures, "; "),
+		)
 	}
 
 	var fieldValue string

@@ -48,6 +48,16 @@ class FakeSession:
         return FakeResponse(self.html)
 
 
+class FakeBridge:
+    def __init__(self, response=None):
+        self.response = response or {"status": "success"}
+        self.requests = []
+
+    def request_sync(self, payload, timeout=0):
+        self.requests.append((payload, timeout))
+        return self.response
+
+
 def point_viper_storage(monkeypatch, tmp_path):
     monkeypatch.setattr(viper_api, "_USER_DATA_DIR", str(tmp_path))
     monkeypatch.setattr(viper_api, "THREADS_FILE", str(tmp_path / "saved_threads.json"))
@@ -111,6 +121,35 @@ def test_fetch_thread_title_uses_vipergirls_headers():
     assert title == "Fetched Thread"
     assert session.requests[0][0] == "https://vipergirls.to/threads/12345-fetched"
     assert "User-Agent" in session.requests[0][1]["headers"]
+
+
+@pytest.mark.unit
+def test_vipergirls_post_reply_uses_live_reply_form_fields(monkeypatch):
+    bridge = FakeBridge()
+    monkeypatch.setattr(viper_api.SidecarBridge, "get", staticmethod(lambda: bridge))
+
+    api = viper_api.ViperGirlsAPI()
+
+    assert api.post_reply("12345", "hello from test") is True
+    assert len(bridge.requests) == 1
+    payload, timeout = bridge.requests[0]
+    spec = payload["generic_spec"]
+
+    assert timeout == 60
+    assert spec["pre_request"]["action"] == "vg_get_reply_form"
+    assert spec["pre_request"]["url"] == "https://vipergirls.to/newreply.php?do=newreply&t=12345"
+    assert spec["pre_request"]["extract_fields"]["loggedinuser"] == "input[name='loggedinuser']"
+    assert spec["pre_request"]["extract_fields"]["reply_title"] == "input[name='title']"
+    assert spec["headers"]["Referer"] == "https://vipergirls.to/newreply.php?do=newreply&t=12345"
+    assert spec["form_fields"]["title"] == "{reply_title}"
+    assert spec["form_fields"]["loggedinuser"] == "{loggedinuser}"
+    assert spec["form_fields"]["sbutton"] == "Submit Reply"
+    assert spec["form_fields"]["emailupdate"] == "0"
+    assert spec["success_check"]["type"] == "any"
+    assert any(
+        check.get("field") == "__final_url__"
+        for check in spec["success_check"]["any"]
+    )
 
 
 @pytest.mark.unit
