@@ -4,18 +4,24 @@
 import customtkinter as ctk
 import threading
 import webbrowser
+from tkinter import messagebox
 from modules.credentials_manager import CredentialsManager
 from modules.gallery_cache import GalleryCache
 from modules.sidecar import SidecarBridge
 from . import config
 from .gallery_service import (
     CREATE_SUPPORTED,
+    DELETE_SUPPORTED,
     GalleryRecord,
     GalleryResult,
     GalleryService,
     GalleryStatus,
+    parse_pixhost_gallery_import,
 )
 
+
+PIXHOST_SERVICE = "pixhost.to"
+IMX_SERVICE = "imx.to"
 
 GALLERY_CACHE_FALLBACK_STATUSES = {
     GalleryStatus.LOGIN_FAILED,
@@ -47,6 +53,9 @@ class GalleryManager(ctk.CTkToplevel):
         self._records = []
         self._refresh_request_id = 0
         self._create_request_id = 0
+        self._delete_request_id = 0
+        self._sync_request_id = 0
+        self._imx_all_synced = False
 
         self._init_ui()
         self.after(config.UI_GALLERY_REFRESH_DELAY_MS, self._load_cached_or_refresh)
@@ -60,16 +69,25 @@ class GalleryManager(ctk.CTkToplevel):
             top,
             variable=self.service_var,
             values=["imx.to", "pixhost.to", "vipr.im"],
-            command=lambda _choice: self._load_cached_or_refresh(),
+            command=lambda _choice: self._on_service_changed(),
         )
         self.cb_service.pack(side="left")
 
-        ctk.CTkButton(
+        self.btn_refresh = ctk.CTkButton(
             top,
             text="Refresh from host",
             width=132,
             command=self._refresh_list,
-        ).pack(side="right")
+        )
+        self.btn_refresh.pack(side="right")
+
+        self.btn_sync_all = ctk.CTkButton(
+            top,
+            text="Sync All",
+            width=92,
+            command=self._sync_all_galleries,
+        )
+        self.btn_sync_all.pack(side="right", padx=(0, 6))
 
         tools = ctk.CTkFrame(self, fg_color="transparent")
         tools.pack(fill="x", padx=10, pady=(0, 8))
@@ -110,6 +128,56 @@ class GalleryManager(ctk.CTkToplevel):
             bottom, text="Create Gallery", command=self._create_gallery, fg_color="green"
         ).pack(fill="x", padx=5, pady=5)
 
+        self.pixhost_import_frame = ctk.CTkFrame(bottom, fg_color="transparent")
+        ctk.CTkLabel(
+            self.pixhost_import_frame,
+            text="Import Pixhost Gallery URL/hash:",
+        ).pack(anchor="w", padx=5, pady=(8, 2))
+        self.ent_pixhost_import = ctk.CTkEntry(
+            self.pixhost_import_frame,
+            placeholder_text="https://pixhost.to/gallery/abc123 or abc123",
+        )
+        self.ent_pixhost_import.pack(fill="x", padx=5, pady=(0, 5))
+        ctk.CTkButton(
+            self.pixhost_import_frame,
+            text="Import Gallery",
+            command=self._import_pixhost_gallery,
+            fg_color="#3B8ED0",
+        ).pack(fill="x", padx=5, pady=(0, 5))
+        self._update_service_mode()
+
+    def _on_service_changed(self):
+        self._update_service_mode()
+        self._load_cached_or_refresh()
+
+    def _update_service_mode(self):
+        service = self.service_var.get()
+        try:
+            self.btn_refresh.configure(text=self._list_action_label(service))
+        except Exception:
+            pass
+        try:
+            self.btn_sync_all.configure(
+                state="normal" if service == IMX_SERVICE else "disabled"
+            )
+        except Exception:
+            pass
+
+        import_frame = getattr(self, "pixhost_import_frame", None)
+        if import_frame is None:
+            return
+        try:
+            if service == PIXHOST_SERVICE:
+                import_frame.pack(fill="x", padx=0, pady=(4, 0))
+            else:
+                import_frame.pack_forget()
+        except Exception:
+            pass
+
+    def _list_action_label(self, service: str = "") -> str:
+        service = service or self.service_var.get()
+        return "Show saved" if service == PIXHOST_SERVICE else "Refresh from host"
+
     def _ask_cookies_dialog(self):
         dialog = ctk.CTkInputDialog(text="Paste your 'PHPSESSID' cookie value:", title="Cookie 1/3")
         sess = dialog.get_input()
@@ -120,15 +188,26 @@ class GalleryManager(ctk.CTkToplevel):
         self._refresh_list()
 
     def _load_cached_or_refresh(self):
+        self._update_service_mode()
         service = self.service_var.get()
+        if service == PIXHOST_SERVICE:
+            self._render_pixhost_local_result(self._refresh_request_id)
+            return
+
         records = self.gallery_cache.records_for_service(service)
         if records:
+            message = (
+                f"Showing {len(records)} cached gallery record(s). "
+                "Use Refresh from host to reload live data."
+            )
+            if service == IMX_SERVICE:
+                message = (
+                    f"Showing {len(records)} cached IMX gallery record(s). "
+                    "Search and sort use this local cache. Use Sync All to refresh the full index."
+                )
             result = GalleryResult(
                 status=GalleryStatus.SUCCESS,
-                message=(
-                    f"Showing {len(records)} cached gallery record(s). "
-                    "Use Refresh from host to reload live data."
-                ),
+                message=message,
                 service=service,
                 records=records,
                 cached=True,
@@ -148,6 +227,10 @@ class GalleryManager(ctk.CTkToplevel):
 
         service = self.service_var.get()
         self._set_status("")
+        if service == PIXHOST_SERVICE:
+            self._render_pixhost_local_result(request_id)
+            return
+
         ctk.CTkLabel(self.scroll, text="Loading...").pack(pady=20)
 
         def _task():
@@ -156,13 +239,65 @@ class GalleryManager(ctk.CTkToplevel):
 
         threading.Thread(target=_task, daemon=True).start()
 
+    def _sync_all_galleries(self):
+        service = self.service_var.get()
+        if service != IMX_SERVICE:
+            self._set_status("Sync All is only available for IMX.to.", is_error=True)
+            return
+
+        self._sync_request_id += 1
+        request_id = self._sync_request_id
+        self._set_status("Syncing all IMX.to galleries...")
+        self._clear_scroll()
+        ctk.CTkLabel(self.scroll, text="Syncing all IMX.to galleries...").pack(pady=20)
+
+        def _progress(page: int, total: int):
+            self.after(
+                0,
+                lambda page=page, total=total: self._set_status(
+                    f"Syncing IMX.to galleries... page {page}, {total} found."
+                ),
+            )
+
+        def _task():
+            result = self.gallery_service.sync_all_galleries(
+                service, progress_callback=_progress
+            )
+            self.after(0, lambda: self._handle_sync_all_result(request_id, service, result))
+
+        threading.Thread(target=_task, daemon=True).start()
+
+    def _render_pixhost_local_result(self, request_id: int):
+        records = self.gallery_cache.records_for_service(PIXHOST_SERVICE)
+        if records:
+            result = GalleryResult(
+                status=GalleryStatus.SUCCESS,
+                message=(
+                    f"Showing {len(records)} saved Pixhost gallery record(s). "
+                    "Pixhost has no remote account gallery listing."
+                ),
+                service=PIXHOST_SERVICE,
+                records=records,
+                cached=True,
+            )
+        else:
+            result = GalleryResult(
+                status=GalleryStatus.EMPTY,
+                message=(
+                    "No saved Pixhost galleries. Create a Pixhost gallery here or import "
+                    "an existing gallery URL/hash."
+                ),
+                service=PIXHOST_SERVICE,
+                cached=True,
+            )
+        self._render_list_result(request_id, PIXHOST_SERVICE, result)
+
     def _load_more_pages(self):
-        """Fetches the next page and replaces current galleries"""
+        """Fetch the next IMX page and append it to the local cache."""
         page = self.current_page + 1
         self._refresh_request_id += 1
         request_id = self._refresh_request_id
 
-        # Clear UI
         self._clear_scroll()
 
         service = self.service_var.get()
@@ -190,8 +325,63 @@ class GalleryManager(ctk.CTkToplevel):
 
         self._clear_scroll()
         self.current_page = result.page
-        self._records = result.records
 
+        if not result.ok:
+            if (
+                service == IMX_SERVICE
+                and result.status == GalleryStatus.EMPTY
+                and result.page > 1
+            ):
+                records = self.gallery_cache.records_for_service(service)
+                if records:
+                    self.current_page = max(1, result.page - 1)
+                    self._records = records
+                    self._imx_all_synced = True
+                    self._set_status(
+                        f"No more IMX.to galleries after page {self.current_page}. "
+                        f"Showing {len(records)} cached gallery record(s)."
+                    )
+                    self._render_current_records()
+                    return
+            cached_result = self._cached_result_for_failure(service, result)
+            if result.status in GALLERY_CACHE_FALLBACK_STATUSES and cached_result:
+                self.current_page = cached_result.page
+                self._records = cached_result.records
+                self._set_status(cached_result.message, is_warning=True)
+                self._render_current_records()
+                return
+            self._records = []
+            self._render_result_message(result)
+            return
+
+        self._records = result.records
+        status_message = result.message
+        if not result.cached and result.records:
+            self.gallery_cache.upsert_records(service, result.records)
+            if service == IMX_SERVICE:
+                self._records = self.gallery_cache.records_for_service(service)
+                if result.page > 1:
+                    status_message = (
+                        f"Loaded IMX.to page {result.page}; showing "
+                        f"{len(self._records)} cached gallery record(s)."
+                    )
+                else:
+                    status_message = (
+                        f"Refreshed IMX.to page 1; showing "
+                        f"{len(self._records)} cached gallery record(s)."
+                    )
+            else:
+                self._records = self._records_with_cache_metadata(service, result.records)
+        self._set_status(status_message, is_warning=result.cached)
+        self._render_current_records()
+
+    def _handle_sync_all_result(
+        self, request_id: int, service: str, result: GalleryResult
+    ):
+        if self._is_stale_sync(request_id, service):
+            return
+
+        self._clear_scroll()
         if not result.ok:
             cached_result = self._cached_result_for_failure(service, result)
             if result.status in GALLERY_CACHE_FALLBACK_STATUSES and cached_result:
@@ -200,13 +390,20 @@ class GalleryManager(ctk.CTkToplevel):
                 self._set_status(cached_result.message, is_warning=True)
                 self._render_current_records()
                 return
+            self._set_status(result.message, is_error=True)
             self._render_result_message(result)
             return
 
-        if not result.cached and result.records:
+        if result.records:
             self.gallery_cache.upsert_records(service, result.records)
-            self._records = self._records_with_cache_metadata(service, result.records)
-        self._set_status(result.message, is_warning=result.cached)
+
+        self.current_page = result.page
+        self._records = self.gallery_cache.records_for_service(service)
+        self._imx_all_synced = True
+        self._set_status(
+            f"Sync complete: fetched {len(result.records)} IMX.to gallery record(s); "
+            f"showing {len(self._records)} cached gallery record(s)."
+        )
         self._render_current_records()
 
     def _records_with_cache_metadata(self, service: str, records):
@@ -264,7 +461,7 @@ class GalleryManager(ctk.CTkToplevel):
 
         # Append "Load More" button at the bottom if we found data
         # (Assuming if we found data, there *might* be another page)
-        if self.service_var.get() == "imx.to":
+        if self.service_var.get() == IMX_SERVICE and not self._imx_all_synced:
             self.btn_load_more = ctk.CTkButton(
                 self.scroll,
                 text="Load Next Page",
@@ -357,6 +554,27 @@ class GalleryManager(ctk.CTkToplevel):
             state=url_state,
             command=lambda r=record: self._open_gallery(r),
         ).pack(side="left", padx=2)
+
+        if record.service in DELETE_SUPPORTED:
+            ctk.CTkButton(
+                actions,
+                text="Delete",
+                width=64,
+                height=26,
+                fg_color="#a83232",
+                hover_color="#7f2424",
+                command=lambda r=record: self._delete_gallery(r),
+            ).pack(side="left", padx=2)
+        elif record.service == PIXHOST_SERVICE:
+            ctk.CTkButton(
+                actions,
+                text="Remove",
+                width=72,
+                height=26,
+                fg_color="#6b7280",
+                hover_color="#4b5563",
+                command=lambda r=record: self._remove_saved_gallery(r),
+            ).pack(side="left", padx=2)
 
     def _filtered_sorted_records(self):
         query = self.search_var.get().strip().lower()
@@ -462,6 +680,96 @@ class GalleryManager(ctk.CTkToplevel):
         else:
             self._render_result_message(result)
 
+    def _import_pixhost_gallery(self):
+        raw_value = self.ent_pixhost_import.get().strip()
+        display_name = self.ent_name.get().strip()
+        record = parse_pixhost_gallery_import(raw_value, display_name)
+        if not record:
+            self._set_status("Enter a valid Pixhost gallery URL or hash.", is_error=True)
+            return
+
+        self.gallery_cache.upsert_record(record)
+        self._set_status(f"Imported Pixhost gallery '{record.name}' ({record.id}).")
+        self._render_created_gallery(record)
+
+    def _remove_saved_gallery(self, record: GalleryRecord):
+        confirmed = messagebox.askyesno(
+            "Remove Saved Gallery",
+            f"Remove '{record.name}' ({record.id}) from Gallery Manager?\n\n"
+            "This only removes the saved local record; it does not delete anything on Pixhost.",
+            parent=self,
+        )
+        if not confirmed:
+            return
+
+        removed = self.gallery_cache.remove_record(record.service, record.id)
+        self._records = [
+            existing
+            for existing in self._records
+            if not (existing.service == record.service and existing.id == record.id)
+        ]
+        if removed:
+            self._set_status(f"Removed saved gallery '{record.name}' ({record.id}).")
+        else:
+            self._set_status(f"Saved gallery '{record.name}' was already removed.", is_warning=True)
+
+        if self._records:
+            self._render_current_records()
+        else:
+            self._render_pixhost_local_result(self._refresh_request_id)
+
+    def _delete_gallery(self, record: GalleryRecord):
+        if record.service not in DELETE_SUPPORTED:
+            self._set_status(
+                f"{record.service} does not support gallery deletion.", is_error=True
+            )
+            return
+
+        confirmed = messagebox.askyesno(
+            "Delete Gallery",
+            f"Delete '{record.name}' ({record.id}) from {record.service}?\n\n"
+            "This removes the host folder and all images inside it.",
+            parent=self,
+        )
+        if not confirmed:
+            return
+
+        self._delete_request_id += 1
+        request_id = self._delete_request_id
+        service = record.service
+        self._set_status(f"Deleting gallery '{record.name}'...")
+
+        def _task():
+            result = self.gallery_service.delete_gallery(service, record)
+            self.after(
+                0, lambda: self._handle_delete_result(request_id, service, record, result)
+            )
+
+        threading.Thread(target=_task, daemon=True).start()
+
+    def _handle_delete_result(
+        self,
+        request_id: int,
+        service: str,
+        record: GalleryRecord,
+        result: GalleryResult,
+    ):
+        if self._is_stale_delete(request_id, service):
+            return
+
+        if not result.ok:
+            self._set_status(result.message, is_error=True)
+            return
+
+        self.gallery_cache.remove_record(record.service, record.id)
+        self._records = [
+            existing
+            for existing in self._records
+            if not (existing.service == record.service and existing.id == record.id)
+        ]
+        self._set_status(result.message)
+        self._render_current_records()
+
     def _render_created_gallery(self, record: GalleryRecord):
         self._records = [record]
         self._clear_scroll()
@@ -476,7 +784,7 @@ class GalleryManager(ctk.CTkToplevel):
         self._render_record_row(record, highlight=True)
         self._render_empty_actions(
             [
-                ("Refresh from host", self._refresh_list),
+                (self._list_action_label(record.service), self._refresh_list),
                 ("Create Another", self._focus_create_gallery),
             ]
         )
@@ -500,7 +808,15 @@ class GalleryManager(ctk.CTkToplevel):
             pady=(0, 12)
         )
 
-        actions = [("Refresh from host", self._refresh_list)]
+        if result.service == PIXHOST_SERVICE:
+            actions = [
+                (self._list_action_label(result.service), self._refresh_list),
+                ("Import Gallery", self._focus_import_gallery),
+            ]
+        else:
+            actions = [("Refresh from host", self._refresh_list)]
+            if result.service == IMX_SERVICE:
+                actions.append(("Sync All", self._sync_all_galleries))
         if result.status in {GalleryStatus.MISSING_CREDENTIALS, GalleryStatus.LOGIN_FAILED}:
             actions.insert(0, ("Set Credentials", self._open_credentials))
         if result.service in CREATE_SUPPORTED:
@@ -534,6 +850,12 @@ class GalleryManager(ctk.CTkToplevel):
     def _focus_create_gallery(self):
         try:
             self.ent_name.focus_set()
+        except Exception:
+            pass
+
+    def _focus_import_gallery(self):
+        try:
+            self.ent_pixhost_import.focus_set()
         except Exception:
             pass
 
@@ -584,3 +906,9 @@ class GalleryManager(ctk.CTkToplevel):
 
     def _is_stale_create(self, request_id: int, service: str) -> bool:
         return request_id != self._create_request_id or service != self.service_var.get()
+
+    def _is_stale_delete(self, request_id: int, service: str) -> bool:
+        return request_id != self._delete_request_id or service != self.service_var.get()
+
+    def _is_stale_sync(self, request_id: int, service: str) -> bool:
+        return request_id != self._sync_request_id or service != self.service_var.get()

@@ -179,6 +179,25 @@ def create_imx_gallery(
     return None
 
 
+def delete_imx_gallery(user: str, pwd: str, gallery_id: str, client: Any = None) -> bool:
+    """Delete an IMX gallery through the live account edit form."""
+    from modules.gallery_service import GalleryService
+
+    service = GalleryService(
+        bridge=None,
+        creds={
+            "imx_user": user,
+            "imx_pass": pwd,
+        },
+    )
+    result = service.delete_gallery("imx.to", gallery_id)
+    if result.ok:
+        return True
+
+    logger.warning(f"Failed to delete IMX gallery {gallery_id}: {result.message}")
+    return False
+
+
 # ---------------------------------------------------------------------------
 # Vipr helpers
 # ---------------------------------------------------------------------------
@@ -309,3 +328,46 @@ def create_vipr_gallery(creds: Dict[str, str], name: str) -> Optional[Dict[str, 
         "gallery_name": str(raw.get("name") or name),
         "gallery_url": str(raw.get("url") or ""),
     }
+
+
+def delete_vipr_gallery(creds: Dict[str, str], gallery_id: str) -> bool:
+    """Delete a Vipr gallery/folder through the File Manager delete endpoint."""
+    gallery_id = (gallery_id or "").strip()
+    if not gallery_id:
+        return False
+
+    spec = {
+        "url": f"https://vipr.im/?op=my_files&fld_id=0&del_folder={gallery_id}",
+        "method": "GET",
+        "use_cookies": True,
+        "response_type": "html",
+        "extract_fields": {
+            "response_body": "regex:(<body[\\s\\S]*</body>)",
+        },
+        "pre_request": {
+            "action": "vipr_login",
+            "url": "https://vipr.im/",
+            "method": "POST",
+            "form_fields": {
+                "op": "login",
+                "login": creds.get("vipr_user", ""),
+                "password": creds.get("vipr_pass", ""),
+            },
+            "use_cookies": True,
+            "response_type": "html",
+            "extract_fields": {},
+        },
+    }
+
+    resp = execute_generic_request(spec, timeout=30, service="vipr.im")
+    if resp.get("status") != "success":
+        logger.warning(f"Failed to delete Vipr gallery: {resp.get('msg', 'unknown error')}")
+        return False
+
+    data = resp.get("data")
+    body = data.get("response_body", "") if isinstance(data, dict) else ""
+
+    from modules.gallery_service import parse_vipr_gallery_html
+
+    remaining = parse_vipr_gallery_html(body)
+    return not any(str(record.get("id") or "") == gallery_id for record in remaining)

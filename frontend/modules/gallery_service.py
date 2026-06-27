@@ -60,6 +60,9 @@ SERVICE_LABELS = {
 
 LIST_SUPPORTED = {"imx.to", "vipr.im", "imagebam.com"}
 CREATE_SUPPORTED = {"imx.to", "pixhost.to", "vipr.im"}
+DELETE_SUPPORTED = {"imx.to", "vipr.im"}
+IMX_GALLERY_PAGE_SIZE = 100
+GALLERY_SYNC_MAX_PAGES = 250
 
 
 def gallery_url_for_service(service: str, gallery_id: str) -> str:
@@ -100,6 +103,41 @@ def normalize_gallery_record(service: str, raw: Mapping[str, Any]) -> Optional[G
         url=url,
         upload_hash=upload_hash,
         raw=dict(raw),
+    )
+
+
+def parse_pixhost_gallery_import(value: str, name: str = "") -> Optional[GalleryRecord]:
+    """Build a Pixhost gallery record from a public gallery URL or hash."""
+    raw_value = str(value or "").strip()
+    if not raw_value:
+        return None
+
+    gallery_id = ""
+    match = re.search(r"(?:^|/)gallery/([A-Za-z0-9]+)(?:[/?#]|$)", raw_value)
+    if match:
+        gallery_id = match.group(1)
+    elif raw_value.isalnum():
+        gallery_id = raw_value
+
+    if not gallery_id:
+        parsed = urlparse(raw_value if "://" in raw_value else f"https://{raw_value}")
+        match = re.search(r"(?:^|/)gallery/([A-Za-z0-9]+)(?:[/?#]|$)", parsed.path)
+        if match:
+            gallery_id = match.group(1)
+
+    gallery_id = gallery_id.strip()
+    if not gallery_id or not gallery_id.isalnum():
+        return None
+
+    display_name = str(name or "").strip() or gallery_id
+    return normalize_gallery_record(
+        "pixhost.to",
+        {
+            "gallery_hash": gallery_id,
+            "gallery_name": display_name,
+            "gallery_url": gallery_url_for_service("pixhost.to", gallery_id),
+            "source": "imported",
+        },
     )
 
 
@@ -293,6 +331,21 @@ class GalleryService:
 
         return self._list_sidecar_galleries(service, page)
 
+    def sync_all_galleries(
+        self,
+        service: str,
+        max_pages: int = GALLERY_SYNC_MAX_PAGES,
+        progress_callback: Optional[Any] = None,
+    ) -> GalleryResult:
+        service = service.strip()
+        if service != "imx.to":
+            return self._result(
+                GalleryStatus.UNSUPPORTED,
+                f"{SERVICE_LABELS.get(service, service or 'Selected service')} full sync is not supported.",
+                service,
+            )
+        return self._sync_all_imx_galleries(max_pages, progress_callback)
+
     def create_gallery(self, service: str, name: str) -> GalleryResult:
         service = service.strip()
         name = name.strip()
@@ -317,6 +370,54 @@ class GalleryService:
             return self._create_imx_gallery(name)
 
         return self._create_sidecar_gallery(service, name)
+
+    def delete_gallery(self, service: str, record_or_id: Any) -> GalleryResult:
+        service = service.strip()
+        gallery_id = self._gallery_id_from_record_or_id(record_or_id)
+        gallery_name = self._gallery_name_from_record_or_id(record_or_id, gallery_id)
+        if not gallery_id:
+            return self._result(GalleryStatus.ERROR, "Choose a gallery to delete.", service)
+        if service not in SERVICE_LABELS or service not in DELETE_SUPPORTED:
+            return self._result(
+                GalleryStatus.UNSUPPORTED,
+                f"{service or 'Selected service'} does not support gallery deletion.",
+                service,
+            )
+
+        missing = self._missing_credentials(service)
+        if missing:
+            return self._result(
+                GalleryStatus.MISSING_CREDENTIALS,
+                f"{SERVICE_LABELS[service]} needs {missing} before a gallery can be deleted.",
+                service,
+            )
+
+        if service == "imx.to":
+            return self._delete_imx_gallery(gallery_id, gallery_name)
+        if service == "vipr.im":
+            return self._delete_vipr_gallery(gallery_id, gallery_name)
+
+        return self._result(
+            GalleryStatus.UNSUPPORTED,
+            f"{SERVICE_LABELS.get(service, service)} gallery deletion is not supported yet.",
+            service,
+        )
+
+    @staticmethod
+    def _gallery_id_from_record_or_id(record_or_id: Any) -> str:
+        if isinstance(record_or_id, GalleryRecord):
+            return str(record_or_id.id or "").strip()
+        if isinstance(record_or_id, Mapping):
+            return str(record_or_id.get("id") or record_or_id.get("gallery_id") or "").strip()
+        return str(record_or_id or "").strip()
+
+    @staticmethod
+    def _gallery_name_from_record_or_id(record_or_id: Any, fallback: str) -> str:
+        if isinstance(record_or_id, GalleryRecord):
+            return str(record_or_id.name or fallback).strip()
+        if isinstance(record_or_id, Mapping):
+            return str(record_or_id.get("name") or record_or_id.get("gallery_name") or fallback).strip()
+        return fallback
 
     def _missing_credentials(self, service: str) -> str:
         if service == "imx.to" and not self._imx_manual_cookies:
@@ -675,6 +776,79 @@ class GalleryService:
             raw=resp,
         )
 
+    def _delete_vipr_gallery(self, gallery_id: str, gallery_name: str) -> GalleryResult:
+        try:
+            resp = self.bridge.request_sync(
+                {
+                    "action": "http_request",
+                    "service": "vipr.im",
+                    "generic_spec": {
+                        "url": f"https://vipr.im/?op=my_files&fld_id=0&del_folder={gallery_id}",
+                        "method": "GET",
+                        "use_cookies": True,
+                        "response_type": "html",
+                        "extract_fields": {
+                            "response_body": "regex:(<body[\\s\\S]*</body>)",
+                        },
+                        "pre_request": {
+                            "action": "vipr_login",
+                            "url": "https://vipr.im/",
+                            "method": "POST",
+                            "form_fields": {
+                                "op": "login",
+                                "login": self.creds.get("vipr_user", ""),
+                                "password": self.creds.get("vipr_pass", ""),
+                            },
+                            "use_cookies": True,
+                            "response_type": "html",
+                            "extract_fields": {},
+                        },
+                    },
+                },
+                timeout=20,
+            )
+        except Exception as exc:
+            logger.error(f"Failed to delete Vipr gallery {gallery_id}: {exc}")
+            return self._result(GalleryStatus.ERROR, str(exc), "vipr.im")
+
+        if not isinstance(resp, dict):
+            return self._result(
+                GalleryStatus.PARSE_FAILED,
+                "Gallery deletion returned an unreadable response.",
+                "vipr.im",
+                raw=resp,
+            )
+        if resp.get("status") != "success":
+            return self._failure_from_response("vipr.im", resp)
+
+        data = resp.get("data")
+        body = str(data.get("response_body", "") or "") if isinstance(data, dict) else ""
+        if not body:
+            return self._result(
+                GalleryStatus.PARSE_FAILED,
+                "Vipr.im deleted the gallery, but the file-manager page could not be read.",
+                "vipr.im",
+                raw=resp,
+            )
+
+        remaining = parse_vipr_gallery_html(body)
+        if any(str(record.get("id") or "") == gallery_id for record in remaining):
+            return self._result(
+                GalleryStatus.ERROR,
+                f"Vipr.im still lists gallery '{gallery_name}' ({gallery_id}) after deletion.",
+                "vipr.im",
+                raw=resp,
+            )
+
+        record = GalleryRecord(service="vipr.im", id=gallery_id, name=gallery_name)
+        return self._result(
+            GalleryStatus.SUCCESS,
+            f"Deleted gallery '{gallery_name}' ({gallery_id}).",
+            "vipr.im",
+            record=record,
+            raw=resp,
+        )
+
     def _records_from_sidecar_response(
         self, service: str, resp: Any, page: int = 1
     ) -> GalleryResult:
@@ -793,6 +967,9 @@ class GalleryService:
             problem.page = page
             return problem
 
+        return self._fetch_imx_gallery_page(session, page)
+
+    def _fetch_imx_gallery_page(self, session: requests.Session, page: int) -> GalleryResult:
         try:
             response = session.get(
                 f"https://imx.to/user/galleries?page={page}&limit=200",
@@ -829,6 +1006,61 @@ class GalleryService:
                 raw=response.text,
             )
         return self._records_from_raw("imx.to", raw_records, page=page, raw=response.text)
+
+    def _sync_all_imx_galleries(
+        self, max_pages: int, progress_callback: Optional[Any] = None
+    ) -> GalleryResult:
+        session, problem = self._create_imx_session()
+        if problem:
+            return problem
+
+        all_records: List[GalleryRecord] = []
+        seen = set()
+        last_page = 0
+
+        for page in range(1, max_pages + 1):
+            result = self._fetch_imx_gallery_page(session, page)
+            if result.status == GalleryStatus.EMPTY:
+                if all_records:
+                    break
+                return result
+            if not result.ok:
+                return result
+
+            new_records = []
+            for record in result.records:
+                if record.id in seen:
+                    continue
+                seen.add(record.id)
+                new_records.append(record)
+
+            if not new_records and all_records:
+                break
+
+            all_records.extend(new_records)
+            last_page = page
+            if callable(progress_callback):
+                progress_callback(page, len(all_records))
+
+            if len(result.records) < IMX_GALLERY_PAGE_SIZE:
+                break
+        else:
+            return self._result(
+                GalleryStatus.ERROR,
+                f"Stopped IMX.to sync after {max_pages} pages before reaching the end.",
+                "imx.to",
+                records=all_records,
+                page=max_pages,
+            )
+
+        return self._result(
+            GalleryStatus.SUCCESS,
+            f"Synced {len(all_records)} IMX.to gallery record(s) from {last_page} page(s).",
+            "imx.to",
+            records=all_records,
+            page=max(1, last_page),
+            raw={"pages": last_page, "sync_complete": True},
+        )
 
     def _create_imx_gallery(self, name: str) -> GalleryResult:
         session, problem = self._create_imx_session()
@@ -905,6 +1137,80 @@ class GalleryService:
             if record and record.name == name:
                 return record
         return None
+
+    def _delete_imx_gallery(self, gallery_id: str, gallery_name: str) -> GalleryResult:
+        session, problem = self._create_imx_session()
+        if problem:
+            return problem
+
+        try:
+            response = session.post(
+                f"https://imx.to/user/gallery/edit?id={gallery_id}",
+                data={"delete_confirm": "on", "delete_gallery": "Remove Gallery"},
+                timeout=15,
+            )
+        except requests.RequestException as exc:
+            logger.error(f"Failed to delete IMX gallery {gallery_id}: {exc}")
+            return self._result(GalleryStatus.ERROR, str(exc), "imx.to")
+
+        if response.status_code in {401, 403} or _looks_like_imx_login_page(response.text):
+            return self._result(
+                GalleryStatus.LOGIN_FAILED,
+                "IMX.to login failed while deleting the gallery.",
+                "imx.to",
+                raw=response.text,
+            )
+        if response.status_code >= 400:
+            return self._result(
+                GalleryStatus.ERROR,
+                f"IMX.to returned HTTP {response.status_code} while deleting the gallery.",
+                "imx.to",
+                raw=response.text,
+            )
+
+        try:
+            list_response = session.get(
+                "https://imx.to/user/galleries?page=1&limit=200",
+                timeout=10,
+            )
+        except requests.RequestException as exc:
+            logger.error(f"Failed to verify IMX gallery deletion {gallery_id}: {exc}")
+            return self._result(GalleryStatus.ERROR, str(exc), "imx.to")
+
+        if list_response.status_code in {401, 403} or _looks_like_imx_login_page(
+            list_response.text
+        ):
+            return self._result(
+                GalleryStatus.LOGIN_FAILED,
+                "IMX.to login failed while confirming gallery deletion.",
+                "imx.to",
+                raw=list_response.text,
+            )
+        if list_response.status_code >= 400:
+            return self._result(
+                GalleryStatus.ERROR,
+                f"IMX.to returned HTTP {list_response.status_code} while confirming deletion.",
+                "imx.to",
+                raw=list_response.text,
+            )
+
+        remaining, _ = parse_imx_gallery_html(list_response.text)
+        if any(str(record.get("id") or "") == gallery_id for record in remaining):
+            return self._result(
+                GalleryStatus.ERROR,
+                f"IMX.to still lists gallery '{gallery_name}' ({gallery_id}) after deletion.",
+                "imx.to",
+                raw=list_response.text,
+            )
+
+        record = GalleryRecord(service="imx.to", id=gallery_id, name=gallery_name)
+        return self._result(
+            GalleryStatus.SUCCESS,
+            f"Deleted gallery '{gallery_name}' ({gallery_id}).",
+            "imx.to",
+            record=record,
+            raw=response.text,
+        )
 
     def _failure_from_response(
         self, service: str, resp: Mapping[str, Any], page: int = 1

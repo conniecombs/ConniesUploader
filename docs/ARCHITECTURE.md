@@ -33,7 +33,8 @@ Plugin discovery is automatic through `modules/plugin_manager.py`, which scans `
 
 ```text
 main.py (in frontend/)
-  -> modules/ui/main_window.py
+  -> modules/ui/main_window.py compatibility wrapper
+  -> modules/ui/Main_Window/ organized main-window package
   -> modules/plugin_manager.py
   -> modules/plugins/<service>.py
   -> modules/upload_manager.py
@@ -56,7 +57,8 @@ For a typical upload:
 
 ### GUI and Workflow
 
-- Main app shell and queue: `frontend/modules/ui/main_window.py`
+- Main app shell and queue: `frontend/modules/ui/Main_Window/app.py` plus focused mixins under `frontend/modules/ui/Main_Window/`
+- Compatibility import wrapper: `frontend/modules/ui/main_window.py`
 - Drag and drop/file scanning: `frontend/modules/dnd.py`, `frontend/modules/file_handler.py`
 - Settings persistence: `frontend/modules/settings_manager.py`
 - Credentials: `frontend/modules/credentials_manager.py`

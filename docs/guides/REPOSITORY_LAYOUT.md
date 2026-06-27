@@ -13,7 +13,7 @@ This project keeps source files, developer helpers, generated build output, and 
 
 The repository root intentionally keeps the primary `README.md`, build scripts, and cross-project configuration files. The `uploader*_test.go` files inside `backend/` use `package main` internals such as the sidecar HTTP client, job handlers, and package-level compatibility wrappers, so they stay beside `main.go` and `handlers.go`.
 
-Large Python modules should be split only when a real ownership boundary is clear. In particular, `frontend/modules/ui/main_window.py` owns the main queue shell and `frontend/modules/dnd.py` owns queue selection, drag/reorder, and context-menu behavior. Move code out of those files only with focused contract updates and verification, not as a cosmetic layout cleanup.
+Large Python modules should be split only when a real ownership boundary is clear. The main window implementation now lives under `frontend/modules/ui/Main_Window/`, with `frontend/modules/ui/main_window.py` kept as the compatibility import wrapper. `frontend/modules/dnd.py` still owns queue selection, drag/reorder, and context-menu behavior. Move code across those boundaries only with focused contract updates and verification, not as cosmetic layout cleanup.
 
 ## Developer Helpers
 

@@ -17,7 +17,10 @@ from .gallery_service import GalleryRecord, normalize_gallery_record
 
 _USER_DATA_DIR = os.path.join(os.path.expanduser("~"), ".conniesuploader")
 DEFAULT_GALLERY_CACHE_FILE = os.path.join(_USER_DATA_DIR, "gallery_cache.json")
-GALLERY_CACHE_LIMIT_PER_SERVICE = 500
+# Keep gallery cache entries until the user explicitly removes/deletes them.
+# Hosts like IMX can have far more than 500 galleries, and trimming breaks
+# complete local search/sort after a full sync.
+GALLERY_CACHE_LIMIT_PER_SERVICE = None
 
 
 def _now_iso() -> str:
@@ -90,6 +93,25 @@ class GalleryCache:
 
     def upsert_record(self, record: GalleryRecord) -> None:
         self.upsert_records(record.service, [record])
+
+    def remove_record(self, service: str, gallery_id: str) -> bool:
+        service = str(service or "").strip()
+        gallery_id = str(gallery_id or "").strip()
+        if not service or not gallery_id:
+            return False
+
+        payload = self.load()
+        service_records = payload.get("services", {}).get(service)
+        if not isinstance(service_records, dict) or gallery_id not in service_records:
+            return False
+
+        del service_records[gallery_id]
+        if service_records:
+            payload["services"][service] = service_records
+        else:
+            payload.get("services", {}).pop(service, None)
+        self.save(payload)
+        return True
 
     def mark_used(self, record: GalleryRecord, timestamp: Optional[str] = None) -> str:
         payload = self.load()
@@ -266,8 +288,11 @@ class GalleryCache:
             ),
             reverse=True,
         )
-        room = max(0, GALLERY_CACHE_LIMIT_PER_SERVICE - len(pinned))
-        trimmed = pinned + regular[:room]
+        if GALLERY_CACHE_LIMIT_PER_SERVICE is None:
+            trimmed = pinned + regular
+        else:
+            room = max(0, GALLERY_CACHE_LIMIT_PER_SERVICE - len(pinned))
+            trimmed = pinned + regular[:room]
         return dict(trimmed)
 
     def _cached_record_sort_key(self, record: GalleryRecord) -> tuple:

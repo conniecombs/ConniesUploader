@@ -13,6 +13,8 @@ from typing import Any, Dict, List, Tuple
 from loguru import logger
 
 from . import config
+from .gallery_cache import GalleryCache
+from .gallery_service import GalleryRecord, gallery_url_for_service
 from .plugin_manager import PluginManager
 from .sidecar import SidecarBridge
 
@@ -165,6 +167,9 @@ class UploadManager:
                     if gallery_title not in (None, ""):
                         group_cfg["imagebam_gallery_title"] = gallery_title
 
+                if service_id == "imx.to":
+                    self._remember_imx_gallery_use(group_obj, group_cfg)
+
                 explicit_covers = self._explicit_cover_files_for_group(group_obj, files)
                 if explicit_covers is None:
                     cover_cnt = self._cover_count_for_service(group_cfg)
@@ -231,6 +236,39 @@ class UploadManager:
         overrides = COVER_THUMBNAIL_OVERRIDES.get(service_id, {})
         cfg.update(overrides)
         return cfg
+
+    @staticmethod
+    def _remember_imx_gallery_use(group_obj: Any, cfg: Dict[str, Any]) -> None:
+        gallery_id = str(
+            cfg.get("gallery_id") or cfg.get("selected_gallery_id") or cfg.get("imx_gallery_id") or ""
+        ).strip()
+        if not gallery_id:
+            return
+
+        gallery_name = str(
+            cfg.get("selected_gallery_name")
+            or getattr(group_obj, "gallery_name", "")
+            or gallery_id
+        ).strip()
+        gallery_url = str(
+            cfg.get("selected_gallery_url")
+            or getattr(group_obj, "gallery_url", "")
+            or gallery_url_for_service("imx.to", gallery_id)
+        ).strip()
+
+        record = GalleryRecord(
+            service="imx.to",
+            id=gallery_id,
+            name=gallery_name,
+            url=gallery_url,
+            raw={"source": "upload"},
+        )
+        try:
+            cache = GalleryCache()
+            cache.upsert_record(record)
+            cache.mark_used(record)
+        except Exception as exc:
+            logger.debug(f"Could not update IMX gallery cache for {gallery_id}: {exc}")
 
     @staticmethod
     def _explicit_cover_files_for_group(group_obj: Any, files: List[str]) -> List[str] | None:
