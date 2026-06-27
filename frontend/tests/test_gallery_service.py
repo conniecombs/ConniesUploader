@@ -10,6 +10,7 @@ from modules.gallery_service import (
     normalize_gallery_record,
     parse_imagebam_gallery_options,
     parse_imx_gallery_html,
+    parse_pixhost_gallery_import,
     parse_vipr_gallery_html,
 )
 
@@ -78,6 +79,21 @@ class FakeImxSession:
         return FakeResponse("", url="https://imx.to/user/gallery/edit?id=abc123")
 
 
+class FakePagedImxSession(FakeImxSession):
+    def __init__(self, pages):
+        super().__init__()
+        self.pages = pages
+
+    def get(self, url, timeout=0):
+        self.get_calls.append((url, timeout))
+        if url == "https://imx.to/login.php":
+            return FakeResponse("", url=url)
+        page = "1"
+        if "page=" in url:
+            page = url.split("page=", 1)[1].split("&", 1)[0]
+        return FakeResponse(self.pages.get(page, ""), url=url)
+
+
 def test_normalize_gallery_record_uses_standard_shape_and_service_url():
     record = normalize_gallery_record(
         "pixhost.to",
@@ -95,6 +111,31 @@ def test_normalize_gallery_record_uses_standard_shape_and_service_url():
     assert record.url == "https://pixhost.to/gallery/abc123"
     assert record.upload_hash == "upload456"
     assert record.raw["extra"] == "kept"
+
+
+def test_parse_pixhost_gallery_import_accepts_url_or_hash():
+    from_url = parse_pixhost_gallery_import(
+        "https://pixhost.to/gallery/AbC123?utm=ignored",
+        "Imported Gallery",
+    )
+    from_hash = parse_pixhost_gallery_import("xyz789")
+
+    assert from_url == GalleryRecord(
+        service="pixhost.to",
+        id="AbC123",
+        name="Imported Gallery",
+        url="https://pixhost.to/gallery/AbC123",
+        raw={
+            "gallery_hash": "AbC123",
+            "gallery_name": "Imported Gallery",
+            "gallery_url": "https://pixhost.to/gallery/AbC123",
+            "source": "imported",
+        },
+    )
+    assert from_hash.id == "xyz789"
+    assert from_hash.name == "xyz789"
+    assert from_hash.url == "https://pixhost.to/gallery/xyz789"
+    assert parse_pixhost_gallery_import("https://pixhost.to/not-a-gallery/abc") is None
 
 
 def test_parse_imx_gallery_html_supports_plain_and_icon_wrapped_names():
@@ -117,6 +158,30 @@ def test_parse_imx_gallery_html_supports_plain_and_icon_wrapped_names():
             "name": "Second Gallery",
             "url": "https://imx.to/g/DEF456",
         },
+    ]
+
+
+def test_parse_imx_gallery_html_supports_account_gallery_table():
+    html = """
+    <table>
+      <tr>
+        <td><a href="/g/sz0s">untitled gallery</a></td>
+        <td>sz0s</td>
+        <td><a href="/user/gallery/manage?id=sz0s">manage</a></td>
+        <td><a href="/user/gallery/edit?id=sz0s">edit</a></td>
+      </tr>
+    </table>
+    """
+
+    records, candidates = parse_imx_gallery_html(html)
+
+    assert candidates == 1
+    assert records == [
+        {
+            "id": "sz0s",
+            "name": "untitled gallery",
+            "url": "https://imx.to/g/sz0s",
+        }
     ]
 
 
@@ -433,6 +498,118 @@ def test_create_imx_gallery_uses_live_login_and_add_gallery_forms(monkeypatch):
     )
 
 
+def test_sync_all_imx_galleries_uses_one_login_and_stops_at_empty_page(monkeypatch):
+    fake_session = FakePagedImxSession(
+        {
+            "1": "\n".join(
+                f'<a href="/g/page1{index:03d}">Page One {index:03d}</a>'
+                for index in range(100)
+            ),
+            "2": """
+            <a href="/g/page2a">Page Two A</a>
+            """,
+            "3": "",
+        }
+    )
+    progress = []
+    monkeypatch.setattr(
+        "modules.gallery_service.requests.Session", lambda: fake_session
+    )
+    service = GalleryService(
+        FakeBridge(), {"imx_user": "user", "imx_pass": "secret"}
+    )
+
+    result = service.sync_all_galleries(
+        "imx.to", progress_callback=lambda page, total: progress.append((page, total))
+    )
+
+    assert result.status == GalleryStatus.SUCCESS
+    assert result.page == 2
+    assert len(result.records) == 101
+    assert result.records[0].id == "page1000"
+    assert result.records[-1].id == "page2a"
+    assert progress == [(1, 100), (2, 101)]
+    assert fake_session.post_calls == [
+        (
+            "https://imx.to/login.php",
+            {
+                "usr_email": "user",
+                "pwd": "secret",
+                "doLogin": "Login",
+                "remember": "1",
+            },
+            10,
+        )
+    ]
+    assert [call[0] for call in fake_session.get_calls] == [
+        "https://imx.to/login.php",
+        "https://imx.to/user/galleries?page=1&limit=200",
+        "https://imx.to/user/galleries?page=2&limit=200",
+    ]
+
+
+def test_delete_imx_gallery_posts_edit_form_and_confirms_gallery_removed(monkeypatch):
+    fake_session = FakeImxSession()
+    monkeypatch.setattr(
+        "modules.gallery_service.requests.Session", lambda: fake_session
+    )
+    service = GalleryService(
+        FakeBridge(), {"imx_user": "user", "imx_pass": "secret"}
+    )
+    record = GalleryRecord(service="imx.to", id="abc123", name="Delete Me")
+
+    result = service.delete_gallery("imx.to", record)
+
+    assert result.status == GalleryStatus.SUCCESS
+    assert result.record.id == "abc123"
+    assert result.message == "Deleted gallery 'Delete Me' (abc123)."
+    assert fake_session.get_calls[0][0] == "https://imx.to/login.php"
+    assert fake_session.post_calls[0] == (
+        "https://imx.to/login.php",
+        {
+            "usr_email": "user",
+            "pwd": "secret",
+            "doLogin": "Login",
+            "remember": "1",
+        },
+        10,
+    )
+    assert fake_session.post_calls[1] == (
+        "https://imx.to/user/gallery/edit?id=abc123",
+        {"delete_confirm": "on", "delete_gallery": "Remove Gallery"},
+        15,
+    )
+    assert fake_session.get_calls[1] == (
+        "https://imx.to/user/galleries?page=1&limit=200",
+        10,
+    )
+
+
+def test_delete_imx_gallery_reports_error_when_gallery_still_listed(monkeypatch):
+    class FakeStillListedSession(FakeImxSession):
+        def get(self, url, timeout=0):
+            self.get_calls.append((url, timeout))
+            if url == "https://imx.to/user/galleries?page=1&limit=200":
+                return FakeResponse(
+                    '<a href="/g/abc123">Delete Me</a>',
+                    url=url,
+                )
+            return FakeResponse("", url=url)
+
+    fake_session = FakeStillListedSession()
+    monkeypatch.setattr(
+        "modules.gallery_service.requests.Session", lambda: fake_session
+    )
+    service = GalleryService(
+        FakeBridge(), {"imx_user": "user", "imx_pass": "secret"}
+    )
+
+    result = service.delete_gallery("imx.to", "abc123")
+
+    assert result.status == GalleryStatus.ERROR
+    assert "still lists gallery" in result.message
+
+
 def test_create_gallery_maps_login_failures_to_login_failed_status():
     bridge = FakeBridge({"status": "failed", "msg": "login failed"})
     service = GalleryService(bridge, {"vipr_user": "user", "vipr_pass": "pass"})
@@ -482,11 +659,74 @@ def test_create_vipr_gallery_posts_file_manager_form_and_parses_created_folder()
     assert spec["pre_request"]["form_fields"]["login"] == "user"
 
 
+def test_delete_vipr_gallery_calls_delete_endpoint_and_confirms_folder_removed():
+    bridge = FakeBridge(
+        {
+            "status": "success",
+            "data": {
+                "response_body": """
+                <body>
+                  <a href="?op=my_files;fld_id=104998">Other Folder</a>
+                  <a href="https://vipr.im/p/johngrimm/104998/Other%20Folder" class="pub"></a>
+                </body>
+                """,
+            },
+        }
+    )
+    service = GalleryService(bridge, {"vipr_user": "user", "vipr_pass": "pass"})
+    record = GalleryRecord(service="vipr.im", id="104999", name="Delete Me")
+
+    result = service.delete_gallery("vipr.im", record)
+
+    assert result.status == GalleryStatus.SUCCESS
+    assert result.record.id == "104999"
+    assert result.message == "Deleted gallery 'Delete Me' (104999)."
+    payload = bridge.calls[0][0]
+    spec = payload["generic_spec"]
+    assert payload["service"] == "vipr.im"
+    assert spec["method"] == "GET"
+    assert spec["url"] == "https://vipr.im/?op=my_files&fld_id=0&del_folder=104999"
+    assert spec["pre_request"]["form_fields"]["login"] == "user"
+
+
+def test_delete_vipr_gallery_reports_error_when_folder_still_listed():
+    bridge = FakeBridge(
+        {
+            "status": "success",
+            "data": {
+                "response_body": """
+                <body>
+                  <a href="?op=my_files;fld_id=104999">Delete Me</a>
+                  <a href="https://vipr.im/p/johngrimm/104999/Delete%20Me" class="pub"></a>
+                </body>
+                """,
+            },
+        }
+    )
+    service = GalleryService(bridge, {"vipr_user": "user", "vipr_pass": "pass"})
+
+    result = service.delete_gallery("vipr.im", "104999")
+
+    assert result.status == GalleryStatus.ERROR
+    assert "still lists gallery" in result.message
+
+
+def test_delete_gallery_rejects_unsupported_service_without_sidecar_call():
+    bridge = FakeBridge()
+    service = GalleryService(bridge, {})
+
+    result = service.delete_gallery("pixhost.to", "abc123")
+
+    assert result.status == GalleryStatus.UNSUPPORTED
+    assert bridge.calls == []
+
+
 def test_gallery_manager_stale_request_guards():
     manager = GalleryManager.__new__(GalleryManager)
     manager.service_var = FakeVar("imx.to")
     manager._refresh_request_id = 3
     manager._create_request_id = 5
+    manager._delete_request_id = 7
 
     assert not GalleryManager._is_stale_refresh(manager, 3, "imx.to")
     assert GalleryManager._is_stale_refresh(manager, 2, "imx.to")
@@ -495,6 +735,10 @@ def test_gallery_manager_stale_request_guards():
     assert not GalleryManager._is_stale_create(manager, 5, "imx.to")
     assert GalleryManager._is_stale_create(manager, 4, "imx.to")
     assert GalleryManager._is_stale_create(manager, 5, "vipr.im")
+
+    assert not GalleryManager._is_stale_delete(manager, 7, "imx.to")
+    assert GalleryManager._is_stale_delete(manager, 6, "imx.to")
+    assert GalleryManager._is_stale_delete(manager, 7, "vipr.im")
 
 
 def test_gallery_manager_stale_refresh_result_does_not_overwrite_current_view():
@@ -558,6 +802,38 @@ def test_gallery_cache_persists_records_pins_and_last_used(tmp_path):
     assert reloaded.raw["pinned"] is True
     assert reloaded.raw["last_used_at"] == "2026-06-21T10:00:00+00:00"
     assert not (tmp_path / "gallery_cache.json.tmp").exists()
+
+
+def test_gallery_cache_remove_record_deletes_only_requested_gallery(tmp_path):
+    cache = GalleryCache(str(tmp_path / "gallery_cache.json"))
+    keep = GalleryRecord(service="vipr.im", id="42", name="Keep")
+    remove = GalleryRecord(service="vipr.im", id="43", name="Remove")
+    cache.upsert_records("vipr.im", [keep, remove])
+
+    assert cache.remove_record("vipr.im", "43") is True
+    assert cache.remove_record("vipr.im", "missing") is False
+
+    remaining = cache.records_for_service("vipr.im")
+    assert [record.id for record in remaining] == ["42"]
+
+
+def test_gallery_cache_keeps_large_imx_sync_until_user_deletes(tmp_path):
+    cache = GalleryCache(str(tmp_path / "gallery_cache.json"))
+    records = [
+        GalleryRecord(
+            service="imx.to",
+            id=f"id{index:04d}",
+            name=f"Gallery {index:04d}",
+            url=f"https://imx.to/g/id{index:04d}",
+        )
+        for index in range(650)
+    ]
+
+    cache.upsert_records("imx.to", records)
+
+    loaded = cache.records_for_service("imx.to")
+    assert len(loaded) == 650
+    assert {record.id for record in loaded} == {record.id for record in records}
 
 
 def test_gallery_cache_backs_up_corrupt_json(tmp_path):
@@ -636,6 +912,166 @@ def test_gallery_manager_empty_live_result_does_not_fall_back_to_stale_cache(tmp
     assert rendered[0].status == GalleryStatus.EMPTY
 
 
+def test_gallery_manager_imx_page_load_appends_to_cached_index(tmp_path):
+    cache = GalleryCache(str(tmp_path / "gallery_cache.json"))
+    cache.upsert_record(
+        GalleryRecord(
+            service="imx.to",
+            id="page1",
+            name="Page One",
+            url="https://imx.to/g/page1",
+        )
+    )
+    statuses = []
+    render_calls = []
+    manager = GalleryManager.__new__(GalleryManager)
+    manager.gallery_cache = cache
+    manager.service_var = FakeVar("imx.to")
+    manager.scroll = FakeWidget()
+    manager.winfo_exists = lambda: True
+    manager._refresh_request_id = 2
+    manager.current_page = 1
+    manager._records = []
+    manager._imx_all_synced = False
+    manager._clear_scroll = lambda: None
+    manager._set_status = lambda message, is_error=False, is_warning=False: statuses.append(
+        (message, is_error, is_warning)
+    )
+    manager._render_current_records = lambda: render_calls.append(list(manager._records))
+
+    GalleryManager._render_list_result(
+        manager,
+        2,
+        "imx.to",
+        GalleryResult(
+            status=GalleryStatus.SUCCESS,
+            message="Loaded 1 gallery record(s).",
+            service="imx.to",
+            records=[
+                GalleryRecord(
+                    service="imx.to",
+                    id="page2",
+                    name="Page Two",
+                    url="https://imx.to/g/page2",
+                )
+            ],
+            page=2,
+        ),
+    )
+
+    assert manager.current_page == 2
+    assert {record.id for record in manager._records} == {"page1", "page2"}
+    assert {record.id for record in cache.records_for_service("imx.to")} == {
+        "page1",
+        "page2",
+    }
+    assert statuses[-1] == (
+        "Loaded IMX.to page 2; showing 2 cached gallery record(s).",
+        False,
+        False,
+    )
+    assert render_calls and {record.id for record in render_calls[-1]} == {"page1", "page2"}
+
+
+def test_gallery_manager_sync_all_result_caches_and_displays_full_index(tmp_path):
+    cache = GalleryCache(str(tmp_path / "gallery_cache.json"))
+    cache.upsert_record(
+        GalleryRecord(
+            service="imx.to",
+            id="old",
+            name="Old Cached",
+            url="https://imx.to/g/old",
+        )
+    )
+    statuses = []
+    render_calls = []
+    manager = GalleryManager.__new__(GalleryManager)
+    manager.gallery_cache = cache
+    manager.service_var = FakeVar("imx.to")
+    manager.scroll = FakeWidget()
+    manager.winfo_exists = lambda: True
+    manager._sync_request_id = 5
+    manager.current_page = 1
+    manager._records = []
+    manager._clear_scroll = lambda: None
+    manager._set_status = lambda message, is_error=False, is_warning=False: statuses.append(
+        (message, is_error, is_warning)
+    )
+    manager._render_current_records = lambda: render_calls.append(list(manager._records))
+
+    GalleryManager._handle_sync_all_result(
+        manager,
+        5,
+        "imx.to",
+        GalleryResult(
+            status=GalleryStatus.SUCCESS,
+            message="Synced 2 IMX.to gallery record(s).",
+            service="imx.to",
+            records=[
+                GalleryRecord(service="imx.to", id="new1", name="New One"),
+                GalleryRecord(service="imx.to", id="new2", name="New Two"),
+            ],
+            page=3,
+        ),
+    )
+
+    assert manager.current_page == 3
+    assert manager._imx_all_synced is True
+    assert {record.id for record in manager._records} == {"old", "new1", "new2"}
+    assert {record.id for record in cache.records_for_service("imx.to")} == {
+        "old",
+        "new1",
+        "new2",
+    }
+    assert statuses[-1] == (
+        "Sync complete: fetched 2 IMX.to gallery record(s); showing 3 cached gallery record(s).",
+        False,
+        False,
+    )
+    assert render_calls and {record.id for record in render_calls[-1]} == {
+        "old",
+        "new1",
+        "new2",
+    }
+
+
+def test_gallery_manager_pixhost_refresh_uses_saved_records_only(tmp_path):
+    cache = GalleryCache(str(tmp_path / "gallery_cache.json"))
+    cache.upsert_record(
+        GalleryRecord(
+            service="pixhost.to",
+            id="abc123",
+            name="Saved Pixhost",
+            url="https://pixhost.to/gallery/abc123",
+        )
+    )
+    statuses = []
+    render_calls = []
+    manager = GalleryManager.__new__(GalleryManager)
+    manager.gallery_cache = cache
+    manager.service_var = FakeVar("pixhost.to")
+    manager.scroll = FakeWidget()
+    manager.winfo_exists = lambda: True
+    manager._refresh_request_id = 4
+    manager.current_page = 1
+    manager._records = []
+    manager._clear_scroll = lambda: None
+    manager._set_status = lambda message, is_error=False, is_warning=False: statuses.append(
+        (message, is_error, is_warning)
+    )
+    manager._render_current_records = lambda: render_calls.append(list(manager._records))
+
+    GalleryManager._render_pixhost_local_result(manager, 4)
+
+    assert manager._records[0].id == "abc123"
+    assert statuses[-1] == (
+        "Showing 1 saved Pixhost gallery record(s). Pixhost has no remote account gallery listing.",
+        False,
+        True,
+    )
+    assert render_calls and render_calls[-1][0].name == "Saved Pixhost"
+
+
 def test_gallery_manager_toggle_pin_persists_and_rerenders(tmp_path):
     cache = GalleryCache(str(tmp_path / "gallery_cache.json"))
     record = GalleryRecord(
@@ -687,7 +1123,7 @@ def test_gallery_manager_result_messages_show_expected_empty_and_error_actions()
 
     assert statuses[-1] == ("No galleries found for IMX.to.", False)
     assert "No galleries found" in labels_seen
-    assert actions_seen[-1] == ["Refresh from host", "Create Gallery"]
+    assert actions_seen[-1] == ["Refresh from host", "Sync All", "Create Gallery"]
 
     labels_seen.clear()
     with patch("modules.gallery_manager.ctk.CTkLabel", side_effect=fake_label):
@@ -706,6 +1142,21 @@ def test_gallery_manager_result_messages_show_expected_empty_and_error_actions()
     )
     assert "Missing credentials" in labels_seen
     assert actions_seen[-1] == ["Set Credentials", "Refresh from host", "Create Gallery"]
+
+    labels_seen.clear()
+    with patch("modules.gallery_manager.ctk.CTkLabel", side_effect=fake_label):
+        GalleryManager._render_result_message(
+            manager,
+            GalleryResult(
+                status=GalleryStatus.EMPTY,
+                message="No saved Pixhost galleries.",
+                service="pixhost.to",
+            ),
+        )
+
+    assert statuses[-1] == ("No saved Pixhost galleries.", False)
+    assert "No galleries found" in labels_seen
+    assert actions_seen[-1] == ["Show saved", "Import Gallery", "Create Gallery"]
 
 
 def test_gallery_manager_create_success_caches_and_renders_created_gallery(tmp_path):
@@ -744,6 +1195,106 @@ def test_gallery_manager_create_success_caches_and_renders_created_gallery(tmp_p
     assert statuses[-1] == ("Created gallery 'Created Gallery' (abc123).", False)
     assert rendered == [record]
     assert cache.records_for_service("pixhost.to")[0].id == "abc123"
+
+
+def test_gallery_manager_import_pixhost_gallery_caches_record(tmp_path):
+    cache = GalleryCache(str(tmp_path / "gallery_cache.json"))
+    statuses = []
+    rendered = []
+    manager = GalleryManager.__new__(GalleryManager)
+    manager.gallery_cache = cache
+    manager.ent_pixhost_import = FakeVar("https://pixhost.to/gallery/AbC123")
+    manager.ent_name = FakeVar("Imported Pixhost")
+    manager._set_status = lambda message, is_error=False: statuses.append((message, is_error))
+    manager._render_created_gallery = lambda record: rendered.append(record)
+
+    GalleryManager._import_pixhost_gallery(manager)
+
+    assert statuses[-1] == ("Imported Pixhost gallery 'Imported Pixhost' (AbC123).", False)
+    assert rendered[0].id == "AbC123"
+    saved = cache.records_for_service("pixhost.to")[0]
+    assert saved.id == "AbC123"
+    assert saved.name == "Imported Pixhost"
+    assert saved.url == "https://pixhost.to/gallery/AbC123"
+
+
+def test_gallery_manager_import_pixhost_gallery_rejects_invalid_input(tmp_path):
+    manager = GalleryManager.__new__(GalleryManager)
+    manager.gallery_cache = GalleryCache(str(tmp_path / "gallery_cache.json"))
+    manager.ent_pixhost_import = FakeVar("https://pixhost.to/not-a-gallery/AbC123")
+    manager.ent_name = FakeVar("")
+    statuses = []
+    manager._set_status = lambda message, is_error=False: statuses.append((message, is_error))
+    manager._render_created_gallery = lambda record: (_ for _ in ()).throw(
+        AssertionError("invalid import should not render")
+    )
+
+    GalleryManager._import_pixhost_gallery(manager)
+
+    assert statuses[-1] == ("Enter a valid Pixhost gallery URL or hash.", True)
+    assert manager.gallery_cache.records_for_service("pixhost.to") == []
+
+
+def test_gallery_manager_remove_saved_pixhost_gallery_deletes_local_cache_only(tmp_path):
+    cache = GalleryCache(str(tmp_path / "gallery_cache.json"))
+    remove = GalleryRecord(service="pixhost.to", id="43", name="Remove")
+    keep = GalleryRecord(service="pixhost.to", id="42", name="Keep")
+    cache.upsert_records("pixhost.to", [keep, remove])
+    statuses = []
+    render_calls = []
+    manager = GalleryManager.__new__(GalleryManager)
+    manager.gallery_cache = cache
+    manager.service_var = FakeVar("pixhost.to")
+    manager._refresh_request_id = 3
+    manager._records = [keep, remove]
+    manager._set_status = lambda message, is_error=False, is_warning=False: statuses.append(
+        (message, is_error, is_warning)
+    )
+    manager._render_current_records = lambda: render_calls.append(list(manager._records))
+    manager._render_pixhost_local_result = lambda request_id: render_calls.append(("empty", request_id))
+
+    with patch("modules.gallery_manager.messagebox.askyesno", return_value=True) as confirm:
+        GalleryManager._remove_saved_gallery(manager, remove)
+
+    confirm.assert_called_once()
+    assert statuses[-1] == ("Removed saved gallery 'Remove' (43).", False, False)
+    assert [record.id for record in manager._records] == ["42"]
+    assert [record.id for record in cache.records_for_service("pixhost.to")] == ["42"]
+    assert render_calls and render_calls[-1][0].id == "42"
+
+
+def test_gallery_manager_delete_success_removes_record_from_cache_and_view(tmp_path):
+    cache = GalleryCache(str(tmp_path / "gallery_cache.json"))
+    remove = GalleryRecord(service="vipr.im", id="43", name="Remove")
+    keep = GalleryRecord(service="vipr.im", id="42", name="Keep")
+    cache.upsert_records("vipr.im", [keep, remove])
+    statuses = []
+    render_calls = []
+    manager = GalleryManager.__new__(GalleryManager)
+    manager.gallery_cache = cache
+    manager.service_var = FakeVar("vipr.im")
+    manager._delete_request_id = 9
+    manager._records = [keep, remove]
+    manager._set_status = lambda message, is_error=False: statuses.append((message, is_error))
+    manager._render_current_records = lambda: render_calls.append(True)
+
+    GalleryManager._handle_delete_result(
+        manager,
+        9,
+        "vipr.im",
+        remove,
+        GalleryResult(
+            status=GalleryStatus.SUCCESS,
+            message="Deleted gallery 'Remove' (43).",
+            service="vipr.im",
+            record=remove,
+        ),
+    )
+
+    assert statuses[-1] == ("Deleted gallery 'Remove' (43).", False)
+    assert [record.id for record in manager._records] == ["42"]
+    assert [record.id for record in cache.records_for_service("vipr.im")] == ["42"]
+    assert render_calls == [True]
 
 
 def test_gallery_manager_select_marks_last_used_and_passes_full_record(tmp_path):

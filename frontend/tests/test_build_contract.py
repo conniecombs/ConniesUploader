@@ -87,6 +87,13 @@ def test_other_build_entrypoints_use_local_pyinstaller_hooks():
     assert POSIX_HOOKS_ARG in makefile
 
 
+def test_build_entrypoints_use_short_app_name_in_titles():
+    for relative_path in ["build_uploader.bat", "build.sh", "Makefile"]:
+        source = (ROOT / relative_path).read_text(encoding="utf-8")
+
+        assert "Connie's Uploader Ultimate" not in source
+
+
 def test_release_workflow_uses_local_pyinstaller_hooks():
     workflow_path = ROOT / ".github" / "workflows" / "release.yml"
     workflow = workflow_path.read_text(encoding="utf-8")
@@ -130,6 +137,8 @@ def test_cleanup_helper_covers_generated_artifacts_and_user_data():
 
     assert "--include-output" in cleanup
     assert "--include-user-data" in cleanup
+    assert "ConniesUploader.exe" in cleanup
+    assert "taskkill" in cleanup
     assert "Output/" in gitignore
     assert "user_settings.json" in gitignore
     assert "user_templates.json" in gitignore

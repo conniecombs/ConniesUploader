@@ -16,6 +16,7 @@ Tests:
 import unittest
 import sys
 import os
+import tempfile
 from typing import Dict, Any
 from unittest.mock import Mock, MagicMock, patch
 
@@ -523,6 +524,34 @@ class TestPixhostGalleryIntegration(unittest.TestCase):
 
         self.assertEqual(sent_configs[0]["gallery_hash"], "abc123")
         self.assertEqual(sent_configs[0]["gallery_upload_hash"], "upload456")
+
+    def test_upload_manager_remembers_imx_gallery_use_without_full_sync(self):
+        from modules.gallery_cache import GalleryCache
+        from modules.upload_manager import UploadManager
+
+        class Group:
+            gallery_name = "Batch Gallery"
+            gallery_url = "https://imx.to/g/abc123"
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cache = GalleryCache(os.path.join(temp_dir, "gallery_cache.json"))
+            with patch("modules.upload_manager.GalleryCache", return_value=cache):
+                UploadManager._remember_imx_gallery_use(
+                    Group(),
+                    {
+                        "gallery_id": "abc123",
+                        "selected_gallery_name": "Selected Gallery",
+                        "selected_gallery_url": "https://imx.to/g/abc123",
+                    },
+                )
+
+            records = cache.records_for_service("imx.to")
+            self.assertEqual(len(records), 1)
+            self.assertEqual(records[0].id, "abc123")
+            self.assertEqual(records[0].name, "Selected Gallery")
+            self.assertEqual(records[0].url, "https://imx.to/g/abc123")
+            self.assertEqual(records[0].raw["source"], "upload")
+            self.assertTrue(records[0].raw["last_used_at"])
 
 
 class TestUploadManagerJobConfig(unittest.TestCase):

@@ -150,14 +150,28 @@ class FakeProgress:
         self.options.update(kwargs)
 
 
+def main_window_source():
+    paths = [Path("modules/ui/main_window.py")]
+    paths.extend(sorted(Path("modules/ui/Main_Window").glob("*.py")))
+    return "\n".join(path.read_text(encoding="utf-8") for path in paths)
+
+
 @pytest.mark.unit
 def test_main_window_has_visible_add_queue_buttons():
-    source = Path("modules/ui/main_window.py").read_text(encoding="utf-8")
+    source = main_window_source()
 
     assert "self.btn_add_files = ctk.CTkButton" in source
-    assert "text=\"Add Files\", command=self.add_files" in source
+    assert 'text="Add Files", command=self.add_files' in source
     assert "self.btn_add_folder = ctk.CTkButton" in source
-    assert "text=\"Add Folder\", command=self.add_folder" in source
+    assert 'text="Add Folder", command=self.add_folder' in source
+
+
+@pytest.mark.unit
+def test_main_window_title_uses_short_app_name():
+    source = main_window_source()
+
+    assert 'self.title(f"Connie\'s Uploader {config.APP_VERSION}")' in source
+    assert "Connie's Uploader Ultimate {config.APP_VERSION}" not in source
 
 
 @pytest.mark.unit
@@ -187,7 +201,7 @@ def test_preview_data_uses_storage_thumbnail_value_for_readable_service_label():
 
 @pytest.mark.unit
 def test_queue_rows_have_compact_cover_toggle_and_readable_fallbacks():
-    source = Path("modules/ui/main_window.py").read_text(encoding="utf-8")
+    source = main_window_source()
 
     assert "preview_requested=True" in source
     assert "preview_requested=preview_requested" in source
@@ -211,7 +225,7 @@ def test_queue_rows_have_compact_cover_toggle_and_readable_fallbacks():
 
 @pytest.mark.unit
 def test_queue_rows_use_stable_action_lane_and_wrapping_text():
-    source = Path("modules/ui/main_window.py").read_text(encoding="utf-8")
+    source = main_window_source()
 
     assert 'row_actions = ctk.CTkFrame(row, fg_color="transparent", width=176, height=30)' in source
     assert "row_actions.pack_propagate(False)" in source
@@ -227,17 +241,17 @@ def test_queue_rows_use_stable_action_lane_and_wrapping_text():
 
 @pytest.mark.unit
 def test_worker_count_is_in_global_advanced_section():
-    source = Path("modules/ui/main_window.py").read_text(encoding="utf-8")
+    source = main_window_source()
 
     assert "def _create_global_advanced_section" in source
-    assert "text=\"Advanced App Settings +\"" in source
-    assert "text=\"Worker Count:\"" in source
-    assert "text=\"Thread Limit:\"" in source
+    assert 'text="Advanced App Settings +"' in source
+    assert 'text="Worker Count:"' in source
+    assert 'text="Thread Limit:"' in source
     assert "thread_limit_entry = ctk.CTkEntry" in source
     assert "set_global_threads(self.menu_thread_var.get())" in source
     assert 'upload_cfg["global_thread_limit"] = 1' in source
     assert 'cfg["imagebam_threads"] = 1' not in source
-    assert "add_cascade(label=\"Set Thread Limit\"" not in source
+    assert 'add_cascade(label="Set Thread Limit"' not in source
     assert "self._create_global_advanced_section(out_frame)" in source
 
 
@@ -293,9 +307,9 @@ def test_gather_settings_clamps_worker_and_changed_global_thread_limit():
 
 @pytest.mark.unit
 def test_template_recovery_actions_are_available_from_main_window():
-    source = Path("modules/ui/main_window.py").read_text(encoding="utf-8")
+    source = main_window_source()
 
-    assert "Reset Templates to Defaults" in source
+    assert "def reset_templates_to_defaults" in source
     assert "def _show_template_recovery_notice" in source
     assert 'text="Open Broken File"' in source
     assert 'text="Restore Defaults"' in source
@@ -624,13 +638,13 @@ def test_process_files_without_valid_images_uses_inline_import_checks(tmp_path, 
 
 @pytest.mark.unit
 def test_import_checks_panel_has_inline_retry_actions():
-    source = Path("modules/ui/main_window.py").read_text(encoding="utf-8")
+    source = main_window_source()
 
     assert "def _create_import_checks_panel" in source
-    assert "text=\"Import Checks\"" in source
+    assert 'text="Import Checks"' in source
     assert "command=lambda: self._set_import_checks([])" in source
-    assert "text=\"Add Files\"" in source
-    assert "text=\"Add Folder\"" in source
+    assert 'text="Add Files"' in source
+    assert 'text="Add Folder"' in source
 
 
 @pytest.mark.unit
@@ -1172,7 +1186,10 @@ def test_upload_preflight_previews_one_gallery_per_folder(tmp_path):
     )
 
     assert issues == []
-    assert "One Gallery Per Folder will create 2 Pixhost galleries before upload: Batch Alpha, Batch Beta." in summary
+    assert (
+        "One Gallery Per Folder will create 2 Pixhost galleries before upload: Batch Alpha, Batch Beta."
+        in summary
+    )
     assert app.preflight_detail_lines == [
         "One Gallery Per Folder will create 2 Pixhost galleries before upload: Batch Alpha, Batch Beta."
     ]
@@ -1318,8 +1335,7 @@ def test_upload_preflight_reports_vipergirls_posting_blockers(tmp_path, monkeypa
 
     assert summary == ""
     assert (
-        "ViperGirls posting needs username and password. "
-        "Set them in Tools > Set Credentials."
+        "ViperGirls posting needs username and password. " "Set them in Tools > Set Credentials."
     ) in issues
     assert (
         'ViperGirls target "Deleted Target" selected for "Missing Batch" no longer exists.'
@@ -1420,9 +1436,7 @@ def test_upload_preflight_records_problem_folder_action(tmp_path):
 
     assert summary == ""
     assert any("Output folder is not writable: permission denied" in issue for issue in issues)
-    assert app.preflight_action_folders == [
-        {"label": "Output folder", "path": str(output_dir)}
-    ]
+    assert app.preflight_action_folders == [{"label": "Output folder", "path": str(output_dir)}]
 
 
 @pytest.mark.unit
@@ -1442,7 +1456,9 @@ def test_preflight_issue_handler_populates_in_window_checks():
     )
 
     assert app.lbl_eta.text == "Fix 2 upload issues before uploading."
-    assert shown_checks == [["Imgur requires a Client ID or Access Token.", "missing.jpg: file is missing"]]
+    assert shown_checks == [
+        ["Imgur requires a Client ID or Access Token.", "missing.jpg: file is missing"]
+    ]
     assert ("Upload blocked: 2 issues need attention.", "error") in activity
     assert ("Imgur requires a Client ID or Access Token.", "error") in activity
     assert refreshed == [True]
@@ -1465,7 +1481,7 @@ def test_preflight_credentials_shortcut_only_for_credential_issues():
 
 @pytest.mark.unit
 def test_preflight_failures_use_in_window_checks_instead_of_modal():
-    source = Path("modules/ui/main_window.py").read_text(encoding="utf-8")
+    source = main_window_source()
 
     assert "_handle_preflight_issues(preflight_issues)" in source
     assert "Upload Preflight Failed" not in source
@@ -1473,7 +1489,7 @@ def test_preflight_failures_use_in_window_checks_instead_of_modal():
 
 @pytest.mark.unit
 def test_upload_checks_offer_action_buttons():
-    source = Path("modules/ui/main_window.py").read_text(encoding="utf-8")
+    source = main_window_source()
 
     assert "Set Credentials" in source
     assert "Manage ViperGirls Targets" in source
@@ -1520,9 +1536,7 @@ def test_upload_checks_show_only_relevant_actions():
     app.preflight_action_folders = [{"label": "Output folder", "path": "R:\\missing"}]
     app.preflight_action_viper_targets = True
 
-    UploaderApp._refresh_upload_check_actions(
-        app, ["Imgur requires a Client ID or Access Token."]
-    )
+    UploaderApp._refresh_upload_check_actions(app, ["Imgur requires a Client ID or Access Token."])
 
     assert app.btn_upload_checks_credentials.mapped is True
     assert app.btn_upload_checks_credentials.options["state"] == "normal"
@@ -1600,7 +1614,9 @@ def test_vipergirls_post_preview_uses_batch_target_thread_and_template_text():
     assert preview["batch_name"] == "Batch Alpha"
     assert preview["target_name"] == "My Target"
     assert preview["thread_id"] == "98765"
-    assert "Batch Alpha [98765] 1 -> https://preview.invalid/first_image/viewer" in preview["content"]
+    assert (
+        "Batch Alpha [98765] 1 -> https://preview.invalid/first_image/viewer" in preview["content"]
+    )
     assert preview["issues"] == []
 
 
@@ -1881,9 +1897,7 @@ def test_remove_preflight_file_issues_keeps_unrelated_upload_checks():
     assert "bad.bmp" not in app.file_widgets
     assert group.files == ["good.jpg"]
     assert row_bad.destroyed is True
-    assert app.preflight_issues == [
-        "IMX.to requires API Key. Set it in Tools > Set Credentials."
-    ]
+    assert app.preflight_issues == ["IMX.to requires API Key. Set it in Tools > Set Credentials."]
     assert app.preflight_action_files == []
     assert ("Removed 1 invalid file from the queue.", "warning") in activity
 
@@ -2077,8 +2091,10 @@ def test_completion_copy_again_updates_inline_feedback(monkeypatch):
 
 @pytest.mark.unit
 def test_upload_completion_uses_inline_summary_instead_of_modal():
-    source = Path("modules/ui/main_window.py").read_text(encoding="utf-8")
-    complete_block = source[source.index("def _on_upload_complete") : source.index("def _build_completion_summary")]
+    source = main_window_source()
+    complete_block = source[
+        source.index("def _on_upload_complete") : source.index("def _build_completion_summary")
+    ]
 
     assert "self._set_completion_summary(summary)" in complete_block
     assert "self._show_completion_summary(summary)" not in complete_block
@@ -2292,7 +2308,7 @@ def test_queue_order_context_menus_expose_reorder_and_sort_actions():
 
 @pytest.mark.unit
 def test_queue_selection_bar_exposes_bulk_cover_remove_and_shortcuts():
-    source = Path("modules/ui/main_window.py").read_text(encoding="utf-8")
+    source = main_window_source()
 
     assert "self.selection_actions = ctk.CTkFrame" in source
     assert 'text="Mark Cover"' in source
