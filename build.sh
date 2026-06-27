@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Connie's Uploader Ultimate - Linux/macOS build script.
+# Connie's Uploader - Linux/macOS build script.
 
 set -euo pipefail
 
@@ -41,7 +41,7 @@ esac
 
 print_header() {
     echo -e "${BLUE}========================================================${NC}"
-    echo -e "${BLUE}      Connie's Uploader Ultimate - Build Tool${NC}"
+    echo -e "${BLUE}      Connie's Uploader - Build Tool${NC}"
     echo -e "${BLUE}      Version: $VERSION${NC}"
     echo -e "${BLUE}      Platform: $PLATFORM $(uname -m)${NC}"
     echo -e "${BLUE}========================================================${NC}"

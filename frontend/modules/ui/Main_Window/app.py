@@ -66,7 +66,7 @@ class UploaderApp(
 
     def _init_window(self):
         """Initialize window properties (title, size, icon)."""
-        self.title(f"Connie's Uploader Ultimate {config.APP_VERSION}")
+        self.title(f"Connie's Uploader {config.APP_VERSION}")
         self.geometry("1250x850")
         self.minsize(1050, 720)
 

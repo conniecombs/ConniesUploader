@@ -1,4 +1,4 @@
-# Makefile for Connie's Uploader Ultimate
+# Makefile for Connie's Uploader
 # Cross-platform build system for Windows, Linux, and macOS
 
 .PHONY: all clean build test help install-deps build-go build-python package dev
@@ -29,7 +29,7 @@ all: build
 
 # Show help
 help:
-	@echo "Connie's Uploader Ultimate - Build System v$(VERSION)"
+	@echo "Connie's Uploader - Build System v$(VERSION)"
 	@echo ""
 	@echo "Detected OS: $(DETECTED_OS)"
 	@echo ""

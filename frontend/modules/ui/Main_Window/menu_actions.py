@@ -67,9 +67,6 @@ class MenuActionsMixin:
         tools_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Tools", menu=tools_menu)
         tools_menu.add_command(label="Template Editor", command=self.open_template_editor)
-        tools_menu.add_command(
-            label="Reset Templates to Defaults", command=self.reset_templates_to_defaults
-        )
         tools_menu.add_command(label="Set Credentials", command=self.open_creds_dialog)
         tools_menu.add_command(label="Manage Galleries", command=self.open_gallery_manager)
         tools_menu.add_separator()
@@ -128,9 +125,8 @@ class MenuActionsMixin:
 
     def open_viper_tools(self):
         self.saved_threads_data = viper_api.load_saved_threads()
-        from modules.ui import viper_api as ui_viper_api
 
-        ui_viper_api.ViperToolsWindow(self, creds=self.creds, callback=self.refresh_thread_data)
+        viper_api.ViperToolsWindow(self, creds=self.creds, callback=self.refresh_thread_data)
 
     def open_scheduled_posts(self):
         from modules.ui.scheduled_posts_window import ScheduledPostsWindow
@@ -139,9 +135,7 @@ class MenuActionsMixin:
         win.grab_set()
 
     def open_vipergirls_history(self):
-        from modules.ui import viper_api as ui_viper_api
-
-        ui_viper_api.PostingHistoryWindow(self)
+        viper_api.PostingHistoryWindow(self)
 
     def refresh_thread_data(self):
         """Refresh saved thread data from disk and update AutoPoster."""

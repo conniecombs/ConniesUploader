@@ -1,7 +1,7 @@
 @echo off
 setlocal EnableExtensions
 
-REM Connie's Uploader Ultimate - Windows Build Script
+REM Connie's Uploader - Windows Build Script
 REM Builds the Go sidecar and packages the Python GUI with PyInstaller.
 
 set "SCRIPT_DIR=%~dp0"
@@ -350,13 +350,13 @@ REM ========================================================
 
 :print_header
 echo ========================================================
-echo       Connie's Uploader Ultimate - Build v%VERSION%
+echo       Connie's Uploader - Build v%VERSION%
 echo ========================================================
 echo.
 exit /b 0
 
 :show_help
-echo Connie's Uploader Ultimate - Windows Build v%VERSION%
+echo Connie's Uploader - Windows Build v%VERSION%
 echo.
 echo Usage: build_uploader.bat [options]
 echo.
