@@ -235,6 +235,10 @@ class SidecarBridge:
                 logger.critical(
                     f"Sidecar failed to restart after {self.max_restarts} attempts; giving up"
                 )
+                self._dispatch_event({
+                    "type": "sidecar_stopped",
+                    "msg": "Sidecar crash exhaustion"
+                })
                 self.proc = None
                 return
 
@@ -269,7 +273,10 @@ class SidecarBridge:
         stale_listeners: List[queue.Queue[JsonDict]] = []
         for listener in listeners:
             try:
-                listener.put_nowait(data)
+                if event_type in {"result", "error", "batch_complete"}:
+                    listener.put(data, timeout=5.0)
+                else:
+                    listener.put_nowait(data)
             except queue.Full:
                 logger.warning("Dropping sidecar event because a listener queue is full")
             except Exception as exc:

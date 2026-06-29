@@ -52,6 +52,7 @@ class UploadManager:
         self.bridge = SidecarBridge.get()
         self.plugin_manager = PluginManager()
 
+        self.active_files: set[str] = set()
         self.event_queue: queue.Queue = queue.Queue(maxsize=1000)
         self.listener_thread: threading.Thread | None = None
         self.dispatch_thread: threading.Thread | None = None
@@ -95,6 +96,7 @@ class UploadManager:
     ) -> None:
         """Send job JSON payloads to the Go process via the sidecar bridge."""
         logger.info("--- Starting Phase 1: Gallery Creation ---")
+        failed_groups: Dict[Any, str] = {}
 
         try:
             for group_obj, files in pending_by_group.items():
@@ -117,12 +119,20 @@ class UploadManager:
                             )
                     except Exception as exc:
                         logger.error(f"Failed to prepare group {group_obj.title}: {exc}")
+                        failed_groups[group_obj] = str(exc)
 
             logger.info("--- Starting Phase 2: Upload Dispatch ---")
 
             for group_obj, files in pending_by_group.items():
                 if self.cancel_event.is_set():
                     break
+
+                if group_obj in failed_groups:
+                    err_msg = f"error: preparation failed - {failed_groups[group_obj]}"
+                    for file_path in files:
+                        self.result_queue.put((file_path, "", ""))
+                        self.progress_queue.put(("status", file_path, err_msg))
+                    continue
 
                 group_cfg = cfg.copy()
 
@@ -316,7 +326,13 @@ class UploadManager:
                     if resolve_spec:
                         job_data["resolve_spec"] = resolve_spec
                     logger.info(f"Using generic HTTP runner for {service_id} ({len(file_list)} files)")
-                    self.bridge.send_cmd(job_data)
+                    
+                    self.active_files.update(file_list)
+                    if not self.bridge.send_cmd(job_data):
+                        for file_path in file_list:
+                            self.active_files.discard(file_path)
+                            self.result_queue.put((file_path, "", ""))
+                            self.progress_queue.put(("status", file_path, "error: sidecar unavailable"))
                     return
 
             except Exception as exc:
@@ -369,6 +385,9 @@ class UploadManager:
                 evt = data.get("type")
                 fp = data.get("file") or data.get("file_path")
 
+                if evt in ("result", "error") and fp:
+                    self.active_files.discard(fp)
+
                 if evt == "status":
                     self.progress_queue.put(("status", fp, data.get("status")))
 
@@ -396,6 +415,13 @@ class UploadManager:
                     logger.error(f"SIDECAR ERROR: {data.get('msg')}")
                     if fp:
                         self.progress_queue.put(("status", fp, f"error: {data.get('msg')}"))
+
+                elif evt == "sidecar_stopped":
+                    logger.error(f"SIDECAR STOPPED: {data.get('msg')}")
+                    for active_fp in list(self.active_files):
+                        self.result_queue.put((active_fp, "", ""))
+                        self.progress_queue.put(("status", active_fp, f"error: {data.get('msg')}"))
+                    self.active_files.clear()
 
             except queue.Empty:
                 continue

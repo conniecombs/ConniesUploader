@@ -131,7 +131,10 @@ func ExecuteHttpUploadWithData(ctx context.Context, client *http.Client, fp stri
 		sessionClient = preClient
 	}
 
-	uploadURL := resolveUploadURL(spec.URL, extractedValues)
+	uploadURL, err := resolveUploadURL(spec.URL, extractedValues)
+	if err != nil {
+		return HTTPUploadResult{}, err
+	}
 
 	logger := log.WithFields(log.Fields{
 		"action": "upload",
@@ -173,11 +176,18 @@ func ExecuteHttpUploadWithData(ctx context.Context, client *http.Client, fp stri
 							return copyErr
 						}
 					case "text":
-						if err := writer.WriteField(fieldName, substituteValues(field.Value, extractedValues)); err != nil {
+						val, subErr := substituteValues(field.Value, extractedValues)
+						if subErr != nil {
+							return subErr
+						}
+						if err := writer.WriteField(fieldName, val); err != nil {
 							return err
 						}
 					case "dynamic":
-						value := substituteValues(field.Value, extractedValues)
+						value, subErr := substituteValues(field.Value, extractedValues)
+						if subErr != nil {
+							return subErr
+						}
 						if val, ok := extractedValues[field.Value]; ok {
 							value = val
 						}
@@ -207,7 +217,11 @@ func ExecuteHttpUploadWithData(ctx context.Context, client *http.Client, fp stri
 		req.Header.Set("Content-Type", writer.FormDataContentType())
 		req.Header.Set("User-Agent", GetUserAgent(job.Config))
 		for k, v := range spec.Headers {
-			req.Header.Set(k, substituteValues(v, extractedValues))
+			val, subErr := substituteValues(v, extractedValues)
+			if subErr != nil {
+				return uploadResult{}, 0, subErr
+			}
+			req.Header.Set(k, val)
 		}
 
 		useClient := client
@@ -247,7 +261,11 @@ func ExecuteHttpUploadWithData(ctx context.Context, client *http.Client, fp stri
 			resolveValues["url"] = res.URL
 			resolveValues["thumb"] = res.Thumb
 			resolveValues["filename"] = filepath.Base(fp)
-			resolveSpec.ResultURL = substituteValues(resolveSpec.ResultURL, resolveValues)
+			var subErr error
+			resolveSpec.ResultURL, subErr = substituteValues(resolveSpec.ResultURL, resolveValues)
+			if subErr != nil {
+				return HTTPUploadResult{}, fmt.Errorf("resolve URL substitution failed: %w", subErr)
+			}
 		}
 
 		resolveClient := client
@@ -344,7 +362,11 @@ func executePreRequest(
 		if len(spec.FormFields) > 0 {
 			v := url.Values{}
 			for k, val := range spec.FormFields {
-				v.Set(k, substituteValues(val, values))
+				subVal, subErr := substituteValues(val, values)
+				if subErr != nil {
+					return preReqResult{}, 0, subErr
+				}
+				v.Set(k, subVal)
 			}
 			reqBody = strings.NewReader(v.Encode())
 			contentType = "application/x-www-form-urlencoded"
@@ -355,7 +377,11 @@ func executePreRequest(
 			method = http.MethodGet
 		}
 
-		req, err := http.NewRequestWithContext(ctx, method, substituteValues(spec.URL, values), reqBody)
+		subURL, subErr := substituteValues(spec.URL, values)
+		if subErr != nil {
+			return preReqResult{}, 0, subErr
+		}
+		req, err := http.NewRequestWithContext(ctx, method, subURL, reqBody)
 		if err != nil {
 			return preReqResult{}, 0, err
 		}
@@ -364,7 +390,11 @@ func executePreRequest(
 			req.Header.Set("Content-Type", contentType)
 		}
 		for k, v := range spec.Headers {
-			req.Header.Set(k, substituteValues(v, values))
+			subVal, subErr := substituteValues(v, values)
+			if subErr != nil {
+				return preReqResult{}, 0, subErr
+			}
+			req.Header.Set(k, subVal)
 		}
 
 		resp, err := preClient.Do(req)
@@ -502,11 +532,19 @@ func executeResponseFollowUp(ctx context.Context, client *http.Client, resp *htt
 			targetURL = base.ResolveReference(parsed).String()
 		}
 	}
-	targetURL = substituteValues(targetURL, values)
+	var subErr error
+	targetURL, subErr = substituteValues(targetURL, values)
+	if subErr != nil {
+		return nil, subErr
+	}
 
 	form := url.Values{}
 	for key, value := range spec.FormFields {
-		form.Set(key, substituteValues(value, values))
+		subVal, subErr := substituteValues(value, values)
+		if subErr != nil {
+			return nil, subErr
+		}
+		form.Set(key, subVal)
 	}
 	if len(form) == 0 {
 		for key, value := range values {
@@ -523,7 +561,11 @@ func executeResponseFollowUp(ctx context.Context, client *http.Client, resp *htt
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	}
 	for key, value := range spec.Headers {
-		req.Header.Set(key, substituteValues(value, values))
+		subVal, subErr := substituteValues(value, values)
+		if subErr != nil {
+			return nil, subErr
+		}
+		req.Header.Set(key, subVal)
 	}
 
 	nextResp, err := client.Do(req)
@@ -629,13 +671,30 @@ func extractFields(body []byte, responseType string, fields map[string]string) (
 			return nil, err
 		}
 		for k, path := range fields {
-			extracted[k] = GetJSONValue(data, path)
+			optional := false
+			if strings.HasSuffix(k, "?") {
+				optional = true
+				k = strings.TrimSuffix(k, "?")
+			}
+			val := GetJSONValue(data, path)
+			if val == "" && !optional {
+				return nil, fmt.Errorf("required JSON field %q not found using path %q", k, path)
+			}
+			extracted[k] = val
 		}
 	case "", "html":
 		for k, selector := range fields {
+			optional := false
+			if strings.HasSuffix(k, "?") {
+				optional = true
+				k = strings.TrimSuffix(k, "?")
+			}
 			val, err := extractHTMLField(body, selector)
 			if err != nil {
 				return nil, err
+			}
+			if val == "" && !optional {
+				return nil, fmt.Errorf("required HTML field %q not found using selector %q", k, selector)
 			}
 			extracted[k] = val
 		}
@@ -684,37 +743,46 @@ func selectionValue(sel *goquery.Selection) string {
 	return strings.TrimSpace(sel.Text())
 }
 
-func substituteValues(input string, values map[string]string) string {
+func substituteValues(input string, values map[string]string) (string, error) {
 	if input == "" || len(values) == 0 {
-		return input
+		if templateTokenPattern.MatchString(input) {
+			return input, fmt.Errorf("unresolved template tokens remaining in: %s", input)
+		}
+		return input, nil
 	}
 	result := input
 	for key, val := range values {
 		result = strings.ReplaceAll(result, "{"+key+"}", val)
 	}
-	return result
+	if templateTokenPattern.MatchString(result) {
+		return result, fmt.Errorf("unresolved template tokens remaining in: %s", result)
+	}
+	return result, nil
 }
 
-func resolveUploadURL(specURL string, values map[string]string) string {
-	resolved := substituteValues(specURL, values)
+func resolveUploadURL(specURL string, values map[string]string) (string, error) {
+	resolved, err := substituteValues(specURL, values)
+	if err != nil {
+		return resolved, err
+	}
 	endpoint := strings.TrimSpace(values["endpoint"])
 	if endpoint == "" || strings.Contains(specURL, "{endpoint}") {
-		return resolved
+		return resolved, nil
 	}
 
 	upload, err := url.Parse(resolved)
 	if err != nil {
-		return resolved
+		return resolved, nil
 	}
 	endpointURL, err := url.Parse(endpoint)
 	if err != nil {
-		return resolved
+		return resolved, nil
 	}
 	finalURL := upload.ResolveReference(endpointURL)
 	if finalURL.RawQuery == "" {
 		finalURL.RawQuery = upload.RawQuery
 	}
-	return finalURL.String()
+	return finalURL.String(), nil
 }
 
 var templateTokenPattern = regexp.MustCompile(`\{([^{}]+)\}`)
@@ -811,7 +879,10 @@ func ExecuteGenericRequest(ctx context.Context, client *http.Client, spec *Gener
 	}
 
 	// Build the main request.
-	resolvedURL := substituteValues(spec.URL, extractedValues)
+	resolvedURL, err := substituteValues(spec.URL, extractedValues)
+	if err != nil {
+		return extractedValues, err
+	}
 	method := spec.Method
 	if method == "" {
 		method = http.MethodGet
@@ -822,7 +893,11 @@ func ExecuteGenericRequest(ctx context.Context, client *http.Client, spec *Gener
 	if len(spec.FormFields) > 0 {
 		v := url.Values{}
 		for k, val := range spec.FormFields {
-			v.Set(k, substituteValues(val, extractedValues))
+			subVal, subErr := substituteValues(val, extractedValues)
+			if subErr != nil {
+				return extractedValues, subErr
+			}
+			v.Set(k, subVal)
 		}
 		reqBody = strings.NewReader(v.Encode())
 		contentType = "application/x-www-form-urlencoded"
@@ -844,7 +919,11 @@ func ExecuteGenericRequest(ctx context.Context, client *http.Client, spec *Gener
 			// Re-create body for retries.
 			v := url.Values{}
 			for k, val := range spec.FormFields {
-				v.Set(k, substituteValues(val, extractedValues))
+				subVal, subErr := substituteValues(val, extractedValues)
+				if subErr != nil {
+					return reqResult{}, 0, subErr
+				}
+				v.Set(k, subVal)
 			}
 			body = strings.NewReader(v.Encode())
 		}
@@ -858,7 +937,11 @@ func ExecuteGenericRequest(ctx context.Context, client *http.Client, spec *Gener
 			req.Header.Set("Content-Type", contentType)
 		}
 		for k, v := range spec.Headers {
-			req.Header.Set(k, substituteValues(v, extractedValues))
+			subVal, subErr := substituteValues(v, extractedValues)
+			if subErr != nil {
+				return reqResult{}, 0, subErr
+			}
+			req.Header.Set(k, subVal)
 		}
 
 		resp, err := useClient.Do(req)
