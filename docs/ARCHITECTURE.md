@@ -119,9 +119,11 @@ ViperGirls automation is a post-upload workflow, not part of the image-host uplo
 
 - Saved targets: `~/.conniesuploader/saved_threads.json`
 - Posting history: `~/.conniesuploader/posting_history.json`
+- Scheduled posts: `~/.conniesuploader/scheduled_posts.json`
 - Thread IDs are parsed and validated before upload when posting is selected.
 - Optional preview/confirmation can show batch name, target name, thread ID, and generated post content before posting.
 - History rows can copy post text, copy errors, and open target threads.
+Python owns the ViperGirls page workflow: it logs in, fetches the live reply form through the sidecar, parses the current HTML form, copies its fields, overrides the message/title fields, and sends Go only a resolved generic HTTP request to execute.
 
 ## Go Responsibilities
 
@@ -140,7 +142,6 @@ Go owns:
 - Pre-request/follow-up chains
 - Cookie/session handling
 - Response parsing for JSON, HTML selectors, regex extraction, and URL templates
-- Scheduled post timing via `core/scheduler.go`
 - Batch resolve polling for deferred upload workflows
 
 Go does **not** contain any host-specific knowledge. All service-specific behavior is defined by Python plugins through generic HTTP request specs.

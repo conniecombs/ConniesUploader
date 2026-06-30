@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025 conniecombs
 
+import datetime
 import json
 
 import pytest
@@ -49,12 +50,15 @@ class FakeSession:
 
 
 class FakeBridge:
-    def __init__(self, response=None):
+    def __init__(self, response=None, responses=None):
+        self.responses = list(responses or [])
         self.response = response or {"status": "success"}
         self.requests = []
 
     def request_sync(self, payload, timeout=0):
         self.requests.append((payload, timeout))
+        if self.responses:
+            return self.responses.pop(0)
         return self.response
 
 
@@ -63,6 +67,9 @@ def point_viper_storage(monkeypatch, tmp_path):
     monkeypatch.setattr(viper_api, "THREADS_FILE", str(tmp_path / "saved_threads.json"))
     monkeypatch.setattr(
         viper_api, "POSTING_HISTORY_FILE", str(tmp_path / "posting_history.json")
+    )
+    monkeypatch.setattr(
+        viper_api, "SCHEDULED_POSTS_FILE", str(tmp_path / "scheduled_posts.json")
     )
 
 
@@ -125,37 +132,70 @@ def test_fetch_thread_title_uses_vipergirls_headers():
 
 @pytest.mark.unit
 def test_vipergirls_post_reply_uses_live_reply_form_fields(monkeypatch):
-    bridge = FakeBridge()
+    html = """
+    <html>
+      <head><title>Bondage Cafe - Reply to Topic</title></head>
+      <body>
+        <form action="newreply.php?do=postreply&amp;t=12345" method="post" name="vbform">
+          <input name="title" value="Re: Bondage Cafe">
+          <textarea name="message_backup"></textarea>
+          <textarea name="message"></textarea>
+          <input type="hidden" name="wysiwyg" value="0">
+          <input type="hidden" name="s" value="">
+          <input type="hidden" name="securitytoken" value="tok">
+          <input type="hidden" name="do" value="postreply">
+          <input type="hidden" name="t" value="12345">
+          <input type="hidden" name="p" value="">
+          <input type="hidden" name="specifiedpost" value="0">
+          <input type="hidden" name="posthash" value="">
+          <input type="hidden" name="poststarttime" value="">
+          <input type="hidden" name="loggedinuser" value="412723">
+          <input type="hidden" name="multiquoteempty" value="">
+          <input type="submit" name="preview" value="Preview Post">
+          <input type="submit" name="sbutton" value="Submit Reply">
+          <input type="checkbox" name="signature" value="1" checked>
+          <input type="checkbox" name="parseurl" value="1" checked>
+          <select name="emailupdate"><option value="0" selected>No email</option></select>
+          <select name="folderid"><option value="0" selected>Default</option></select>
+        </form>
+      </body>
+    </html>
+    """
+    bridge = FakeBridge(
+        responses=[
+            {"status": "success", "data": {"reply_form_html": html}},
+            {"status": "success"},
+        ]
+    )
     monkeypatch.setattr(viper_api.SidecarBridge, "get", staticmethod(lambda: bridge))
 
     api = viper_api.ViperGirlsAPI()
 
     assert api.post_reply("12345", "hello from test") is True
-    assert len(bridge.requests) == 1
-    payload, timeout = bridge.requests[0]
-    spec = payload["generic_spec"]
+    assert len(bridge.requests) == 2
+    fetch_payload, fetch_timeout = bridge.requests[0]
+    submit_payload, submit_timeout = bridge.requests[1]
+    fetch_spec = fetch_payload["generic_spec"]
+    spec = submit_payload["generic_spec"]
 
-    assert timeout == 60
-    assert spec["pre_request"]["action"] == "vg_get_reply_form"
-    assert spec["pre_request"]["url"] == "https://vipergirls.to/newreply.php?do=newreply&t=12345"
-    assert spec["pre_request"]["extract_fields"]["loggedinuser"] == "input[name='loggedinuser']"
-    assert spec["pre_request"]["extract_fields"]["reply_title"] == "input[name='title']"
-    assert spec["pre_request"]["extract_fields"]["session_id?"] == "input[name='s']"
-    assert spec["pre_request"]["extract_fields"]["post_id?"] == "input[name='p']"
-    assert spec["pre_request"]["extract_fields"]["posthash?"] == "input[name='posthash']"
-    assert (
-        spec["pre_request"]["extract_fields"]["poststarttime?"]
-        == "input[name='poststarttime']"
-    )
-    assert (
-        spec["pre_request"]["extract_fields"]["multiquoteempty?"]
-        == "input[name='multiquoteempty']"
-    )
+    assert fetch_timeout == 30
+    assert fetch_spec["method"] == "GET"
+    assert fetch_spec["url"] == "https://vipergirls.to/newreply.php?do=newreply&t=12345"
+    assert fetch_spec["extract_fields"]["reply_form_html"] == r"regex:([\s\S]*)"
+    assert submit_timeout == 60
+    assert "pre_request" not in spec
+    assert spec["url"] == "https://vipergirls.to/newreply.php?do=postreply&t=12345"
     assert spec["headers"]["Referer"] == "https://vipergirls.to/newreply.php?do=newreply&t=12345"
-    assert spec["form_fields"]["title"] == "{reply_title}"
-    assert spec["form_fields"]["loggedinuser"] == "{loggedinuser}"
+    assert spec["form_fields"]["title"] == "Re: Bondage Cafe"
+    assert spec["form_fields"]["message"] == "hello from test"
+    assert spec["form_fields"]["s"] == ""
+    assert spec["form_fields"]["p"] == ""
+    assert spec["form_fields"]["posthash"] == ""
+    assert spec["form_fields"]["poststarttime"] == ""
+    assert spec["form_fields"]["loggedinuser"] == "412723"
     assert spec["form_fields"]["sbutton"] == "Submit Reply"
     assert spec["form_fields"]["emailupdate"] == "0"
+    assert "preview" not in spec["form_fields"]
     assert spec["success_check"]["type"] == "any"
     assert any(
         check.get("field") == "__final_url__"
@@ -438,6 +478,82 @@ def test_auto_poster_marks_target_used(tmp_path, monkeypatch):
 
     assert poster.saved_threads_data["Target"]["last_used_at"]
     assert viper_api.load_saved_threads()["Target"]["last_used_at"]
+
+
+@pytest.mark.unit
+def test_scheduled_posts_are_python_owned(tmp_path, monkeypatch):
+    point_viper_storage(monkeypatch, tmp_path)
+    bridge = FakeBridge()
+    monkeypatch.setattr(viper_api.SidecarBridge, "get", staticmethod(lambda: bridge))
+    api = viper_api.ViperGirlsAPI()
+
+    assert api.schedule_post(
+        "post-1",
+        "54321",
+        "Target",
+        "scheduled body",
+        "2026-06-30T22:00:00+00:00",
+    )
+
+    posts = api.list_scheduled_posts()
+    assert posts[0]["id"] == "post-1"
+    assert posts[0]["thread_id"] == "54321"
+    assert posts[0]["message"] == "scheduled body"
+    assert posts[0]["status"] == "pending"
+    assert not bridge.requests
+
+    assert api.cancel_scheduled_post("post-1") is True
+    assert api.list_scheduled_posts() == []
+
+
+@pytest.mark.unit
+def test_python_scheduler_processes_due_posts(tmp_path, monkeypatch):
+    point_viper_storage(monkeypatch, tmp_path)
+    viper_api.add_scheduled_post(
+        {
+            "id": "post-1",
+            "thread_id": "54321",
+            "thread_name": "Target",
+            "message": "scheduled body",
+            "scheduled_time": "2026-06-30T20:00:00+00:00",
+        }
+    )
+
+    calls = []
+
+    class FakeViperGirlsAPI:
+        def login(self, username, password):
+            calls.append(("login", username, password))
+            return True
+
+        def post_reply(self, thread_id, message):
+            calls.append(("post_reply", thread_id, message))
+            return True
+
+    monkeypatch.setattr(viper_api, "ViperGirlsAPI", FakeViperGirlsAPI)
+    event_queue = []
+
+    class ListQueue:
+        def put_nowait(self, item):
+            event_queue.append(item)
+
+    scheduler = viper_api.ViperGirlsPostScheduler(
+        {"vg_user": "user", "vg_pass": "password"},
+        ListQueue(),
+    )
+    scheduler.process_due_posts(
+        datetime.datetime(2026, 6, 30, 20, 1, tzinfo=datetime.timezone.utc)
+    )
+
+    posts = viper_api.load_scheduled_posts()
+    assert calls == [
+        ("login", "user", "password"),
+        ("post_reply", "54321", "scheduled body"),
+    ]
+    assert posts[0]["status"] == "posted"
+    assert posts[0]["error"] == ""
+    assert event_queue[0]["type"] == "scheduled_post_completed"
+    assert event_queue[0]["status"] == "posted"
 
 
 @pytest.mark.unit

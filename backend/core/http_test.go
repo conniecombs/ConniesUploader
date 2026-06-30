@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -214,5 +215,49 @@ func TestExecuteGenericRequestOptionalPreRequestFieldSubstitutesEmptyValue(t *te
 	}, nil)
 	if err != nil {
 		t.Fatalf("ExecuteGenericRequest returned error: %v", err)
+	}
+}
+
+func TestExecuteGenericRequestFieldExtractionErrorIncludesSanitizedDiagnostics(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`
+			<html>
+				<head><title>Reply Form</title></head>
+				<body>
+					<form method="post" action="/submit">
+						<input name="securitytoken" value="secret-token">
+						<textarea name="message"></textarea>
+					</form>
+				</body>
+			</html>
+		`))
+	}))
+	defer server.Close()
+
+	_, err := ExecuteGenericRequest(context.Background(), server.Client(), &GenericHttpRequestSpec{
+		URL:          server.URL + "/reply-form",
+		Method:       http.MethodGet,
+		ResponseType: "html",
+		ExtractFields: map[string]string{
+			"missing": "input[name='missing']",
+		},
+	}, nil)
+	if err == nil {
+		t.Fatal("ExecuteGenericRequest returned nil error")
+	}
+	msg := err.Error()
+	for _, want := range []string{
+		"diagnostics:",
+		"status=200",
+		"Reply Form",
+		"action=\"/submit\"",
+		"fields=\"securitytoken,message\"",
+	} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("error %q did not contain %q", msg, want)
+		}
+	}
+	if strings.Contains(msg, "secret-token") {
+		t.Fatalf("error leaked form value: %q", msg)
 	}
 }

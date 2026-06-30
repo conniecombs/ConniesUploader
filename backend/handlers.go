@@ -119,12 +119,6 @@ func handleJob(job JobRequest) {
 		handleHttpRequest(job)
 	case "http_batch_resolve":
 		handleHttpBatchResolve(job)
-	case "viper_schedule_post":
-		handleViperSchedulePost(job)
-	case "viper_cancel_post":
-		handleViperCancelPost(job)
-	case "viper_list_posts":
-		handleViperListPosts(job)
 	case "generate_thumb":
 		handleGenerateThumb(job)
 	default:
@@ -303,52 +297,6 @@ func handleHttpBatchResolve(job JobRequest) {
 	}
 
 	sendJobEvent(&job, OutputEvent{Type: "batch_complete", Status: "done"})
-}
-
-// ---------------------------------------------------------------------------
-// Scheduler handlers (ViperGirls post scheduling — stateful Go-side timers)
-// ---------------------------------------------------------------------------
-
-func handleViperSchedulePost(job JobRequest) {
-	ensureInitialized()
-	if core.GlobalScheduler == nil {
-		sendJobEvent(&job, OutputEvent{Type: "result", Status: "failed", Msg: "Scheduler not initialized"})
-		return
-	}
-	post := core.ScheduledPost{
-		ID:            job.Config["id"],
-		ThreadID:      job.Config["thread_id"],
-		ThreadName:    job.Config["thread_name"],
-		Message:       job.Config["message"],
-		ScheduledTime: job.Config["scheduled_time"],
-		Cover:         job.Config["cover_thumbnail"],
-	}
-	core.GlobalScheduler.AddPost(post)
-	sendJobEvent(&job, OutputEvent{Type: "result", Status: "success", Msg: "Post scheduled", Data: post})
-}
-
-func handleViperCancelPost(job JobRequest) {
-	ensureInitialized()
-	if core.GlobalScheduler == nil {
-		sendJobEvent(&job, OutputEvent{Type: "result", Status: "failed", Msg: "Scheduler not initialized"})
-		return
-	}
-	id := job.Config["id"]
-	if core.GlobalScheduler.CancelPost(id) {
-		sendJobEvent(&job, OutputEvent{Type: "result", Status: "success", Msg: "Post cancelled"})
-	} else {
-		sendJobEvent(&job, OutputEvent{Type: "result", Status: "failed", Msg: "Post not found or not pending"})
-	}
-}
-
-func handleViperListPosts(job JobRequest) {
-	ensureInitialized()
-	if core.GlobalScheduler == nil {
-		sendJobEvent(&job, OutputEvent{Type: "result", Status: "failed", Msg: "Scheduler not initialized"})
-		return
-	}
-	posts := core.GlobalScheduler.ListPosts()
-	sendJobEvent(&job, OutputEvent{Type: "result", Status: "success", Data: posts})
 }
 
 // ---------------------------------------------------------------------------

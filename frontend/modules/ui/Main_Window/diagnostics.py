@@ -133,6 +133,14 @@ class DiagnosticsMixin:
             except Exception as e:
                 logger.warning(f"Error stopping AutoPoster: {e}")
 
+        # Stop Python-owned ViperGirls scheduler
+        if hasattr(self, "viper_scheduler") and self.viper_scheduler:
+            logger.info("Stopping ViperGirls scheduler...")
+            try:
+                self.viper_scheduler.stop()
+            except Exception as e:
+                logger.warning(f"Error stopping ViperGirls scheduler: {e}")
+
         # Stop System Tray
         if hasattr(self, "system_tray") and self.system_tray:
             logger.info("Stopping System Tray...")

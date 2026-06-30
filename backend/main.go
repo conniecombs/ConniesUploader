@@ -86,97 +86,6 @@ func initHTTPClient() {
 	}
 }
 
-// initScheduler starts the post scheduler with a generic HTTP post function.
-func initScheduler() {
-	core.InitScheduler(client, scheduledPostFn)
-}
-
-// scheduledPostFn executes a scheduled forum post using the generic HTTP runner.
-// It performs: GET forum.php → extract security token → POST reply.
-func scheduledPostFn(ctx context.Context, httpClient *http.Client, threadID, message string) (bool, string) {
-	spec := &core.GenericHttpRequestSpec{
-		URL:    fmt.Sprintf("https://vipergirls.to/newreply.php?do=postreply&t=%s", threadID),
-		Method: "POST",
-		Headers: map[string]string{
-			"Referer": fmt.Sprintf("https://vipergirls.to/newreply.php?do=newreply&t=%s", threadID),
-		},
-		UseCookies: true,
-		FormFields: map[string]string{
-			"title":           "{reply_title}",
-			"message":         message,
-			"message_backup":  "",
-			"wysiwyg":         "{wysiwyg}",
-			"iconid":          "0",
-			"s":               "{session_id}",
-			"securitytoken":   "{security_token}",
-			"do":              "postreply",
-			"t":               threadID,
-			"p":               "{post_id}",
-			"specifiedpost":   "{specifiedpost}",
-			"posthash":        "{posthash}",
-			"poststarttime":   "{poststarttime}",
-			"loggedinuser":    "{loggedinuser}",
-			"multiquoteempty": "{multiquoteempty}",
-			"sbutton":         "Submit Reply",
-			"signature":       "1",
-			"parseurl":        "1",
-			"emailupdate":     "0",
-			"folderid":        "0",
-		},
-		ResponseType:  "html",
-		ExtractFields: map[string]string{},
-		SuccessCheck: &core.SuccessCheck{
-			Type: "any",
-			Any: []core.SuccessCheck{
-				{
-					Field: "__response_body__",
-					Match: "(?i)thank you for posting|redirecting",
-					Type:  "regex",
-				},
-				{
-					Field: "__final_url__",
-					Match: `(?i)(?:/threads/\d+|showthread\.php\?t=\d+)`,
-					Type:  "regex",
-				},
-			},
-		},
-		PreRequest: &core.PreRequestSpec{
-			Action: "vg_get_reply_form",
-			URL:    fmt.Sprintf("https://vipergirls.to/newreply.php?do=newreply&t=%s", threadID),
-			Method: "GET",
-			Headers: map[string]string{
-				"Referer": "https://vipergirls.to/forum.php",
-			},
-			UseCookies:   true,
-			ResponseType: "html",
-			ExtractFields: map[string]string{
-				"reply_title":      `input[name='title']`,
-				"security_token":   `input[name='securitytoken']`,
-				"wysiwyg":          `input[name='wysiwyg']`,
-				"session_id?":      `input[name='s']`,
-				"post_id?":         `input[name='p']`,
-				"specifiedpost":    `input[name='specifiedpost']`,
-				"posthash?":        `input[name='posthash']`,
-				"poststarttime?":   `input[name='poststarttime']`,
-				"loggedinuser":     `input[name='loggedinuser']`,
-				"multiquoteempty?": `input[name='multiquoteempty']`,
-			},
-		},
-	}
-
-	// Wrap spec in a minimal JobRequest.
-	job := &core.JobRequest{
-		Service:     "vipergirls.to",
-		GenericSpec: spec,
-	}
-
-	_, err := core.ExecuteGenericRequest(ctx, httpClient, spec, job)
-	if err != nil {
-		return false, err.Error()
-	}
-	return true, "Post successful"
-}
-
 // ensureInitialized lazily bootstraps the HTTP client.
 // Called by handler functions so tests that set client directly still work.
 func ensureInitialized() {
@@ -286,7 +195,6 @@ func main() {
 	core.SendJSON(OutputEvent{Type: "log", Msg: fmt.Sprintf("=== GO SIDECAR STARTED - WORKERS: %d ===", clampedWorkerCount)})
 
 	initHTTPClient()
-	initScheduler()
 
 	jobQueue := make(chan JobRequest, 100)
 	var wg sync.WaitGroup

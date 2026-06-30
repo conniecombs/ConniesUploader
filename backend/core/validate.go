@@ -50,7 +50,6 @@ func ValidateJobRequest(job *JobRequest) error {
 	validActions := map[string]bool{
 		"http_upload": true, "http_request": true, "http_batch_resolve": true,
 		"generate_thumb": true,
-		"viper_schedule_post": true, "viper_cancel_post": true, "viper_list_posts": true,
 	}
 	if !validActions[job.Action] {
 		return fmt.Errorf("invalid action: %s", job.Action)

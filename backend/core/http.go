@@ -416,7 +416,7 @@ func executePreRequest(
 
 		extracted, err := extractFields(bodyBytes, spec.ResponseType, spec.ExtractFields)
 		if err != nil {
-			return preReqResult{}, resp.StatusCode, err
+			return preReqResult{}, resp.StatusCode, withHTMLDiagnostics(err, bodyBytes, spec.ResponseType, resp)
 		}
 		return preReqResult{Extracted: extracted, Client: preClient}, resp.StatusCode, nil
 	}, logger)
@@ -743,6 +743,76 @@ func selectionValue(sel *goquery.Selection) string {
 	return strings.TrimSpace(sel.Text())
 }
 
+func withHTMLDiagnostics(err error, body []byte, responseType string, resp *http.Response) error {
+	if err == nil || strings.ToLower(responseType) == "json" {
+		return err
+	}
+	diagnostics := htmlDiagnostics(body, resp)
+	if diagnostics == "" {
+		return err
+	}
+	return fmt.Errorf("%w; %s", err, diagnostics)
+}
+
+func htmlDiagnostics(body []byte, resp *http.Response) string {
+	doc, err := goquery.NewDocumentFromReader(bytes.NewReader(body))
+	if err != nil {
+		return ""
+	}
+
+	parts := []string{"diagnostics:"}
+	if resp != nil {
+		parts = append(parts, fmt.Sprintf("status=%d", resp.StatusCode))
+		if resp.Request != nil && resp.Request.URL != nil {
+			parts = append(parts, "final_url="+resp.Request.URL.String())
+		}
+	}
+	if title := strings.TrimSpace(doc.Find("title").First().Text()); title != "" {
+		parts = append(parts, "title="+strconv.Quote(title))
+	}
+
+	formSummaries := make([]string, 0, 3)
+	doc.Find("form").EachWithBreak(func(i int, form *goquery.Selection) bool {
+		if i >= 3 {
+			return false
+		}
+		action, _ := form.Attr("action")
+		method, _ := form.Attr("method")
+		names := formFieldNames(form, 16)
+		formSummaries = append(
+			formSummaries,
+			fmt.Sprintf(
+				"{method=%s action=%s fields=%s}",
+				strconv.Quote(strings.TrimSpace(method)),
+				strconv.Quote(strings.TrimSpace(action)),
+				strconv.Quote(strings.Join(names, ",")),
+			),
+		)
+		return true
+	})
+	if len(formSummaries) > 0 {
+		parts = append(parts, "forms=["+strings.Join(formSummaries, " ")+"]")
+	}
+
+	return strings.Join(parts, " ")
+}
+
+func formFieldNames(form *goquery.Selection, limit int) []string {
+	names := make([]string, 0, limit)
+	seen := make(map[string]bool)
+	form.Find("input, textarea, select").EachWithBreak(func(_ int, field *goquery.Selection) bool {
+		name, _ := field.Attr("name")
+		name = strings.TrimSpace(name)
+		if name == "" || seen[name] {
+			return true
+		}
+		seen[name] = true
+		names = append(names, name)
+		return len(names) < limit
+	})
+	return names
+}
+
 func substituteValues(input string, values map[string]string) (string, error) {
 	if input == "" || len(values) == 0 {
 		if templateTokenPattern.MatchString(input) {
@@ -970,7 +1040,10 @@ func ExecuteGenericRequest(ctx context.Context, client *http.Client, spec *Gener
 		if len(spec.ExtractFields) > 0 {
 			extracted, err = extractFields(bodyBytes, spec.ResponseType, spec.ExtractFields)
 			if err != nil {
-				return reqResult{}, resp.StatusCode, fmt.Errorf("field extraction failed: %w", err)
+				return reqResult{}, resp.StatusCode, fmt.Errorf(
+					"field extraction failed: %w",
+					withHTMLDiagnostics(err, bodyBytes, spec.ResponseType, resp),
+				)
 			}
 		}
 

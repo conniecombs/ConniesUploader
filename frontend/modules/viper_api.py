@@ -9,9 +9,10 @@ import os
 import re
 import shutil
 import threading
+import time
 import webbrowser
 from typing import Any, Dict, List, Optional, Tuple
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import customtkinter as ctk
 import pyperclip
@@ -27,6 +28,7 @@ from modules.sidecar import SidecarBridge
 _USER_DATA_DIR = os.path.join(os.path.expanduser("~"), ".conniesuploader")
 THREADS_FILE = os.path.join(_USER_DATA_DIR, "saved_threads.json")
 POSTING_HISTORY_FILE = os.path.join(_USER_DATA_DIR, "posting_history.json")
+SCHEDULED_POSTS_FILE = os.path.join(_USER_DATA_DIR, "scheduled_posts.json")
 POSTING_HISTORY_LIMIT = 500
 TARGETS_EXPORT_VERSION = 1
 VIPERGIRLS_BASE_URL = "https://vipergirls.to"
@@ -55,6 +57,10 @@ THREAD_TITLE_SELECTORS = (
 
 class ThreadTargetError(ValueError):
     """Raised when a ViperGirls posting target cannot be normalized."""
+
+
+class ViperPostError(RuntimeError):
+    """Raised when a ViperGirls page cannot be prepared for posting."""
 
 
 def _now_iso() -> str:
@@ -625,6 +631,351 @@ def clear_posting_history() -> None:
     save_posting_history([])
 
 
+def _read_json_file(filepath: str, fallback: Any) -> Any:
+    if not os.path.exists(filepath):
+        return fallback
+    try:
+        with open(filepath, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as exc:
+        _backup_corrupt_json_file(filepath, exc)
+        return fallback
+
+
+def _parse_scheduled_time(value: str) -> Optional[datetime]:
+    raw_value = str(value or "").strip()
+    if not raw_value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw_value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _canonical_scheduled_post(entry: Dict[str, Any]) -> Dict[str, str]:
+    thread_id = extract_thread_id(str(entry.get("thread_id") or "")) or ""
+    scheduled_time = str(entry.get("scheduled_time") or "")
+    status = str(entry.get("status") or "pending").strip().lower() or "pending"
+    if status not in {"pending", "posted", "failed"}:
+        status = "pending"
+    return {
+        "id": str(entry.get("id") or ""),
+        "thread_id": thread_id,
+        "thread_name": str(entry.get("thread_name") or ""),
+        "message": str(entry.get("message") or ""),
+        "scheduled_time": scheduled_time,
+        "status": status,
+        "error": str(entry.get("error") or ""),
+        "cover_thumbnail": str(entry.get("cover_thumbnail") or ""),
+    }
+
+
+def load_scheduled_posts() -> List[Dict[str, str]]:
+    """Load persisted ViperGirls scheduled posts."""
+    raw_data = _read_json_file(SCHEDULED_POSTS_FILE, [])
+    if not isinstance(raw_data, list):
+        _backup_corrupt_json_file(
+            SCHEDULED_POSTS_FILE, ValueError("scheduled posts data is not a JSON list")
+        )
+        return []
+    return [
+        _canonical_scheduled_post(item)
+        for item in raw_data
+        if isinstance(item, dict)
+    ]
+
+
+def save_scheduled_posts(posts: List[Dict[str, Any]]) -> None:
+    """Atomically save ViperGirls scheduled posts."""
+    os.makedirs(_USER_DATA_DIR, exist_ok=True)
+    normalized = [
+        _canonical_scheduled_post(item)
+        for item in posts
+        if isinstance(item, dict)
+    ]
+    tmp_path = f"{SCHEDULED_POSTS_FILE}.tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(normalized, f, indent=4, ensure_ascii=False)
+        f.write("\n")
+    os.replace(tmp_path, SCHEDULED_POSTS_FILE)
+
+
+def add_scheduled_post(post: Dict[str, Any]) -> Dict[str, str]:
+    """Persist one pending ViperGirls scheduled post."""
+    normalized = _canonical_scheduled_post({**post, "status": "pending", "error": ""})
+    if not normalized["id"]:
+        raise ViperPostError("Scheduled post is missing an ID.")
+    if not normalized["thread_id"]:
+        raise ViperPostError("Scheduled post is missing a thread ID.")
+    if not normalized["message"].strip():
+        raise ViperPostError("Scheduled post message is empty.")
+    if _parse_scheduled_time(normalized["scheduled_time"]) is None:
+        raise ViperPostError("Scheduled post time is invalid.")
+
+    posts = [item for item in load_scheduled_posts() if item.get("id") != normalized["id"]]
+    posts.append(normalized)
+    save_scheduled_posts(posts)
+    return normalized
+
+
+def cancel_scheduled_post(post_id: str) -> bool:
+    """Remove a pending scheduled post by ID."""
+    clean_id = str(post_id or "").strip()
+    posts = load_scheduled_posts()
+    kept = [
+        post for post in posts
+        if not (post.get("id") == clean_id and post.get("status") == "pending")
+    ]
+    if len(kept) == len(posts):
+        return False
+    save_scheduled_posts(kept)
+    return True
+
+
+def _update_scheduled_post_status(
+    posts: List[Dict[str, str]],
+    post_id: str,
+    status: str,
+    error: str = "",
+) -> List[Dict[str, str]]:
+    updated = []
+    for post in posts:
+        if post.get("id") == post_id:
+            item = dict(post)
+            item["status"] = status
+            item["error"] = error
+            updated.append(item)
+        else:
+            updated.append(post)
+    return updated
+
+
+def _vipergirls_success_check() -> Dict[str, Any]:
+    return {
+        "type": "any",
+        "any": [
+            {
+                "field": "__response_body__",
+                "match": "(?i)thank you for posting|redirecting",
+                "type": "regex",
+            },
+            {
+                "field": "__final_url__",
+                "match": r"(?i)(?:/threads/\d+|showthread\.php\?t=\d+)",
+                "type": "regex",
+            },
+        ],
+    }
+
+
+def _extract_form_value(element: Any) -> str:
+    if element.name == "textarea":
+        return element.get_text() or ""
+    if element.name == "select":
+        selected = element.select_one("option[selected]")
+        if selected is None:
+            selected = element.select_one("option")
+        return str(selected.get("value", selected.get_text(strip=True)) if selected else "")
+    return str(element.get("value", ""))
+
+
+def _copy_reply_form_fields(form: Any) -> Dict[str, str]:
+    fields: Dict[str, str] = {}
+    for element in form.select("input, textarea, select"):
+        name = str(element.get("name") or "").strip()
+        if not name:
+            continue
+        tag_name = str(element.name or "").lower()
+        field_type = str(element.get("type") or "").lower()
+        if tag_name == "input" and field_type in {"submit", "button", "image", "file"}:
+            continue
+        if field_type in {"checkbox", "radio"} and not element.has_attr("checked"):
+            continue
+        fields[name] = _extract_form_value(element)
+    return fields
+
+
+def _summarize_vipergirls_page(soup: BeautifulSoup) -> str:
+    title = clean_thread_title(soup.title.get_text(" ", strip=True) if soup.title else "")
+    page_text = " ".join((soup.get_text(" ", strip=True) or "").split())
+    lowered = page_text.lower()
+    if "you are not logged in" in lowered or "log in" == title.lower():
+        return "ViperGirls returned a login page."
+    if "no permission" in lowered or "do not have permission" in lowered:
+        return "ViperGirls reported that this account cannot reply to the thread."
+    if "thread is closed" in lowered or "closed thread" in lowered:
+        return "ViperGirls reported that the thread is closed."
+    if "just a moment" in lowered:
+        return "ViperGirls returned an interstitial page."
+    if title:
+        return f"Reply form was not found on page '{title}'."
+    return "Reply form was not found on the ViperGirls page."
+
+
+def build_vipergirls_reply_spec(thread_id: str, message: str, html_text: str) -> Dict[str, Any]:
+    """Parse a live ViperGirls reply page and build a resolved POST spec."""
+    clean_thread_id = extract_thread_id(str(thread_id or "")) or ""
+    if not clean_thread_id:
+        raise ViperPostError("Thread ID is missing or invalid.")
+    if not str(message or "").strip():
+        raise ViperPostError("Post message is empty.")
+
+    reply_url = f"{VIPERGIRLS_BASE_URL}/newreply.php?do=newreply&t={clean_thread_id}"
+    soup = BeautifulSoup(html_text or "", "html.parser")
+    form = None
+    for candidate in soup.select("form"):
+        action = str(candidate.get("action") or "")
+        input_names = {
+            str(element.get("name") or "")
+            for element in candidate.select("input, textarea, select")
+        }
+        if (
+            "newreply.php" in action
+            and "do=postreply" in action
+        ) or {"message", "securitytoken", "do"}.issubset(input_names):
+            form = candidate
+            break
+
+    if form is None:
+        raise ViperPostError(_summarize_vipergirls_page(soup))
+
+    form_fields = _copy_reply_form_fields(form)
+    required_fields = {"securitytoken", "do", "t", "loggedinuser"}
+    missing = sorted(name for name in required_fields if name not in form_fields)
+    if missing:
+        raise ViperPostError(
+            "ViperGirls reply form is missing required field(s): "
+            + ", ".join(missing)
+        )
+
+    form_fields["message"] = str(message)
+    form_fields["message_backup"] = ""
+    form_fields["wysiwyg"] = form_fields.get("wysiwyg", "0") or "0"
+    form_fields["iconid"] = form_fields.get("iconid", "0") or "0"
+    form_fields["do"] = "postreply"
+    form_fields["t"] = clean_thread_id
+    form_fields["sbutton"] = "Submit Reply"
+    form_fields.setdefault("signature", "1")
+    form_fields.setdefault("parseurl", "1")
+    form_fields.setdefault("emailupdate", "0")
+    form_fields.setdefault("folderid", "0")
+    form_fields.pop("preview", None)
+
+    action = str(form.get("action") or f"newreply.php?do=postreply&t={clean_thread_id}")
+    post_url = urljoin(VIPERGIRLS_BASE_URL + "/", action)
+    return {
+        "url": post_url,
+        "method": "POST",
+        "use_cookies": True,
+        "form_fields": form_fields,
+        "headers": {
+            "Referer": reply_url,
+        },
+        "response_type": "html",
+        "extract_fields": {},
+        "success_check": _vipergirls_success_check(),
+    }
+
+
+class ViperGirlsPostScheduler:
+    """Python-owned scheduled-post runner for ViperGirls."""
+
+    def __init__(self, creds: Dict[str, str], event_queue: Optional[Any] = None):
+        self.creds = creds
+        self.event_queue = event_queue
+        self._stop_event = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+
+    def start(self) -> None:
+        if self._thread and self._thread.is_alive():
+            return
+        self._stop_event.clear()
+        self._thread = threading.Thread(
+            target=self._run,
+            name="ViperGirlsPostScheduler",
+            daemon=True,
+        )
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop_event.set()
+        if self._thread and self._thread.is_alive():
+            self._thread.join(timeout=3.0)
+
+    def _emit(self, post: Dict[str, str], status: str, msg: str) -> None:
+        if self.event_queue is None:
+            return
+        try:
+            self.event_queue.put_nowait({
+                "type": "scheduled_post_completed",
+                "id": post.get("id"),
+                "status": status,
+                "msg": msg,
+                "data": post,
+            })
+        except Exception:
+            logger.debug("Could not emit scheduled post event.", exc_info=True)
+
+    def _run(self) -> None:
+        while not self._stop_event.is_set():
+            try:
+                self.process_due_posts()
+            except Exception as exc:
+                logger.warning(f"Scheduled ViperGirls post check failed: {exc}")
+            self._stop_event.wait(60.0)
+
+    def process_due_posts(self, now: Optional[datetime] = None) -> List[Dict[str, str]]:
+        now_utc = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+        posts = load_scheduled_posts()
+        due_posts = [
+            post for post in posts
+            if post.get("status") == "pending"
+            and (scheduled_at := _parse_scheduled_time(post.get("scheduled_time", "")))
+            and scheduled_at <= now_utc
+        ]
+        if not due_posts:
+            return []
+
+        user = str(self.creds.get("vg_user") or "")
+        pwd = str(self.creds.get("vg_pass") or "")
+        if not user or not pwd:
+            error = "Missing ViperGirls credentials."
+            for post in due_posts:
+                posts = _update_scheduled_post_status(posts, post["id"], "failed", error)
+                failed_post = next(item for item in posts if item.get("id") == post["id"])
+                self._emit(failed_post, "failed", error)
+            save_scheduled_posts(posts)
+            return due_posts
+
+        api = ViperGirlsAPI()
+        if not api.login(user, pwd):
+            error = "ViperGirls login failed."
+            for post in due_posts:
+                posts = _update_scheduled_post_status(posts, post["id"], "failed", error)
+                failed_post = next(item for item in posts if item.get("id") == post["id"])
+                self._emit(failed_post, "failed", error)
+            save_scheduled_posts(posts)
+            return due_posts
+
+        for post in due_posts:
+            try:
+                ok = api.post_reply(post["thread_id"], post["message"])
+                status = "posted" if ok else "failed"
+                error = "" if ok else "ViperGirls post failed."
+            except Exception as exc:
+                status = "failed"
+                error = str(exc)
+            posts = _update_scheduled_post_status(posts, post["id"], status, error)
+            updated_post = next(item for item in posts if item.get("id") == post["id"])
+            self._emit(updated_post, status, error or "Post successful")
+            save_scheduled_posts(posts)
+
+        return due_posts
+
+
 class ViperGirlsAPI:
     def __init__(self):
         self.bridge = SidecarBridge.get()
@@ -686,83 +1037,48 @@ class ViperGirlsAPI:
 
     def post_reply(self, thread_id, message):
         logger.info(f"ViperAPI: Posting to thread {thread_id}...")
+        clean_thread_id = extract_thread_id(str(thread_id or "")) or ""
+        if not clean_thread_id:
+            logger.error("ViperAPI: Post Failed: invalid thread ID")
+            return False
 
-        spec = {
-            "url": f"https://vipergirls.to/newreply.php?do=postreply&t={thread_id}",
-            "method": "POST",
-            "use_cookies": True,
-            "form_fields": {
-                "title": "{reply_title}",
-                "message": message,
-                "message_backup": "",
-                "wysiwyg": "{wysiwyg}",
-                "iconid": "0",
-                "s": "{session_id}",
-                "securitytoken": "{security_token}",
-                "do": "postreply",
-                "t": str(thread_id),
-                "p": "{post_id}",
-                "specifiedpost": "{specifiedpost}",
-                "posthash": "{posthash}",
-                "poststarttime": "{poststarttime}",
-                "loggedinuser": "{loggedinuser}",
-                "multiquoteempty": "{multiquoteempty}",
-                "sbutton": "Submit Reply",
-                "signature": "1",
-                "parseurl": "1",
-                "emailupdate": "0",
-                "folderid": "0",
-            },
+        reply_url = f"{VIPERGIRLS_BASE_URL}/newreply.php?do=newreply&t={clean_thread_id}"
+        fetch_spec = {
+            "url": reply_url,
+            "method": "GET",
             "headers": {
-                "Referer": f"https://vipergirls.to/newreply.php?do=newreply&t={thread_id}",
+                "Referer": f"{VIPERGIRLS_BASE_URL}/forum.php",
             },
+            "use_cookies": True,
             "response_type": "html",
-            "extract_fields": {},
-            "success_check": {
-                "type": "any",
-                "any": [
-                    {
-                        "field": "__response_body__",
-                        "match": "(?i)thank you for posting|redirecting",
-                        "type": "regex",
-                    },
-                    {
-                        "field": "__final_url__",
-                        "match": r"(?i)(?:/threads/\d+|showthread\.php\?t=\d+)",
-                        "type": "regex",
-                    },
-                ],
-            },
-            "pre_request": {
-                "action": "vg_get_reply_form",
-                "url": f"https://vipergirls.to/newreply.php?do=newreply&t={thread_id}",
-                "method": "GET",
-                "headers": {
-                    "Referer": "https://vipergirls.to/forum.php",
-                },
-                "use_cookies": True,
-                "response_type": "html",
-                "extract_fields": {
-                    "reply_title": "input[name='title']",
-                    "security_token": "input[name='securitytoken']",
-                    "wysiwyg": "input[name='wysiwyg']",
-                    "session_id?": "input[name='s']",
-                    "post_id?": "input[name='p']",
-                    "specifiedpost": "input[name='specifiedpost']",
-                    "posthash?": "input[name='posthash']",
-                    "poststarttime?": "input[name='poststarttime']",
-                    "loggedinuser": "input[name='loggedinuser']",
-                    "multiquoteempty?": "input[name='multiquoteempty']",
-                },
+            "extract_fields": {
+                "reply_form_html": r"regex:([\s\S]*)",
             },
         }
-
-        payload = {
+        fetch_payload = {
             "action": "http_request",
             "service": "vipergirls.to",
-            "generic_spec": spec,
+            "generic_spec": fetch_spec,
         }
-        resp = self.bridge.request_sync(payload, timeout=60)
+        fetch_resp = self.bridge.request_sync(fetch_payload, timeout=30)
+        if fetch_resp.get("status") != "success":
+            logger.error(f"ViperAPI: Reply form fetch failed: {fetch_resp.get('msg')}")
+            return False
+
+        data = fetch_resp.get("data") if isinstance(fetch_resp.get("data"), dict) else {}
+        html_text = str(data.get("reply_form_html") or "")
+        try:
+            post_spec = build_vipergirls_reply_spec(clean_thread_id, message, html_text)
+        except ViperPostError as exc:
+            logger.error(f"ViperAPI: Post Failed: {exc}")
+            return False
+
+        post_payload = {
+            "action": "http_request",
+            "service": "vipergirls.to",
+            "generic_spec": post_spec,
+        }
+        resp = self.bridge.request_sync(post_payload, timeout=60)
 
         if resp.get("status") == "success":
             logger.info("ViperAPI: Post Successful")
@@ -773,40 +1089,28 @@ class ViperGirlsAPI:
 
     def schedule_post(self, post_id, thread_id, thread_name, message, scheduled_time, cover_thumbnail=""):
         logger.info(f"ViperAPI: Scheduling post to thread {thread_id} for {scheduled_time}...")
-        payload = {
-            "action": "viper_schedule_post",
-            "service": "vipergirls",
-            "config": {
-                "id": post_id,
-                "thread_id": str(thread_id),
-                "thread_name": thread_name,
-                "message": message,
-                "scheduled_time": scheduled_time,
-                "cover_thumbnail": cover_thumbnail,
-            },
-        }
-        resp = self.bridge.request_sync(payload, timeout=10)
-        return resp.get("status") == "success"
+        try:
+            add_scheduled_post(
+                {
+                    "id": post_id,
+                    "thread_id": str(thread_id),
+                    "thread_name": thread_name,
+                    "message": message,
+                    "scheduled_time": scheduled_time,
+                    "cover_thumbnail": cover_thumbnail,
+                }
+            )
+            return True
+        except ViperPostError as exc:
+            logger.error(f"ViperAPI: Schedule failed: {exc}")
+            return False
 
     def cancel_scheduled_post(self, post_id):
         logger.info(f"ViperAPI: Cancelling scheduled post {post_id}...")
-        payload = {
-            "action": "viper_cancel_post",
-            "service": "vipergirls",
-            "config": {"id": post_id},
-        }
-        resp = self.bridge.request_sync(payload, timeout=10)
-        return resp.get("status") == "success"
+        return cancel_scheduled_post(post_id)
 
     def list_scheduled_posts(self):
-        payload = {
-            "action": "viper_list_posts",
-            "service": "vipergirls",
-        }
-        resp = self.bridge.request_sync(payload, timeout=10)
-        if resp.get("status") == "success":
-            return resp.get("data", [])
-        return []
+        return load_scheduled_posts()
 
     def close(self):
         pass

@@ -184,14 +184,13 @@ class UploaderApp(
         self.system_tray = SystemTrayManager(self)
         self.system_tray.start()
 
-        # Initialize sidecar credentials for background scheduled posts.
-        self._init_sidecar_credentials()
-
-        # Listen for scheduler events
+        # Start Python-owned ViperGirls scheduled posting.
         self.scheduler_queue = queue.Queue()
-        from modules.sidecar import SidecarBridge
-
-        SidecarBridge.get().add_listener(self.scheduler_queue)
+        self.viper_scheduler = viper_api.ViperGirlsPostScheduler(
+            self.creds,
+            self.scheduler_queue,
+        )
+        self.viper_scheduler.start()
         self._process_scheduler_events()
 
     def _process_scheduler_events(self):
@@ -214,27 +213,6 @@ class UploaderApp(
         except queue.Empty:
             pass
         self.after(1000, self._process_scheduler_events)
-
-    def _init_sidecar_credentials(self):
-        user = self.creds.get("vg_user")
-        pwd = self.creds.get("vg_pass")
-        if not user or not pwd:
-            return
-
-        def _login_sidecar():
-            try:
-                api_client = viper_api.ViperGirlsAPI()
-                if api_client.login(user, pwd):
-                    self.add_activity("ViperGirls scheduler session initialized.", "success")
-                else:
-                    self.add_activity(
-                        "ViperGirls scheduler session could not be initialized.",
-                        "warning",
-                    )
-            except Exception as exc:
-                logger.warning(f"Could not initialize scheduled-post session: {exc}")
-
-        threading.Thread(target=_login_sidecar, daemon=True).start()
 
     def _init_ui(self):
         """Initialize user interface (menu, layout, drag-and-drop)."""
