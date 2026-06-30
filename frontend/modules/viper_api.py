@@ -752,7 +752,7 @@ class ViperGirlsAPI:
                     "posthash": "input[name='posthash']",
                     "poststarttime": "input[name='poststarttime']",
                     "loggedinuser": "input[name='loggedinuser']",
-                    "multiquoteempty": "input[name='multiquoteempty']",
+                    "multiquoteempty?": "input[name='multiquoteempty']",
                 },
             },
         }

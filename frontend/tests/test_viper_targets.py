@@ -140,6 +140,10 @@ def test_vipergirls_post_reply_uses_live_reply_form_fields(monkeypatch):
     assert spec["pre_request"]["url"] == "https://vipergirls.to/newreply.php?do=newreply&t=12345"
     assert spec["pre_request"]["extract_fields"]["loggedinuser"] == "input[name='loggedinuser']"
     assert spec["pre_request"]["extract_fields"]["reply_title"] == "input[name='title']"
+    assert (
+        spec["pre_request"]["extract_fields"]["multiquoteempty?"]
+        == "input[name='multiquoteempty']"
+    )
     assert spec["headers"]["Referer"] == "https://vipergirls.to/newreply.php?do=newreply&t=12345"
     assert spec["form_fields"]["title"] == "{reply_title}"
     assert spec["form_fields"]["loggedinuser"] == "{loggedinuser}"

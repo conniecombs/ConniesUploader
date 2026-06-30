@@ -153,3 +153,66 @@ func TestExecuteGenericRequestPreRequestReusesBaseCookieJar(t *testing.T) {
 		t.Fatalf("post request returned error: %v", err)
 	}
 }
+
+func TestExecuteGenericRequestOptionalPreRequestFieldSubstitutesEmptyValue(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/reply-form":
+			_, _ = w.Write([]byte(`
+				<input name="securitytoken" value="tok">
+				<input name="posthash" value="hash">
+			`))
+		case "/submit":
+			if err := r.ParseForm(); err != nil {
+				t.Fatalf("ParseForm failed: %v", err)
+			}
+			if got := r.FormValue("securitytoken"); got != "tok" {
+				t.Fatalf("securitytoken = %q", got)
+			}
+			if got := r.FormValue("posthash"); got != "hash" {
+				t.Fatalf("posthash = %q", got)
+			}
+			if _, ok := r.Form["multiquoteempty"]; !ok {
+				t.Fatal("multiquoteempty form key was not submitted")
+			}
+			if got := r.FormValue("multiquoteempty"); got != "" {
+				t.Fatalf("multiquoteempty = %q", got)
+			}
+			_, _ = w.Write([]byte("thank you for posting"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	_, err := ExecuteGenericRequest(context.Background(), server.Client(), &GenericHttpRequestSpec{
+		URL:          server.URL + "/submit",
+		Method:       http.MethodPost,
+		ResponseType: "html",
+		FormFields: map[string]string{
+			"securitytoken":   "{security_token}",
+			"posthash":        "{posthash}",
+			"multiquoteempty": "{multiquoteempty}",
+		},
+		PreRequest: &PreRequestSpec{
+			URL:          server.URL + "/reply-form",
+			Method:       http.MethodGet,
+			ResponseType: "html",
+			ExtractFields: map[string]string{
+				"security_token":    "input[name='securitytoken']",
+				"posthash":          "input[name='posthash']",
+				"multiquoteempty?":  "input[name='multiquoteempty']",
+				"missing_required?": "input[name='also_missing']",
+				"another_optional?": "input[name='still_missing']",
+			},
+		},
+		SuccessCheck: &SuccessCheck{
+			Field: "__response_body__",
+			Match: "thank you for posting",
+			Type:  "contains",
+		},
+	}, nil)
+	if err != nil {
+		t.Fatalf("ExecuteGenericRequest returned error: %v", err)
+	}
+}
