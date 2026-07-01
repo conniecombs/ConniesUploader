@@ -2,11 +2,11 @@
 
 ## Current Status
 
-- **Product Version:** v2.0.0
-- **Architecture Version:** v2.6.0
-- **Last Updated:** 2026-06-25
+- **Product Version:** BETA development build; latest tagged release is v2.0.0
+- **Architecture Version:** v2.7.0
+- **Last Updated:** 2026-06-30
 
-Connie's Uploader Ultimate is a hybrid desktop app:
+Connie's Uploader is a hybrid desktop app:
 
 - Python owns the GUI, user settings, plugin discovery, templates, galleries, ViperGirls posting, website-specific request sequencing/parsing, and output generation.
 - Go runs as a local sidecar process and owns concurrent transport execution, Python-provided rate limits, retries, generic HTTP request execution, multipart upload streaming, cookie/session mechanics, and thumbnail generation.
@@ -27,7 +27,7 @@ The current auto-discovered upload plugins are:
 - `turboimagehost`
 - `vipr.im`
 
-Plugin discovery is automatic through `modules/plugin_manager.py`, which scans `modules.plugins` with `pkgutil.iter_modules()`. New plugin files do not need to be registered in `modules/plugins/__init__.py`. Special/helper modules and files ending in `_legacy` are skipped.
+Plugin discovery is automatic through `frontend/modules/plugin_manager.py`, which scans `modules.plugins` with `pkgutil.iter_modules()`. New plugin files do not need to be registered in `frontend/modules/plugins/__init__.py`. Special/helper modules and files ending in `_legacy` are skipped.
 
 ## Runtime Flow
 
@@ -125,6 +125,8 @@ ViperGirls automation is a post-upload workflow, not part of the image-host uplo
 - History rows can copy post text, copy errors, and open target threads.
 Python owns the ViperGirls page workflow: it logs in, fetches the live reply form through the sidecar, parses the current HTML form, copies its fields, overrides the message/title fields, and sends Go only a resolved generic HTTP request to execute.
 
+Scheduled posts are Python-owned too. The scheduler wakes periodically, loads pending records, performs the same form-aware ViperGirls login/post path, and updates each record to `posted` or `failed`.
+
 ## Go Responsibilities
 
 ### Sidecar Process
@@ -182,6 +184,8 @@ Regex selectors are supplied by plugin code. They should be compiled with gracef
 | Gallery cache/pins/last used | `~/.conniesuploader/gallery_cache.json` |
 | ViperGirls targets | `~/.conniesuploader/saved_threads.json` |
 | ViperGirls posting history | `~/.conniesuploader/posting_history.json` |
+| ViperGirls scheduled posts | `~/.conniesuploader/scheduled_posts.json` |
+| Upload activity log | `~/.conniesuploader/activity.log` |
 | Runtime crash logs | `crash_log*.log` |
 
 Files under `~/.conniesuploader/` are user data and should not be committed. Generated build/test output such as `build/`, `dist/`, `htmlcov/`, `.coverage`, `uploader`, and `uploader.exe` should also stay out of source control.

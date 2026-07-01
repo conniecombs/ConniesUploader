@@ -1,6 +1,6 @@
 # Documentation Index
 
-Complete guide to the current documentation for Connie's Uploader Ultimate.
+Complete guide to the current documentation for Connie's Uploader.
 
 ## Start Here
 
@@ -10,6 +10,7 @@ Complete guide to the current documentation for Connie's Uploader Ultimate.
 | Learn the app as a user | [User Tutorial](guides/USER_TUTORIAL.md) |
 | Fix source/build/package problems | [Build Troubleshooting](guides/BUILD_TROUBLESHOOTING.md) |
 | Understand the Python/Go architecture | [Architecture](ARCHITECTURE.md) |
+| Understand the Python/Go transport boundary | [Transport Contract](TRANSPORT_CONTRACT.md) |
 | Contribute code/docs | [Contributing](CONTRIBUTING.md) |
 | Add or maintain upload plugins | [Plugin Creation Guide](guides/PLUGIN_CREATION_GUIDE.md) |
 | Define plugin settings UI | [Schema Plugin Guide](guides/SCHEMA_PLUGIN_GUIDE.md) |
@@ -28,6 +29,7 @@ Complete guide to the current documentation for Connie's Uploader Ultimate.
 - [Repository Layout](guides/REPOSITORY_LAYOUT.md) explains what belongs in source control and what is generated/user data.
 - [Plugin Creation Guide](guides/PLUGIN_CREATION_GUIDE.md) explains plugin discovery, metadata, request specs, pre-requests, dynamic extraction, galleries, covers, tests, and packaging updates.
 - [Schema Plugin Guide](guides/SCHEMA_PLUGIN_GUIDE.md) explains declarative plugin settings fields, validation, tooltips, advanced settings, and migration from manual UI.
+- [Transport Contract](TRANSPORT_CONTRACT.md) defines the Python-owned website workflow and Go-owned transport boundary.
 
 ## Release Docs
 
@@ -61,6 +63,7 @@ Historical docs may mention old file names, old version numbers, old coverage va
 
 - [README](../README.md)
 - [Architecture](ARCHITECTURE.md)
+- [Transport Contract](TRANSPORT_CONTRACT.md)
 - [Contributing](CONTRIBUTING.md)
 - [Changelog](CHANGELOG.md)
 - [Code of Conduct](CODE_OF_CONDUCT.md)
@@ -76,6 +79,7 @@ docs/
 ├── CHANGELOG.md
 ├── CODE_OF_CONDUCT.md
 ├── CONTRIBUTING.md
+├── TRANSPORT_CONTRACT.md
 ├── assets/
 │   └── screenshots/
 ├── archive/
@@ -111,6 +115,12 @@ docs/
 
 ## Recent Documentation Updates
 
+### 2026-06-30
+
+- Updated current docs for the `BETA` development build, shorter app title, scheduled-post menu, activity terminal, persisted activity log, and current Python/Go transport ownership.
+- Fixed current guide links and source/test commands after the `frontend/` and `backend/` split.
+- Kept historical release notes as published records while pointing current guidance at the active docs.
+
 ### 2026-06-22
 
 - Published v2.0.0 release metadata and release notes for ViperGirls posting, Template Editor, Gallery Manager, cache, cover, and queue workflow changes.
@@ -137,6 +147,6 @@ docs/
 - Update plugin docs when plugin discovery, schema fields, request specs, or packaging hidden imports change.
 - Keep historical docs clearly separated from current guidance.
 
-- **Last Updated:** 2026-06-22
-- **Documentation Version:** 2.3
-- **Project Version:** v2.0.0
+- **Last Updated:** 2026-06-30
+- **Documentation Version:** 2.4
+- **Project Version:** BETA development build; latest tagged release is v2.0.0

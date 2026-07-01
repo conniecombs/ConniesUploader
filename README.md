@@ -1,6 +1,7 @@
-# Connie's Uploader Ultimate
+# Connie's Uploader
 
-![Project version badge showing v2.0.0](https://img.shields.io/badge/version-2.0.0-blue.svg)
+![Current app build badge showing BETA](https://img.shields.io/badge/app-BETA-orange.svg)
+![Latest tagged release badge showing v2.0.0](https://img.shields.io/badge/latest%20release-v2.0.0-blue.svg)
 ![MIT License badge](https://img.shields.io/badge/license-MIT-green.svg)
 ![Supported platforms: Windows, Linux, and macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)
 ![Continuous integration workflow status: passing](https://github.com/conniecombs/ConniesUploader/actions/workflows/ci.yml/badge.svg?branch=main)
@@ -9,9 +10,11 @@
 ![Go programming language version 1.25.9 or higher](https://img.shields.io/badge/Go-1.25.9+-00ADD8.svg)
 ![Python version 3.11 or higher required](https://img.shields.io/badge/Python-3.11+-3776AB.svg)
 
-Connie's Uploader Ultimate is a desktop image-uploading tool with a CustomTkinter GUI and a Go sidecar for concurrent uploads. It supports batch uploads, gallery workflows, custom output templates, drag and drop, secure credential storage, and automated release builds for Windows, Linux, and macOS.
+Connie's Uploader is a desktop image-uploading tool with a CustomTkinter GUI and a Go sidecar for concurrent uploads. It supports batch uploads, gallery workflows, custom output templates, drag and drop, secure credential storage, ViperGirls posting workflows, and automated release builds for Windows, Linux, and macOS.
 
-**Latest release:** v2.0.0 "Posting, Templates & Gallery Workflows" (June 22, 2026)
+**Latest tagged release:** v2.0.0 "Posting, Templates & Gallery Workflows" (June 22, 2026)
+
+**Current development build:** `BETA` on the `Bleeding-Edge` branch.
 
 ## Screenshots
 
@@ -39,9 +42,9 @@ Import Checks and Upload Checks explain what needs attention inside the main win
 
 ![Import Checks and Upload Checks panels showing rejected files, preflight warnings, and fix buttons](docs/assets/screenshots/import-upload-checks.png)
 
-### Track Upload Activity Inline
+### Track Upload Activity
 
-The activity panel records the work as it happens: host readiness, queueing, active uploads, completed files, and progress. It can be hidden when users want the queue to take more space.
+The activity panel records the work as it happens: host readiness, queueing, active uploads, completed files, and progress. `View > Activity Terminal` can also tail the persisted activity log in PowerShell during longer upload sessions.
 
 ![Connie's Uploader upload progress view with uploaded, uploading, and queued rows plus a visible activity timeline](docs/assets/screenshots/activity-progress.png)
 
@@ -74,7 +77,7 @@ The Gallery Manager can refresh host galleries, search and sort results, pin fre
 - Save output files to `Output/` and keep history under `~/.conniesuploader/history/`.
 - Use dark, light, or system appearance modes.
 - Auto-copy completed output to the clipboard.
-- Integrate with ViperGirls forum posting workflows, including live thread-title names, target search, notes/tags, import/export, preview, confirmation, and posting history.
+- Integrate with ViperGirls forum posting workflows, including live thread-title names, target search, notes/tags, import/export, preview, confirmation, scheduled posts, and posting history.
 
 ## Supported Services
 
@@ -88,6 +91,26 @@ The active upload plugins are:
 - `vipr.im`
 
 ## Latest Changelog
+
+### Unreleased - Bleeding-Edge BETA
+
+**Added**
+
+- Added a `BETA` app build label and shortened the main window title to `Connie's Uploader BETA`.
+- Added `Tools > Scheduled Posts` for persisted ViperGirls scheduled post records.
+- Added `View > Activity Terminal` to tail `~/.conniesuploader/activity.log`.
+
+**Changed**
+
+- Completed the move toward Python-owned host workflows: Python now owns gallery/forum sequencing, parsing, and success checks while Go remains the generic transport runner.
+- Moved host-specific default rate limits into Python job/request payloads.
+- Updated the Go sidecar action surface around `http_upload`, raw `http_request`, `http_batch_resolve`, and thumbnail generation.
+
+**Fixed**
+
+- Fixed Turbo deferred result matching when host result pages return sanitized filenames.
+
+The latest published release remains v2.0.0 below. Full history is available in [CHANGELOG.md](docs/CHANGELOG.md).
 
 ### v2.0.0 - Posting, Templates & Gallery Workflows
 
@@ -198,7 +221,7 @@ python main.py
 1. Set service credentials from `Tools > Set Credentials`.
 2. Choose an image host from the service dropdown.
 3. Add files or folders with `File > Add Files`, `File > Add Folder`, or drag and drop.
-4. Adjust gallery, thumbnail, thread, and output settings as needed.
+4. Adjust gallery, thumbnail, thread, scheduling, and output settings as needed.
 5. Click `Start Upload`.
 6. Review generated output in `Output/` or the history directory.
 
@@ -208,8 +231,10 @@ Additional tools are available from the application menus:
 - `Tools > Template Editor`
 - `Tools > ViperGirls Posting Targets`
 - `Tools > ViperGirls Posting History`
+- `Tools > Scheduled Posts`
 - `Tools > Install Context Menu` on Windows
 - `View > Execution Log`
+- `View > Activity Terminal`
 
 ## Configuration and Data
 
@@ -221,6 +246,8 @@ Additional tools are available from the application menus:
 - Gallery cache, pinned galleries, and last-used gallery timestamps are written to `~/.conniesuploader/gallery_cache.json`.
 - Saved ViperGirls posting targets, including fetched thread titles, are written to `~/.conniesuploader/saved_threads.json`.
 - ViperGirls posting history is written to `~/.conniesuploader/posting_history.json`.
+- ViperGirls scheduled posts are written to `~/.conniesuploader/scheduled_posts.json`.
+- Upload activity events are written to `~/.conniesuploader/activity.log`.
 - Runtime crash logs are written to `crash_log.log` when applicable.
 
 ## Architecture
@@ -230,7 +257,7 @@ Connie's Uploader uses a hybrid desktop architecture:
 - `frontend/` contains the Python GUI (`main.py`) and all `modules/`.
 - `backend/` contains the Go sidecar (`main.go`, `handlers.go`), along with the generic `core/` HTTP runner.
 - `packaging/` contains PyInstaller build assets and custom hooks.
-- `logs/` contains the application logs.
+- `logs/` is ignored for optional local diagnostics.
 - `scripts/maintenance/` contains repository cleanup and maintenance helpers.
 - `scripts/diagnostics/` contains local troubleshooting helpers that are not part of the app runtime.
 - Python and Go communicate through JSON events over standard input and output.
@@ -239,7 +266,7 @@ Generated folders and runtime data are intentionally kept out of source control:
 
 - Build output: `build/`, `dist/`, `uploader`, `uploader.exe`, `packaging/ConniesUploader.spec`
 - Test output: `.coverage`, `htmlcov/`, `.pytest_cache/`
-- Local app data: `Output/`, legacy repo-local `user_settings.json` and `user_templates.json`, `~/.conniesuploader/*.json`
+- Local app data: `Output/`, legacy repo-local `user_settings.json` and `user_templates.json`, `~/.conniesuploader/*.json`, `~/.conniesuploader/history/`, `~/.conniesuploader/activity.log`
 - Runtime diagnostics: `crash_log*.log`
 
 ## CI, Security, and Releases

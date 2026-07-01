@@ -1,6 +1,6 @@
 # Release Notes
 
-This directory contains release notes and publishing guidance for Connie's Uploader Ultimate.
+This directory contains release notes and publishing guidance for Connie's Uploader.
 
 ## Latest Release
 
@@ -36,11 +36,11 @@ Read the full notes: [RELEASE_NOTES_v2.0.0.md](RELEASE_NOTES_v2.0.0.md)
 
 ## Publishing
 
-The release workflow is tag-based. For v2.0.0, use:
+The release workflow is tag-based. For a new version, use:
 
 ```bash
-git tag -a v2.0.0 -m "Release v2.0.0"
-git push origin v2.0.0
+git tag -a vX.Y.Z -m "Release vX.Y.Z"
+git push origin vX.Y.Z
 ```
 
 See [RELEASE_PROCESS.md](RELEASE_PROCESS.md) for the full checklist.

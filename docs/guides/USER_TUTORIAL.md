@@ -1,6 +1,6 @@
-# Connie's Uploader Ultimate User Tutorial
+# Connie's Uploader User Tutorial
 
-This tutorial walks through Connie's Uploader Ultimate from first launch through batch uploads, galleries, templates, output files, ViperGirls posting, and every setting exposed by the current desktop app.
+This tutorial walks through Connie's Uploader from first launch through batch uploads, galleries, templates, output files, ViperGirls posting, and every setting exposed by the current desktop app.
 
 The program is a desktop image uploader. You add image files or folders, choose an image host, adjust service settings, start the upload, and receive formatted output text such as BBCode, Markdown, HTML, or a custom template.
 
@@ -1096,6 +1096,8 @@ Posting happens in batch order. The auto-poster waits briefly between posts to r
 
 If no posting targets exist, the targets manager shows an empty state with import/add guidance. If a search has no matches, clear or change the search text to return to the full list.
 
+`Tools > Scheduled Posts` opens the persisted scheduled-post list. Scheduled records are stored locally, processed by the Python scheduler while the app is running, and marked as `posted` or `failed` after the due time is reached.
+
 Saved thread data is stored under:
 
 ```text
@@ -1121,7 +1123,7 @@ Saved thread data is stored under:
 | `Manage Galleries` | Lists, selects, and creates galleries for supported hosts. |
 | `ViperGirls Posting Targets` | Manages saved ViperGirls posting targets. |
 | `ViperGirls Posting History` | Shows saved posting attempts with copy/open actions. |
-| `Set Thread Limit` | Sets per-service thread values from `1 Threads` through `10 Threads` for the current session/settings. |
+| `Scheduled Posts` | Shows pending, posted, and failed scheduled ViperGirls posts. |
 | `Install Context Menu` | On Windows, adds an Explorer directory context menu entry named `Upload with Connie's Uploader`. |
 
 ### View
@@ -1129,6 +1131,7 @@ Saved thread data is stored under:
 | Menu item | Explanation |
 | --- | --- |
 | `Execution Log` | Opens a log window showing app and sidecar events. Use this first when diagnosing upload failures. |
+| `Activity Terminal` | Opens PowerShell and tails `~/.conniesuploader/activity.log` for long-running upload activity. |
 | `Show Image Previews` | Enables thumbnails in the upload queue. Disable for very large batches if you want faster queue population and lower memory use. |
 | `Separate Batches for Files` | When enabled, loose files selected together become separate one-file batches instead of one `Miscellaneous` batch. |
 | `Appearance Mode > System` | Follows the operating system appearance. |
@@ -1156,6 +1159,8 @@ Saved thread data is stored under:
 | Persistent output history | `~/.conniesuploader/history/` |
 | Saved ViperGirls posting targets | `~/.conniesuploader/saved_threads.json` |
 | ViperGirls posting history | `~/.conniesuploader/posting_history.json` |
+| ViperGirls scheduled posts | `~/.conniesuploader/scheduled_posts.json` |
+| Upload activity log | `~/.conniesuploader/activity.log` |
 | Credentials | Operating system keyring |
 | Crash/debug log | `crash_log.log` |
 
@@ -1179,10 +1184,10 @@ The sidecar is not a public server and does not listen for outside users. The Py
 1. The main window reads the current queue, selected host, selected template, cover selections, gallery settings, and posting targets.
 2. Upload Checks run before network work begins. This catches missing credentials, invalid posting targets, bad thread IDs, unsupported files, and other fixable problems.
 3. `frontend/modules/plugin_manager.py` finds the selected host plugin in `frontend/modules/plugins/`.
-4. The plugin validates its own settings and builds a list of upload instructions (e.g., login, create gallery, upload files).
+4. The plugin validates its own settings and builds upload instructions. New gallery/forum workflows use Python-owned transport requests so Python can parse host pages and decide success.
 5. `frontend/modules/upload_manager.py` sends that plan to `frontend/modules/sidecar.py`.
 6. `frontend/modules/sidecar.py` starts or reuses the bundled Go sidecar and sends it the upload job.
-7. The Go sidecar manages rate limits, executes the upload requests, and streams events back.
+7. The Go sidecar manages rate limits, executes HTTP requests, and streams events back.
 8. `frontend/modules/upload_manager.py` catches those events, updates the UI progress bars, and records the output URLs.
 9. When uploads finish, `frontend/modules/template_manager.py` renders the selected template using returned image links, cover links, gallery details, batch details, and ViperGirls target details.
 10. The UI shows the completion summary and optionally copies the output to the clipboard.
@@ -1196,11 +1201,11 @@ Go is good at:
 
 - Running several upload workers without freezing the window.
 - Applying rate limits and timeouts consistently.
-- Handling multipart HTTP uploads and response parsing.
+- Handling multipart HTTP uploads and compatibility upload result extraction.
 - Keeping network work isolated from the CustomTkinter interface.
 - Reporting progress back while Python stays focused on the user interface.
 
-Python is still the brain of the app. The image-host plugins live in Python, so adding or changing a host usually means editing one plugin file instead of recompiling Go. The Go sidecar mostly acts as a generic HTTP runner: Python describes what needs to happen, and Go executes it.
+Python is still the brain of the app. The image-host plugins live in Python, so adding or changing a host usually means editing one plugin file instead of recompiling Go. The Go sidecar mostly acts as a generic HTTP runner: Python describes what needs to happen, Go executes it, and Python interprets the website-specific result.
 
 ### Worker Count And Thread Limit
 
@@ -1233,9 +1238,11 @@ Example:
 | `frontend/modules/sidecar.py` | Finds, starts, stops, and communicates with the bundled sidecar, or with `uploader.exe`/`uploader` during source builds. |
 | `frontend/modules/template_manager.py` | Stores templates, validates placeholders, renders output, previews posts, and powers the Template Editor. |
 | `frontend/modules/gallery_manager.py` | Shows and creates supported image-host galleries. |
-| `frontend/modules/viper_api.py` | Manages ViperGirls targets, thread validation, thread-title fetching, and posting history windows. |
+| `frontend/modules/transport.py` | Builds and executes raw sidecar HTTP requests for Python-owned gallery/forum workflows. |
+| `frontend/modules/viper_api.py` | Manages ViperGirls targets, thread validation, thread-title fetching, scheduled posts, and posting history windows. |
+| `frontend/modules/ui/scheduled_posts_window.py` | Shows scheduled ViperGirls posts and their current status. |
 | `frontend/modules/auto_poster.py` | Posts completed ViperGirls batches sequentially with cooldowns and clearer failure reporting. |
-| `handlers.go`, `main.go`, and `core/` | Implement the Go sidecar's job handling, worker limits, validation, rate limiting, HTTP execution, retries, and result parsing. |
+| `backend/handlers.go`, `backend/main.go`, and `backend/core/` | Implement the Go sidecar's job handling, worker limits, validation, rate limiting, HTTP execution, retries, and compatibility upload result extraction. |
 
 ### How To Read Errors
 

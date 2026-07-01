@@ -1,6 +1,6 @@
 # Release Process Guide
 
-This document describes how to create and publish releases for Connie's Uploader Ultimate.
+This document describes how to create and publish releases for Connie's Uploader.
 
 ## Table of Contents
 
@@ -96,11 +96,12 @@ Use this checklist when creating a new release:
 
 ### Pre-Release
 
-- [ ] Run full test suite locally: `go test ./... && python -m pytest`
+- [ ] Run the Go suite locally: `cd backend && go test ./...`
+- [ ] Run the Python suite locally: `cd frontend && python -m pytest tests/ -v`
 - [ ] Update version in `docs/CHANGELOG.md`
 - [ ] Review all changes since last release
 - [ ] Ensure security scans pass (check GitHub Actions)
-- [ ] Update README.md if needed (features, installation)
+- [ ] Update `README.md` and `docs/` if needed for features, installation, menus, data paths, or release notes
 - [ ] Test build on all platforms locally (optional but recommended)
 
 ### Release
@@ -311,5 +312,5 @@ If you have questions about the release process:
 
 ---
 
-**Last Updated:** 2026-05-20
+**Last Updated:** 2026-06-30
 **Maintained By:** conniecombs

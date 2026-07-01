@@ -7,9 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added the `BETA` development build label and shortened the runtime window title to `Connie's Uploader BETA`.
+- Added `Tools > Scheduled Posts` for persisted ViperGirls scheduled post records.
+- Added `View > Activity Terminal`, backed by `~/.conniesuploader/activity.log`, for tailing upload activity during longer sessions.
+
 ### Changed
 
 - Expanded the user tutorial's Template Editor guide with a safer editing workflow, rendering model, conditional syntax reference, image/cover loop guidance, separator examples, and troubleshooting notes.
+- Refreshed current documentation for the `frontend/` and `backend/` source split, beta build status, scheduled posting, activity logging, current menu layout, and Python-owned transport parsing model.
 - **Architecture:** Completed migration from Go service modules to a pure generic HTTP runner. The `backend/services/` directory has been removed entirely. All host-specific logic (gallery creation, login flows, forum posting, upload construction) now lives in Python plugins as declarative HTTP request specs.
 - Added `http_request` action to Go sidecar for standalone (non-upload) HTTP operations like login, gallery creation, and forum posting.
 - Added `http_batch_resolve` action to Go sidecar for deferred batch result polling.
@@ -26,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Moved app settings storage from legacy repo-local `user_settings.json` to `~/.conniesuploader/user_settings.json`, with startup migration that removes legacy settings files from the checkout without printing their contents.
+- Fixed Turbo deferred result matching when result pages refer to sanitized filenames.
 
 ## [2.0.0] - 2026-06-22
 

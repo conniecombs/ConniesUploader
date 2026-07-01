@@ -7,7 +7,7 @@ This project keeps source files, developer helpers, generated build output, and 
 - `frontend/` contains the Python application (`main.py`), `modules/`, UI, plugins, templates, and Python test suite (`tests/`).
 - `backend/` contains the Go sidecar (`main.go`, `handlers.go`), along with `core/` logic and Go tests.
 - `packaging/` contains PyInstaller build assets and custom hooks (`packaging/pyinstaller_hooks/`).
-- `logs/` contains the application execution logs.
+- `logs/` is available for optional local diagnostics and is ignored by git.
 - `docs/` contains user, developer, release, and troubleshooting documentation.
 - `docs/assets/screenshots/` contains tutorial and README screenshots.
 
@@ -61,6 +61,8 @@ The app stores current persistent data under `~/.conniesuploader/`, including:
 - `gallery_cache.json`
 - `saved_threads.json`
 - `posting_history.json`
+- `scheduled_posts.json`
+- `activity.log`
 - `history/`
 
 The cleanup helper leaves local user data alone by default. To remove it intentionally, pass `--include-output` or `--include-user-data`.

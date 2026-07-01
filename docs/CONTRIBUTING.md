@@ -1,6 +1,6 @@
-# Contributing to Connie's Uploader Ultimate
+# Contributing to Connie's Uploader
 
-Thank you for helping improve Connie's Uploader Ultimate. This guide explains how to set up the project, make changes safely, test them, and keep documentation current.
+Thank you for helping improve Connie's Uploader. This guide explains how to set up the project, make changes safely, test them, and keep documentation current.
 
 ## Code of Conduct
 
@@ -91,7 +91,7 @@ ConniesUploader/
 │   └── maintenance/           # Cleanup and maintenance helpers
 ├── packaging/
 │   └── pyinstaller_hooks/         # Local PyInstaller hooks
-├── logs/                      # Execution logs
+├── logs/                      # Optional local diagnostics; ignored by git
 ├── docs/                      # User, developer, release, and historical docs
 ├── .github/workflows/         # CI, release, and security workflows
 ├── build_uploader.bat         # Windows build script
@@ -106,7 +106,7 @@ Generated/user data should stay out of commits:
 - `build/`, `dist/`, `htmlcov/`, `.coverage*`, `.pytest_cache/`
 - `uploader`, `uploader.exe`, `packaging/ConniesUploader.spec`
 - `Output/`, legacy repo-local `user_settings.json`, legacy `user_templates.json`
-- `~/.conniesuploader/*.json`
+- `~/.conniesuploader/*.json`, `~/.conniesuploader/history/`, `~/.conniesuploader/activity.log`
 - `crash_log*.log`
 
 Use the cleanup helper when local generated files get noisy:
@@ -181,7 +181,7 @@ PR descriptions should include:
 - Close response bodies.
 - Prefer `regexp.Compile()` with graceful errors for dynamic/plugin-provided patterns.
 - Keep generic runner behavior in `core/` when possible.
-- Add Go service code only when a host workflow cannot be represented reasonably by a plugin HTTP spec.
+- Add Go code only for generic transport capabilities; host-specific website behavior belongs in Python.
 
 ### UI
 

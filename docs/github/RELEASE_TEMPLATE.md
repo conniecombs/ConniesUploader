@@ -1,5 +1,5 @@
 <!--
-Release Notes Template for Connie's Uploader Ultimate
+Release Notes Template for Connie's Uploader
 
 Use this template when creating a new version section in docs/CHANGELOG.md
 The automated release workflow will extract this content for the GitHub Release

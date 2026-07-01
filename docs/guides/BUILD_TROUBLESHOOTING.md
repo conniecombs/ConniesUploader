@@ -1,6 +1,6 @@
 # Build Troubleshooting Guide
 
-This guide covers source-run and packaged-build problems for Connie's Uploader Ultimate.
+This guide covers source-run and packaged-build problems for Connie's Uploader.
 
 ## Quick Rules
 
@@ -52,7 +52,7 @@ build_uploader.bat --ci
 
 ### Symptoms
 
-When running `python main.py`, logs show:
+When running `python main.py` from the repo root, or `cd frontend && python main.py`, logs show:
 
 ```text
 Sidecar executable 'uploader.exe' was not found
@@ -147,7 +147,7 @@ pyinstaller ^
   frontend/main.py
 ```
 
-If a new active plugin is added, update this command, `build_uploader.bat`, `build.sh`, `Makefile`, `.github/workflows/release.yml`, and `tests/test_build_contract.py`.
+If a new active plugin is added, update this command, `build_uploader.bat`, `build.sh`, `Makefile`, `.github/workflows/release.yml`, and `frontend/tests/test_build_contract.py`.
 
 ## Manual Linux/macOS PyInstaller Build
 
@@ -376,6 +376,7 @@ Before distributing a build:
 - [ ] Archive verification found Tk/Tcl runtime files on Windows.
 - [ ] Plugins load and show six active services.
 - [ ] `View > Execution Log` does not show startup import errors.
+- [ ] `View > Activity Terminal` can open the persisted activity log when testing long uploads.
 - [ ] A one-file upload works.
 - [ ] Drag and drop works.
 - [ ] Gallery Manager opens.
@@ -393,4 +394,5 @@ Include:
 - Final executable size, if packaged.
 - `python scripts/diagnostics/check_sidecar_location.py` output for source-run sidecar issues.
 - Relevant `View > Execution Log` output.
+- Relevant `View > Activity Terminal` output from `~/.conniesuploader/activity.log`, if upload activity is involved.
 - Screenshot of the error dialog, if present.
