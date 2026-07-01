@@ -163,8 +163,8 @@ def test_vipergirls_post_reply_uses_live_reply_form_fields(monkeypatch):
     """
     bridge = FakeBridge(
         responses=[
-            {"status": "success", "data": {"reply_form_html": html}},
-            {"status": "success"},
+            {"status": "success", "data": {"response_body": html}},
+            {"status": "success", "data": {"response_body": "Thank you for posting"}},
         ]
     )
     monkeypatch.setattr(viper_api.SidecarBridge, "get", staticmethod(lambda: bridge))
@@ -181,9 +181,13 @@ def test_vipergirls_post_reply_uses_live_reply_form_fields(monkeypatch):
     assert fetch_timeout == 30
     assert fetch_spec["method"] == "GET"
     assert fetch_spec["url"] == "https://vipergirls.to/newreply.php?do=newreply&t=12345"
-    assert fetch_spec["extract_fields"]["reply_form_html"] == r"regex:([\s\S]*)"
+    assert fetch_spec["include_response_body"] is True
+    assert fetch_spec["include_transport_metadata"] is True
+    assert "extract_fields" not in fetch_spec
     assert submit_timeout == 60
     assert "pre_request" not in spec
+    assert "extract_fields" not in spec
+    assert "success_check" not in spec
     assert spec["url"] == "https://vipergirls.to/newreply.php?do=postreply&t=12345"
     assert spec["headers"]["Referer"] == "https://vipergirls.to/newreply.php?do=newreply&t=12345"
     assert spec["form_fields"]["title"] == "Re: Bondage Cafe"
@@ -196,11 +200,8 @@ def test_vipergirls_post_reply_uses_live_reply_form_fields(monkeypatch):
     assert spec["form_fields"]["sbutton"] == "Submit Reply"
     assert spec["form_fields"]["emailupdate"] == "0"
     assert "preview" not in spec["form_fields"]
-    assert spec["success_check"]["type"] == "any"
-    assert any(
-        check.get("field") == "__final_url__"
-        for check in spec["success_check"]["any"]
-    )
+    assert spec["include_response_body"] is True
+    assert spec["include_transport_metadata"] is True
 
 
 @pytest.mark.unit

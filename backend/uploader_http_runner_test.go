@@ -449,6 +449,67 @@ func TestSendJobEventEchoesRequestID(t *testing.T) {
 	}
 }
 
+func TestHandleHttpRequestReturnsRawTransportDataWhenRequested(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte("<html><body>raw transport body</body></html>"))
+	}))
+	defer server.Close()
+
+	oldClient := client
+	client = server.Client()
+	defer func() { client = oldClient }()
+
+	oldStdout := os.Stdout
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe failed: %v", err)
+	}
+	os.Stdout = writer
+	handleHttpRequest(JobRequest{
+		ID:      "raw-request-1",
+		Action:  "http_request",
+		Service: "transport.test",
+		GenericSpec: &core.GenericHttpRequestSpec{
+			URL:                      server.URL,
+			Method:                   http.MethodGet,
+			IncludeResponseBody:      true,
+			IncludeTransportMetadata: true,
+		},
+	})
+	_ = writer.Close()
+	os.Stdout = oldStdout
+
+	raw, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("ReadAll failed: %v", err)
+	}
+
+	var decoded OutputEvent
+	if err := json.Unmarshal([]byte(strings.TrimSpace(string(raw))), &decoded); err != nil {
+		t.Fatalf("Unmarshal emitted event failed: %v; raw=%q", err, raw)
+	}
+	if decoded.Status != "success" {
+		t.Fatalf("status = %q", decoded.Status)
+	}
+	data, ok := decoded.Data.(map[string]interface{})
+	if !ok {
+		t.Fatalf("data has type %T, want object", decoded.Data)
+	}
+	if data["response_body"] != "<html><body>raw transport body</body></html>" {
+		t.Fatalf("response_body = %q", data["response_body"])
+	}
+	if data["status_code"] != "200" {
+		t.Fatalf("status_code = %q", data["status_code"])
+	}
+	if data["final_url"] != server.URL {
+		t.Fatalf("final_url = %q", data["final_url"])
+	}
+	if _, leaked := data["__response_body__"]; leaked {
+		t.Fatalf("internal response body key leaked: %#v", data)
+	}
+}
+
 func TestResponseTemplateUsesJSONAndFilePlaceholders(t *testing.T) {
 	resp := &http.Response{
 		Body: io.NopCloser(strings.NewReader(`{"success":true,"id":"abc123"}`)),

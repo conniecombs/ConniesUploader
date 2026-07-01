@@ -124,15 +124,22 @@ type ProgressEvent struct {
 	ETA              int     `json:"eta_seconds"`
 }
 
-// GenericHttpRequestSpec describes a standalone (non-upload) HTTP request.
-// Used for login, gallery creation, forum posting, and other non-file operations.
+// GenericHttpRequestSpec describes a standalone (non-upload) transport request.
+// Python owns website-specific sequencing, parsing, and success decisions. Go
+// only executes the resolved request and optionally returns raw transport facts.
 type GenericHttpRequestSpec struct {
-	URL           string            `json:"url"`
-	Method        string            `json:"method"`
-	Headers       map[string]string `json:"headers,omitempty"`
-	FormFields    map[string]string `json:"form_fields,omitempty"`
-	UseCookies    bool              `json:"use_cookies"`
-	ResponseType  string            `json:"response_type"` // "json", "html"
+	URL                      string            `json:"url"`
+	Method                   string            `json:"method"`
+	Headers                  map[string]string `json:"headers,omitempty"`
+	FormFields               map[string]string `json:"form_fields,omitempty"`
+	UseCookies               bool              `json:"use_cookies"`
+	IncludeResponseBody      bool              `json:"include_response_body,omitempty"`
+	IncludeTransportMetadata bool              `json:"include_transport_metadata,omitempty"`
+
+	// Deprecated compatibility fields. New Python code should call Go one
+	// resolved transport request at a time, then parse and validate responses in
+	// Python.
+	ResponseType  string            `json:"response_type,omitempty"`
 	ExtractFields map[string]string `json:"extract_fields,omitempty"`
 	SuccessCheck  *SuccessCheck     `json:"success_check,omitempty"`
 	PreRequest    *PreRequestSpec   `json:"pre_request,omitempty"`

@@ -8,13 +8,13 @@
 
 Connie's Uploader Ultimate is a hybrid desktop app:
 
-- Python owns the GUI, user settings, plugin discovery, templates, galleries, ViperGirls posting, and output generation.
-- Go runs as a local sidecar process and owns concurrent upload execution, rate limiting, retries, generic HTTP request execution, response parsing, cookie/session management, and scheduled post timing.
+- Python owns the GUI, user settings, plugin discovery, templates, galleries, ViperGirls posting, website-specific request sequencing/parsing, and output generation.
+- Go runs as a local sidecar process and owns concurrent transport execution, Python-provided rate limits, retries, generic HTTP request execution, multipart upload streaming, cookie/session mechanics, and thumbnail generation.
 - Python and Go communicate through JSON events over standard input and standard output.
 
-The upload model is entirely plugin-driven. Python plugins build generic HTTP request specifications with `build_http_request()`, and the Go sidecar executes those specs through the generic HTTP runner. All host-specific logic lives in Python plugin files. The Go sidecar has no knowledge of any specific image host — it is a "dumb and fast" HTTP runner.
+The upload model is plugin-driven. Python plugins build HTTP upload specifications with `build_http_request()`, and the Go sidecar executes those specs through the generic runner. All host-specific logic lives in Python. The Go sidecar has no knowledge of any specific image host or forum — it is a "dumb and fast" transport runner.
 
-Go also manages a post scheduler for ViperGirls timed posts, using the same generic HTTP request mechanism to execute posts when their scheduled time arrives.
+The Python/Go boundary is documented in [`TRANSPORT_CONTRACT.md`](TRANSPORT_CONTRACT.md).
 
 ## Active Services
 
@@ -50,7 +50,7 @@ For a typical upload:
 2. Upload Checks validate obvious problems before work starts, including files, credentials, gallery settings, and posting targets.
 3. The selected plugin validates configuration and builds a `HttpRequestSpec` when it supports the generic runner.
 4. `UploadManager` sends upload jobs to `SidecarBridge`.
-5. The Go sidecar rate-limits work, executes the upload, parses the host response, retries transient failures, and emits correlated progress/result events.
+5. The Go sidecar applies Python-provided rate limits, executes the upload, retries transient transport failures, and emits correlated progress/result events. Existing upload plugins still use Go's generic parser compatibility shim to convert upload responses into result events.
 6. Python stores results, generates template output, saves history, copies output when enabled, and queues optional ViperGirls posts.
 
 ## Python Responsibilities
@@ -80,7 +80,7 @@ Recommended plugin responsibilities:
 - `prepare_group()` when a service needs per-batch setup such as gallery creation
 - `finalize_batch()` when a service needs post-upload finalization
 
-Legacy `initialize_session()` and `upload_file()` hooks remain for compatibility, but new upload services should prefer schema settings plus `build_http_request()`.
+Legacy `initialize_session()` and `upload_file()` hooks remain for compatibility, but new upload services should prefer schema settings plus `build_http_request()`. New non-upload workflows should use raw sidecar transport requests and parse/validate responses in Python.
 
 ### Templates and Output
 
@@ -135,16 +135,15 @@ Go owns:
 
 - JSON event handling from Python
 - Worker pool execution
-- Rate limiting
-- Retry behavior
+- Python-provided rate limits and generic fallback limits
+- Transport retry behavior
 - Multipart upload construction
 - Generic HTTP request execution (uploads and standalone requests)
-- Pre-request/follow-up chains
-- Cookie/session handling
-- Response parsing for JSON, HTML selectors, regex extraction, and URL templates
-- Batch resolve polling for deferred upload workflows
+- Cookie/session mechanics
+- Thumbnail generation
+- Legacy parser/pre-request/batch-resolve compatibility for existing upload specs
 
-Go does **not** contain any host-specific knowledge. All service-specific behavior is defined by Python plugins through generic HTTP request specs.
+Go does **not** contain any host-specific knowledge. All service-specific behavior is defined by Python modules and plugins.
 
 ### Generic HTTP Runner
 
@@ -152,23 +151,18 @@ The generic runner supports two action types:
 
 **`http_upload`** — File upload with multipart construction:
 - Upload request specs from Python plugins
-- Multi-step pre-requests and follow-up requests
 - Shared cookies for login/session workflows
-- Header/form/body template substitution from extracted values
-- JSON path extraction, including array paths
-- HTML selector extraction
-- Regex extraction with `regex:` selectors
-- URL and thumbnail templates
 - Correlated request IDs so stale sidecar events do not satisfy the wrong upload
+- Legacy response-parser compatibility for current upload result events
 
 **`http_request`** — Standalone (non-file) HTTP requests:
-- Login flows, gallery creation, forum posting, and other non-upload operations
-- Form-encoded POST requests with value substitution
-- Response field extraction (JSON and regex)
-- Success checking (contains, equals, not_empty, regex)
-- Pre-request chains for session setup
+- One resolved HTTP request per Python call
+- Form-encoded POST requests
+- Cookie reuse through the sidecar cookie jar
+- Optional raw `response_body`, `status_code`, and `final_url` return fields
+- Python-owned response parsing and success/failure decisions
 
-**`http_batch_resolve`** — Deferred batch result polling:
+**`http_batch_resolve`** — Deferred batch result polling compatibility:
 - Polls a result page with configurable delays
 - Extracts per-file links using regex patterns
 - Matches extracted links to original filenames
@@ -199,14 +193,14 @@ Current strengths:
 - Credentials are stored through the operating system keyring.
 - Credentials are passed to the sidecar through local stdin events, not CLI arguments.
 - TLS verification remains enabled.
-- Go uses rate limits for image hosts and forum posting paths.
+- Python supplies host-specific sidecar rate limits for upload and forum posting paths.
 - User JSON files use atomic-save/recovery patterns where practical.
 
 Known hardening opportunities:
 
 - Add stronger Go-side file path validation instead of relying only on Python validation.
 - Replace any `regexp.MustCompile()` path that can receive plugin-provided patterns with `regexp.Compile()` and graceful error returns.
-- Continue reducing host-specific Go upload code where generic specs can represent the behavior cleanly.
+- Continue retiring legacy Go parser compatibility by moving upload response parsing into Python.
 - Consider stricter plugin trust/sandboxing if third-party plugin loading becomes a supported user feature.
 
 ## Performance Characteristics
@@ -241,7 +235,7 @@ Preferred path:
 6. Add focused tests for config validation and generated request shape.
 7. Run `cd frontend && pytest tests/ -v` and `cd backend && go test ./...`.
 
-Only add Go code when the generic runner cannot reasonably express the host behavior (e.g., new response parsing strategies). The Go sidecar should remain a generic, host-agnostic HTTP runner.
+Only add Go code for generic transport capability. Host parsing, website decisions, and response interpretation belong in Python.
 
 ## Roadmap
 
@@ -249,7 +243,8 @@ Near-term hardening:
 
 - Gracefully handle malformed plugin regex patterns in Go.
 - Add Go-side path bounds validation for upload file paths.
+- Move upload result parsing out of the remaining compatibility shim and into Python.
 - Keep documentation and screenshots synchronized with the current UI.
 - Consider stricter plugin trust/sandboxing if third-party plugin loading becomes a supported user feature.
 
-The current architecture is production-usable and fully plugin-driven. The Go sidecar is a pure generic HTTP runner with no host-specific code.
+The current architecture is production-usable and plugin-driven. The Go sidecar is host-agnostic transport code; legacy upload parser hooks remain only as compatibility scaffolding.

@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import json
 import re
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 from urllib.parse import parse_qs, unquote, urljoin, urlparse
@@ -13,6 +14,8 @@ from urllib.parse import parse_qs, unquote, urljoin, urlparse
 import requests
 from bs4 import BeautifulSoup
 from loguru import logger
+
+from modules.transport import build_transport_spec, execute_transport_request
 
 
 class GalleryStatus:
@@ -449,52 +452,47 @@ class GalleryService:
     def _list_sidecar_galleries(self, service: str, page: int) -> GalleryResult:
         try:
             if service == "vipr.im":
-                spec = {
-                    "url": "https://vipr.im/?op=my_files",
-                    "method": "GET",
-                    "use_cookies": True,
-                    "response_type": "html",
-                    "extract_fields": {
-                        "response_body": "regex:(<body[\\s\\S]*</body>)",
-                    },
-                    "pre_request": {
-                        "action": "vipr_login",
-                        "url": "https://vipr.im/",
-                        "method": "POST",
-                        "form_fields": {
-                            "op": "login",
-                            "login": self.creds.get("vipr_user", ""),
-                            "password": self.creds.get("vipr_pass", ""),
-                        },
-                        "use_cookies": True,
-                        "response_type": "html",
-                        "extract_fields": {},
-                    },
-                }
-                resp = self.bridge.request_sync(
-                    {
-                        "action": "http_request",
-                        "service": service,
-                        "generic_spec": spec,
-                    },
+                if not self._login_vipr():
+                    return self._result(
+                        GalleryStatus.LOGIN_FAILED,
+                        "Vipr.im login failed. Check the saved username and password.",
+                        service,
+                        page=page,
+                    )
+                response = self._transport_request(
+                    service,
+                    "https://vipr.im/?op=my_files",
                     timeout=20,
                 )
-                resp = self._normalize_vipr_gallery_response(resp)
+                if not response.ok:
+                    return self._failure_from_response(service, response.raw, page=page)
+                raw_records = parse_vipr_gallery_html(response.body)
+                return self._records_from_raw(
+                    service,
+                    raw_records,
+                    page=page,
+                    raw=response.raw,
+                )
             else:
-                resp = self.bridge.request_sync(
-                    {
-                        "action": "http_request",
-                        "service": service,
-                        "generic_spec": {
-                            "url": f"https://api.{service}/galleries",
-                            "method": "GET",
-                            "headers": {"Accept": "application/json"},
-                            "response_type": "json",
-                            "extract_fields": {},
-                        },
-                    },
+                response = self._transport_request(
+                    service,
+                    f"https://api.{service}/galleries",
+                    headers={"Accept": "application/json"},
                     timeout=20,
                 )
+                if not response.ok:
+                    return self._failure_from_response(service, response.raw, page=page)
+                try:
+                    raw_records = response.json()
+                except json.JSONDecodeError as exc:
+                    return self._result(
+                        GalleryStatus.PARSE_FAILED,
+                        f"Gallery list response was not valid JSON: {exc}",
+                        service,
+                        page=page,
+                        raw=response.raw,
+                    )
+                resp = {**response.raw, "data": raw_records}
         except Exception as exc:
             logger.error(f"Failed to list galleries for {service}: {exc}")
             return self._result(GalleryStatus.ERROR, str(exc), service, page=page)
@@ -503,57 +501,24 @@ class GalleryService:
 
     def _list_imagebam_galleries(self, page: int) -> GalleryResult:
         try:
-            resp = self.bridge.request_sync(
-                {
-                    "action": "http_request",
-                    "service": "imagebam.com",
-                    "generic_spec": {
-                        "url": "https://www.imagebam.com/",
-                        "method": "GET",
-                        "use_cookies": True,
-                        "response_type": "html",
-                        "extract_fields": {
-                            "response_body": "regex:(<body[\\s\\S]*</body>)",
-                        },
-                        "pre_request": self._imagebam_login_pre_request(),
-                    },
-                },
+            if not self._login_imagebam():
+                return self._result(
+                    GalleryStatus.LOGIN_FAILED,
+                    "ImageBam login failed. Check the saved username and password.",
+                    "imagebam.com",
+                    page=page,
+                )
+            response = self._transport_request(
+                "imagebam.com",
+                "https://www.imagebam.com/",
                 timeout=30,
             )
         except Exception as exc:
             logger.error(f"Failed to list ImageBam galleries: {exc}")
             return self._result(GalleryStatus.ERROR, str(exc), "imagebam.com", page=page)
 
+        resp = {**response.raw, "data": {"response_body": response.body}}
         return self._normalize_imagebam_gallery_response(resp, page)
-
-    def _imagebam_login_pre_request(self) -> Dict[str, Any]:
-        return {
-            "action": "get_login_csrf",
-            "url": "https://www.imagebam.com/auth/login",
-            "method": "GET",
-            "headers": {},
-            "form_fields": {},
-            "use_cookies": True,
-            "extract_fields": {
-                "login_token": "input[name='_token']",
-            },
-            "response_type": "html",
-            "follow_up_request": {
-                "action": "submit_login",
-                "url": "https://www.imagebam.com/auth/login",
-                "method": "POST",
-                "headers": {},
-                "form_fields": {
-                    "_token": "{login_token}",
-                    "email": self.creds.get("imagebam_user", ""),
-                    "password": self.creds.get("imagebam_pass", ""),
-                    "remember": "on",
-                },
-                "use_cookies": True,
-                "extract_fields": {},
-                "response_type": "html",
-            },
-        }
 
     def _normalize_imagebam_gallery_response(self, resp: Any, page: int) -> GalleryResult:
         if not isinstance(resp, dict):
@@ -615,53 +580,47 @@ class GalleryService:
 
         try:
             if service == "pixhost.to":
-                resp = self.bridge.request_sync(
-                    {
-                        "action": "http_request",
-                        "service": service,
-                        "generic_spec": {
-                            "url": "https://api.pixhost.to/galleries",
-                            "method": "POST",
-                            "headers": {"Accept": "application/json"},
-                            "form_fields": {"gallery_name": name},
-                            "response_type": "json",
-                            "extract_fields": {
-                                "gallery_name": "gallery_name",
-                                "gallery_hash": "gallery_hash",
-                                "gallery_url": "gallery_url",
-                                "gallery_upload_hash": "gallery_upload_hash",
-                            },
-                            "success_check": {
-                                "field": "gallery_hash",
-                                "type": "not_empty",
-                            },
-                        },
-                    },
+                response = self._transport_request(
+                    service,
+                    "https://api.pixhost.to/galleries",
+                    method="POST",
+                    headers={"Accept": "application/json"},
+                    form_fields={"gallery_name": name},
                     timeout=20,
                 )
+                if not response.ok:
+                    return self._failure_from_response(service, response.raw)
+                try:
+                    raw = response.json()
+                except json.JSONDecodeError as exc:
+                    return self._result(
+                        GalleryStatus.PARSE_FAILED,
+                        f"Gallery creation response was not valid JSON: {exc}",
+                        service,
+                        raw=response.raw,
+                    )
+                resp = {**response.raw, "data": raw}
             else:
-                resp = self.bridge.request_sync(
-                    {
-                        "action": "http_request",
-                        "service": service,
-                        "generic_spec": {
-                            "url": f"https://api.{service}/galleries",
-                            "method": "POST",
-                            "headers": {"Accept": "application/json"},
-                            "form_fields": {"gallery_name": name},
-                            "response_type": "json",
-                            "extract_fields": {
-                                "gallery_name": "gallery_name",
-                                "gallery_hash": "gallery_hash",
-                                "gallery_url": "gallery_url",
-                                "gallery_upload_hash": "gallery_upload_hash",
-                                "id": "id",
-                                "name": "name",
-                            },
-                        },
-                    },
+                response = self._transport_request(
+                    service,
+                    f"https://api.{service}/galleries",
+                    method="POST",
+                    headers={"Accept": "application/json"},
+                    form_fields={"gallery_name": name},
                     timeout=20,
                 )
+                if not response.ok:
+                    return self._failure_from_response(service, response.raw)
+                try:
+                    raw = response.json()
+                except json.JSONDecodeError as exc:
+                    return self._result(
+                        GalleryStatus.PARSE_FAILED,
+                        f"Gallery creation response was not valid JSON: {exc}",
+                        service,
+                        raw=response.raw,
+                    )
+                resp = {**response.raw, "data": raw}
         except Exception as exc:
             logger.error(f"Failed to create gallery for {service}: {exc}")
             return self._result(GalleryStatus.ERROR, str(exc), service)
@@ -702,41 +661,24 @@ class GalleryService:
 
     def _create_vipr_gallery(self, name: str) -> GalleryResult:
         try:
-            resp = self.bridge.request_sync(
-                {
-                    "action": "http_request",
-                    "service": "vipr.im",
-                    "generic_spec": {
-                        "url": "https://vipr.im/",
-                        "method": "POST",
-                        "use_cookies": True,
-                        "response_type": "html",
-                        "form_fields": {
-                            "op": "my_files",
-                            "fld_id": "0",
-                            "sort_field": "file_created",
-                            "sort_order": "down",
-                            "export_mode": "",
-                            "domain": "vipr.im",
-                            "create_new_folder": name,
-                        },
-                        "extract_fields": {
-                            "response_body": "regex:(<body[\\s\\S]*</body>)",
-                        },
-                        "pre_request": {
-                            "action": "vipr_login",
-                            "url": "https://vipr.im/",
-                            "method": "POST",
-                            "form_fields": {
-                                "op": "login",
-                                "login": self.creds.get("vipr_user", ""),
-                                "password": self.creds.get("vipr_pass", ""),
-                            },
-                            "use_cookies": True,
-                            "response_type": "html",
-                            "extract_fields": {},
-                        },
-                    },
+            if not self._login_vipr():
+                return self._result(
+                    GalleryStatus.LOGIN_FAILED,
+                    "Vipr.im login failed. Check the saved username and password.",
+                    "vipr.im",
+                )
+            response = self._transport_request(
+                "vipr.im",
+                "https://vipr.im/",
+                method="POST",
+                form_fields={
+                    "op": "my_files",
+                    "fld_id": "0",
+                    "sort_field": "file_created",
+                    "sort_order": "down",
+                    "export_mode": "",
+                    "domain": "vipr.im",
+                    "create_new_folder": name,
                 },
                 timeout=20,
             )
@@ -744,6 +686,7 @@ class GalleryService:
             logger.error(f"Failed to create Vipr gallery: {exc}")
             return self._result(GalleryStatus.ERROR, str(exc), "vipr.im")
 
+        resp = {**response.raw, "data": {"response_body": response.body}}
         if not isinstance(resp, dict):
             return self._result(
                 GalleryStatus.PARSE_FAILED,
@@ -778,39 +721,22 @@ class GalleryService:
 
     def _delete_vipr_gallery(self, gallery_id: str, gallery_name: str) -> GalleryResult:
         try:
-            resp = self.bridge.request_sync(
-                {
-                    "action": "http_request",
-                    "service": "vipr.im",
-                    "generic_spec": {
-                        "url": f"https://vipr.im/?op=my_files&fld_id=0&del_folder={gallery_id}",
-                        "method": "GET",
-                        "use_cookies": True,
-                        "response_type": "html",
-                        "extract_fields": {
-                            "response_body": "regex:(<body[\\s\\S]*</body>)",
-                        },
-                        "pre_request": {
-                            "action": "vipr_login",
-                            "url": "https://vipr.im/",
-                            "method": "POST",
-                            "form_fields": {
-                                "op": "login",
-                                "login": self.creds.get("vipr_user", ""),
-                                "password": self.creds.get("vipr_pass", ""),
-                            },
-                            "use_cookies": True,
-                            "response_type": "html",
-                            "extract_fields": {},
-                        },
-                    },
-                },
+            if not self._login_vipr():
+                return self._result(
+                    GalleryStatus.LOGIN_FAILED,
+                    "Vipr.im login failed. Check the saved username and password.",
+                    "vipr.im",
+                )
+            response = self._transport_request(
+                "vipr.im",
+                f"https://vipr.im/?op=my_files&fld_id=0&del_folder={gallery_id}",
                 timeout=20,
             )
         except Exception as exc:
             logger.error(f"Failed to delete Vipr gallery {gallery_id}: {exc}")
             return self._result(GalleryStatus.ERROR, str(exc), "vipr.im")
 
+        resp = {**response.raw, "data": {"response_body": response.body}}
         if not isinstance(resp, dict):
             return self._result(
                 GalleryStatus.PARSE_FAILED,
@@ -848,6 +774,73 @@ class GalleryService:
             record=record,
             raw=resp,
         )
+
+    def _transport_request(
+        self,
+        service: str,
+        url: str,
+        *,
+        method: str = "GET",
+        headers: Optional[Mapping[str, Any]] = None,
+        form_fields: Optional[Mapping[str, Any]] = None,
+        timeout: float = 20,
+    ):
+        spec = build_transport_spec(
+            url,
+            method=method,
+            headers=headers,
+            form_fields=form_fields,
+            use_cookies=True,
+        )
+        return execute_transport_request(
+            spec,
+            service=service,
+            timeout=timeout,
+            bridge=self.bridge,
+        )
+
+    def _login_vipr(self) -> bool:
+        response = self._transport_request(
+            "vipr.im",
+            "https://vipr.im/",
+            method="POST",
+            form_fields={
+                "op": "login",
+                "login": self.creds.get("vipr_user", ""),
+                "password": self.creds.get("vipr_pass", ""),
+            },
+            timeout=20,
+        )
+        return response.ok
+
+    def _login_imagebam(self) -> bool:
+        login_page = self._transport_request(
+            "imagebam.com",
+            "https://www.imagebam.com/auth/login",
+            timeout=30,
+        )
+        if not login_page.ok:
+            return False
+
+        soup = BeautifulSoup(login_page.body or "", "html.parser")
+        token_field = soup.select_one("input[name='_token']")
+        token = str(token_field.get("value") or "").strip() if token_field else ""
+        if not token:
+            return False
+
+        response = self._transport_request(
+            "imagebam.com",
+            "https://www.imagebam.com/auth/login",
+            method="POST",
+            form_fields={
+                "_token": token,
+                "email": self.creds.get("imagebam_user", ""),
+                "password": self.creds.get("imagebam_pass", ""),
+                "remember": "on",
+            },
+            timeout=30,
+        )
+        return response.ok
 
     def _records_from_sidecar_response(
         self, service: str, resp: Any, page: int = 1

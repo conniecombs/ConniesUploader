@@ -39,6 +39,15 @@ COVER_THUMBNAIL_OVERRIDES = {
 }
 
 
+SERVICE_RATE_LIMITS = {
+    "imx.to": {"requests_per_second": 2.0, "burst_size": 5},
+    "pixhost.to": {"requests_per_second": 2.0, "burst_size": 5},
+    "turboimagehost": {"requests_per_second": 2.0, "burst_size": 5},
+    "vipr.im": {"requests_per_second": 2.0, "burst_size": 5},
+    "imagebam.com": {"requests_per_second": 2.0, "burst_size": 5},
+}
+
+
 class UploadManager:
     def __init__(
         self,
@@ -325,6 +334,8 @@ class UploadManager:
                     }
                     if resolve_spec:
                         job_data["resolve_spec"] = resolve_spec
+                    if service_id in SERVICE_RATE_LIMITS:
+                        job_data["rate_limits"] = SERVICE_RATE_LIMITS[service_id]
                     logger.info(f"Using generic HTTP runner for {service_id} ({len(file_list)} files)")
                     
                     self.active_files.update(file_list)

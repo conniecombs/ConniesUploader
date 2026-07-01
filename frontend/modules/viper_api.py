@@ -23,6 +23,7 @@ from loguru import logger
 
 from modules.credentials_manager import CredentialsManager
 from modules.sidecar import SidecarBridge
+from modules.transport import build_transport_spec, execute_transport_request
 
 # Store threads file in user's home directory.
 _USER_DATA_DIR = os.path.join(os.path.expanduser("~"), ".conniesuploader")
@@ -37,6 +38,7 @@ THREAD_TITLE_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
 )
+VIPERGIRLS_RATE_LIMIT = {"requests_per_second": 1.0, "burst_size": 3}
 
 THREAD_ID_PATTERNS = (
     re.compile(r"^\d+$"),
@@ -753,22 +755,20 @@ def _update_scheduled_post_status(
     return updated
 
 
-def _vipergirls_success_check() -> Dict[str, Any]:
-    return {
-        "type": "any",
-        "any": [
-            {
-                "field": "__response_body__",
-                "match": "(?i)thank you for posting|redirecting",
-                "type": "regex",
-            },
-            {
-                "field": "__final_url__",
-                "match": r"(?i)(?:/threads/\d+|showthread\.php\?t=\d+)",
-                "type": "regex",
-            },
-        ],
-    }
+def _vipergirls_login_succeeded(body: str, final_url: str = "") -> bool:
+    lowered = (body or "").lower()
+    if "thank you for logging in" in lowered or "logout.php" in lowered:
+        return True
+    token_match = re.search(r"SECURITYTOKEN\s*=\s*\"([^\"]+)\"", body or "")
+    if token_match and token_match.group(1).strip().lower() != "guest":
+        return True
+    return bool(re.search(r"(?i)(?:forum\.php|/forums?|/threads?)", final_url or ""))
+
+
+def _vipergirls_post_succeeded(body: str, final_url: str = "") -> bool:
+    if re.search(r"(?i)thank you for posting|redirecting", body or ""):
+        return True
+    return bool(re.search(r"(?i)(?:/threads/\d+|showthread\.php\?t=\d+)", final_url or ""))
 
 
 def _extract_form_value(element: Any) -> str:
@@ -874,9 +874,8 @@ def build_vipergirls_reply_spec(thread_id: str, message: str, html_text: str) ->
         "headers": {
             "Referer": reply_url,
         },
-        "response_type": "html",
-        "extract_fields": {},
-        "success_check": _vipergirls_success_check(),
+        "include_response_body": True,
+        "include_transport_metadata": True,
     }
 
 
@@ -986,11 +985,27 @@ class ViperGirlsAPI:
         import hashlib
         md5_pass = hashlib.md5(password.encode()).hexdigest()
 
-        spec = {
-            "url": "https://vipergirls.to/login.php?do=login",
-            "method": "POST",
-            "use_cookies": True,
-            "form_fields": {
+        seed_spec = build_transport_spec(
+            f"{VIPERGIRLS_BASE_URL}/login.php?do=login",
+            method="GET",
+            use_cookies=True,
+        )
+        seed_resp = execute_transport_request(
+            seed_spec,
+            service="vipergirls.to",
+            timeout=30,
+            bridge=self.bridge,
+            rate_limits=VIPERGIRLS_RATE_LIMIT,
+        )
+        if not seed_resp.ok:
+            logger.error(f"ViperAPI: Login seed failed: {seed_resp.message}")
+            return False
+
+        spec = build_transport_spec(
+            f"{VIPERGIRLS_BASE_URL}/login.php?do=login",
+            method="POST",
+            use_cookies=True,
+            form_fields={
                 "vb_login_username": username,
                 "vb_login_md5password": md5_pass,
                 "vb_login_md5password_utf": md5_pass,
@@ -998,41 +1013,22 @@ class ViperGirlsAPI:
                 "do": "login",
                 "securitytoken": "guest",
             },
-            "headers": {
-                "Referer": "https://vipergirls.to/forum.php",
-            },
-            "response_type": "html",
-            "extract_fields": {
-                "security_token": "regex:SECURITYTOKEN\\s*=\\s*\"([^\"]+)\"",
-            },
-            "success_check": {
-                "field": "__response_body__",
-                "match": "Thank you for logging in",
-                "type": "contains",
-            },
-            "pre_request": {
-                "action": "vg_seed_cookies",
-                "url": "https://vipergirls.to/login.php?do=login",
-                "method": "GET",
-                "use_cookies": True,
-                "response_type": "html",
-                "extract_fields": {},
-            },
-        }
+            headers={"Referer": f"{VIPERGIRLS_BASE_URL}/forum.php"},
+        )
+        resp = execute_transport_request(
+            spec,
+            service="vipergirls.to",
+            timeout=30,
+            bridge=self.bridge,
+            rate_limits=VIPERGIRLS_RATE_LIMIT,
+        )
 
-        payload = {
-            "action": "http_request",
-            "service": "vipergirls.to",
-            "generic_spec": spec,
-        }
-        resp = self.bridge.request_sync(payload, timeout=30)
-
-        if resp.get("status") == "success":
+        if resp.ok and _vipergirls_login_succeeded(resp.body, resp.final_url):
             self.is_logged_in = True
             logger.info("ViperAPI: Login Successful")
             return True
 
-        logger.error(f"ViperAPI: Login Failed: {resp.get('msg')}")
+        logger.error(f"ViperAPI: Login Failed: {resp.message or 'unexpected page'}")
         return False
 
     def post_reply(self, thread_id, message):
@@ -1043,48 +1039,42 @@ class ViperGirlsAPI:
             return False
 
         reply_url = f"{VIPERGIRLS_BASE_URL}/newreply.php?do=newreply&t={clean_thread_id}"
-        fetch_spec = {
-            "url": reply_url,
-            "method": "GET",
-            "headers": {
-                "Referer": f"{VIPERGIRLS_BASE_URL}/forum.php",
-            },
-            "use_cookies": True,
-            "response_type": "html",
-            "extract_fields": {
-                "reply_form_html": r"regex:([\s\S]*)",
-            },
-        }
-        fetch_payload = {
-            "action": "http_request",
-            "service": "vipergirls.to",
-            "generic_spec": fetch_spec,
-        }
-        fetch_resp = self.bridge.request_sync(fetch_payload, timeout=30)
-        if fetch_resp.get("status") != "success":
-            logger.error(f"ViperAPI: Reply form fetch failed: {fetch_resp.get('msg')}")
+        fetch_spec = build_transport_spec(
+            reply_url,
+            method="GET",
+            headers={"Referer": f"{VIPERGIRLS_BASE_URL}/forum.php"},
+            use_cookies=True,
+        )
+        fetch_resp = execute_transport_request(
+            fetch_spec,
+            service="vipergirls.to",
+            timeout=30,
+            bridge=self.bridge,
+            rate_limits=VIPERGIRLS_RATE_LIMIT,
+        )
+        if not fetch_resp.ok:
+            logger.error(f"ViperAPI: Reply form fetch failed: {fetch_resp.message}")
             return False
 
-        data = fetch_resp.get("data") if isinstance(fetch_resp.get("data"), dict) else {}
-        html_text = str(data.get("reply_form_html") or "")
         try:
-            post_spec = build_vipergirls_reply_spec(clean_thread_id, message, html_text)
+            post_spec = build_vipergirls_reply_spec(clean_thread_id, message, fetch_resp.body)
         except ViperPostError as exc:
             logger.error(f"ViperAPI: Post Failed: {exc}")
             return False
 
-        post_payload = {
-            "action": "http_request",
-            "service": "vipergirls.to",
-            "generic_spec": post_spec,
-        }
-        resp = self.bridge.request_sync(post_payload, timeout=60)
+        resp = execute_transport_request(
+            post_spec,
+            service="vipergirls.to",
+            timeout=60,
+            bridge=self.bridge,
+            rate_limits=VIPERGIRLS_RATE_LIMIT,
+        )
 
-        if resp.get("status") == "success":
+        if resp.ok and _vipergirls_post_succeeded(resp.body, resp.final_url):
             logger.info("ViperAPI: Post Successful")
             return True
 
-        logger.error(f"ViperAPI: Post Failed: {resp.get('msg')}")
+        logger.error(f"ViperAPI: Post Failed: {resp.message or 'unexpected page'}")
         return False
 
     def schedule_post(self, post_id, thread_id, thread_name, message, scheduled_time, cover_thumbnail=""):

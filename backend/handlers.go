@@ -245,6 +245,17 @@ func handleHttpRequest(job JobRequest) {
 			cleanData[k] = v
 		}
 	}
+	if spec.IncludeTransportMetadata || spec.IncludeResponseBody {
+		if statusCode := extracted["__status_code__"]; strings.TrimSpace(statusCode) != "" {
+			cleanData["status_code"] = statusCode
+		}
+		if finalURL := extracted["__final_url__"]; strings.TrimSpace(finalURL) != "" {
+			cleanData["final_url"] = finalURL
+		}
+	}
+	if spec.IncludeResponseBody {
+		cleanData["response_body"] = extracted["__response_body__"]
+	}
 
 	sendJobEvent(&job, OutputEvent{Type: "result", Status: "success", Data: cleanData})
 }

@@ -7,37 +7,11 @@ All operations are dispatched as generic HTTP request specs — the Go sidecar
 executes them as a dumb HTTP runner with no host-specific knowledge.
 """
 
+import json
 from typing import Dict, Optional, Tuple, Any
 from modules.sidecar import SidecarBridge
+from modules.transport import build_transport_spec, execute_transport_request
 from loguru import logger
-
-
-# ---------------------------------------------------------------------------
-# Generic helper
-# ---------------------------------------------------------------------------
-
-
-def execute_generic_request(
-    spec: Dict[str, Any], timeout: float = 30.0, service: str = ""
-) -> Dict[str, Any]:
-    """Send a generic HTTP request spec to the Go sidecar for execution.
-
-    Args:
-        spec: A GenericHttpRequestSpec dictionary.
-        timeout: Seconds to wait for the sidecar response.
-        service: Optional service identifier for rate-limiting.
-
-    Returns:
-        The sidecar response dict. On success, extracted values are in
-        ``resp["data"]``.
-    """
-    payload: Dict[str, Any] = {
-        "action": "http_request",
-        "generic_spec": spec,
-    }
-    if service:
-        payload["service"] = service
-    return SidecarBridge.get().request_sync(payload, timeout=timeout)
 
 
 # ---------------------------------------------------------------------------
@@ -74,32 +48,22 @@ def create_pixhost_gallery(name: str) -> Optional[Dict[str, str]]:
         Dictionary with gallery_hash and gallery_upload_hash if successful,
         None otherwise.
     """
-    spec = {
-        "url": "https://api.pixhost.to/galleries",
-        "method": "POST",
-        "headers": {
-            "Accept": "application/json",
-        },
-        "form_fields": {
-            "gallery_name": name,
-        },
-        "response_type": "json",
-        "extract_fields": {
-            "gallery_name": "gallery_name",
-            "gallery_hash": "gallery_hash",
-            "gallery_url": "gallery_url",
-            "gallery_upload_hash": "gallery_upload_hash",
-        },
-        "success_check": {
-            "field": "gallery_hash",
-            "type": "not_empty",
-        },
-    }
+    spec = build_transport_spec(
+        "https://api.pixhost.to/galleries",
+        method="POST",
+        headers={"Accept": "application/json"},
+        form_fields={"gallery_name": name},
+        use_cookies=True,
+    )
 
-    resp = execute_generic_request(spec, timeout=30, service="pixhost.to")
+    resp = execute_transport_request(spec, timeout=30, service="pixhost.to")
 
-    if resp.get("status") == "success":
-        data = resp.get("data")
+    if resp.ok:
+        try:
+            data = resp.json()
+        except json.JSONDecodeError as exc:
+            logger.warning(f"Failed to parse Pixhost gallery response: {exc}")
+            data = None
         if isinstance(data, dict) and data.get("gallery_hash"):
             return {
                 "gallery_name": data.get("gallery_name", name),
@@ -108,7 +72,7 @@ def create_pixhost_gallery(name: str) -> Optional[Dict[str, str]]:
                 "gallery_upload_hash": data.get("gallery_upload_hash", ""),
             }
 
-    logger.warning(f"Failed to create Pixhost gallery: {resp.get('msg', 'unknown error')}")
+    logger.warning(f"Failed to create Pixhost gallery: {resp.message or 'unknown error'}")
     return None
 
 
@@ -127,20 +91,17 @@ def finalize_pixhost_gallery(
     if not gallery_upload_hash or not gallery_hash:
         return False
 
-    spec = {
-        "url": f"https://api.pixhost.to/galleries/{gallery_hash}/finalize",
-        "method": "POST",
-        "headers": {
-            "Accept": "application/json",
-        },
-        "form_fields": {
-            "gallery_upload_hash": gallery_upload_hash,
-        },
-        "response_type": "json",
-    }
+    spec = build_transport_spec(
+        f"https://api.pixhost.to/galleries/{gallery_hash}/finalize",
+        method="POST",
+        headers={"Accept": "application/json"},
+        form_fields={"gallery_upload_hash": gallery_upload_hash},
+        use_cookies=True,
+        include_response_body=False,
+    )
 
-    resp = execute_generic_request(spec, timeout=15, service="pixhost.to")
-    return resp.get("status") == "success"
+    resp = execute_transport_request(spec, timeout=15, service="pixhost.to")
+    return resp.ok
 
 
 # ---------------------------------------------------------------------------
@@ -206,7 +167,8 @@ def delete_imx_gallery(user: str, pwd: str, gallery_id: str, client: Any = None)
 def vipr_login(user: str, password: str, client: Any = None) -> Dict[str, str]:
     """Create credentials dictionary for Vipr service.
 
-    Note: Actual authentication happens in the Go sidecar per request/session.
+    Note: Python now performs Vipr authentication by issuing resolved transport
+    requests through the Go sidecar.
 
     Args:
         user: Username for Vipr
@@ -228,36 +190,11 @@ def get_vipr_metadata(creds: Dict[str, str]) -> Dict[str, Any]:
     Returns:
         Dictionary with "galleries" key containing list of gallery dicts
     """
-    # Vipr gallery listing requires login + HTML scraping.
-    spec = {
-        "url": "https://vipr.im/?op=my_files",
-        "method": "GET",
-        "use_cookies": True,
-        "response_type": "html",
-        "extract_fields": {
-            "response_body": "regex:(<body[\\s\\S]*</body>)",
-        },
-        "pre_request": {
-            "action": "vipr_login",
-            "url": "https://vipr.im/",
-            "method": "POST",
-            "form_fields": {
-                "op": "login",
-                "login": creds.get("vipr_user", ""),
-                "password": creds.get("vipr_pass", ""),
-            },
-            "use_cookies": True,
-            "response_type": "html",
-            "extract_fields": {},
-        },
-    }
-
-    resp = execute_generic_request(spec, timeout=30, service="vipr.im")
-
     galleries = []
-    if resp.get("status") == "success":
-        data = resp.get("data", {})
-        body = data.get("response_body", "") if isinstance(data, dict) else ""
+    bridge = SidecarBridge.get()
+    if _login_vipr(creds, bridge=bridge, timeout=30):
+        resp = _fetch_vipr_file_manager(bridge=bridge, timeout=30)
+        body = resp.body if resp.ok else ""
 
         from modules.gallery_service import parse_vipr_gallery_html
 
@@ -272,12 +209,16 @@ def create_vipr_gallery(creds: Dict[str, str], name: str) -> Optional[Dict[str, 
     if not name:
         return None
 
-    spec = {
-        "url": "https://vipr.im/",
-        "method": "POST",
-        "use_cookies": True,
-        "response_type": "html",
-        "form_fields": {
+    bridge = SidecarBridge.get()
+    if not _login_vipr(creds, bridge=bridge, timeout=30):
+        logger.warning("Failed to create Vipr gallery: login failed")
+        return None
+
+    spec = build_transport_spec(
+        "https://vipr.im/",
+        method="POST",
+        use_cookies=True,
+        form_fields={
             "op": "my_files",
             "fld_id": "0",
             "sort_field": "file_created",
@@ -286,35 +227,18 @@ def create_vipr_gallery(creds: Dict[str, str], name: str) -> Optional[Dict[str, 
             "domain": "vipr.im",
             "create_new_folder": name,
         },
-        "extract_fields": {
-            "response_body": "regex:(<body[\\s\\S]*</body>)",
-        },
-        "pre_request": {
-            "action": "vipr_login",
-            "url": "https://vipr.im/",
-            "method": "POST",
-            "form_fields": {
-                "op": "login",
-                "login": creds.get("vipr_user", ""),
-                "password": creds.get("vipr_pass", ""),
-            },
-            "use_cookies": True,
-            "response_type": "html",
-            "extract_fields": {},
-        },
-    }
+    )
 
-    resp = execute_generic_request(spec, timeout=30, service="vipr.im")
-    if resp.get("status") != "success":
-        logger.warning(f"Failed to create Vipr gallery: {resp.get('msg', 'unknown error')}")
+    resp = execute_transport_request(
+        spec, timeout=30, service="vipr.im", bridge=bridge
+    )
+    if not resp.ok:
+        logger.warning(f"Failed to create Vipr gallery: {resp.message or 'unknown error'}")
         return None
-
-    data = resp.get("data")
-    body = data.get("response_body", "") if isinstance(data, dict) else ""
 
     from modules.gallery_service import parse_vipr_gallery_html
 
-    raw_records = parse_vipr_gallery_html(body)
+    raw_records = parse_vipr_gallery_html(resp.body)
     raw = next((record for record in raw_records if record.get("name") == name), None)
     if not raw or not raw.get("id"):
         logger.warning("Vipr gallery was created, but its folder ID could not be parsed")
@@ -336,38 +260,60 @@ def delete_vipr_gallery(creds: Dict[str, str], gallery_id: str) -> bool:
     if not gallery_id:
         return False
 
-    spec = {
-        "url": f"https://vipr.im/?op=my_files&fld_id=0&del_folder={gallery_id}",
-        "method": "GET",
-        "use_cookies": True,
-        "response_type": "html",
-        "extract_fields": {
-            "response_body": "regex:(<body[\\s\\S]*</body>)",
-        },
-        "pre_request": {
-            "action": "vipr_login",
-            "url": "https://vipr.im/",
-            "method": "POST",
-            "form_fields": {
-                "op": "login",
-                "login": creds.get("vipr_user", ""),
-                "password": creds.get("vipr_pass", ""),
-            },
-            "use_cookies": True,
-            "response_type": "html",
-            "extract_fields": {},
-        },
-    }
-
-    resp = execute_generic_request(spec, timeout=30, service="vipr.im")
-    if resp.get("status") != "success":
-        logger.warning(f"Failed to delete Vipr gallery: {resp.get('msg', 'unknown error')}")
+    bridge = SidecarBridge.get()
+    if not _login_vipr(creds, bridge=bridge, timeout=30):
+        logger.warning("Failed to delete Vipr gallery: login failed")
         return False
 
-    data = resp.get("data")
-    body = data.get("response_body", "") if isinstance(data, dict) else ""
+    spec = build_transport_spec(
+        f"https://vipr.im/?op=my_files&fld_id=0&del_folder={gallery_id}",
+        method="GET",
+        use_cookies=True,
+    )
+
+    resp = execute_transport_request(
+        spec, timeout=30, service="vipr.im", bridge=bridge
+    )
+    if not resp.ok:
+        logger.warning(f"Failed to delete Vipr gallery: {resp.message or 'unknown error'}")
+        return False
 
     from modules.gallery_service import parse_vipr_gallery_html
 
-    remaining = parse_vipr_gallery_html(body)
+    remaining = parse_vipr_gallery_html(resp.body)
     return not any(str(record.get("id") or "") == gallery_id for record in remaining)
+
+
+def _login_vipr(
+    creds: Dict[str, str],
+    *,
+    bridge: Any,
+    timeout: float,
+) -> bool:
+    spec = build_transport_spec(
+        "https://vipr.im/",
+        method="POST",
+        form_fields={
+            "op": "login",
+            "login": creds.get("vipr_user", ""),
+            "password": creds.get("vipr_pass", ""),
+        },
+        use_cookies=True,
+    )
+    resp = execute_transport_request(
+        spec, timeout=timeout, service="vipr.im", bridge=bridge
+    )
+    if not resp.ok:
+        logger.warning(f"Vipr login failed: {resp.message or 'unknown error'}")
+    return resp.ok
+
+
+def _fetch_vipr_file_manager(*, bridge: Any, timeout: float):
+    spec = build_transport_spec(
+        "https://vipr.im/?op=my_files",
+        method="GET",
+        use_cookies=True,
+    )
+    return execute_transport_request(
+        spec, timeout=timeout, service="vipr.im", bridge=bridge
+    )

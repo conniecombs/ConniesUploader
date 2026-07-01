@@ -14,10 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `http_request` action to Go sidecar for standalone (non-upload) HTTP operations like login, gallery creation, and forum posting.
 - Added `http_batch_resolve` action to Go sidecar for deferred batch result polling.
 - Moved ViperGirls scheduled posting out of Go and into Python so scheduled posts use the same form-aware posting path as immediate auto-posts.
+- Added a Python/Go transport contract and raw sidecar response mode so Python owns website parsing and success checks while Go returns transport facts (`response_body`, `status_code`, `final_url`).
+- Moved remaining ViperGirls, Vipr, ImageBam, and Pixhost gallery/request workflows away from Go-side `pre_request`, `extract_fields`, and `success_check` orchestration.
+- Moved host-specific default sidecar rate limits out of Go and into Python job/request payloads.
 - Updated `api.py` to build generic HTTP specs instead of using service-specific sidecar actions.
 - Updated `turbo.py` plugin with a full `build_http_request()` implementation replacing the legacy Go fallback.
-- Updated `viper_api.py` login and post methods to use generic HTTP request specs, with Python harvesting the live ViperGirls reply form before submitting a resolved request through Go.
-- Updated `gallery_service.py` to use generic HTTP request specs for gallery operations.
+- Updated `viper_api.py` login and post methods so Python performs the login/post success checks and harvests the live ViperGirls reply form before submitting a resolved request through Go.
+- Updated `gallery_service.py` to use Python-owned raw transport calls for gallery operations.
 - Removed legacy `upload` action (replaced by `http_upload`), `login`, `verify`, `create_gallery`, `finalize_gallery`, `list_galleries`, `viper_login`, and `viper_post` actions from Go sidecar.
 
 ### Fixed

@@ -11,15 +11,14 @@ import (
 	"golang.org/x/time/rate"
 )
 
-// RateLimiters and RateLimiterMutex are exported for test access.
-var RateLimiters = map[string]*rate.Limiter{
-	"imx.to":         rate.NewLimiter(rate.Limit(2.0), 5),
-	"pixhost.to":     rate.NewLimiter(rate.Limit(2.0), 5),
-	"vipr.im":        rate.NewLimiter(rate.Limit(2.0), 5),
-	"turboimagehost": rate.NewLimiter(rate.Limit(2.0), 5),
-	"imagebam.com":   rate.NewLimiter(rate.Limit(2.0), 5),
-	"vipergirls.to":  rate.NewLimiter(rate.Limit(1.0), 3),
-}
+const (
+	defaultServiceRequestsPerSecond = 2.0
+	defaultServiceBurstSize         = 5
+)
+
+// RateLimiters and RateLimiterMutex are exported for test access. Host-specific
+// limits belong in Python job specs; Go lazily creates generic defaults.
+var RateLimiters = map[string]*rate.Limiter{}
 var RateLimiterMutex sync.RWMutex
 var globalRateLimiter = rate.NewLimiter(rate.Limit(10.0), 20)
 
@@ -28,7 +27,10 @@ func GetRateLimiter(service string) *rate.Limiter {
 	limiter, exists := RateLimiters[service]
 	RateLimiterMutex.RUnlock()
 	if !exists {
-		limiter = rate.NewLimiter(rate.Limit(2.0), 5)
+		limiter = rate.NewLimiter(
+			rate.Limit(defaultServiceRequestsPerSecond),
+			defaultServiceBurstSize,
+		)
 		RateLimiterMutex.Lock()
 		RateLimiters[service] = limiter
 		RateLimiterMutex.Unlock()

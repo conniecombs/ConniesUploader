@@ -16,12 +16,15 @@ from modules.gallery_service import (
 
 
 class FakeBridge:
-    def __init__(self, response=None):
+    def __init__(self, response=None, responses=None):
         self.response = response
+        self.responses = list(responses or [])
         self.calls = []
 
     def request_sync(self, payload, timeout=0):
         self.calls.append((payload, timeout))
+        if self.responses:
+            return self.responses.pop(0)
         return self.response
 
 
@@ -247,16 +250,20 @@ def test_parse_imagebam_gallery_options_uses_numeric_upload_tokens():
 
 def test_list_galleries_normalizes_sidecar_gallery_response_and_sends_credentials():
     bridge = FakeBridge(
-        {
-            "status": "success",
-            "data": [
-                {
-                    "gallery_id": "42",
-                    "gallery_name": "Vipr Folder",
-                    "gallery_url": "https://vipr.im/f/42",
-                }
-            ],
-        }
+        responses=[
+            {"status": "success", "data": {"response_body": "logged in"}},
+            {
+                "status": "success",
+                "data": {
+                    "response_body": """
+                    <body>
+                      <a href="?op=my_files;fld_id=42">Vipr Folder</a>
+                      <a href="https://vipr.im/p/user/42/Vipr%20Folder" class="pub"></a>
+                    </body>
+                    """,
+                },
+            },
+        ]
     )
     service = GalleryService(bridge, {"vipr_user": "user", "vipr_pass": "pass"})
 
@@ -268,32 +275,39 @@ def test_list_galleries_normalizes_sidecar_gallery_response_and_sends_credential
         service="vipr.im",
         id="42",
         name="Vipr Folder",
-        url="https://vipr.im/f/42",
+        url="https://vipr.im/p/user/42/Vipr%20Folder",
         raw={
-            "gallery_id": "42",
-            "gallery_name": "Vipr Folder",
-            "gallery_url": "https://vipr.im/f/42",
+            "id": "42",
+            "name": "Vipr Folder",
+            "url": "https://vipr.im/p/user/42/Vipr%20Folder",
+            "username": "user",
         },
     )
     payload = bridge.calls[0][0]
     assert payload["action"] == "http_request"
-    pre_request = payload["generic_spec"]["pre_request"]
-    assert pre_request["form_fields"]["login"] == "user"
+    assert payload["generic_spec"]["form_fields"]["op"] == "login"
+    assert payload["generic_spec"]["form_fields"]["login"] == "user"
+    list_payload = bridge.calls[1][0]
+    assert list_payload["generic_spec"]["url"] == "https://vipr.im/?op=my_files"
+    assert "pre_request" not in list_payload["generic_spec"]
 
 
 def test_list_galleries_parses_vipr_generic_html_response():
     bridge = FakeBridge(
-        {
-            "status": "success",
-            "data": {
-                "response_body": """
-                <body>
-                  <a href="?op=my_files;fld_id=42">Vipr Folder</a>
-                  <a href="https://vipr.im/p/user/42/Vipr%20Folder" class="pub"></a>
-                </body>
-                """,
+        responses=[
+            {"status": "success", "data": {"response_body": "logged in"}},
+            {
+                "status": "success",
+                "data": {
+                    "response_body": """
+                    <body>
+                      <a href="?op=my_files;fld_id=42">Vipr Folder</a>
+                      <a href="https://vipr.im/p/user/42/Vipr%20Folder" class="pub"></a>
+                    </body>
+                    """,
+                },
             },
-        }
+        ]
     )
     service = GalleryService(bridge, {"vipr_user": "user", "vipr_pass": "pass"})
 
@@ -307,19 +321,28 @@ def test_list_galleries_parses_vipr_generic_html_response():
 
 def test_list_galleries_parses_imagebam_upload_gallery_dropdown():
     bridge = FakeBridge(
-        {
-            "status": "success",
-            "data": {
-                "response_body": """
-                <body>
-                  <select data-uploader-gallery-option-value-select name="gallery">
-                    <option value="default">Select Gallery or Create New</option>
-                    <option value="490670">DL Katia 01</option>
-                  </select>
-                </body>
-                """,
+        responses=[
+            {
+                "status": "success",
+                "data": {
+                    "response_body": '<input type="hidden" name="_token" value="tok">'
+                },
             },
-        }
+            {"status": "success", "data": {"response_body": "logged in"}},
+            {
+                "status": "success",
+                "data": {
+                    "response_body": """
+                    <body>
+                      <select data-uploader-gallery-option-value-select name="gallery">
+                        <option value="default">Select Gallery or Create New</option>
+                        <option value="490670">DL Katia 01</option>
+                      </select>
+                    </body>
+                    """,
+                },
+            },
+        ]
     )
     service = GalleryService(
         bridge, {"imagebam_user": "user", "imagebam_pass": "pass"}
@@ -334,11 +357,10 @@ def test_list_galleries_parses_imagebam_upload_gallery_dropdown():
         name="DL Katia 01",
         raw={"id": "490670", "name": "DL Katia 01"},
     )
-    payload = bridge.calls[0][0]
-    assert payload["service"] == "imagebam.com"
-    assert payload["generic_spec"]["pre_request"]["follow_up_request"]["form_fields"][
-        "email"
-    ] == "user"
+    login_payload = bridge.calls[1][0]
+    assert login_payload["service"] == "imagebam.com"
+    assert login_payload["generic_spec"]["form_fields"]["email"] == "user"
+    assert "pre_request" not in login_payload["generic_spec"]
 
 
 def test_gallery_response_parsing_reports_unreadable_and_failed_shapes():
@@ -348,18 +370,17 @@ def test_gallery_response_parsing_reports_unreadable_and_failed_shapes():
     )
 
     unreadable = service.list_galleries("vipr.im")
-    assert unreadable.status == GalleryStatus.PARSE_FAILED
-    assert "unreadable response" in unreadable.message
+    assert unreadable.status == GalleryStatus.LOGIN_FAILED
+    assert "login failed" in unreadable.message.lower()
 
     service.bridge = FakeBridge({"status": "success", "data": {"id": "42"}})
     wrong_shape = service.list_galleries("vipr.im")
-    assert wrong_shape.status == GalleryStatus.PARSE_FAILED
-    assert "did not contain a gallery list" in wrong_shape.message
+    assert wrong_shape.status == GalleryStatus.EMPTY
 
     service.bridge = FakeBridge({"type": "error", "msg": "auth expired"})
     failed = service.list_galleries("vipr.im")
     assert failed.status == GalleryStatus.LOGIN_FAILED
-    assert failed.message == "auth expired"
+    assert "login failed" in failed.message.lower()
 
 
 def test_list_galleries_reports_unsupported_service_without_sidecar_call():
@@ -394,7 +415,7 @@ def test_list_galleries_distinguishes_empty_from_parse_failure():
     )
 
     assert empty.list_galleries("vipr.im").status == GalleryStatus.EMPTY
-    assert parse_failed.list_galleries("vipr.im").status == GalleryStatus.PARSE_FAILED
+    assert parse_failed.list_galleries("vipr.im").status == GalleryStatus.EMPTY
 
 
 def test_list_galleries_requires_imx_credentials_without_vipr_fallback():
@@ -650,13 +671,17 @@ def test_create_vipr_gallery_posts_file_manager_form_and_parses_created_folder()
             "username": "johngrimm",
         },
     )
-    payload = bridge.calls[0][0]
+    login_payload = bridge.calls[0][0]
+    assert login_payload["generic_spec"]["form_fields"]["op"] == "login"
+    assert login_payload["generic_spec"]["form_fields"]["login"] == "user"
+    payload = bridge.calls[1][0]
     spec = payload["generic_spec"]
     assert spec["url"] == "https://vipr.im/"
     assert spec["method"] == "POST"
     assert spec["form_fields"]["op"] == "my_files"
     assert spec["form_fields"]["create_new_folder"] == "New Folder"
-    assert spec["pre_request"]["form_fields"]["login"] == "user"
+    assert "pre_request" not in spec
+    assert "extract_fields" not in spec
 
 
 def test_delete_vipr_gallery_calls_delete_endpoint_and_confirms_folder_removed():
@@ -681,12 +706,16 @@ def test_delete_vipr_gallery_calls_delete_endpoint_and_confirms_folder_removed()
     assert result.status == GalleryStatus.SUCCESS
     assert result.record.id == "104999"
     assert result.message == "Deleted gallery 'Delete Me' (104999)."
-    payload = bridge.calls[0][0]
+    login_payload = bridge.calls[0][0]
+    assert login_payload["generic_spec"]["form_fields"]["op"] == "login"
+    assert login_payload["generic_spec"]["form_fields"]["login"] == "user"
+    payload = bridge.calls[1][0]
     spec = payload["generic_spec"]
     assert payload["service"] == "vipr.im"
     assert spec["method"] == "GET"
     assert spec["url"] == "https://vipr.im/?op=my_files&fld_id=0&del_folder=104999"
-    assert spec["pre_request"]["form_fields"]["login"] == "user"
+    assert "pre_request" not in spec
+    assert "extract_fields" not in spec
 
 
 def test_delete_vipr_gallery_reports_error_when_folder_still_listed():

@@ -111,11 +111,17 @@ def test_create_vipr_gallery_uses_file_manager_contract():
     }
     payload = bridge.request_sync.call_args.args[0]
     spec = payload["generic_spec"]
+    login_payload = bridge.request_sync.call_args_list[0].args[0]
+    login_spec = login_payload["generic_spec"]
+    assert login_spec["form_fields"]["op"] == "login"
+    assert login_spec["form_fields"]["login"] == "user"
     assert payload["service"] == "vipr.im"
     assert spec["url"] == "https://vipr.im/"
     assert spec["form_fields"]["op"] == "my_files"
     assert spec["form_fields"]["create_new_folder"] == "Batch Gallery"
-    assert spec["pre_request"]["form_fields"]["login"] == "user"
+    assert "pre_request" not in spec
+    assert "extract_fields" not in spec
+    assert spec["include_response_body"] is True
 
 
 def test_delete_vipr_gallery_uses_file_manager_delete_contract():
@@ -140,7 +146,13 @@ def test_delete_vipr_gallery_uses_file_manager_delete_contract():
     assert deleted is True
     payload = bridge.request_sync.call_args.args[0]
     spec = payload["generic_spec"]
+    login_payload = bridge.request_sync.call_args_list[0].args[0]
+    login_spec = login_payload["generic_spec"]
+    assert login_spec["form_fields"]["op"] == "login"
+    assert login_spec["form_fields"]["login"] == "user"
     assert payload["service"] == "vipr.im"
     assert spec["url"] == "https://vipr.im/?op=my_files&fld_id=0&del_folder=105000"
     assert spec["method"] == "GET"
-    assert spec["pre_request"]["form_fields"]["login"] == "user"
+    assert "pre_request" not in spec
+    assert "extract_fields" not in spec
+    assert spec["include_response_body"] is True
