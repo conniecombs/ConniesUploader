@@ -3,6 +3,7 @@
 
 import json
 import queue
+import re
 import threading
 from pathlib import Path
 
@@ -227,6 +228,16 @@ def test_turbo_http_request_resolves_deferred_result_page_thumbnails():
     assert "img" in request["resolve_spec"]["link_extractor"].lower()
     assert "filename" in request["resolve_spec"]["link_extractor"]
     assert "thumb_url" in request["resolve_spec"]["link_extractor"]
+    assert re.search(
+        request["resolve_spec"]["link_extractor"],
+        "[url=https://www.turboimagehost.com/p/123691283/imx api.jpg.html]"
+        "[img]https://s8d9.turboimg.net/t1/123691283_imx_api.jpg[/img][/url]",
+    )
+    assert re.search(
+        request["resolve_spec"]["link_extractor"],
+        "[url=https://www.turboimagehost.com/p/123691283/imx_api.jpg.html]"
+        "[img]https://s8d9.turboimg.net/t1/123691283_imx_api.jpg[/img][/url]",
+    )
 
 
 @pytest.mark.unit

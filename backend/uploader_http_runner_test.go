@@ -405,6 +405,79 @@ func TestExecuteHttpUploadResolvesTurboResultPageThumbnail(t *testing.T) {
 	}
 }
 
+func TestExecuteHttpUploadResolvesTurboResultPageSanitizedFilename(t *testing.T) {
+	tmpDir := t.TempDir()
+	imagePath := tmpDir + "/imx api.jpg"
+	if err := createTestImage(imagePath); err != nil {
+		t.Fatalf("Failed to create test image: %v", err)
+	}
+
+	var baseURL string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/upload":
+			if err := r.ParseMultipartForm(10 << 20); err != nil {
+				t.Fatalf("ParseMultipartForm failed: %v", err)
+			}
+			if _, _, err := r.FormFile("qqfile"); err != nil {
+				t.Fatalf("qqfile missing: %v", err)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"success":true,"newUrl":"` + baseURL + `/result"}`))
+		case "/result":
+			_, _ = w.Write([]byte(`<input id="imgCodeGG" value="https://www.turboimagehost.com/album/395178/miscellaneous">
+			<textarea id="imgCodeURF">
+				[URL=https://www.turboimagehost.com/p/123691283/imx_api.jpg.html][IMG]https://s8d9.turboimg.net/t1/123691283_imx_api.jpg[/IMG][/URL]
+			</textarea>`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	baseURL = server.URL
+
+	job := &JobRequest{
+		Action:  "http_upload",
+		Service: "turboimagehost",
+		Files:   []string{imagePath},
+		Config:  map[string]string{},
+		Creds:   map[string]string{},
+		HttpSpec: &HttpRequestSpec{
+			URL:    baseURL + "/upload",
+			Method: "POST",
+			MultipartFields: map[string]MultipartField{
+				"qqfile": {Type: "file", Value: imagePath},
+			},
+			ResponseParser: ResponseParserSpec{
+				Type:         "json",
+				StatusPath:   "success",
+				SuccessValue: "true",
+				URLPath:      "newUrl",
+			},
+		},
+		ResolveSpec: &core.BatchResolveSpec{
+			ResultURL:        "{url}",
+			LinkExtractor:    `(?is)\[url=(?P<image_url>https?://[^\]]+?/p/[0-9]+/(?P<filename>[^/\]]+?)\.html)\]\s*\[img\](?P<thumb_url>https?://[^\]]+?)\[/img\]\s*\[/url\]`,
+			GalleryExtractor: "input#imgCodeGG",
+			FileMatchMode:    "filename",
+		},
+	}
+
+	result, err := core.ExecuteHttpUploadWithData(context.Background(), server.Client(), imagePath, job)
+	if err != nil {
+		t.Fatalf("ExecuteHttpUpload failed: %v", err)
+	}
+	if result.URL != "https://www.turboimagehost.com/p/123691283/imx_api.jpg.html" {
+		t.Fatalf("url = %q", result.URL)
+	}
+	if result.Thumb != "https://s8d9.turboimg.net/t1/123691283_imx_api.jpg" {
+		t.Fatalf("thumb = %q", result.Thumb)
+	}
+	if result.Data["gallery_url"] != "https://www.turboimagehost.com/album/395178/miscellaneous" {
+		t.Fatalf("gallery_url = %q", result.Data["gallery_url"])
+	}
+}
+
 func TestGetJSONValueSupportsArrayIndexes(t *testing.T) {
 	data := map[string]interface{}{
 		"files": []interface{}{

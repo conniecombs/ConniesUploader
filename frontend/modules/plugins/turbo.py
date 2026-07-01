@@ -278,9 +278,9 @@ class TurboPlugin(ImageHostPlugin):
                 "result_url": "{url}",
                 "poll_delays_ms": [500, 1000, 2000, 3000, 5000, 5000],
                 "link_extractor": (
-                    r"(?is)\[url=(?P<image_url>https?://[^\]\s]+/p/[0-9]+/"
-                    r"(?P<filename>[^/\]\s]+)\.html)\]\s*"
-                    r"\[img\](?P<thumb_url>https?://[^\]\s]+)\[/img\]\s*\[/url\]"
+                    r"(?is)\[url=(?P<image_url>https?://[^\]]+?/p/[0-9]+/"
+                    r"(?P<filename>[^/\]]+?)\.html)\]\s*"
+                    r"\[img\](?P<thumb_url>https?://[^\]]+?)\[/img\]\s*\[/url\]"
                 ),
                 "gallery_extractor": "input#imgCodeGG",
                 "file_match_mode": "filename",

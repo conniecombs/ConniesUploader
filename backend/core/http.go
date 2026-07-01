@@ -1313,15 +1313,16 @@ func batchFileMatches(matchName, expected, urlStr, mode string) bool {
 	if expectedLower == "" {
 		return false
 	}
+	expectedComparable := comparableBatchFileName(expectedLower)
 
 	switch mode {
 	case "first", "single":
 		return true
 	case "contains":
-		if matchName != "" && strings.Contains(normalizeBatchFileName(matchName), expectedLower) {
+		if matchName != "" && batchFileNameContains(matchName, expectedLower, expectedComparable) {
 			return true
 		}
-		if urlStr != "" && strings.Contains(normalizeBatchFileName(urlStr), expectedLower) {
+		if urlStr != "" && batchFileNameContains(urlStr, expectedLower, expectedComparable) {
 			return true
 		}
 		return false
@@ -1331,12 +1332,20 @@ func batchFileMatches(matchName, expected, urlStr, mode string) bool {
 			if normalized == expectedLower || strings.HasSuffix(normalized, "_"+expectedLower) || strings.Contains(normalized, expectedLower) {
 				return true
 			}
+			comparable := comparableBatchFileName(normalized)
+			if comparable != "" && expectedComparable != "" && (comparable == expectedComparable || strings.Contains(comparable, expectedComparable)) {
+				return true
+			}
 		}
 		if urlStr != "" {
 			parsedURL, err := url.Parse(urlStr)
 			if err == nil {
 				baseName := normalizeBatchFileName(filepath.Base(parsedURL.Path))
 				if baseName == expectedLower || strings.Contains(baseName, expectedLower) {
+					return true
+				}
+				comparable := comparableBatchFileName(baseName)
+				if comparable != "" && expectedComparable != "" && (comparable == expectedComparable || strings.Contains(comparable, expectedComparable)) {
 					return true
 				}
 			}
@@ -1358,4 +1367,22 @@ func normalizeBatchFileName(value string) string {
 	}
 	cleaned = strings.TrimSuffix(cleaned, ".html")
 	return strings.TrimSpace(cleaned)
+}
+
+func batchFileNameContains(value, expectedLower, expectedComparable string) bool {
+	normalized := normalizeBatchFileName(value)
+	if strings.Contains(normalized, expectedLower) {
+		return true
+	}
+	comparable := comparableBatchFileName(normalized)
+	return comparable != "" && expectedComparable != "" && strings.Contains(comparable, expectedComparable)
+}
+
+func comparableBatchFileName(value string) string {
+	normalized := normalizeBatchFileName(value)
+	if normalized == "" {
+		return ""
+	}
+	normalized = strings.NewReplacer("_", " ", "-", " ").Replace(normalized)
+	return strings.Join(strings.Fields(normalized), " ")
 }
