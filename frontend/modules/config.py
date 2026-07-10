@@ -11,6 +11,43 @@ import os
 APP_VERSION = "BETA"
 USER_AGENT = f"ConniesUploader/{APP_VERSION}"
 
+# --- Runtime mode and paths ---
+APP_MODE = (os.environ.get("CONNIESUPLOADER_MODE") or "desktop").strip().lower() or "desktop"
+
+
+def _env_path(name: str, default: str, *, absolute_when_set: bool = True) -> str:
+    value = os.environ.get(name)
+    if value is None or not value.strip():
+        return default
+    path = os.path.expanduser(value.strip())
+    if absolute_when_set:
+        return os.path.abspath(path)
+    return path
+
+
+def _env_int(name: str, default: int, *, minimum: int = 1, maximum: int = 65535) -> int:
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        logger.warning(f"Invalid integer for {name}: {raw!r}; using {default}")
+        return default
+    return max(minimum, min(value, maximum))
+
+
+USER_DATA_DIR = _env_path(
+    "CONNIESUPLOADER_DATA_DIR",
+    os.path.join(os.path.expanduser("~"), ".conniesuploader"),
+)
+INPUT_DIR = _env_path("CONNIESUPLOADER_INPUT_DIR", "/input")
+OUTPUT_DIR = _env_path("CONNIESUPLOADER_OUTPUT_DIR", "Output")
+WEB_UPLOAD_DIR = os.path.join(USER_DATA_DIR, "uploads")
+HISTORY_DIR = os.path.join(USER_DATA_DIR, "history")
+WEB_HOST = os.environ.get("CONNIESUPLOADER_HOST", "0.0.0.0")
+WEB_PORT = _env_int("CONNIESUPLOADER_PORT", 8080)
+
 # --- Constants ---
 IMX_URL = "https://api.imx.to/v1/upload.php"
 PIX_URL = "https://api.pixhost.to/images"
@@ -40,11 +77,14 @@ IMAGEBAM_GALLERIES_URL = "https://www.imagebam.com/my/galleries"
 SUPPORTED_EXTENSIONS = (".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp")
 # Alias for backward compatibility - centralized extension validation
 VALID_EXTENSIONS = SUPPORTED_EXTENSIONS
-USER_DATA_DIR = os.path.join(os.path.expanduser("~"), ".conniesuploader")
 SETTINGS_FILE = os.path.join(USER_DATA_DIR, "user_settings.json")
 LEGACY_SETTINGS_FILE = os.path.abspath("user_settings.json")
 ACTIVITY_LOG_FILE = os.path.join(USER_DATA_DIR, "activity.log")
-CRASH_LOG_FILE = "crash_log.log"
+CRASH_LOG_FILE = _env_path(
+    "CONNIESUPLOADER_CRASH_LOG_FILE",
+    os.path.join(USER_DATA_DIR, "crash_log.log") if APP_MODE == "web" else "crash_log.log",
+    absolute_when_set=False,
+)
 UI_THUMB_SIZE = (40, 40)
 
 # Upload Configuration

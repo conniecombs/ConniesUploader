@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added a Web Docker Migration Plan for the approved FastAPI webGUI direction, Docker runtime contract, first feature slice, and five-step gated implementation path.
+- Added the initial FastAPI web runtime shell, Dockerfile, Compose example, and container path overrides for `/data`, `/input`, and `/output`.
+- Added UI-neutral upload batch/session models and shared batch output generation for the web runtime migration.
+- Added the first FastAPI web API routes for services, settings, JSON-backed credentials, mounted-file browsing, browser upload staging, upload sessions, progress events, history, and output downloads.
+- Added the first lightweight Docker webGUI for service settings, credentials, mounted and browser-staged files, queue controls, progress streaming, generated output, and history.
+- Added the Web Docker Quickstart for Compose, `docker run`, volume mounts, runtime variables, and local-network security notes.
 - Added the `BETA` development build label and shortened the runtime window title to `Connie's Uploader BETA`.
 - Added `Tools > Scheduled Posts` for persisted ViperGirls scheduled post records.
 - Added `View > Activity Terminal`, backed by `~/.conniesuploader/activity.log`, for tailing upload activity during longer sessions.

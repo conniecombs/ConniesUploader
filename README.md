@@ -175,6 +175,24 @@ Makefile:
 make build
 ```
 
+### Docker Web Runtime
+
+The FastAPI web runtime provides a lightweight browser GUI for the Docker path, including service settings, JSON-backed credentials, mounted `/input` files, browser upload staging, queue/progress/results, generated output, and history.
+
+```bash
+docker compose up --build
+```
+
+Open `http://localhost:8080/`.
+
+Default container paths:
+
+- `/data` for settings, credentials, uploads, logs, and history.
+- `/input` for mounted source files.
+- `/output` for generated output files.
+
+See [Web Docker Quickstart](docs/guides/WEB_DOCKER_QUICKSTART.md) for volume examples, runtime variables, and security notes.
+
 Useful build-script options:
 
 - `--clean` cleans build artifacts before building.
@@ -319,6 +337,8 @@ python scripts/diagnostics/check_sidecar_location.py
 - [Plugin Creation Guide](docs/guides/PLUGIN_CREATION_GUIDE.md)
 - [Repository Layout](docs/guides/REPOSITORY_LAYOUT.md)
 - [Schema Plugin Guide](docs/guides/SCHEMA_PLUGIN_GUIDE.md)
+- [Web Docker Quickstart](docs/guides/WEB_DOCKER_QUICKSTART.md)
+- [Web Docker Migration Plan](docs/guides/WEB_DOCKER_MIGRATION_PLAN.md)
 - [Release Process](docs/releases/RELEASE_PROCESS.md)
 - [Documentation Index](docs/README.md)
 

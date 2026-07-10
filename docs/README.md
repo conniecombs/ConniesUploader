@@ -11,6 +11,8 @@ Complete guide to the current documentation for Connie's Uploader.
 | Fix source/build/package problems | [Build Troubleshooting](guides/BUILD_TROUBLESHOOTING.md) |
 | Understand the Python/Go architecture | [Architecture](ARCHITECTURE.md) |
 | Understand the Python/Go transport boundary | [Transport Contract](TRANSPORT_CONTRACT.md) |
+| Run the Docker webGUI | [Web Docker Quickstart](guides/WEB_DOCKER_QUICKSTART.md) |
+| Follow the Docker/webGUI migration plan | [Web Docker Migration Plan](guides/WEB_DOCKER_MIGRATION_PLAN.md) |
 | Contribute code/docs | [Contributing](CONTRIBUTING.md) |
 | Add or maintain upload plugins | [Plugin Creation Guide](guides/PLUGIN_CREATION_GUIDE.md) |
 | Define plugin settings UI | [Schema Plugin Guide](guides/SCHEMA_PLUGIN_GUIDE.md) |
@@ -25,6 +27,8 @@ Complete guide to the current documentation for Connie's Uploader.
 ## Current Developer Docs
 
 - [Architecture](ARCHITECTURE.md) describes the current Python GUI plus Go sidecar architecture, active plugins, data storage, security model, test strategy, and known hardening opportunities.
+- [Web Docker Quickstart](guides/WEB_DOCKER_QUICKSTART.md) explains how to run the FastAPI webGUI with Docker Compose or `docker run`, including volumes, environment variables, and security notes.
+- [Web Docker Migration Plan](guides/WEB_DOCKER_MIGRATION_PLAN.md) defines the approved FastAPI webGUI and Docker runtime contract.
 - [Contributing](CONTRIBUTING.md) describes setup, repository layout, PR workflow, code standards, plugin workflow, testing, building, and documentation expectations.
 - [Repository Layout](guides/REPOSITORY_LAYOUT.md) explains what belongs in source control and what is generated/user data.
 - [Plugin Creation Guide](guides/PLUGIN_CREATION_GUIDE.md) explains plugin discovery, metadata, request specs, pre-requests, dynamic extraction, galleries, covers, tests, and packaging updates.
@@ -91,7 +95,9 @@ docs/
 │   ├── PLUGIN_CREATION_GUIDE.md
 │   ├── REPOSITORY_LAYOUT.md
 │   ├── SCHEMA_PLUGIN_GUIDE.md
-│   └── USER_TUTORIAL.md
+│   ├── USER_TUTORIAL.md
+│   ├── WEB_DOCKER_QUICKSTART.md
+│   └── WEB_DOCKER_MIGRATION_PLAN.md
 ├── releases/
 │   ├── RELEASE_NOTES.md
 │   ├── RELEASE_NOTES_v2.0.0.md
@@ -114,6 +120,11 @@ docs/
 ```
 
 ## Recent Documentation Updates
+
+### 2026-07-10
+
+- Added the Web Docker Migration Plan for the approved FastAPI webGUI direction, Docker runtime paths, first feature slice, and five-step gated implementation plan.
+- Added the Web Docker Quickstart for running the Docker webGUI, mounting `/data`, `/input`, and `/output`, and local-network security notes.
 
 ### 2026-06-30
 
@@ -147,6 +158,6 @@ docs/
 - Update plugin docs when plugin discovery, schema fields, request specs, or packaging hidden imports change.
 - Keep historical docs clearly separated from current guidance.
 
-- **Last Updated:** 2026-06-30
+- **Last Updated:** 2026-07-10
 - **Documentation Version:** 2.4
 - **Project Version:** BETA development build; latest tagged release is v2.0.0

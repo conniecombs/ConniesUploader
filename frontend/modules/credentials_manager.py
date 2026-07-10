@@ -8,6 +8,7 @@ import customtkinter as ctk
 from tkinter import messagebox
 from typing import Dict, Callable, Optional
 from modules import config
+from modules.credential_schema import SERVICE_CONFIGS as SHARED_SERVICE_CONFIGS
 
 
 class CredentialsManager:
@@ -142,6 +143,7 @@ class CredentialsManager:
             ],
         },
     }
+    SERVICE_CONFIGS = SHARED_SERVICE_CONFIGS
 
     @classmethod
     def load_all_credentials(cls) -> Dict[str, str]:

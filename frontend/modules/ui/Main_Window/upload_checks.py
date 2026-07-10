@@ -516,14 +516,7 @@ class UploadChecksMixin:
     def _preflight_check_output_locations(self, issues: List[str]) -> None:
         for folder, label in [
             (getattr(self, "output_dir", "Output"), "Output folder"),
-            (
-                getattr(
-                    self,
-                    "central_history_path",
-                    os.path.join(os.path.expanduser("~"), ".conniesuploader", "history"),
-                ),
-                "History folder",
-            ),
+            (getattr(self, "central_history_path", config.HISTORY_DIR), "History folder"),
         ]:
             try:
                 self._assert_folder_writable(folder)

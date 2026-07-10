@@ -13,9 +13,10 @@ from typing import Any, Dict, Iterable, List, Optional
 
 from loguru import logger
 
+from . import config
 from .gallery_service import GalleryRecord, normalize_gallery_record
 
-_USER_DATA_DIR = os.path.join(os.path.expanduser("~"), ".conniesuploader")
+_USER_DATA_DIR = config.USER_DATA_DIR
 DEFAULT_GALLERY_CACHE_FILE = os.path.join(_USER_DATA_DIR, "gallery_cache.json")
 # Keep gallery cache entries until the user explicitly removes/deletes them.
 # Hosts like IMX can have far more than 500 galleries, and trimming breaks

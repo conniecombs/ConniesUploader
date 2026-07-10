@@ -126,7 +126,7 @@ class UploaderApp(
         self.current_output_files = []
         self.current_completion_summary = None
         self.pix_galleries_to_finalize = []
-        self.output_dir = "Output"
+        self.output_dir = config.OUTPUT_DIR
         self._template_recovery_notice_shown = False
 
     def _init_state(self):
@@ -167,9 +167,7 @@ class UploaderApp(
         self.rename_worker = None
 
         # Central history directory
-        self.central_history_path = os.path.join(
-            os.path.expanduser("~"), ".conniesuploader", "history"
-        )
+        self.central_history_path = config.HISTORY_DIR
         if not os.path.exists(self.central_history_path):
             os.makedirs(self.central_history_path)
 

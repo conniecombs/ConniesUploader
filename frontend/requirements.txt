@@ -16,6 +16,11 @@ beautifulsoup4==4.12.3
 # HTTP Requests
 requests==2.33.1
 
+# Web Runtime
+fastapi==0.139.0
+uvicorn[standard]==0.51.0
+python-multipart==0.0.32
+
 # Logging
 loguru==0.7.2
 
@@ -34,6 +39,7 @@ jsonschema==4.26.0
 # Testing and Code Quality
 pytest==9.0.3
 pytest-cov==7.0.0
+httpx==0.28.1
 flake8==7.1.1
 black==26.3.1
 pip-audit==2.10.0

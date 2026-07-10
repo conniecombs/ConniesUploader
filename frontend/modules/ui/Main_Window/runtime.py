@@ -51,6 +51,7 @@ from .common import (  # noqa: F401
     tk,
     viper_api,
 )
+from modules.upload_output import generate_group_output as generate_shared_group_output
 
 
 class RuntimeMixin:
@@ -592,109 +593,50 @@ class RuntimeMixin:
         self.add_activity("Stopping upload after current work finishes.", "warning")
 
     def generate_group_output(self, group):
-        res_map = {r[0]: (r[1], r[2]) for r in self.results}
-        group_results = []
-        svc = self.settings.get("service", "")
+        try:
+            output = generate_shared_group_output(
+                group,
+                self.results,
+                self.settings,
+                self.template_mgr,
+                output_dir=self.__dict__.get("output_dir", config.OUTPUT_DIR),
+                history_dir=self.__dict__.get("central_history_path", config.HISTORY_DIR),
+                selected_gallery_by_service=self.__dict__.get("selected_gallery_by_service", {}),
+                saved_threads_data=self.__dict__.get("saved_threads_data", {}),
+            )
+        except Exception as e:
+            self.log(f"Error writing output: {e}")
+            self.add_activity(f"Error writing output: {e}", "error")
+            return
 
-        for fp in self._ordered_group_files_for_output(group):
-            if fp in res_map:
-                val = res_map[fp]
-                viewer_url = val[0]
-                thumb_url = val[1]
-                direct_url = viewer_url
-                if svc == "imx.to":
-                    if "/t/" in thumb_url:
-                        direct_url = thumb_url.replace("/t/", "/i/")
-                group_results.append((viewer_url, thumb_url, direct_url))
-
-        if not group_results:
+        if output is None:
             self.log(f"Warning: No successful uploads for '{group.title}'.")
             self.add_activity(f"No successful uploads for {group.title}.", "warning")
             return
 
-        gallery = self._gallery_for_group(group, svc, self.settings) or {}
-        gal_id = str(gallery.get("id") or "")
-        cover_url = group_results[0][1] if group_results else ""
-
-        # Get thumbnail size for BBCode formatting
-        thumb_size = "250"  # Default
-        if svc == "imx.to":
-            thumb_size = self.settings.get("imx_thumb", "180")
-        elif svc == "pixhost.to":
-            thumb_size = self.settings.get("pix_thumb", "200")
-        elif svc == "turboimagehost":
-            thumb_size = self.settings.get("turbo_thumb", "180")
-        elif svc == "vipr.im":
-            thumb_size = self.settings.get("vipr_thumb", "170x170")
-            if "x" in str(thumb_size):
-                thumb_size = str(thumb_size).split("x")[0]
-        elif svc == "imagebam.com":
-            thumb_size = self.settings.get("imagebam_thumb", "180")
-        elif svc == "imgur.com":
-            thumb_size = self.settings.get("imgur_thumb", self.settings.get("thumbnail_size", "m"))
-
-        gal_link = str(gallery.get("url") or "")
-
-        target_name = str(getattr(group, "selected_thread", "") or "").strip()
         try:
-            saved_threads = object.__getattribute__(self, "saved_threads_data")
-        except AttributeError:
-            saved_threads = {}
-        record = saved_threads.get(target_name, {}) if isinstance(saved_threads, dict) else {}
-        thread_id = self._thread_id_from_vipergirls_record(record)
-        batch_name = self._batch_display_name(group)
-        gallery_name = str(gallery.get("name") or batch_name)
-
-        ctx = {
-            "gallery_link": gal_link,
-            "gallery_name": gallery_name,
-            "gallery_id": gal_id,
-            "cover_url": cover_url,
-            "cover_count": len(self._cover_files_for_group(group)),
-            "thumb_size": thumb_size,
-            "batch_name": batch_name,
-            "image_count": len(group_results),
-            "service": svc,
-            "thread_name": target_name if target_name != "Do Not Post" else "",
-            "thread_id": thread_id,
-            "upload_date": datetime.now().strftime("%Y-%m-%d"),
-        }
-        text = self.template_mgr.apply(group.selected_template, ctx, group_results)
-
-        try:
-            from modules.file_handler import sanitize_filename
-
-            safe_title = sanitize_filename(group.title)
-            ts = datetime.now().strftime("%Y%m%d_%H%M")
-            out_dir = getattr(self, "output_dir", "Output")
-            os.makedirs(out_dir, exist_ok=True)
-            out_name = os.path.join(out_dir, f"{safe_title}_{ts}.txt")
-            with open(out_name, "w", encoding="utf-8") as f:
-                f.write(text)
-            self.current_output_files.append(out_name)
-            self.log(f"Saved: {out_name}")
-            self.add_activity(f"Saved output: {os.path.basename(out_name)}.", "success")
+            self.current_output_files.append(output.output_file)
+            self.log(f"Saved: {output.output_file}")
+            self.add_activity(
+                f"Saved output: {os.path.basename(output.output_file)}.", "success"
+            )
 
             # Queue for auto-posting if needed
             tgt_thread = group.selected_thread
             if tgt_thread and tgt_thread != "Do Not Post":
                 self.auto_poster.queue_post(
                     group.batch_index,
-                    text,
+                    output.text,
                     tgt_thread,
                     batch_name=self._batch_display_name(group),
                 )
                 message, level = self._vipergirls_queue_activity(group, tgt_thread)
                 self.add_activity(message, level)
 
-            central_name = os.path.join(self.central_history_path, f"{safe_title}_{ts}.txt")
-            with open(central_name, "w", encoding="utf-8") as f:
-                f.write(text)
-
-            self.lbl_eta.configure(text=f"Saved: {safe_title}_{ts}.txt")
+            self.lbl_eta.configure(text=f"Saved: {os.path.basename(output.output_file)}")
             self.btn_open.configure(state="normal")
             if self.var_auto_copy.get():
-                self.clipboard_buffer.append(text)
+                self.clipboard_buffer.append(output.text)
                 try:
                     pyperclip.copy("\n\n".join(self.clipboard_buffer))
                     self.add_activity("Copied output to clipboard.", "success")
@@ -702,23 +644,11 @@ class RuntimeMixin:
                     logger.warning(f"Could not copy to clipboard: {e}")
                     self.add_activity("Could not copy output to clipboard.", "warning")
 
-            need_links_txt = bool(self.settings.get("save_links", False))
-            if svc == "imx.to" and self.var_imx_links.get():
-                need_links_txt = True
-            elif svc == "pixhost.to" and self.var_pix_links.get():
-                need_links_txt = True
-            elif svc == "turboimagehost" and self.var_turbo_links.get():
-                need_links_txt = True
-            elif svc == "vipr.im" and self.var_vipr_links.get():
-                need_links_txt = True
-
-            if need_links_txt:
-                links_name = os.path.join(out_dir, f"{safe_title}_{ts}_links.txt")
-                raw_links = "\n".join([r[0] for r in group_results])
-                with open(links_name, "w", encoding="utf-8") as f:
-                    f.write(raw_links)
-                self.log(f"Saved Links: {links_name}")
-                self.add_activity(f"Saved links file: {os.path.basename(links_name)}.", "success")
+            if output.links_file:
+                self.log(f"Saved Links: {output.links_file}")
+                self.add_activity(
+                    f"Saved links file: {os.path.basename(output.links_file)}.", "success"
+                )
 
         except Exception as e:
             self.log(f"Error writing output: {e}")

@@ -21,10 +21,11 @@ import pyperclip
 from loguru import logger
 from tkinter import colorchooser, filedialog, messagebox
 
+from . import config
 from .widgets import MouseWheelComboBox
 
 
-_USER_DATA_DIR = os.path.join(os.path.expanduser("~"), ".conniesuploader")
+_USER_DATA_DIR = config.USER_DATA_DIR
 DEFAULT_TEMPLATE_FILE = os.path.join(_USER_DATA_DIR, "templates.json")
 LEGACY_TEMPLATE_FILE = os.path.abspath("user_templates.json")
 TEMPLATE_EXPORT_VERSION = 1

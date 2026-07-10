@@ -9,7 +9,6 @@ import os
 import re
 import shutil
 import threading
-import time
 import webbrowser
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urljoin, urlparse
@@ -21,12 +20,13 @@ from bs4 import BeautifulSoup
 from tkinter import filedialog, messagebox
 from loguru import logger
 
+from modules import config
 from modules.credentials_manager import CredentialsManager
 from modules.sidecar import SidecarBridge
 from modules.transport import build_transport_spec, execute_transport_request
 
 # Store threads file in user's home directory.
-_USER_DATA_DIR = os.path.join(os.path.expanduser("~"), ".conniesuploader")
+_USER_DATA_DIR = config.USER_DATA_DIR
 THREADS_FILE = os.path.join(_USER_DATA_DIR, "saved_threads.json")
 POSTING_HISTORY_FILE = os.path.join(_USER_DATA_DIR, "posting_history.json")
 SCHEDULED_POSTS_FILE = os.path.join(_USER_DATA_DIR, "scheduled_posts.json")

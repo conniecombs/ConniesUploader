@@ -227,7 +227,7 @@ class UploadController:
                 c for c in group_title if c.isalnum() or c in (" ", "_", "-")
             ).strip()
             ts = datetime.now().strftime("%Y%m%d_%H%M")
-            out_dir = "Output"
+            out_dir = config.OUTPUT_DIR
             os.makedirs(out_dir, exist_ok=True)
 
             out_name = os.path.join(out_dir, f"{safe_title}_{ts}.txt")
@@ -237,7 +237,7 @@ class UploadController:
             logger.info(f"Saved: {out_name}")
 
             # Central History
-            history_path = os.path.join(os.path.expanduser("~"), ".conniesuploader", "history")
+            history_path = config.HISTORY_DIR
             os.makedirs(history_path, exist_ok=True)
             with open(
                 os.path.join(history_path, f"{safe_title}_{ts}.txt"), "w", encoding="utf-8"

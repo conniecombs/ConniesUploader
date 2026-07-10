@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Connie's Uploader Web</title>
+    <link rel="stylesheet" href="/static/app.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div class="brand-block">
+          <p class="eyebrow">Web Runtime</p>
+          <h1>Connie's Uploader</h1>
+        </div>
+        <dl class="runtime-strip" id="runtime-status">
+          <div>
+            <dt>Status</dt>
+            <dd id="status-value">Checking</dd>
+          </div>
+          <div>
+            <dt>Mode</dt>
+            <dd id="mode-value">-</dd>
+          </div>
+          <div>
+            <dt>Input</dt>
+            <dd id="input-value">-</dd>
+          </div>
+          <div>
+            <dt>Output</dt>
+            <dd id="output-value">-</dd>
+          </div>
+        </dl>
+      </header>
+
+      <div class="message-line" id="message-line" role="status" aria-live="polite"></div>
+
+      <section class="workspace-grid">
+        <div class="stack">
+          <section class="panel" aria-labelledby="service-heading">
+            <div class="panel-heading">
+              <h2 id="service-heading">Service</h2>
+              <button class="secondary-button" id="save-settings-button" type="button">Save</button>
+            </div>
+            <div class="form-grid compact">
+              <label>
+                Host
+                <select id="service-select"></select>
+              </label>
+              <label>
+                Workers
+                <input id="worker-count" type="number" min="1" max="16" step="1" />
+              </label>
+              <label>
+                Threads
+                <input id="thread-limit" type="number" min="1" max="16" step="1" />
+              </label>
+              <label>
+                Template
+                <select id="template-select">
+                  <option value="BBCode">BBCode</option>
+                  <option value="Markdown">Markdown</option>
+                  <option value="HTML">HTML</option>
+                  <option value="Basic List">Basic List</option>
+                  <option value="Cover + Gallery ID">Cover + Gallery ID</option>
+                </select>
+              </label>
+            </div>
+            <div class="service-options" id="service-options"></div>
+          </section>
+
+          <section class="panel" aria-labelledby="credentials-heading">
+            <div class="panel-heading">
+              <h2 id="credentials-heading">Credentials</h2>
+              <button class="secondary-button" id="save-credentials-button" type="button">Save</button>
+            </div>
+            <div class="credential-grid" id="credential-fields"></div>
+          </section>
+
+          <section class="panel" aria-labelledby="files-heading">
+            <div class="panel-heading">
+              <h2 id="files-heading">Files</h2>
+              <button class="secondary-button" id="refresh-files-button" type="button">Refresh</button>
+            </div>
+            <div class="path-row">
+              <button class="ghost-button" id="up-directory-button" type="button">Up</button>
+              <span id="input-path-label">/input</span>
+            </div>
+            <div class="file-list" id="input-file-list" aria-label="Mounted input files"></div>
+            <div class="upload-row">
+              <input id="browser-file-input" type="file" multiple accept="image/*" />
+              <button class="secondary-button" id="stage-upload-button" type="button">Stage</button>
+            </div>
+          </section>
+        </div>
+
+        <div class="stack">
+          <section class="panel queue-panel" aria-labelledby="queue-heading">
+            <div class="panel-heading">
+              <h2 id="queue-heading">Queue</h2>
+              <div class="button-row">
+                <button class="ghost-button" id="clear-queue-button" type="button">Clear</button>
+                <button class="primary-button" id="start-upload-button" type="button">Start</button>
+                <button class="danger-button" id="cancel-upload-button" type="button" disabled>Cancel</button>
+              </div>
+            </div>
+            <div class="form-grid batch-grid">
+              <label>
+                Batch
+                <input id="batch-title" type="text" value="Web Batch" />
+              </label>
+              <label>
+                Gallery ID
+                <input id="gallery-id" type="text" />
+              </label>
+            </div>
+            <div class="queue-list" id="queue-list" aria-label="Selected upload queue"></div>
+          </section>
+
+          <section class="panel" aria-labelledby="progress-heading">
+            <div class="panel-heading">
+              <h2 id="progress-heading">Progress</h2>
+              <span class="state-pill" id="upload-state">Idle</span>
+            </div>
+            <div class="progress-track" aria-label="Upload progress">
+              <span id="progress-bar"></span>
+            </div>
+            <dl class="metrics-row">
+              <div>
+                <dt>Files</dt>
+                <dd id="progress-count">0 / 0</dd>
+              </div>
+              <div>
+                <dt>Session</dt>
+                <dd id="session-id">-</dd>
+              </div>
+            </dl>
+            <div class="event-log" id="event-log" aria-label="Upload event log"></div>
+          </section>
+
+          <section class="panel" aria-labelledby="results-heading">
+            <div class="panel-heading">
+              <h2 id="results-heading">Results</h2>
+              <div class="button-row">
+                <button class="secondary-button" id="copy-output-button" type="button">Copy</button>
+                <button class="secondary-button" id="refresh-history-button" type="button">History</button>
+              </div>
+            </div>
+            <div class="result-links" id="result-links"></div>
+            <textarea id="generated-output" readonly spellcheck="false"></textarea>
+            <div class="history-list" id="history-list" aria-label="Generated output history"></div>
+          </section>
+        </div>
+      </section>
+    </main>
+    <script src="/static/app.js"></script>
+  </body>
+</html>
