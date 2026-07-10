@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 
 from modules import config
 from web.api import register_api_routes
+from web.security import install_auth_middleware, security_status
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -33,9 +34,11 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="Connie's Uploader Web",
         version=config.APP_VERSION,
-        docs_url="/api/docs",
+        docs_url="/api/docs" if config.WEB_DOCS_ENABLED else None,
         redoc_url=None,
+        openapi_url="/api/openapi.json" if config.WEB_DOCS_ENABLED else None,
     )
+    install_auth_middleware(app)
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     register_api_routes(app)
 
@@ -51,6 +54,7 @@ def create_app() -> FastAPI:
             "version": config.APP_VERSION,
             "mode": config.APP_MODE,
             "paths": runtime_paths(),
+            "security": security_status(),
         }
 
     return app

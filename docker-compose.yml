@@ -4,7 +4,7 @@ services:
       context: .
     image: conniesuploader-web:local
     ports:
-      - "8080:8080"
+      - "${CONNIESUPLOADER_BIND_ADDR:-127.0.0.1}:${CONNIESUPLOADER_WEB_PORT:-8080}:8080"
     environment:
       CONNIESUPLOADER_MODE: web
       CONNIESUPLOADER_DATA_DIR: /data
@@ -12,10 +12,34 @@ services:
       CONNIESUPLOADER_OUTPUT_DIR: /output
       CONNIESUPLOADER_HOST: 0.0.0.0
       CONNIESUPLOADER_PORT: "8080"
+      CONNIESUPLOADER_WEB_AUTH_REQUIRED: "true"
+      CONNIESUPLOADER_WEB_DOCS_ENABLED: "false"
+      CONNIESUPLOADER_WEB_USERNAME: ${CONNIESUPLOADER_WEB_USERNAME:-admin}
+      CONNIESUPLOADER_WEB_PASSWORD: ${CONNIESUPLOADER_WEB_PASSWORD:?Set CONNIESUPLOADER_WEB_PASSWORD before starting the web container}
     volumes:
       - conniesuploader-data:/data
       - ./Input:/input:ro
       - ./Output:/output
+    user: "1000:1000"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/api/health', timeout=3).read()",
+        ]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
     restart: unless-stopped
 
 volumes:

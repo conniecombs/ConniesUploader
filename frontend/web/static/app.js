@@ -682,10 +682,13 @@ function renderUpload() {
   statePill.textContent = uploadState;
   statePill.className = `state-pill ${uploadState}`;
   const completed = upload?.completed_files || 0;
+  const failed = upload?.failed_files || 0;
   const total = upload?.total_files || 0;
   const percent = total ? Math.round((completed / total) * 100) : 0;
   byId("progress-bar").style.width = `${percent}%`;
-  byId("progress-count").textContent = `${completed} / ${total}`;
+  byId("progress-count").textContent = failed
+    ? `${completed} / ${total} (${failed} failed)`
+    : `${completed} / ${total}`;
   byId("session-id").textContent = upload?.id || "-";
   byId("cancel-upload-button").disabled = !upload || isTerminal(upload.state);
   byId("start-upload-button").disabled = upload?.state === "running";
@@ -758,14 +761,23 @@ function renderResults(upload) {
     title.textContent = basename(result.file_path);
     const meta = document.createElement("span");
     meta.className = "row-meta";
-    meta.textContent = result.viewer_url || "No viewer URL";
+    meta.textContent = result.success === false
+      ? result.error || "Upload failed"
+      : result.viewer_url || "No viewer URL";
     main.append(title, meta);
-    const link = document.createElement("a");
-    link.href = result.viewer_url || "#";
-    link.target = "_blank";
-    link.rel = "noreferrer";
-    link.textContent = "Open";
-    row.append(main, link);
+    if (result.success === false) {
+      const status = document.createElement("span");
+      status.className = "result-status failed";
+      status.textContent = "Failed";
+      row.append(main, status);
+    } else {
+      const link = document.createElement("a");
+      link.href = result.viewer_url || "#";
+      link.target = "_blank";
+      link.rel = "noreferrer";
+      link.textContent = "Open";
+      row.append(main, link);
+    }
     linkList.append(row);
   }
   byId("generated-output").value = outputs.map((output) => output.text || "").join("\n\n");

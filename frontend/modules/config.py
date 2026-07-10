@@ -37,6 +37,30 @@ def _env_int(name: str, default: int, *, minimum: int = 1, maximum: int = 65535)
     return max(minimum, min(value, maximum))
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    value = raw.strip().lower()
+    if value in {"1", "true", "yes", "on"}:
+        return True
+    if value in {"0", "false", "no", "off"}:
+        return False
+    logger.warning(f"Invalid boolean for {name}: {raw!r}; using {default}")
+    return default
+
+
+def _env_secret(name: str) -> str:
+    file_value = os.environ.get(f"{name}_FILE")
+    if file_value and file_value.strip():
+        try:
+            with open(os.path.expanduser(file_value.strip()), "r", encoding="utf-8") as handle:
+                return handle.read().strip()
+        except OSError as exc:
+            logger.warning(f"Could not read secret file for {name}: {exc}")
+    return (os.environ.get(name) or "").strip()
+
+
 USER_DATA_DIR = _env_path(
     "CONNIESUPLOADER_DATA_DIR",
     os.path.join(os.path.expanduser("~"), ".conniesuploader"),
@@ -47,6 +71,35 @@ WEB_UPLOAD_DIR = os.path.join(USER_DATA_DIR, "uploads")
 HISTORY_DIR = os.path.join(USER_DATA_DIR, "history")
 WEB_HOST = os.environ.get("CONNIESUPLOADER_HOST", "0.0.0.0")
 WEB_PORT = _env_int("CONNIESUPLOADER_PORT", 8080)
+WEB_AUTH_REQUIRED = _env_bool("CONNIESUPLOADER_WEB_AUTH_REQUIRED", APP_MODE == "web")
+WEB_USERNAME = os.environ.get("CONNIESUPLOADER_WEB_USERNAME", "admin").strip() or "admin"
+WEB_PASSWORD = _env_secret("CONNIESUPLOADER_WEB_PASSWORD")
+WEB_TOKEN = _env_secret("CONNIESUPLOADER_WEB_TOKEN")
+WEB_DOCS_ENABLED = _env_bool("CONNIESUPLOADER_WEB_DOCS_ENABLED", APP_MODE != "web")
+WEB_SESSION_RETENTION_SECONDS = _env_int(
+    "CONNIESUPLOADER_WEB_SESSION_RETENTION_SECONDS",
+    24 * 60 * 60,
+    minimum=60,
+    maximum=30 * 24 * 60 * 60,
+)
+WEB_UPLOAD_RETENTION_SECONDS = _env_int(
+    "CONNIESUPLOADER_WEB_UPLOAD_RETENTION_SECONDS",
+    72 * 60 * 60,
+    minimum=60,
+    maximum=30 * 24 * 60 * 60,
+)
+WEB_UPLOAD_MAX_FILES = _env_int(
+    "CONNIESUPLOADER_WEB_UPLOAD_MAX_FILES",
+    500,
+    minimum=1,
+    maximum=100000,
+)
+WEB_UPLOAD_MAX_BYTES = _env_int(
+    "CONNIESUPLOADER_WEB_UPLOAD_MAX_BYTES",
+    2 * 1024 * 1024 * 1024,
+    minimum=1,
+    maximum=1024 * 1024 * 1024 * 1024,
+)
 
 # --- Constants ---
 IMX_URL = "https://api.imx.to/v1/upload.php"

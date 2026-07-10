@@ -148,6 +148,40 @@ def _file_record(path: Path, root: Path) -> Dict[str, Any]:
     }
 
 
+def _staged_upload_files(upload_dir: Path) -> List[Path]:
+    if not upload_dir.exists():
+        return []
+    return [path for path in upload_dir.iterdir() if path.is_file() or path.is_symlink()]
+
+
+def _cleanup_staged_uploads(upload_dir: Path) -> None:
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    cutoff = datetime.now(timezone.utc).timestamp() - config.WEB_UPLOAD_RETENTION_SECONDS
+    for path in _staged_upload_files(upload_dir):
+        try:
+            stat = path.lstat()
+        except OSError:
+            continue
+        if path.is_symlink() or stat.st_mtime < cutoff:
+            try:
+                path.unlink()
+            except OSError:
+                pass
+
+
+def _staged_upload_usage(upload_dir: Path) -> tuple[int, int]:
+    count = 0
+    total = 0
+    for path in _staged_upload_files(upload_dir):
+        try:
+            stat = path.lstat()
+        except OSError:
+            continue
+        count += 1
+        total += stat.st_size
+    return count, total
+
+
 @router.get("/services")
 def services(request: Request) -> Dict[str, Any]:
     manager = _plugin_manager(request)
@@ -215,9 +249,12 @@ def list_input_files(path: str = "") -> Dict[str, Any]:
 @router.post("/files/upload")
 async def upload_files(files: List[UploadFile] = File(...)) -> Dict[str, Any]:
     upload_dir = Path(config.WEB_UPLOAD_DIR)
-    upload_dir.mkdir(parents=True, exist_ok=True)
+    _cleanup_staged_uploads(upload_dir)
+    file_count, total_bytes = _staged_upload_usage(upload_dir)
     saved = []
     for upload in files:
+        if file_count >= config.WEB_UPLOAD_MAX_FILES:
+            raise HTTPException(status_code=413, detail="Staged upload file limit reached")
         original_name = upload.filename or "upload"
         safe_name = sanitize_filename(original_name)
         extension = Path(original_name).suffix.lower()
@@ -238,8 +275,17 @@ async def upload_files(files: List[UploadFile] = File(...)) -> Dict[str, Any]:
                     except OSError:
                         pass
                     raise HTTPException(status_code=400, detail=f"File too large: {original_name}")
+                if total_bytes + bytes_written > config.WEB_UPLOAD_MAX_BYTES:
+                    handle.close()
+                    try:
+                        target.unlink()
+                    except OSError:
+                        pass
+                    raise HTTPException(status_code=413, detail="Staged upload storage limit reached")
                 handle.write(chunk)
         saved.append({"name": original_name, "path": str(target), "size": bytes_written})
+        file_count += 1
+        total_bytes += bytes_written
     return {"files": saved}
 
 
@@ -247,6 +293,10 @@ async def upload_files(files: List[UploadFile] = File(...)) -> Dict[str, Any]:
 def start_upload(payload: UploadStartRequest, request: Request) -> Dict[str, Any]:
     if not payload.groups:
         raise HTTPException(status_code=400, detail="At least one upload group is required")
+
+    registry = _registry(request)
+    if registry.has_active():
+        raise HTTPException(status_code=409, detail="Another upload is already running")
 
     settings_manager = _settings_manager(request)
     settings = {**settings_manager.load(), **payload.settings}
@@ -274,7 +324,7 @@ def start_upload(payload: UploadStartRequest, request: Request) -> Dict[str, Any
 
     factory = _manager_factory(request)
     create_kwargs = {"manager_factory": factory} if factory else {}
-    session = _registry(request).create(
+    session = registry.create(
         groups,
         settings,
         _credential_store(request).load_all(),
@@ -308,10 +358,11 @@ async def upload_events(upload_id: str, request: Request) -> StreamingResponse:
         raise HTTPException(status_code=404, detail="Upload session not found")
 
     async def stream():
+        cursor = 0
         while True:
             if await request.is_disconnected():
                 break
-            events = session.drain_events()
+            cursor, events = session.events_since(cursor)
             if not events:
                 snapshot = _snapshot_payload(session.snapshot())
                 yield _sse("snapshot", snapshot)

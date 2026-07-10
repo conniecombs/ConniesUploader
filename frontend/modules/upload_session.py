@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import queue
 import threading
@@ -39,6 +39,7 @@ class UploadSessionSnapshot:
     state: str
     total_files: int
     completed_files: int
+    failed_files: int = 0
     results: List[UploadFileResult] = field(default_factory=list)
     output_files: List[UploadGeneratedOutput] = field(default_factory=list)
     last_events: List[UploadProgressEvent] = field(default_factory=list)
@@ -75,9 +76,14 @@ class UploadSession:
         self.state = "pending"
         self.total_files = sum(len(group.files) for group in self.groups)
         self.completed_files = 0
+        self.failed_files = 0
         self.results: List[UploadFileResult] = []
         self.output_files: List[UploadGeneratedOutput] = []
         self.last_events: List[UploadProgressEvent] = []
+        self.finished_at: Optional[datetime] = None
+        self.updated_at = self.created_at
+        self._event_log: List[UploadProgressEvent] = []
+        self._event_lock = threading.RLock()
         self._outputs_finalized = False
 
     def start(self) -> None:
@@ -85,6 +91,8 @@ class UploadSession:
             return
         self.cancel_event.clear()
         self.started_at = datetime.now(timezone.utc)
+        self.finished_at = None
+        self.updated_at = self.started_at
         self.state = "running"
 
         SidecarBridge.set_worker_count(self.settings.get("global_worker_count", 8))
@@ -99,32 +107,49 @@ class UploadSession:
     def cancel(self) -> None:
         self.cancel_event.set()
         self.state = "cancelled"
+        self.finished_at = datetime.now(timezone.utc)
+        self.updated_at = self.finished_at
+        shutdown = getattr(self.upload_manager, "shutdown", None)
+        if callable(shutdown):
+            shutdown()
 
     def drain_events(self, limit: int = 100) -> List[UploadProgressEvent]:
-        events: List[UploadProgressEvent] = []
-        for _ in range(max(0, limit)):
-            event = self._drain_one_result()
-            if event is None:
-                event = self._drain_one_progress()
-            if event is None:
-                break
-            events.append(event)
+        return self.collect_events(limit=limit)
 
-        if events:
-            self.last_events.extend(events)
-            self.last_events = self.last_events[-200:]
-        if self.state == "running" and self.total_files and self.completed_files >= self.total_files:
-            self.state = "complete"
-            self._finalize_outputs()
+    def collect_events(self, limit: int = 100) -> List[UploadProgressEvent]:
+        events: List[UploadProgressEvent] = []
+        with self._event_lock:
+            for _ in range(max(0, limit)):
+                event = self._drain_one_result()
+                if event is None:
+                    event = self._drain_one_progress()
+                if event is None:
+                    break
+                events.append(event)
+                self._record_event(event)
+
+            if self.state == "running" and self.total_files and self.completed_files >= self.total_files:
+                self.state = "failed" if self.failed_files else "complete"
+                self.finished_at = datetime.now(timezone.utc)
+                self.updated_at = self.finished_at
+                self._finalize_outputs()
         return events
 
+    def events_since(self, cursor: int = 0, limit: int = 200) -> tuple[int, List[UploadProgressEvent]]:
+        with self._event_lock:
+            self.collect_events()
+            start = max(0, int(cursor or 0))
+            end = min(len(self._event_log), start + max(1, limit))
+            return end, list(self._event_log[start:end])
+
     def snapshot(self) -> UploadSessionSnapshot:
-        self.drain_events()
+        self.collect_events()
         return UploadSessionSnapshot(
             id=self.id,
             state=self.state,
             total_files=self.total_files,
             completed_files=self.completed_files,
+            failed_files=self.failed_files,
             results=list(self.results),
             output_files=list(self.output_files),
             last_events=list(self.last_events),
@@ -138,6 +163,7 @@ class UploadSession:
         result_tuples = [
             (result.file_path, result.viewer_url, result.thumb_url)
             for result in self.results
+            if result.success
         ]
         for group in self.groups:
             try:
@@ -150,9 +176,7 @@ class UploadSession:
                     history_dir=config.HISTORY_DIR,
                 )
             except Exception as exc:
-                self.last_events.append(
-                    UploadProgressEvent("output_error", None, str(exc))
-                )
+                self._record_event(UploadProgressEvent("output_error", None, str(exc)))
                 continue
             if output is None:
                 continue
@@ -171,9 +195,7 @@ class UploadSession:
                 ),
             )
             self.output_files.append(generated)
-            self.last_events.append(
-                UploadProgressEvent("output", None, generated)
-            )
+            self._record_event(UploadProgressEvent("output", None, generated))
 
     @staticmethod
     def _relative_output_name(filepath: str) -> str:
@@ -191,7 +213,16 @@ class UploadSession:
             return None
 
         self.completed_files += 1
-        result = UploadFileResult(file_path, viewer_url, thumb_url)
+        success = bool(viewer_url or thumb_url)
+        if not success:
+            self.failed_files += 1
+        result = UploadFileResult(
+            file_path,
+            viewer_url,
+            thumb_url,
+            success=success,
+            error="" if success else "Upload failed",
+        )
         self.results.append(result)
         return UploadProgressEvent("result", file_path, result)
 
@@ -202,6 +233,13 @@ class UploadSession:
             return None
 
         return UploadProgressEvent(str(kind), file_path, value)
+
+    def _record_event(self, event: UploadProgressEvent) -> None:
+        self.updated_at = datetime.now(timezone.utc)
+        self.last_events.append(event)
+        self.last_events = self.last_events[-200:]
+        self._event_log.append(event)
+        self._event_log = self._event_log[-1000:]
 
 
 class UploadSessionRegistry:
@@ -228,16 +266,40 @@ class UploadSessionRegistry:
             template_manager=template_manager,
         )
         with self._lock:
+            self.prune_locked()
             self._sessions[session.id] = session
         return session
 
     def get(self, session_id: str) -> UploadSession | None:
         with self._lock:
+            self.prune_locked()
             return self._sessions.get(session_id)
 
     def list(self) -> List[UploadSessionSnapshot]:
         with self._lock:
+            self.prune_locked()
             return [session.snapshot() for session in self._sessions.values()]
+
+    def has_active(self) -> bool:
+        with self._lock:
+            self.prune_locked()
+            return any(
+                session.state not in {"complete", "cancelled", "failed"}
+                for session in self._sessions.values()
+            )
+
+    def prune_locked(self) -> None:
+        cutoff = datetime.now(timezone.utc) - timedelta(
+            seconds=config.WEB_SESSION_RETENTION_SECONDS
+        )
+        expired = [
+            session_id
+            for session_id, session in self._sessions.items()
+            if session.state in {"complete", "cancelled", "failed"}
+            and (session.finished_at or session.updated_at) < cutoff
+        ]
+        for session_id in expired:
+            self._sessions.pop(session_id, None)
 
 
 default_registry = UploadSessionRegistry()

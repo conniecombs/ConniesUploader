@@ -79,6 +79,8 @@ class UploadFileResult:
     file_path: str
     viewer_url: str
     thumb_url: str
+    success: bool = True
+    error: str = ""
 
 
 @dataclass(frozen=True)

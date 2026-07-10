@@ -30,6 +30,23 @@ class FakeUploadManager:
                 )
 
 
+class FailingUploadManager(FakeUploadManager):
+    def start_batch(self, pending_by_group, settings, credentials):
+        self.started = (pending_by_group, settings, credentials)
+        for files in pending_by_group.values():
+            for file_path in files:
+                self.progress_queue.put(("status", file_path, "error: failed"))
+                self.result_queue.put((file_path, "", ""))
+
+
+class SlowUploadManager(FakeUploadManager):
+    def start_batch(self, pending_by_group, settings, credentials):
+        self.started = (pending_by_group, settings, credentials)
+        for files in pending_by_group.values():
+            for file_path in files:
+                self.progress_queue.put(("status", file_path, "queued"))
+
+
 def make_web_client(monkeypatch, tmp_path):
     data_dir = tmp_path / "data"
     input_dir = tmp_path / "input"
@@ -100,6 +117,8 @@ def test_credentials_update_returns_only_status(monkeypatch, tmp_path):
 
     assert response.status_code == 200
     payload = status_response.json()
+    assert payload["storage"] == "file"
+    assert "file" not in payload
     imx_api = next(field for field in payload["fields"] if field["key"] == "imx_api")
     assert imx_api["present"] is True
     assert "secret-token" not in status_response.text
@@ -156,21 +175,66 @@ def test_upload_start_status_cancel_and_sse(monkeypatch, tmp_path):
     upload = status_response.json()["upload"]
     assert upload["state"] == "complete"
     assert upload["completed_files"] == 1
+    assert upload["failed_files"] == 0
     assert upload["results"] == [
         {
             "file_path": str(image_path),
             "viewer_url": "https://img.test/view",
             "thumb_url": "https://img.test/thumb",
+            "success": True,
+            "error": "",
         }
     ]
 
     events_response = client.get(f"/api/uploads/{upload_id}/events")
     assert events_response.status_code == 200
-    assert "event: snapshot" in events_response.text
+    assert "event: result" in events_response.text
+    assert "event: output" in events_response.text
 
     cancel_response = client.post(f"/api/uploads/{upload_id}/cancel")
     assert cancel_response.status_code == 200
     assert cancel_response.json()["upload"]["state"] == "cancelled"
+
+
+def test_upload_failures_mark_session_failed(monkeypatch, tmp_path):
+    client, paths = make_web_client(monkeypatch, tmp_path)
+    client.app.state.manager_factory = FailingUploadManager
+    image_path = paths["input"] / "queued.jpg"
+    image_path.write_bytes(b"fake image bytes")
+
+    response = client.post(
+        "/api/uploads",
+        json={
+            "settings": {"service": "pixhost.to", "global_worker_count": 1},
+            "groups": [{"title": "Batch", "files": [str(image_path)]}],
+        },
+    )
+
+    assert response.status_code == 200
+    upload = response.json()["upload"]
+    assert upload["state"] == "failed"
+    assert upload["completed_files"] == 1
+    assert upload["failed_files"] == 1
+    assert upload["results"][0]["success"] is False
+    assert upload["results"][0]["error"] == "Upload failed"
+
+
+def test_only_one_upload_can_run_at_a_time(monkeypatch, tmp_path):
+    client, paths = make_web_client(monkeypatch, tmp_path)
+    client.app.state.manager_factory = SlowUploadManager
+    image_path = paths["input"] / "queued.jpg"
+    image_path.write_bytes(b"fake image bytes")
+    payload = {
+        "settings": {"service": "pixhost.to", "global_worker_count": 1},
+        "groups": [{"title": "Batch", "files": [str(image_path)]}],
+    }
+
+    first = client.post("/api/uploads", json=payload)
+    second = client.post("/api/uploads", json=payload)
+
+    assert first.status_code == 200
+    assert first.json()["upload"]["state"] == "running"
+    assert second.status_code == 409
 
 
 def test_history_listing_and_output_download(monkeypatch, tmp_path):

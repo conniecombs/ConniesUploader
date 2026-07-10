@@ -63,6 +63,15 @@ Planned environment variables:
 | `CONNIESUPLOADER_OUTPUT_DIR` | `Output` | Overrides generated output location; Docker should set `/output` |
 | `CONNIESUPLOADER_HOST` | `0.0.0.0` | Web server bind host |
 | `CONNIESUPLOADER_PORT` | `8080` | Web server port |
+| `CONNIESUPLOADER_WEB_AUTH_REQUIRED` | `true` in Docker | Requires Basic or bearer auth before serving the UI/API |
+| `CONNIESUPLOADER_WEB_USERNAME` | `admin` | Basic-auth username |
+| `CONNIESUPLOADER_WEB_PASSWORD(_FILE)` | unset | Basic-auth password or Docker secret file path |
+| `CONNIESUPLOADER_WEB_TOKEN(_FILE)` | unset | Optional bearer token or Docker secret file path |
+| `CONNIESUPLOADER_WEB_DOCS_ENABLED` | `false` in web mode | Enables FastAPI OpenAPI docs when explicitly requested |
+| `CONNIESUPLOADER_WEB_SESSION_RETENTION_SECONDS` | `86400` | Retains completed in-memory upload sessions |
+| `CONNIESUPLOADER_WEB_UPLOAD_RETENTION_SECONDS` | `259200` | Retains browser-staged upload files |
+| `CONNIESUPLOADER_WEB_UPLOAD_MAX_FILES` | `500` | Caps staged upload count |
+| `CONNIESUPLOADER_WEB_UPLOAD_MAX_BYTES` | `2147483648` | Caps staged upload bytes |
 
 The Docker image should be Linux-based and multi-arch capable for at least:
 

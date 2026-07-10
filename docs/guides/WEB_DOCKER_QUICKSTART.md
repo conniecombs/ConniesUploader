@@ -7,10 +7,15 @@ Connie's Uploader now has a first-pass FastAPI web runtime for Docker and browse
 From the repository root:
 
 ```bash
+export CONNIESUPLOADER_WEB_PASSWORD=change-this-password
 docker compose up --build
 ```
 
 Open `http://localhost:8080/`.
+
+Compose binds the web port to `127.0.0.1` by default and requires
+`CONNIESUPLOADER_WEB_PASSWORD`. Use username `admin` unless you also set
+`CONNIESUPLOADER_WEB_USERNAME`.
 
 The included `docker-compose.yml` mounts:
 
@@ -26,7 +31,9 @@ Create `Input/` in the repository root if you want the mounted-file picker to sh
 
 ```bash
 docker build -t conniesuploader-web:local .
-docker run --rm -p 8080:8080 ^
+docker run --rm -p 127.0.0.1:8080:8080 ^
+  -e CONNIESUPLOADER_WEB_AUTH_REQUIRED=true ^
+  -e CONNIESUPLOADER_WEB_PASSWORD=change-this-password ^
   -v conniesuploader-data:/data ^
   -v "%cd%\\Input:/input:ro" ^
   -v "%cd%\\Output:/output" ^
@@ -47,6 +54,10 @@ The Dockerfile sets these defaults:
 | `CONNIESUPLOADER_OUTPUT_DIR` | `/output` |
 | `CONNIESUPLOADER_HOST` | `0.0.0.0` |
 | `CONNIESUPLOADER_PORT` | `8080` |
+| `CONNIESUPLOADER_WEB_AUTH_REQUIRED` | `true` in Compose |
+| `CONNIESUPLOADER_WEB_USERNAME` | `admin` |
+| `CONNIESUPLOADER_WEB_PASSWORD` | required in Compose |
+| `CONNIESUPLOADER_WEB_DOCS_ENABLED` | `false` in web mode |
 
 Bind `8080` to localhost when exposing the app only on the current machine:
 
@@ -70,8 +81,8 @@ The current webGUI supports:
 - Raw upload links
 - Generated output text, output downloads, and history listing
 
-Gallery management, ViperGirls posting, scheduled posts, multi-user auth, and public internet hardening are outside the first Docker web slice.
+Gallery management, ViperGirls posting, scheduled posts, and multi-user auth are outside the first Docker web slice.
 
 ## Security Notes
 
-Treat this runtime as a trusted local-network tool unless you add your own access controls. The API stores web credentials in `/data/credentials.json`, returns only credential presence status to the browser, and blocks path traversal outside configured input/output roots.
+The web runtime fails closed when `CONNIESUPLOADER_WEB_AUTH_REQUIRED=true` and no password or bearer token is configured. Keep the default localhost binding unless you put the app behind HTTPS, a VPN, or a trusted reverse proxy. The API stores web credentials in `/data/credentials.json`, returns only credential presence status to the browser, and blocks path traversal outside configured input/output roots.

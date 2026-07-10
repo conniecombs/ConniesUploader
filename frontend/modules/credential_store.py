@@ -32,7 +32,7 @@ class JsonCredentialStore:
     def status(self) -> Dict[str, Any]:
         values = self.load_all()
         return {
-            "file": self.filepath,
+            "storage": "file",
             "fields": [
                 {
                     **field,
@@ -70,7 +70,8 @@ class JsonCredentialStore:
         if directory:
             os.makedirs(directory, exist_ok=True)
         tmp_path = f"{self.filepath}.tmp"
-        with open(tmp_path, "w", encoding="utf-8") as handle:
+        fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
             json.dump(data, handle, indent=4, sort_keys=True)
             handle.write("\n")
         os.replace(tmp_path, self.filepath)
