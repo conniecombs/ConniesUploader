@@ -49,6 +49,38 @@ button:disabled {
   padding: 24px;
 }
 
+.auth-shell {
+  display: grid;
+  min-height: 100vh;
+  align-items: center;
+  justify-items: center;
+  padding: 24px;
+}
+
+.auth-panel {
+  width: min(420px, 100%);
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.auth-form {
+  display: grid;
+  gap: 13px;
+  margin-top: 20px;
+}
+
+.auth-form .primary-button {
+  width: 100%;
+  margin-top: 4px;
+}
+
+.is-hidden {
+  display: none !important;
+}
+
 .topbar {
   display: grid;
   grid-template-columns: minmax(220px, 0.7fr) minmax(360px, 1.3fr);
@@ -69,6 +101,13 @@ button:disabled {
 
 .brand-block {
   padding: 18px 20px;
+}
+
+.brand-heading {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .eyebrow {

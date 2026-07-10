@@ -57,34 +57,90 @@ def test_config_accepts_container_path_overrides(monkeypatch, tmp_path):
         importlib.reload(config)
 
 
-def test_web_auth_fails_closed_without_secret(monkeypatch):
+def test_web_auth_first_run_setup_flow(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "WEB_AUTH_REQUIRED", True)
     monkeypatch.setattr(config, "WEB_PASSWORD", "")
     monkeypatch.setattr(config, "WEB_TOKEN", "")
+    monkeypatch.setattr(config, "WEB_AUTH_FILE", str(tmp_path / "web_auth.json"))
     monkeypatch.setattr(config, "WEB_DOCS_ENABLED", False)
     client = TestClient(create_app())
 
     health = client.get("/api/health")
-    root = client.get("/")
+    root = client.get("/", follow_redirects=False)
+    setup = client.get("/setup")
+    status = client.get("/api/auth/status")
+    protected_api = client.get("/api/services")
+    weak_password = client.post(
+        "/api/auth/setup",
+        json={"username": "connie", "password": "short"},
+    )
+    created = client.post(
+        "/api/auth/setup",
+        json={"username": "connie", "password": "strong-password"},
+    )
+    account_text = (tmp_path / "web_auth.json").read_text(encoding="utf-8")
+    authenticated_root = client.get("/")
+    duplicate_setup = client.post(
+        "/api/auth/setup",
+        json={"username": "other", "password": "another-password"},
+    )
+    logged_out = client.post("/api/auth/logout")
+    login_redirect = client.get("/", follow_redirects=False)
 
     assert health.status_code == 200
-    assert root.status_code == 503
+    assert health.json()["security"]["setup_required"] is True
+    assert root.status_code == 303
+    assert root.headers["location"] == "/setup"
+    assert setup.status_code == 200
+    assert status.json()["setup_required"] is True
+    assert protected_api.status_code == 428
+    assert weak_password.status_code == 400
+    assert created.status_code == 200
+    assert "strong-password" not in account_text
+    assert authenticated_root.status_code == 200
+    assert duplicate_setup.status_code == 409
+    assert logged_out.status_code == 200
+    assert login_redirect.status_code == 303
+    assert login_redirect.headers["location"] == "/login"
 
 
-def test_web_auth_accepts_basic_credentials(monkeypatch):
+def test_web_auth_accepts_basic_credentials(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "WEB_AUTH_REQUIRED", True)
     monkeypatch.setattr(config, "WEB_USERNAME", "admin")
     monkeypatch.setattr(config, "WEB_PASSWORD", "secret")
     monkeypatch.setattr(config, "WEB_TOKEN", "")
+    monkeypatch.setattr(config, "WEB_AUTH_FILE", str(tmp_path / "web_auth.json"))
     monkeypatch.setattr(config, "WEB_DOCS_ENABLED", False)
     client = TestClient(create_app())
     header = base64.b64encode(b"admin:secret").decode("ascii")
 
-    denied = client.get("/")
+    denied = client.get("/", follow_redirects=False)
+    denied_api = client.get("/api/settings")
     allowed = client.get("/", headers={"Authorization": f"Basic {header}"})
 
-    assert denied.status_code == 401
+    assert denied.status_code == 303
+    assert denied.headers["location"] == "/login"
+    assert denied_api.status_code == 401
     assert allowed.status_code == 200
+
+
+def test_web_auth_accepts_setup_account_basic_credentials(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "WEB_AUTH_REQUIRED", True)
+    monkeypatch.setattr(config, "WEB_PASSWORD", "")
+    monkeypatch.setattr(config, "WEB_TOKEN", "")
+    monkeypatch.setattr(config, "WEB_AUTH_FILE", str(tmp_path / "web_auth.json"))
+    monkeypatch.setattr(config, "WEB_DOCS_ENABLED", False)
+    client = TestClient(create_app())
+    client.post(
+        "/api/auth/setup",
+        json={"username": "webuser", "password": "stored-password"},
+    )
+    client.post("/api/auth/logout")
+    header = base64.b64encode(b"webuser:stored-password").decode("ascii")
+
+    response = client.get("/", headers={"Authorization": f"Basic {header}"})
+
+    assert response.status_code == 200
 
 
 def test_openapi_docs_are_disabled_when_configured(monkeypatch):

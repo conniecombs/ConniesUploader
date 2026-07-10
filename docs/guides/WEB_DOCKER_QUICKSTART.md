@@ -7,15 +7,16 @@ Connie's Uploader now has a first-pass FastAPI web runtime for Docker and browse
 From the repository root:
 
 ```bash
-export CONNIESUPLOADER_WEB_PASSWORD=change-this-password
 docker compose up --build
 ```
 
-Open `http://localhost:8080/`.
+Open `http://localhost:8080/`. On the first run, the web app redirects to
+`/setup` so you can create the username and password used to access the app.
 
-Compose binds the web port to `127.0.0.1` by default and requires
-`CONNIESUPLOADER_WEB_PASSWORD`. Use username `admin` unless you also set
-`CONNIESUPLOADER_WEB_USERNAME`.
+Compose binds the web port to `127.0.0.1` by default and stores the web account
+under the `conniesuploader-data` volume. For scripted deployments, you can still
+preconfigure Basic auth with `CONNIESUPLOADER_WEB_USERNAME` and
+`CONNIESUPLOADER_WEB_PASSWORD`.
 
 The included `docker-compose.yml` mounts:
 
@@ -33,7 +34,6 @@ Create `Input/` in the repository root if you want the mounted-file picker to sh
 docker build -t conniesuploader-web:local .
 docker run --rm -p 127.0.0.1:8080:8080 ^
   -e CONNIESUPLOADER_WEB_AUTH_REQUIRED=true ^
-  -e CONNIESUPLOADER_WEB_PASSWORD=change-this-password ^
   -v conniesuploader-data:/data ^
   -v "%cd%\\Input:/input:ro" ^
   -v "%cd%\\Output:/output" ^
@@ -41,6 +41,8 @@ docker run --rm -p 127.0.0.1:8080:8080 ^
 ```
 
 For PowerShell on Windows, the line-continuation character is backtick instead of `^`.
+After the container starts, open `http://localhost:8080/` and create the first
+web account.
 
 ## Runtime Settings
 
@@ -56,7 +58,8 @@ The Dockerfile sets these defaults:
 | `CONNIESUPLOADER_PORT` | `8080` |
 | `CONNIESUPLOADER_WEB_AUTH_REQUIRED` | `true` in Compose |
 | `CONNIESUPLOADER_WEB_USERNAME` | `admin` |
-| `CONNIESUPLOADER_WEB_PASSWORD` | required in Compose |
+| `CONNIESUPLOADER_WEB_PASSWORD` | unset; optional Basic-auth override |
+| `CONNIESUPLOADER_WEB_AUTH_FILE` | `/data/web_auth.json` through `CONNIESUPLOADER_DATA_DIR` |
 | `CONNIESUPLOADER_WEB_DOCS_ENABLED` | `false` in web mode |
 
 Bind `8080` to localhost when exposing the app only on the current machine:
@@ -85,4 +88,4 @@ Gallery management, ViperGirls posting, scheduled posts, and multi-user auth are
 
 ## Security Notes
 
-The web runtime fails closed when `CONNIESUPLOADER_WEB_AUTH_REQUIRED=true` and no password or bearer token is configured. Keep the default localhost binding unless you put the app behind HTTPS, a VPN, or a trusted reverse proxy. The API stores web credentials in `/data/credentials.json`, returns only credential presence status to the browser, and blocks path traversal outside configured input/output roots.
+When `CONNIESUPLOADER_WEB_AUTH_REQUIRED=true` and no env password or bearer token is configured, the web runtime serves only the first-run setup page until an account is created. The setup flow stores a salted PBKDF2 password hash in `/data/web_auth.json`; host-service credentials remain in `/data/credentials.json`. Keep the default localhost binding unless you put the app behind HTTPS, a VPN, or a trusted reverse proxy. The API returns only credential presence status to the browser and blocks path traversal outside configured input/output roots.

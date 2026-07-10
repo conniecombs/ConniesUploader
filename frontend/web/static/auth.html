@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Connie's Uploader Web</title>
+    <link rel="stylesheet" href="/static/app.css" />
+  </head>
+  <body>
+    <main class="auth-shell">
+      <section class="auth-panel" aria-labelledby="auth-title">
+        <p class="eyebrow">Web Runtime</p>
+        <h1 id="auth-title">Sign in</h1>
+        <form id="auth-form" class="auth-form" autocomplete="on">
+          <label>
+            Username
+            <input id="auth-username" name="username" type="text" autocomplete="username" required />
+          </label>
+          <label>
+            Password
+            <input
+              id="auth-password"
+              name="password"
+              type="password"
+              autocomplete="current-password"
+              minlength="8"
+              required
+            />
+          </label>
+          <label id="auth-confirm-wrap" class="is-hidden">
+            Confirm password
+            <input
+              id="auth-confirm-password"
+              name="confirm-password"
+              type="password"
+              autocomplete="new-password"
+              minlength="8"
+            />
+          </label>
+          <button id="auth-submit" class="primary-button" type="submit">Sign in</button>
+        </form>
+        <div class="message-line" id="message-line" role="status" aria-live="polite"></div>
+      </section>
+    </main>
+    <script src="/static/auth.js"></script>
+  </body>
+</html>

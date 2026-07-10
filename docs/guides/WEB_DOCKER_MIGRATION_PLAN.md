@@ -64,9 +64,10 @@ Planned environment variables:
 | `CONNIESUPLOADER_HOST` | `0.0.0.0` | Web server bind host |
 | `CONNIESUPLOADER_PORT` | `8080` | Web server port |
 | `CONNIESUPLOADER_WEB_AUTH_REQUIRED` | `true` in Docker | Requires Basic or bearer auth before serving the UI/API |
-| `CONNIESUPLOADER_WEB_USERNAME` | `admin` | Basic-auth username |
-| `CONNIESUPLOADER_WEB_PASSWORD(_FILE)` | unset | Basic-auth password or Docker secret file path |
+| `CONNIESUPLOADER_WEB_USERNAME` | `admin` | Optional env-configured Basic-auth username |
+| `CONNIESUPLOADER_WEB_PASSWORD(_FILE)` | unset | Optional Basic-auth password or Docker secret file path |
 | `CONNIESUPLOADER_WEB_TOKEN(_FILE)` | unset | Optional bearer token or Docker secret file path |
+| `CONNIESUPLOADER_WEB_AUTH_FILE` | `<data dir>/web_auth.json` | First-run web account file with salted password hash |
 | `CONNIESUPLOADER_WEB_DOCS_ENABLED` | `false` in web mode | Enables FastAPI OpenAPI docs when explicitly requested |
 | `CONNIESUPLOADER_WEB_SESSION_RETENTION_SECONDS` | `86400` | Retains completed in-memory upload sessions |
 | `CONNIESUPLOADER_WEB_UPLOAD_RETENTION_SECONDS` | `259200` | Retains browser-staged upload files |
@@ -111,6 +112,10 @@ The exact file names can change during implementation if a better local pattern 
 The initial FastAPI surface should cover the first webGUI slice:
 
 - `GET /api/health`
+- `GET /api/auth/status`
+- `POST /api/auth/setup`
+- `POST /api/auth/login`
+- `POST /api/auth/logout`
 - `GET /api/services`
 - `GET /api/settings`
 - `PUT /api/settings`
@@ -209,7 +214,7 @@ Expected verification:
 
 ## Security Notes
 
-- Web mode should assume the app is for trusted local networks unless authentication is explicitly added later.
-- Credentials in `/data` must never be committed, printed in logs, or returned by status APIs.
+- Web mode starts with authentication required in Docker, and a first-run setup page creates the local web account when no env secret is configured.
+- Credentials and password hashes in `/data` must never be committed, printed in logs, or returned by status APIs.
 - Docker documentation should recommend binding to localhost or running behind a trusted reverse proxy for remote access.
 - `/input` path traversal protections are required before mounted-file uploads are accepted by API endpoints.

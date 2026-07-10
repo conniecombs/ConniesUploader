@@ -46,6 +46,14 @@ def create_app() -> FastAPI:
     def index() -> FileResponse:
         return FileResponse(STATIC_DIR / "index.html")
 
+    @app.get("/login", include_in_schema=False)
+    def login() -> FileResponse:
+        return FileResponse(STATIC_DIR / "auth.html")
+
+    @app.get("/setup", include_in_schema=False)
+    def setup() -> FileResponse:
+        return FileResponse(STATIC_DIR / "auth.html")
+
     @app.get("/api/health")
     def health() -> Dict[str, Any]:
         return {

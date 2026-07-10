@@ -12,7 +12,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, FastAPI, File, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -24,6 +24,16 @@ from modules.plugin_manager import PluginManager
 from modules.settings_manager import SettingsManager
 from modules.upload_models import UploadBatch
 from modules.upload_session import UploadSessionRegistry
+from web.auth_store import AccountValidationError, WebAccountStore
+from web.security import (
+    authenticate_credentials,
+    clear_session,
+    issue_session,
+    request_authorized,
+    request_username,
+    security_status,
+    setup_required,
+)
 
 router = APIRouter(prefix="/api")
 
@@ -34,6 +44,11 @@ class SettingsUpdateRequest(BaseModel):
 
 class CredentialUpdateRequest(BaseModel):
     credentials: Dict[str, Any]
+
+
+class AuthCredentialsRequest(BaseModel):
+    username: str
+    password: str
 
 
 class UploadGroupRequest(BaseModel):
@@ -57,6 +72,7 @@ def register_api_routes(app: FastAPI) -> None:
     app.state.settings_manager = getattr(app.state, "settings_manager", SettingsManager())
     app.state.credential_store = getattr(app.state, "credential_store", JsonCredentialStore())
     app.state.plugin_manager = getattr(app.state, "plugin_manager", PluginManager())
+    app.state.web_account_store = getattr(app.state, "web_account_store", WebAccountStore())
     app.include_router(router)
 
 
@@ -78,6 +94,10 @@ def _plugin_manager(request: Request) -> PluginManager:
 
 def _manager_factory(request: Request):
     return getattr(request.app.state, "manager_factory", None)
+
+
+def _web_account_store(request: Request) -> WebAccountStore:
+    return getattr(request.app.state, "web_account_store", None) or WebAccountStore()
 
 
 def _jsonable(value: Any) -> Any:
@@ -198,6 +218,49 @@ def services(request: Request) -> Dict[str, Any]:
             }
         )
     return {"services": service_payload, "load_errors": manager.get_load_errors()}
+
+
+@router.get("/auth/status")
+def auth_status(request: Request) -> Dict[str, Any]:
+    status = security_status()
+    username = request_username(request)
+    return {
+        **status,
+        "authenticated": request_authorized(request),
+        "username": username,
+    }
+
+
+@router.post("/auth/setup")
+def setup_account(
+    payload: AuthCredentialsRequest,
+    request: Request,
+    response: Response,
+) -> Dict[str, Any]:
+    if not setup_required():
+        raise HTTPException(status_code=409, detail="A web account is already configured.")
+    try:
+        account = _web_account_store(request).create_account(payload.username, payload.password)
+    except AccountValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    issue_session(response, account["username"])
+    return {"ok": True, "username": account["username"]}
+
+
+@router.post("/auth/login")
+def login(payload: AuthCredentialsRequest, response: Response) -> Dict[str, Any]:
+    if setup_required():
+        raise HTTPException(status_code=428, detail="Create the first web account before signing in.")
+    if not authenticate_credentials(payload.username, payload.password):
+        raise HTTPException(status_code=401, detail="Invalid username or password.")
+    issue_session(response, payload.username)
+    return {"ok": True, "username": payload.username}
+
+
+@router.post("/auth/logout")
+def logout(response: Response) -> Dict[str, bool]:
+    clear_session(response)
+    return {"ok": True}
 
 
 @router.get("/settings")

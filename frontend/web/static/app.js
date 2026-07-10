@@ -59,6 +59,7 @@ const EVENT_TYPES = [
 ];
 
 const state = {
+  auth: null,
   health: null,
   services: [],
   settings: {},
@@ -90,6 +91,7 @@ function setMessage(text, type = "") {
 async function apiJson(url, options = {}) {
   const response = await fetch(url, {
     cache: "no-store",
+    credentials: "same-origin",
     headers: {
       ...(options.body && !(options.body instanceof FormData)
         ? { "Content-Type": "application/json" }
@@ -324,6 +326,19 @@ function emptyState(text) {
   node.className = "empty-state";
   node.textContent = text;
   return node;
+}
+
+function renderAuth() {
+  const button = byId("logout-button");
+  if (!button) {
+    return;
+  }
+  button.hidden = !state.auth?.auth_required;
+}
+
+async function loadAuthStatus() {
+  state.auth = await apiJson("/api/auth/status");
+  renderAuth();
 }
 
 async function loadHealth() {
@@ -824,6 +839,11 @@ async function copyOutput() {
   setMessage("Generated output copied.", "success");
 }
 
+async function logout() {
+  await apiJson("/api/auth/logout", { method: "POST" });
+  window.location.replace("/login");
+}
+
 function clearQueue() {
   state.queue = [];
   renderQueue();
@@ -834,6 +854,7 @@ function showError(error) {
 }
 
 function bindEvents() {
+  byId("logout-button").addEventListener("click", () => logout().catch(showError));
   byId("service-select").addEventListener("change", () => {
     renderServiceOptions();
     renderCredentials();
@@ -859,7 +880,7 @@ async function init() {
   renderQueue();
   byId("event-log").append(emptyState("No events yet."));
   byId("history-list").append(emptyState("No generated history."));
-  await Promise.all([loadHealth(), loadServicesAndSettings()]);
+  await Promise.all([loadAuthStatus(), loadHealth(), loadServicesAndSettings()]);
   await Promise.all([loadInputFiles(), loadHistory()]);
   setMessage("Ready.", "success");
 }
