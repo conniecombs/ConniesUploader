@@ -7,6 +7,8 @@ import base64
 from fastapi.testclient import TestClient
 
 from modules import config
+from modules import viper_api
+from modules.credential_store import JsonCredentialStore
 from web.app import create_app
 
 
@@ -102,6 +104,40 @@ def test_web_auth_first_run_setup_flow(monkeypatch, tmp_path):
     assert logged_out.status_code == 200
     assert login_redirect.status_code == 303
     assert login_redirect.headers["location"] == "/login"
+
+
+def test_web_mode_starts_and_stops_vipergirls_scheduler(monkeypatch, tmp_path):
+    events = []
+
+    class FakeScheduler:
+        def __init__(self, creds, event_queue=None, credentials_provider=None, api_factory=None):
+            self.credentials_provider = credentials_provider
+            self.api_factory = api_factory
+            events.append(("init", creds, event_queue))
+
+        def start(self):
+            events.append(("start", self.credentials_provider()))
+
+        def stop(self):
+            events.append(("stop", None))
+
+    monkeypatch.setattr(config, "APP_MODE", "web")
+    monkeypatch.setattr(config, "USER_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setattr(config, "WEB_AUTH_REQUIRED", False)
+    monkeypatch.setattr(config, "WEB_DOCS_ENABLED", False)
+    monkeypatch.setattr(viper_api, "ViperGirlsPostScheduler", FakeScheduler)
+
+    app = create_app()
+    credential_store = JsonCredentialStore(str(tmp_path / "credentials.json"))
+    credential_store.update({"vg_user": "poster", "vg_pass": "secret"})
+    app.state.credential_store = credential_store
+
+    with TestClient(app) as client:
+        assert client.get("/api/health").status_code == 200
+
+    assert events[0][0] == "init"
+    assert events[1] == ("start", {"vg_user": "poster", "vg_pass": "secret"})
+    assert events[2] == ("stop", None)
 
 
 def test_web_auth_accepts_basic_credentials(monkeypatch, tmp_path):

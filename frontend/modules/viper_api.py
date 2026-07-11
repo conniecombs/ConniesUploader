@@ -10,7 +10,7 @@ import re
 import shutil
 import threading
 import webbrowser
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 from urllib.parse import urljoin, urlparse
 
 import customtkinter as ctk
@@ -55,6 +55,15 @@ THREAD_TITLE_SELECTORS = (
     ".p-title-value",
     "h1",
 )
+
+
+def configure_storage(user_data_dir: Optional[str] = None) -> None:
+    """Point ViperGirls JSON stores at the active runtime data directory."""
+    global _USER_DATA_DIR, THREADS_FILE, POSTING_HISTORY_FILE, SCHEDULED_POSTS_FILE
+    _USER_DATA_DIR = user_data_dir or config.USER_DATA_DIR
+    THREADS_FILE = os.path.join(_USER_DATA_DIR, "saved_threads.json")
+    POSTING_HISTORY_FILE = os.path.join(_USER_DATA_DIR, "posting_history.json")
+    SCHEDULED_POSTS_FILE = os.path.join(_USER_DATA_DIR, "scheduled_posts.json")
 
 
 class ThreadTargetError(ValueError):
@@ -882,9 +891,17 @@ def build_vipergirls_reply_spec(thread_id: str, message: str, html_text: str) ->
 class ViperGirlsPostScheduler:
     """Python-owned scheduled-post runner for ViperGirls."""
 
-    def __init__(self, creds: Dict[str, str], event_queue: Optional[Any] = None):
+    def __init__(
+        self,
+        creds: Dict[str, str],
+        event_queue: Optional[Any] = None,
+        credentials_provider: Optional[Callable[[], Dict[str, str]]] = None,
+        api_factory: Optional[Callable[[], Any]] = None,
+    ):
         self.creds = creds
         self.event_queue = event_queue
+        self.credentials_provider = credentials_provider
+        self.api_factory = api_factory
         self._stop_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
 
@@ -938,8 +955,9 @@ class ViperGirlsPostScheduler:
         if not due_posts:
             return []
 
-        user = str(self.creds.get("vg_user") or "")
-        pwd = str(self.creds.get("vg_pass") or "")
+        creds = self.credentials_provider() if self.credentials_provider else self.creds
+        user = str(creds.get("vg_user") or "")
+        pwd = str(creds.get("vg_pass") or "")
         if not user or not pwd:
             error = "Missing ViperGirls credentials."
             for post in due_posts:
@@ -949,7 +967,7 @@ class ViperGirlsPostScheduler:
             save_scheduled_posts(posts)
             return due_posts
 
-        api = ViperGirlsAPI()
+        api = self.api_factory() if self.api_factory else ViperGirlsAPI()
         if not api.login(user, pwd):
             error = "ViperGirls login failed."
             for post in due_posts:

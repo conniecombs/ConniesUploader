@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+import uuid
 
 from fastapi import APIRouter, FastAPI, File, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
@@ -44,6 +45,29 @@ class SettingsUpdateRequest(BaseModel):
 
 class CredentialUpdateRequest(BaseModel):
     credentials: Dict[str, Any]
+
+
+class ViperGirlsTargetRequest(BaseModel):
+    name: str
+    url: str
+    old_name: str = ""
+    notes: str = ""
+    tags: List[str] | str = Field(default_factory=list)
+    fetch_title: bool = False
+
+
+class ViperGirlsPostRequest(BaseModel):
+    target_name: str
+    message: str
+    batch_name: str = "Web Post"
+
+
+class ViperGirlsScheduleRequest(BaseModel):
+    target_name: str
+    message: str
+    scheduled_time: str
+    batch_name: str = "Scheduled Post"
+    cover_thumbnail: str = ""
 
 
 class AuthCredentialsRequest(BaseModel):
@@ -96,8 +120,19 @@ def _manager_factory(request: Request):
     return getattr(request.app.state, "manager_factory", None)
 
 
+def _viper_api_factory(request: Request):
+    return getattr(request.app.state, "viper_api_factory", None)
+
+
 def _web_account_store(request: Request) -> WebAccountStore:
     return getattr(request.app.state, "web_account_store", None) or WebAccountStore()
+
+
+def _viper_api():
+    from modules import viper_api
+
+    viper_api.configure_storage(config.USER_DATA_DIR)
+    return viper_api
 
 
 def _jsonable(value: Any) -> Any:
@@ -218,6 +253,203 @@ def services(request: Request) -> Dict[str, Any]:
             }
         )
     return {"services": service_payload, "load_errors": manager.get_load_errors()}
+
+
+def _viper_target_items(targets: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
+    return [
+        {"name": name, **dict(record)}
+        for name, record in sorted(targets.items(), key=lambda item: item[0].lower())
+    ]
+
+
+def _load_viper_targets() -> Dict[str, Dict[str, Any]]:
+    return _viper_api().load_saved_threads()
+
+
+def _resolve_viper_target(name: str) -> tuple[str, Dict[str, Any]]:
+    clean_name = str(name or "").strip()
+    targets = _load_viper_targets()
+    record = targets.get(clean_name)
+    if not record:
+        raise HTTPException(status_code=404, detail="ViperGirls target not found.")
+    return clean_name, record
+
+
+def _viper_credentials(request: Request) -> Dict[str, str]:
+    credentials = _credential_store(request).load_all()
+    return {
+        "vg_user": str(credentials.get("vg_user") or "").strip(),
+        "vg_pass": str(credentials.get("vg_pass") or "").strip(),
+    }
+
+
+@router.get("/vipergirls/targets")
+def list_vipergirls_targets() -> Dict[str, Any]:
+    return {"targets": _viper_target_items(_load_viper_targets())}
+
+
+@router.put("/vipergirls/targets")
+def put_vipergirls_target(payload: ViperGirlsTargetRequest) -> Dict[str, Any]:
+    api = _viper_api()
+    targets = _load_viper_targets()
+    old_name = str(payload.old_name or "").strip()
+    requested_name = str(payload.name or "").strip()
+    existing = targets.get(old_name or requested_name, {})
+
+    try:
+        if payload.fetch_title:
+            target_name, record, _fetched = api.build_site_named_thread_record(
+                requested_name,
+                payload.url,
+                existing=existing,
+                notes=payload.notes,
+                tags=payload.tags,
+                existing_names=targets.keys(),
+                exclude=old_name or requested_name,
+            )
+        else:
+            if not requested_name:
+                raise api.ThreadTargetError("Target name is required.")
+            target_name = requested_name
+            record = api.normalize_thread_record(
+                target_name,
+                payload.url,
+                existing=existing,
+                notes=payload.notes,
+                tags=payload.tags,
+            )
+    except api.ThreadTargetError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if target_name in targets and target_name != (old_name or target_name):
+        raise HTTPException(status_code=409, detail="A target with that name already exists.")
+
+    updated = dict(targets)
+    if old_name and old_name != target_name:
+        updated.pop(old_name, None)
+    updated[target_name] = record
+    api.save_saved_threads(updated)
+    return {"target": {"name": target_name, **dict(record)}, "targets": _viper_target_items(updated)}
+
+
+@router.delete("/vipergirls/targets/{name:path}")
+def delete_vipergirls_target(name: str) -> Dict[str, Any]:
+    api = _viper_api()
+    targets = _load_viper_targets()
+    if name not in targets:
+        raise HTTPException(status_code=404, detail="ViperGirls target not found.")
+    updated = dict(targets)
+    updated.pop(name, None)
+    api.save_saved_threads(updated)
+    return {"targets": _viper_target_items(updated)}
+
+
+@router.post("/vipergirls/preview")
+def preview_vipergirls_post(payload: ViperGirlsPostRequest) -> Dict[str, Any]:
+    _name, record = _resolve_viper_target(payload.target_name)
+    message = str(payload.message or "")
+    if not message.strip():
+        raise HTTPException(status_code=400, detail="Post message is empty.")
+    return {
+        "target": {"name": payload.target_name, **dict(record)},
+        "batch_name": payload.batch_name,
+        "message": message,
+    }
+
+
+@router.post("/vipergirls/post")
+def post_vipergirls_now(payload: ViperGirlsPostRequest, request: Request) -> Dict[str, Any]:
+    api = _viper_api()
+    target_name, record = _resolve_viper_target(payload.target_name)
+    message = str(payload.message or "")
+    thread_id = api.extract_thread_id(str(record.get("thread_id") or ""))
+    if not message.strip():
+        raise HTTPException(status_code=400, detail="Post message is empty.")
+    if not thread_id:
+        raise HTTPException(status_code=400, detail="ViperGirls target has no usable thread ID.")
+
+    creds = _viper_credentials(request)
+    if not creds["vg_user"] or not creds["vg_pass"]:
+        raise HTTPException(status_code=400, detail="ViperGirls credentials are missing.")
+
+    status = "failed"
+    error = ""
+    status_code = 502
+    try:
+        factory = _viper_api_factory(request)
+        client = factory() if factory else api.ViperGirlsAPI()
+        if not client.login(creds["vg_user"], creds["vg_pass"]):
+            error = "ViperGirls login failed."
+        elif client.post_reply(thread_id, message):
+            status = "success"
+            status_code = 200
+            api.mark_thread_target_used(target_name)
+        else:
+            error = "ViperGirls post failed."
+    except Exception as exc:
+        error = str(exc)
+
+    entry = api.append_posting_history(
+        {
+            "batch_name": payload.batch_name,
+            "target_name": target_name,
+            "thread_id": thread_id,
+            "target_url": str(record.get("url") or ""),
+            "status": status,
+            "error": error,
+            "post_text": message,
+        }
+    )
+    if status != "success":
+        raise HTTPException(status_code=status_code, detail=error or "ViperGirls post failed.")
+    return {"history": entry}
+
+
+@router.get("/vipergirls/history")
+def list_vipergirls_history() -> Dict[str, Any]:
+    return {"history": list(reversed(_viper_api().load_posting_history()))}
+
+
+@router.delete("/vipergirls/history")
+def clear_vipergirls_history() -> Dict[str, Any]:
+    _viper_api().clear_posting_history()
+    return {"history": []}
+
+
+@router.get("/vipergirls/scheduled")
+def list_vipergirls_scheduled() -> Dict[str, Any]:
+    return {"scheduled": _viper_api().load_scheduled_posts()}
+
+
+@router.post("/vipergirls/scheduled")
+def schedule_vipergirls_post(payload: ViperGirlsScheduleRequest) -> Dict[str, Any]:
+    api = _viper_api()
+    target_name, record = _resolve_viper_target(payload.target_name)
+    thread_id = api.extract_thread_id(str(record.get("thread_id") or ""))
+    if not thread_id:
+        raise HTTPException(status_code=400, detail="ViperGirls target has no usable thread ID.")
+    try:
+        scheduled = api.add_scheduled_post(
+            {
+                "id": str(uuid.uuid4()),
+                "thread_id": thread_id,
+                "thread_name": target_name or payload.batch_name,
+                "message": payload.message,
+                "scheduled_time": payload.scheduled_time,
+                "cover_thumbnail": payload.cover_thumbnail,
+            }
+        )
+    except api.ViperPostError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"scheduled": scheduled, "items": api.load_scheduled_posts()}
+
+
+@router.delete("/vipergirls/scheduled/{post_id}")
+def cancel_vipergirls_scheduled(post_id: str) -> Dict[str, Any]:
+    api = _viper_api()
+    if not api.cancel_scheduled_post(post_id):
+        raise HTTPException(status_code=404, detail="Pending scheduled post not found.")
+    return {"scheduled": api.load_scheduled_posts()}
 
 
 @router.get("/auth/status")
@@ -387,6 +619,9 @@ def start_upload(payload: UploadStartRequest, request: Request) -> Dict[str, Any
 
     factory = _manager_factory(request)
     create_kwargs = {"manager_factory": factory} if factory else {}
+    viper_factory = _viper_api_factory(request)
+    if viper_factory:
+        create_kwargs["viper_api_factory"] = viper_factory
     session = registry.create(
         groups,
         settings,

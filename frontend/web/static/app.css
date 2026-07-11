@@ -287,6 +287,22 @@ dd {
   margin-bottom: 12px;
 }
 
+.posting-inline {
+  display: grid;
+  grid-template-columns: minmax(190px, 0.8fr) minmax(220px, 1.2fr);
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 12px;
+}
+
+.checkbox-label {
+  display: flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 8px;
+  color: #314152;
+}
+
 label {
   display: grid;
   gap: 6px;
@@ -334,6 +350,17 @@ textarea {
   display: grid;
   gap: 10px;
   margin-top: 12px;
+}
+
+.viper-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.compact-stack {
+  gap: 10px;
 }
 
 .service-options {
@@ -390,7 +417,8 @@ textarea {
 .queue-list,
 .event-log,
 .history-list,
-.result-links {
+.result-links,
+.target-list {
   display: grid;
   gap: 8px;
 }
@@ -407,11 +435,18 @@ textarea {
   overflow: auto;
 }
 
+.target-list {
+  max-height: 180px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
 .file-row,
 .queue-row,
 .history-row,
 .result-row,
-.event-row {
+.event-row,
+.target-row {
   display: grid;
   gap: 8px;
   align-items: center;
@@ -445,6 +480,20 @@ textarea {
   min-height: 34px;
   padding: 7px 9px;
   font-size: 0.82rem;
+}
+
+.target-row {
+  width: 100%;
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 44px;
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.target-row:hover,
+.target-row.is-selected {
+  border-color: var(--accent);
+  background: #edf7f4;
 }
 
 .row-main {
@@ -547,6 +596,11 @@ textarea {
   overflow: auto;
 }
 
+#viper-post-preview {
+  min-height: 132px;
+  margin-top: 0;
+}
+
 .event-type {
   color: var(--info);
   font-weight: 800;
@@ -590,6 +644,10 @@ a:hover {
   .runtime-strip div:nth-child(-n + 2) {
     border-bottom: 1px solid var(--line);
   }
+
+  .viper-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 640px) {
@@ -604,6 +662,7 @@ a:hover {
   .runtime-strip,
   .form-grid.compact,
   .batch-grid,
+  .posting-inline,
   .service-options,
   .metrics-row,
   .field-row {

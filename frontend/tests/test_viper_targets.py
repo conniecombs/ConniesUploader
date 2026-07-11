@@ -558,6 +558,46 @@ def test_python_scheduler_processes_due_posts(tmp_path, monkeypatch):
 
 
 @pytest.mark.unit
+def test_python_scheduler_uses_dynamic_credentials_and_api_factory(tmp_path, monkeypatch):
+    point_viper_storage(monkeypatch, tmp_path)
+    viper_api.add_scheduled_post(
+        {
+            "id": "post-1",
+            "thread_id": "54321",
+            "thread_name": "Target",
+            "message": "scheduled body",
+            "scheduled_time": "2026-06-30T20:00:00+00:00",
+        }
+    )
+
+    calls = []
+
+    class FakeViperGirlsAPI:
+        def login(self, username, password):
+            calls.append(("login", username, password))
+            return True
+
+        def post_reply(self, thread_id, message):
+            calls.append(("post_reply", thread_id, message))
+            return True
+
+    scheduler = viper_api.ViperGirlsPostScheduler(
+        {},
+        credentials_provider=lambda: {"vg_user": "dynamic", "vg_pass": "secret"},
+        api_factory=FakeViperGirlsAPI,
+    )
+    scheduler.process_due_posts(
+        datetime.datetime(2026, 6, 30, 20, 1, tzinfo=datetime.timezone.utc)
+    )
+
+    assert calls == [
+        ("login", "dynamic", "secret"),
+        ("post_reply", "54321", "scheduled body"),
+    ]
+    assert viper_api.load_scheduled_posts()[0]["status"] == "posted"
+
+
+@pytest.mark.unit
 def test_target_manager_filters_by_tags_and_sorts_by_last_used():
     manager = viper_api.ViperToolsWindow.__new__(viper_api.ViperToolsWindow)
     manager.saved_threads = {

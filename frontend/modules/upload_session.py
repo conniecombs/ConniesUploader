@@ -31,6 +31,7 @@ UploadManagerFactory = Callable[
     [queue.Queue, queue.Queue, threading.Event],
     UploadManager,
 ]
+ViperApiFactory = Callable[[], Any]
 
 
 @dataclass
@@ -56,6 +57,7 @@ class UploadSession:
         *,
         manager_factory: UploadManagerFactory = UploadManager,
         template_manager: Any | None = None,
+        viper_api_factory: ViperApiFactory | None = None,
         session_id: Optional[str] = None,
     ) -> None:
         self.id = session_id or str(uuid.uuid4())
@@ -71,6 +73,7 @@ class UploadSession:
             self.cancel_event,
         )
         self.template_manager = template_manager or HeadlessTemplateManager()
+        self.viper_api_factory = viper_api_factory
         self.created_at = datetime.now(timezone.utc)
         self.started_at: Optional[datetime] = None
         self.state = "pending"
@@ -165,6 +168,7 @@ class UploadSession:
             for result in self.results
             if result.success
         ]
+        saved_threads = self._load_vipergirls_targets()
         for group in self.groups:
             try:
                 output = generate_group_output(
@@ -174,6 +178,7 @@ class UploadSession:
                     self.template_manager,
                     output_dir=config.OUTPUT_DIR,
                     history_dir=config.HISTORY_DIR,
+                    saved_threads_data=saved_threads,
                 )
             except Exception as exc:
                 self._record_event(UploadProgressEvent("output_error", None, str(exc)))
@@ -196,6 +201,106 @@ class UploadSession:
             )
             self.output_files.append(generated)
             self._record_event(UploadProgressEvent("output", None, generated))
+            self._post_to_vipergirls_if_requested(group, generated, saved_threads)
+
+    def _load_vipergirls_targets(self) -> Dict[str, Any]:
+        try:
+            from . import viper_api
+
+            viper_api.configure_storage(config.USER_DATA_DIR)
+            return viper_api.load_saved_threads()
+        except Exception as exc:
+            self._record_event(UploadProgressEvent("post_error", None, str(exc)))
+            return {}
+
+    def _post_to_vipergirls_if_requested(
+        self,
+        group: UploadBatch,
+        generated: UploadGeneratedOutput,
+        saved_threads: Dict[str, Any],
+    ) -> None:
+        if not self.settings.get("auto_post_enabled"):
+            return
+
+        target_name = str(getattr(group, "selected_thread", "") or "").strip()
+        if not target_name or target_name == "Do Not Post":
+            return
+
+        try:
+            from . import viper_api
+
+            viper_api.configure_storage(config.USER_DATA_DIR)
+            record = saved_threads.get(target_name) if isinstance(saved_threads, dict) else None
+            thread_id = viper_api.extract_thread_id(str((record or {}).get("thread_id") or ""))
+            if not thread_id:
+                raise viper_api.ViperPostError(
+                    f'ViperGirls target "{target_name}" is missing a usable thread ID.'
+                )
+
+            username = str(self.credentials.get("vg_user") or "").strip()
+            password = str(self.credentials.get("vg_pass") or "").strip()
+            if not username or not password:
+                raise viper_api.ViperPostError("Missing ViperGirls credentials.")
+
+            client = self.viper_api_factory() if self.viper_api_factory else viper_api.ViperGirlsAPI()
+            if not client.login(username, password):
+                raise viper_api.ViperPostError("ViperGirls login failed.")
+
+            posted = client.post_reply(thread_id, generated.text)
+            if not posted:
+                raise viper_api.ViperPostError("ViperGirls post failed.")
+
+            viper_api.mark_thread_target_used(target_name)
+            entry = viper_api.append_posting_history(
+                {
+                    "batch_name": generated.group_title,
+                    "target_name": target_name,
+                    "thread_id": thread_id,
+                    "target_url": str((record or {}).get("url") or ""),
+                    "status": "success",
+                    "post_text": generated.text,
+                }
+            )
+            self._record_event(UploadProgressEvent("post", None, entry))
+        except Exception as exc:
+            entry = self._record_failed_vipergirls_post(group, generated, target_name, str(exc))
+            self._record_event(UploadProgressEvent("post_error", None, entry))
+
+    def _record_failed_vipergirls_post(
+        self,
+        group: UploadBatch,
+        generated: UploadGeneratedOutput,
+        target_name: str,
+        error: str,
+    ) -> Dict[str, str]:
+        try:
+            from . import viper_api
+
+            viper_api.configure_storage(config.USER_DATA_DIR)
+            saved_threads = viper_api.load_saved_threads()
+            record = saved_threads.get(target_name, {}) if target_name else {}
+            entry = viper_api.append_posting_history(
+                {
+                    "batch_name": generated.group_title or getattr(group, "title", "Batch"),
+                    "target_name": target_name,
+                    "thread_id": str(record.get("thread_id") or ""),
+                    "target_url": str(record.get("url") or ""),
+                    "status": "failed",
+                    "error": error,
+                    "post_text": generated.text,
+                }
+            )
+            return entry
+        except Exception:
+            return {
+                "batch_name": generated.group_title,
+                "target_name": target_name,
+                "thread_id": "",
+                "target_url": "",
+                "status": "failed",
+                "error": error,
+                "post_text": generated.text,
+            }
 
     @staticmethod
     def _relative_output_name(filepath: str) -> str:
@@ -257,6 +362,7 @@ class UploadSessionRegistry:
         *,
         manager_factory: UploadManagerFactory = UploadManager,
         template_manager: Any | None = None,
+        viper_api_factory: ViperApiFactory | None = None,
     ) -> UploadSession:
         session = UploadSession(
             groups,
@@ -264,6 +370,7 @@ class UploadSessionRegistry:
             credentials,
             manager_factory=manager_factory,
             template_manager=template_manager,
+            viper_api_factory=viper_api_factory,
         )
         with self._lock:
             self.prune_locked()

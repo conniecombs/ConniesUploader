@@ -47,6 +47,19 @@ class SlowUploadManager(FakeUploadManager):
                 self.progress_queue.put(("status", file_path, "queued"))
 
 
+class FakeViperGirlsPoster:
+    def __init__(self):
+        self.calls = []
+
+    def login(self, username, password):
+        self.calls.append(("login", username, password))
+        return True
+
+    def post_reply(self, thread_id, message):
+        self.calls.append(("post_reply", thread_id, message))
+        return True
+
+
 def make_web_client(monkeypatch, tmp_path):
     data_dir = tmp_path / "data"
     input_dir = tmp_path / "input"
@@ -125,6 +138,89 @@ def test_credentials_update_returns_only_status(monkeypatch, tmp_path):
     assert "unknown" not in (paths["data"] / "credentials.json").read_text(encoding="utf-8")
 
 
+def test_vipergirls_target_preview_schedule_history_and_delete(monkeypatch, tmp_path):
+    client, _paths = make_web_client(monkeypatch, tmp_path)
+
+    save_response = client.put(
+        "/api/vipergirls/targets",
+        json={
+            "name": "My Target",
+            "url": "https://vipergirls.to/threads/98765-sample",
+            "notes": "Pinned set",
+            "tags": ["sample", "web"],
+        },
+    )
+    list_response = client.get("/api/vipergirls/targets")
+    preview_response = client.post(
+        "/api/vipergirls/preview",
+        json={"target_name": "My Target", "message": "[url]https://img.test/view[/url]"},
+    )
+    schedule_response = client.post(
+        "/api/vipergirls/scheduled",
+        json={
+            "target_name": "My Target",
+            "message": "scheduled body",
+            "scheduled_time": "2035-01-02T03:04:05+00:00",
+        },
+    )
+    scheduled_id = schedule_response.json()["scheduled"]["id"]
+    cancel_response = client.delete(f"/api/vipergirls/scheduled/{scheduled_id}")
+    clear_history_response = client.delete("/api/vipergirls/history")
+    delete_response = client.delete("/api/vipergirls/targets/My%20Target")
+
+    assert save_response.status_code == 200
+    assert save_response.json()["target"]["thread_id"] == "98765"
+    assert save_response.json()["target"]["tags"] == ["sample", "web"]
+    assert list_response.status_code == 200
+    assert list_response.json()["targets"][0]["name"] == "My Target"
+    assert preview_response.status_code == 200
+    assert preview_response.json()["message"] == "[url]https://img.test/view[/url]"
+    assert schedule_response.status_code == 200
+    assert schedule_response.json()["scheduled"]["thread_id"] == "98765"
+    assert cancel_response.status_code == 200
+    assert cancel_response.json()["scheduled"] == []
+    assert clear_history_response.status_code == 200
+    assert clear_history_response.json()["history"] == []
+    assert delete_response.status_code == 200
+    assert delete_response.json()["targets"] == []
+
+
+def test_vipergirls_manual_post_uses_saved_credentials_and_records_history(monkeypatch, tmp_path):
+    client, _paths = make_web_client(monkeypatch, tmp_path)
+    poster = FakeViperGirlsPoster()
+    client.app.state.viper_api_factory = lambda: poster
+
+    client.put(
+        "/api/credentials",
+        json={"credentials": {"vg_user": "poster", "vg_pass": "secret"}},
+    )
+    client.put(
+        "/api/vipergirls/targets",
+        json={"name": "My Target", "url": "https://vipergirls.to/threads/98765-sample"},
+    )
+    response = client.post(
+        "/api/vipergirls/post",
+        json={
+            "target_name": "My Target",
+            "message": "hello from web",
+            "batch_name": "Manual Batch",
+        },
+    )
+    history_response = client.get("/api/vipergirls/history")
+    target_response = client.get("/api/vipergirls/targets")
+
+    assert response.status_code == 200
+    assert poster.calls == [
+        ("login", "poster", "secret"),
+        ("post_reply", "98765", "hello from web"),
+    ]
+    history = history_response.json()["history"]
+    assert history[0]["status"] == "success"
+    assert history[0]["batch_name"] == "Manual Batch"
+    assert history[0]["thread_id"] == "98765"
+    assert target_response.json()["targets"][0]["last_used_at"]
+
+
 def test_input_listing_and_path_traversal_guard(monkeypatch, tmp_path):
     client, paths = make_web_client(monkeypatch, tmp_path)
     image_path = paths["input"] / "sample.jpg"
@@ -194,6 +290,53 @@ def test_upload_start_status_cancel_and_sse(monkeypatch, tmp_path):
     cancel_response = client.post(f"/api/uploads/{upload_id}/cancel")
     assert cancel_response.status_code == 200
     assert cancel_response.json()["upload"]["state"] == "cancelled"
+
+
+def test_upload_auto_posts_generated_output_to_vipergirls(monkeypatch, tmp_path):
+    client, paths = make_web_client(monkeypatch, tmp_path)
+    poster = FakeViperGirlsPoster()
+    client.app.state.viper_api_factory = lambda: poster
+    image_path = paths["input"] / "queued.jpg"
+    image_path.write_bytes(b"fake image bytes")
+
+    client.put(
+        "/api/credentials",
+        json={"credentials": {"vg_user": "poster", "vg_pass": "secret"}},
+    )
+    client.put(
+        "/api/vipergirls/targets",
+        json={"name": "My Target", "url": "https://vipergirls.to/threads/98765-sample"},
+    )
+
+    response = client.post(
+        "/api/uploads",
+        json={
+            "settings": {
+                "service": "pixhost.to",
+                "global_worker_count": 1,
+                "auto_post_enabled": True,
+                "output_format": "BBCode",
+            },
+            "groups": [
+                {
+                    "title": "Auto Batch",
+                    "files": [str(image_path)],
+                    "selected_thread": "My Target",
+                }
+            ],
+        },
+    )
+    history_response = client.get("/api/vipergirls/history")
+
+    assert response.status_code == 200
+    assert response.json()["upload"]["state"] == "complete"
+    assert poster.calls[0] == ("login", "poster", "secret")
+    assert poster.calls[1][0] == "post_reply"
+    assert poster.calls[1][1] == "98765"
+    assert "https://img.test/view" in poster.calls[1][2]
+    history = history_response.json()["history"]
+    assert history[0]["status"] == "success"
+    assert history[0]["batch_name"] == "Auto Batch"
 
 
 def test_upload_failures_mark_session_failed(monkeypatch, tmp_path):

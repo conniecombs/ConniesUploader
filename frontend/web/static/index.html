@@ -117,6 +117,16 @@
                 <input id="gallery-id" type="text" />
               </label>
             </div>
+            <div class="posting-inline">
+              <label class="checkbox-label">
+                <input id="auto-post-enabled" type="checkbox" />
+                Auto-post to ViperGirls
+              </label>
+              <label>
+                Target
+                <select id="posting-target-select"></select>
+              </label>
+            </div>
             <div class="queue-list" id="queue-list" aria-label="Selected upload queue"></div>
           </section>
 
@@ -152,6 +162,70 @@
             <div class="result-links" id="result-links"></div>
             <textarea id="generated-output" readonly spellcheck="false"></textarea>
             <div class="history-list" id="history-list" aria-label="Generated output history"></div>
+          </section>
+
+          <section class="panel" aria-labelledby="vipergirls-heading">
+            <div class="panel-heading">
+              <h2 id="vipergirls-heading">ViperGirls</h2>
+              <div class="button-row">
+                <button class="secondary-button" id="refresh-viper-button" type="button">Refresh</button>
+                <button class="secondary-button" id="preview-viper-button" type="button">Preview</button>
+                <button class="primary-button" id="post-viper-button" type="button">Post</button>
+                <button class="ghost-button" id="clear-viper-history-button" type="button">Clear History</button>
+              </div>
+            </div>
+            <div class="viper-grid">
+              <div class="stack compact-stack">
+                <div class="form-grid batch-grid">
+                  <label>
+                    Username
+                    <input id="vg-user" type="text" autocomplete="username" />
+                  </label>
+                  <label>
+                    Password
+                    <input id="vg-pass" type="password" autocomplete="current-password" />
+                  </label>
+                </div>
+                <button class="secondary-button" id="save-vg-credentials-button" type="button">
+                  Save Credentials
+                </button>
+                <div class="form-grid batch-grid">
+                  <label>
+                    Target name
+                    <input id="viper-target-name" type="text" />
+                  </label>
+                  <label>
+                    Thread URL or ID
+                    <input id="viper-target-url" type="text" />
+                  </label>
+                </div>
+                <div class="form-grid batch-grid">
+                  <label>
+                    Tags
+                    <input id="viper-target-tags" type="text" />
+                  </label>
+                  <label>
+                    Schedule
+                    <input id="viper-schedule-time" type="datetime-local" />
+                  </label>
+                </div>
+                <label>
+                  Notes
+                  <input id="viper-target-notes" type="text" />
+                </label>
+                <div class="button-row">
+                  <button class="secondary-button" id="save-viper-target-button" type="button">Save Target</button>
+                  <button class="danger-button" id="delete-viper-target-button" type="button">Delete</button>
+                  <button class="secondary-button" id="schedule-viper-button" type="button">Schedule</button>
+                </div>
+              </div>
+              <div class="stack compact-stack">
+                <div class="target-list" id="viper-target-list" aria-label="ViperGirls posting targets"></div>
+                <textarea id="viper-post-preview" readonly spellcheck="false"></textarea>
+                <div class="history-list" id="viper-scheduled-list" aria-label="Scheduled ViperGirls posts"></div>
+                <div class="history-list" id="viper-history-list" aria-label="ViperGirls posting history"></div>
+              </div>
+            </div>
           </section>
         </div>
       </section>

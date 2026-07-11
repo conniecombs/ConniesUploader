@@ -54,6 +54,8 @@ const EVENT_TYPES = [
   "result",
   "output",
   "output_error",
+  "post",
+  "post_error",
   "gallery_url",
   "register_pix_gal",
 ];
@@ -64,6 +66,9 @@ const state = {
   services: [],
   settings: {},
   credentials: null,
+  viperTargets: [],
+  viperHistory: [],
+  viperScheduled: [],
   queue: [],
   inputPath: "",
   currentUpload: null,
@@ -211,6 +216,15 @@ function renderRuntime() {
   byId("output-value").textContent = state.health?.paths?.output || "-";
 }
 
+function selectedViperTargetName() {
+  return byId("posting-target-select").value || "";
+}
+
+function selectedViperTarget() {
+  const name = selectedViperTargetName();
+  return state.viperTargets.find((target) => target.name === name) || null;
+}
+
 function renderServices() {
   const select = byId("service-select");
   const previous = select.value || state.settings.service;
@@ -226,6 +240,7 @@ function renderServices() {
   byId("worker-count").value = state.settings.global_worker_count ?? 8;
   byId("thread-limit").value = state.settings.global_thread_limit ?? 5;
   byId("template-select").value = state.settings.output_format || "BBCode";
+  byId("auto-post-enabled").checked = Boolean(state.settings.auto_post_enabled);
   renderServiceOptions();
   renderCredentials();
 }
@@ -321,6 +336,122 @@ function renderCredentials() {
   }
 }
 
+function renderViperCredentials() {
+  const fields = state.credentials?.fields || [];
+  for (const key of ["vg_user", "vg_pass"]) {
+    const field = fields.find((item) => item.key === key);
+    const input = byId(key === "vg_user" ? "vg-user" : "vg-pass");
+    input.placeholder = field?.present ? "Saved" : "";
+  }
+}
+
+function renderViperTargetForm() {
+  const target = selectedViperTarget();
+  byId("viper-target-name").value = target?.name || "";
+  byId("viper-target-url").value = target?.url || "";
+  byId("viper-target-tags").value = (target?.tags || []).join(", ");
+  byId("viper-target-notes").value = target?.notes || "";
+}
+
+function renderViperTargets(preferredName = "") {
+  const select = byId("posting-target-select");
+  const previous = preferredName || select.value;
+  select.replaceChildren();
+  const none = document.createElement("option");
+  none.value = "Do Not Post";
+  none.textContent = "Do Not Post";
+  select.append(none);
+  for (const target of state.viperTargets) {
+    const option = document.createElement("option");
+    option.value = target.name;
+    option.textContent = target.name;
+    select.append(option);
+  }
+  select.value = state.viperTargets.some((target) => target.name === previous)
+    ? previous
+    : "Do Not Post";
+
+  const list = byId("viper-target-list");
+  list.replaceChildren();
+  if (!state.viperTargets.length) {
+    list.append(emptyState("No ViperGirls targets saved."));
+  } else {
+    for (const target of state.viperTargets) {
+      const row = document.createElement("button");
+      row.className = `target-row${select.value === target.name ? " is-selected" : ""}`;
+      row.type = "button";
+      const title = document.createElement("span");
+      title.className = "row-title";
+      title.textContent = target.name;
+      const meta = document.createElement("span");
+      meta.className = "row-meta";
+      meta.textContent = `Thread ${target.thread_id || "-"} - ${target.url || ""}`;
+      row.append(title, meta);
+      row.addEventListener("click", () => {
+        select.value = target.name;
+        renderViperTargetForm();
+        renderViperTargets(target.name);
+      });
+      list.append(row);
+    }
+  }
+  renderViperTargetForm();
+}
+
+function renderViperHistory() {
+  const list = byId("viper-history-list");
+  list.replaceChildren();
+  if (!state.viperHistory.length) {
+    list.append(emptyState("No ViperGirls posting history."));
+    return;
+  }
+  for (const entry of state.viperHistory.slice(0, 8)) {
+    const row = document.createElement("div");
+    row.className = "history-row";
+    const main = document.createElement("div");
+    main.className = "row-main";
+    const title = document.createElement("span");
+    title.className = "row-title";
+    title.textContent = `${entry.status || "unknown"} - ${entry.batch_name || "Batch"}`;
+    const meta = document.createElement("span");
+    meta.className = "row-meta";
+    meta.textContent = `${entry.target_name || "Target"} - ${entry.timestamp || ""}`;
+    main.append(title, meta);
+    row.append(main);
+    list.append(row);
+  }
+}
+
+function renderViperScheduled() {
+  const list = byId("viper-scheduled-list");
+  list.replaceChildren();
+  const pending = state.viperScheduled.filter((item) => item.status === "pending");
+  if (!pending.length) {
+    list.append(emptyState("No scheduled ViperGirls posts."));
+    return;
+  }
+  for (const item of pending.slice(0, 8)) {
+    const row = document.createElement("div");
+    row.className = "history-row";
+    const main = document.createElement("div");
+    main.className = "row-main";
+    const title = document.createElement("span");
+    title.className = "row-title";
+    title.textContent = item.thread_name || `Thread ${item.thread_id}`;
+    const meta = document.createElement("span");
+    meta.className = "row-meta";
+    meta.textContent = item.scheduled_time || "";
+    main.append(title, meta);
+    const cancel = document.createElement("button");
+    cancel.className = "ghost-button";
+    cancel.type = "button";
+    cancel.textContent = "Cancel";
+    cancel.addEventListener("click", () => cancelViperScheduled(item.id).catch(showError));
+    row.append(main, cancel);
+    list.append(row);
+  }
+}
+
 function emptyState(text) {
   const node = document.createElement("div");
   node.className = "empty-state";
@@ -356,6 +487,21 @@ async function loadServicesAndSettings() {
   state.settings = settings.settings || {};
   state.credentials = credentials;
   renderServices();
+  renderViperCredentials();
+}
+
+async function loadViperGirls() {
+  const [targets, history, scheduled] = await Promise.all([
+    apiJson("/api/vipergirls/targets"),
+    apiJson("/api/vipergirls/history"),
+    apiJson("/api/vipergirls/scheduled"),
+  ]);
+  state.viperTargets = targets.targets || [];
+  state.viperHistory = history.history || [];
+  state.viperScheduled = scheduled.scheduled || [];
+  renderViperTargets();
+  renderViperHistory();
+  renderViperScheduled();
 }
 
 async function loadInputFiles(path = state.inputPath) {
@@ -475,6 +621,7 @@ function collectSettings() {
     global_worker_count: Number.parseInt(byId("worker-count").value || "8", 10),
     global_thread_limit: Number.parseInt(byId("thread-limit").value || "5", 10),
     output_format: byId("template-select").value || "BBCode",
+    auto_post_enabled: byId("auto-post-enabled").checked,
   };
   for (const field of flattenSchema(service?.settings_schema || [])) {
     const control = document.querySelector(`[data-setting-key="${field.key}"]`);
@@ -538,6 +685,160 @@ async function saveCredentials() {
   setMessage("Credentials saved.", "success");
 }
 
+async function saveViperCredentials() {
+  const credentials = {};
+  const username = byId("vg-user").value.trim();
+  const password = byId("vg-pass").value.trim();
+  if (username) {
+    credentials.vg_user = username;
+  }
+  if (password) {
+    credentials.vg_pass = password;
+  }
+  if (!Object.keys(credentials).length) {
+    setMessage("No ViperGirls credential changes.");
+    return;
+  }
+  state.credentials = await apiJson("/api/credentials", {
+    method: "PUT",
+    body: JSON.stringify({ credentials }),
+  });
+  byId("vg-user").value = "";
+  byId("vg-pass").value = "";
+  renderViperCredentials();
+  setMessage("ViperGirls credentials saved.", "success");
+}
+
+function viperTargetPayload() {
+  const selected = selectedViperTarget();
+  return {
+    name: byId("viper-target-name").value.trim(),
+    url: byId("viper-target-url").value.trim(),
+    old_name: selected?.name || "",
+    notes: byId("viper-target-notes").value.trim(),
+    tags: byId("viper-target-tags").value
+      .split(",")
+      .map((tag) => tag.trim())
+      .filter(Boolean),
+  };
+}
+
+async function saveViperTarget() {
+  const payload = await apiJson("/api/vipergirls/targets", {
+    method: "PUT",
+    body: JSON.stringify(viperTargetPayload()),
+  });
+  state.viperTargets = payload.targets || [];
+  renderViperTargets(payload.target?.name || "");
+  setMessage("ViperGirls target saved.", "success");
+}
+
+async function deleteViperTarget() {
+  const name = selectedViperTarget()?.name || byId("viper-target-name").value.trim();
+  if (!name || name === "Do Not Post") {
+    setMessage("Choose a ViperGirls target to delete.", "error");
+    return;
+  }
+  const payload = await apiJson(`/api/vipergirls/targets/${encodeURIComponent(name)}`, {
+    method: "DELETE",
+  });
+  state.viperTargets = payload.targets || [];
+  renderViperTargets("Do Not Post");
+  setMessage("ViperGirls target deleted.", "success");
+}
+
+function currentViperPostMessage() {
+  return byId("generated-output").value.trim() || byId("viper-post-preview").value.trim();
+}
+
+function requireViperTargetAndMessage() {
+  const targetName = selectedViperTargetName();
+  const message = currentViperPostMessage();
+  if (!targetName || targetName === "Do Not Post") {
+    throw new Error("Choose a ViperGirls target first.");
+  }
+  if (!message) {
+    throw new Error("Generate or paste post output before posting.");
+  }
+  return { targetName, message };
+}
+
+async function previewViperPost() {
+  const { targetName, message } = requireViperTargetAndMessage();
+  const payload = await apiJson("/api/vipergirls/preview", {
+    method: "POST",
+    body: JSON.stringify({
+      target_name: targetName,
+      message,
+      batch_name: byId("batch-title").value.trim() || "Web Post",
+    }),
+  });
+  byId("viper-post-preview").value = payload.message || message;
+  setMessage("ViperGirls post preview refreshed.", "success");
+}
+
+async function postViperNow() {
+  const { targetName, message } = requireViperTargetAndMessage();
+  await apiJson("/api/vipergirls/post", {
+    method: "POST",
+    body: JSON.stringify({
+      target_name: targetName,
+      message,
+      batch_name: byId("batch-title").value.trim() || "Web Post",
+    }),
+  });
+  await loadViperGirls();
+  setMessage("Posted to ViperGirls.", "success");
+}
+
+function localDateTimeToIso(value) {
+  const raw = String(value || "").trim();
+  if (!raw) {
+    return "";
+  }
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) {
+    return raw;
+  }
+  return date.toISOString();
+}
+
+async function scheduleViperPost() {
+  const { targetName, message } = requireViperTargetAndMessage();
+  const scheduledTime = localDateTimeToIso(byId("viper-schedule-time").value);
+  if (!scheduledTime) {
+    throw new Error("Choose a schedule time.");
+  }
+  const payload = await apiJson("/api/vipergirls/scheduled", {
+    method: "POST",
+    body: JSON.stringify({
+      target_name: targetName,
+      message,
+      scheduled_time: scheduledTime,
+      batch_name: byId("batch-title").value.trim() || "Scheduled Post",
+    }),
+  });
+  state.viperScheduled = payload.items || [];
+  renderViperScheduled();
+  setMessage("ViperGirls post scheduled.", "success");
+}
+
+async function cancelViperScheduled(postId) {
+  const payload = await apiJson(`/api/vipergirls/scheduled/${encodeURIComponent(postId)}`, {
+    method: "DELETE",
+  });
+  state.viperScheduled = payload.scheduled || [];
+  renderViperScheduled();
+  setMessage("Scheduled ViperGirls post cancelled.", "success");
+}
+
+async function clearViperHistory() {
+  const payload = await apiJson("/api/vipergirls/history", { method: "DELETE" });
+  state.viperHistory = payload.history || [];
+  renderViperHistory();
+  setMessage("ViperGirls posting history cleared.", "success");
+}
+
 async function stageBrowserUploads() {
   const input = byId("browser-file-input");
   if (!input.files.length) {
@@ -582,13 +883,18 @@ async function startUpload() {
   }
   await saveSettings();
   const settings = collectSettings();
+  const selectedThread = settings.auto_post_enabled ? selectedViperTargetName() : "Do Not Post";
+  if (settings.auto_post_enabled && (!selectedThread || selectedThread === "Do Not Post")) {
+    setMessage("Choose a ViperGirls target before auto-posting.", "error");
+    return;
+  }
   const title = byId("batch-title").value.trim() || "Web Batch";
   const group = {
     title,
     files: state.queue.map((file) => file.path),
     cover_files: state.queue.filter((file) => file.cover).map((file) => file.path),
     selected_template: byId("template-select").value || "BBCode",
-    selected_thread: "Do Not Post",
+    selected_thread: selectedThread,
     source: "web",
     gallery: galleryPayload(settings),
   };
@@ -687,6 +993,7 @@ function applyUpload(upload) {
       state.pollTimer = null;
     }
     loadHistory().catch(showError);
+    loadViperGirls().catch(showError);
   }
 }
 
@@ -728,6 +1035,12 @@ function appendEvent(kind, filePath, value) {
     text.textContent = `${basename(value.file_path)} uploaded`;
   } else if (value?.output_name) {
     text.textContent = `Generated ${value.output_name}`;
+  } else if (value?.status && (value?.target_name || kind.startsWith("post"))) {
+    const status = value.status || kind;
+    const target = value.target_name ? ` to ${value.target_name}` : "";
+    const error = value.error ? `: ${value.error}` : "";
+    text.textContent = `ViperGirls ${status}${target}${error}`;
+    loadViperGirls().catch(showError);
   } else {
     text.textContent = fileName || "Updated";
   }
@@ -795,7 +1108,11 @@ function renderResults(upload) {
     }
     linkList.append(row);
   }
-  byId("generated-output").value = outputs.map((output) => output.text || "").join("\n\n");
+  const generatedText = outputs.map((output) => output.text || "").join("\n\n");
+  byId("generated-output").value = generatedText;
+  if (generatedText) {
+    byId("viper-post-preview").value = generatedText;
+  }
 }
 
 async function loadHistory() {
@@ -861,6 +1178,27 @@ function bindEvents() {
   });
   byId("save-settings-button").addEventListener("click", () => saveSettings().catch(showError));
   byId("save-credentials-button").addEventListener("click", () => saveCredentials().catch(showError));
+  byId("save-vg-credentials-button").addEventListener("click", () =>
+    saveViperCredentials().catch(showError),
+  );
+  byId("posting-target-select").addEventListener("change", renderViperTargetForm);
+  byId("refresh-viper-button").addEventListener("click", () => loadViperGirls().catch(showError));
+  byId("save-viper-target-button").addEventListener("click", () =>
+    saveViperTarget().catch(showError),
+  );
+  byId("delete-viper-target-button").addEventListener("click", () =>
+    deleteViperTarget().catch(showError),
+  );
+  byId("preview-viper-button").addEventListener("click", () =>
+    previewViperPost().catch(showError),
+  );
+  byId("post-viper-button").addEventListener("click", () => postViperNow().catch(showError));
+  byId("schedule-viper-button").addEventListener("click", () =>
+    scheduleViperPost().catch(showError),
+  );
+  byId("clear-viper-history-button").addEventListener("click", () =>
+    clearViperHistory().catch(showError),
+  );
   byId("refresh-files-button").addEventListener("click", () => loadInputFiles().catch(showError));
   byId("up-directory-button").addEventListener("click", () =>
     loadInputFiles(parentInputPath(state.inputPath)).catch(showError),
@@ -880,7 +1218,10 @@ async function init() {
   renderQueue();
   byId("event-log").append(emptyState("No events yet."));
   byId("history-list").append(emptyState("No generated history."));
-  await Promise.all([loadAuthStatus(), loadHealth(), loadServicesAndSettings()]);
+  byId("viper-target-list").append(emptyState("No ViperGirls targets saved."));
+  byId("viper-scheduled-list").append(emptyState("No scheduled ViperGirls posts."));
+  byId("viper-history-list").append(emptyState("No ViperGirls posting history."));
+  await Promise.all([loadAuthStatus(), loadHealth(), loadServicesAndSettings(), loadViperGirls()]);
   await Promise.all([loadInputFiles(), loadHistory()]);
   setMessage("Ready.", "success");
 }
