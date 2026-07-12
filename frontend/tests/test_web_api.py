@@ -380,22 +380,34 @@ def test_only_one_upload_can_run_at_a_time(monkeypatch, tmp_path):
     assert second.status_code == 409
 
 
-def test_history_listing_and_output_download(monkeypatch, tmp_path):
+def test_history_listing_output_download_and_delete(monkeypatch, tmp_path):
     client, paths = make_web_client(monkeypatch, tmp_path)
-    history_file = paths["history"] / "old.txt"
+    history_file = paths["history"] / "result.txt"
     output_file = paths["output"] / "result.txt"
     history_file.write_text("history", encoding="utf-8")
     output_file.write_text("output", encoding="utf-8")
 
     history_response = client.get("/api/history")
     output_response = client.get("/api/output/result.txt")
-    traversal = client.get("/api/output/%2e%2e/secret.txt")
+    output_traversal = client.get("/api/output/%2e%2e/secret.txt")
+    history_delete_traversal = client.delete("/api/history/%2e%2e/secret.txt")
+    output_delete = client.delete("/api/output/result.txt")
+    output_missing = client.delete("/api/output/result.txt")
 
     assert history_response.status_code == 200
-    assert history_response.json()["entries"][0]["name"] == "old.txt"
+    assert history_response.json()["entries"][0]["name"] == "result.txt"
     assert output_response.status_code == 200
     assert output_response.text == "output"
-    assert traversal.status_code == 400
+    assert output_traversal.status_code == 400
+    assert history_delete_traversal.status_code == 400
+    assert output_delete.status_code == 200
+    assert output_delete.json()["deleted"]["name"] == "result.txt"
+    assert not output_file.exists()
+    assert history_file.exists()
+    assert output_missing.status_code == 404
+    history_delete = client.delete("/api/history/result.txt")
+    assert history_delete.status_code == 200
+    assert not history_file.exists()
 
 
 def test_upload_file_result_model_remains_json_shape():

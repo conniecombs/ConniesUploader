@@ -203,6 +203,16 @@ def _file_record(path: Path, root: Path) -> Dict[str, Any]:
     }
 
 
+def _delete_file_under(root: str, relative_path: str, missing_detail: str) -> Dict[str, str]:
+    target = _resolve_under(root, relative_path)
+    if not target.exists() or not target.is_file():
+        raise HTTPException(status_code=404, detail=missing_detail)
+    root_path = Path(root).expanduser().resolve()
+    relative_name = str(target.relative_to(root_path))
+    target.unlink()
+    return {"name": target.name, "relative_path": relative_name}
+
+
 def _staged_upload_files(upload_dir: Path) -> List[Path]:
     if not upload_dir.exists():
         return []
@@ -691,9 +701,21 @@ def list_history() -> Dict[str, Any]:
     return {"root": str(history_dir), "entries": entries}
 
 
+@router.delete("/history/{name:path}")
+def delete_history_file(name: str) -> Dict[str, Any]:
+    deleted = _delete_file_under(config.HISTORY_DIR, name, "History file not found")
+    return {"deleted": deleted}
+
+
 @router.get("/output/{name:path}")
 def get_output(name: str) -> FileResponse:
     output_path = _resolve_under(config.OUTPUT_DIR, name)
     if not output_path.exists() or not output_path.is_file():
         raise HTTPException(status_code=404, detail="Output file not found")
     return FileResponse(output_path, filename=output_path.name)
+
+
+@router.delete("/output/{name:path}")
+def delete_output(name: str) -> Dict[str, Any]:
+    deleted = _delete_file_under(config.OUTPUT_DIR, name, "Output file not found")
+    return {"deleted": deleted}

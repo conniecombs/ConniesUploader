@@ -475,6 +475,14 @@ textarea {
   padding: 8px 10px;
 }
 
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
 .event-row {
   grid-template-columns: 74px minmax(0, 1fr);
   min-height: 34px;
@@ -702,6 +710,10 @@ a:hover {
   }
 
   .button-row {
+    justify-content: flex-start;
+  }
+
+  .row-actions {
     justify-content: flex-start;
   }
 }

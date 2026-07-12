@@ -3,6 +3,7 @@
 
 import importlib
 import base64
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 
@@ -57,6 +58,21 @@ def test_config_accepts_container_path_overrides(monkeypatch, tmp_path):
         monkeypatch.delenv("CONNIESUPLOADER_OUTPUT_DIR", raising=False)
         monkeypatch.delenv("CONNIESUPLOADER_PORT", raising=False)
         importlib.reload(config)
+
+
+def test_web_results_and_history_expose_separate_delete_actions():
+    repo_root = Path(__file__).resolve().parents[2]
+    app_source = (repo_root / "frontend/web/static/app.js").read_text(encoding="utf-8")
+    css_source = (repo_root / "frontend/web/static/app.css").read_text(encoding="utf-8")
+
+    assert "function deleteOutputFile(output)" in app_source
+    assert 'apiJson(`/api/output/${apiFilePath(name)}`, { method: "DELETE" })' in app_source
+    assert "state.deletedOutputNames.add(name)" in app_source
+    assert "function deleteHistoryFile(entry)" in app_source
+    assert 'apiJson(`/api/history/${apiFilePath(name)}`, { method: "DELETE" })' in app_source
+    assert 'remove.addEventListener("click", () => deleteOutputFile(output).catch(showError));' in app_source
+    assert 'remove.addEventListener("click", () => deleteHistoryFile(entry).catch(showError));' in app_source
+    assert ".row-actions" in css_source
 
 
 def test_web_auth_first_run_setup_flow(monkeypatch, tmp_path):

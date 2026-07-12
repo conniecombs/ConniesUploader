@@ -72,6 +72,7 @@ const state = {
   queue: [],
   inputPath: "",
   currentUpload: null,
+  deletedOutputNames: new Set(),
   eventSource: null,
   pollTimer: null,
   serviceOptionValues: {},
@@ -137,6 +138,14 @@ function formatSize(value) {
 
 function basename(path) {
   return String(path || "").split(/[\\/]/).filter(Boolean).pop() || String(path || "");
+}
+
+function apiFilePath(path) {
+  return String(path || "")
+    .split(/[\\/]/)
+    .filter(Boolean)
+    .map((part) => encodeURIComponent(part))
+    .join("/");
 }
 
 function normalizeValues(values) {
@@ -902,6 +911,7 @@ async function startUpload() {
     method: "POST",
     body: JSON.stringify({ settings, groups: [group] }),
   });
+  state.deletedOutputNames.clear();
   applyUpload(payload.upload);
   openEventSource(payload.upload.id);
   setMessage("Upload started.", "success");
@@ -1055,7 +1065,9 @@ function renderResults(upload) {
   const linkList = byId("result-links");
   linkList.replaceChildren();
   const results = upload?.results || [];
-  const outputs = upload?.output_files || [];
+  const outputs = (upload?.output_files || []).filter(
+    (output) => !state.deletedOutputNames.has(output.output_name),
+  );
   if (!results.length && !outputs.length) {
     linkList.append(emptyState("No results yet."));
     byId("generated-output").value = "";
@@ -1073,10 +1085,18 @@ function renderResults(upload) {
     meta.className = "row-meta";
     meta.textContent = output.output_file;
     main.append(title, meta);
+    const actions = document.createElement("div");
+    actions.className = "row-actions";
     const link = document.createElement("a");
-    link.href = `/api/output/${encodeURIComponent(output.output_name)}`;
+    link.href = `/api/output/${apiFilePath(output.output_name)}`;
     link.textContent = "Download";
-    row.append(main, link);
+    const remove = document.createElement("button");
+    remove.className = "danger-button";
+    remove.type = "button";
+    remove.textContent = "Delete";
+    remove.addEventListener("click", () => deleteOutputFile(output).catch(showError));
+    actions.append(link, remove);
+    row.append(main, actions);
     linkList.append(row);
   }
   for (const result of results) {
@@ -1136,9 +1156,48 @@ async function loadHistory() {
     meta.className = "row-meta";
     meta.textContent = `${formatSize(entry.size)} - ${entry.modified}`;
     main.append(title, meta);
-    row.append(main);
+    const remove = document.createElement("button");
+    remove.className = "danger-button";
+    remove.type = "button";
+    remove.textContent = "Delete";
+    remove.addEventListener("click", () => deleteHistoryFile(entry).catch(showError));
+    row.append(main, remove);
     list.append(row);
   }
+}
+
+async function deleteOutputFile(output) {
+  const name = output?.output_name || "";
+  if (!name) {
+    setMessage("No output file is available to delete.", "error");
+    return;
+  }
+  if (!window.confirm(`Delete output file "${basename(name)}"?`)) {
+    return;
+  }
+  await apiJson(`/api/output/${apiFilePath(name)}`, { method: "DELETE" });
+  state.deletedOutputNames.add(name);
+  if (state.currentUpload?.output_files) {
+    state.currentUpload.output_files = state.currentUpload.output_files.filter(
+      (item) => item.output_name !== name,
+    );
+  }
+  renderUpload();
+  setMessage("Output file deleted.", "success");
+}
+
+async function deleteHistoryFile(entry) {
+  const name = entry?.relative_path || entry?.name || "";
+  if (!name) {
+    setMessage("No history file is available to delete.", "error");
+    return;
+  }
+  if (!window.confirm(`Delete history file "${basename(name)}"?`)) {
+    return;
+  }
+  await apiJson(`/api/history/${apiFilePath(name)}`, { method: "DELETE" });
+  await loadHistory();
+  setMessage("History file deleted.", "success");
 }
 
 async function copyOutput() {
