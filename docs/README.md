@@ -34,6 +34,8 @@ Complete guide to the current documentation for Connie's Uploader.
 ## Release Docs
 
 - [Current Release Notes](releases/RELEASE_NOTES.md)
+- [v3.0.0 Release Notes](releases/RELEASE_NOTES_v3.0.0.md)
+- [v3.0.0 Branch Difference Record](releases/BRANCH_DIFF_v3.0.0.md)
 - [v2.0.0 Release Notes](releases/RELEASE_NOTES_v2.0.0.md)
 - [v1.4.0 Release Notes](releases/RELEASE_NOTES_v1.4.0.md)
 - [v1.3.0 Release Notes](releases/RELEASE_NOTES_v1.3.0.md)
@@ -94,6 +96,8 @@ docs/
 │   └── USER_TUTORIAL.md
 ├── releases/
 │   ├── RELEASE_NOTES.md
+│   ├── RELEASE_NOTES_v3.0.0.md
+│   ├── BRANCH_DIFF_v3.0.0.md
 │   ├── RELEASE_NOTES_v2.0.0.md
 │   ├── RELEASE_NOTES_v1.4.0.md
 │   ├── RELEASE_NOTES_v1.3.0.md
@@ -114,6 +118,12 @@ docs/
 ```
 
 ## Recent Documentation Updates
+
+### 2026-07-12
+
+- Promoted current release documentation, build metadata, and app metadata to `v3.0.0`.
+- Added v3.0.0 release notes for the Python-owned workflow and generic Go transport architecture.
+- Added a branch-difference record for `Bleeding-Edge` compared with `main`, including compare metadata, ahead/behind commits, and full file status.
 
 ### 2026-06-30
 
@@ -147,6 +157,6 @@ docs/
 - Update plugin docs when plugin discovery, schema fields, request specs, or packaging hidden imports change.
 - Keep historical docs clearly separated from current guidance.
 
-- **Last Updated:** 2026-06-30
-- **Documentation Version:** 2.4
-- **Project Version:** BETA development build; latest tagged release is v2.0.0
+- **Last Updated:** 2026-07-12
+- **Documentation Version:** 3.0
+- **Project Version:** v3.0.0

@@ -124,14 +124,14 @@ Use this checklist when creating a new release:
 
 We follow [Semantic Versioning](https://semver.org/):
 
-- **MAJOR** (v2.0.0): Incompatible API changes
+- **MAJOR** (v3.0.0): Incompatible API or architecture changes
 - **MINOR** (v1.1.0): New functionality, backwards-compatible
 - **PATCH** (v1.0.1): Bug fixes, backwards-compatible
 
 Examples:
 - Bug fix: `v1.0.0` → `v1.0.1`
 - New feature: `v1.0.1` → `v1.1.0`
-- Breaking change: `v1.1.0` → `v2.0.0`
+- Breaking change: `v2.0.0` → `v3.0.0`
 
 ## Release Artifacts
 

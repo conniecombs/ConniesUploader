@@ -1,7 +1,7 @@
 # Connie's Uploader
 
-![Current app build badge showing BETA](https://img.shields.io/badge/app-BETA-orange.svg)
-![Latest tagged release badge showing v2.0.0](https://img.shields.io/badge/latest%20release-v2.0.0-blue.svg)
+![Current app build badge showing v3.0.0](https://img.shields.io/badge/app-v3.0.0-orange.svg)
+![Latest tagged release badge showing v3.0.0](https://img.shields.io/badge/latest%20release-v3.0.0-blue.svg)
 ![MIT License badge](https://img.shields.io/badge/license-MIT-green.svg)
 ![Supported platforms: Windows, Linux, and macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)
 ![Continuous integration workflow status: passing](https://github.com/conniecombs/ConniesUploader/actions/workflows/ci.yml/badge.svg?branch=main)
@@ -12,9 +12,9 @@
 
 Connie's Uploader is a desktop image-uploading tool with a CustomTkinter GUI and a Go sidecar for concurrent uploads. It supports batch uploads, gallery workflows, custom output templates, drag and drop, secure credential storage, ViperGirls posting workflows, and automated release builds for Windows, Linux, and macOS.
 
-**Latest tagged release:** v2.0.0 "Posting, Templates & Gallery Workflows" (June 22, 2026)
+**Latest tagged release:** v3.0.0 "Python-Owned Workflows & Generic Transport" (July 12, 2026)
 
-**Current development build:** `BETA` on the `Bleeding-Edge` branch.
+**Current release branch:** `Bleeding-Edge`
 
 ## Screenshots
 
@@ -22,7 +22,7 @@ Connie's Uploader is a desktop image-uploading tool with a CustomTkinter GUI and
 
 The main screen opens directly into the upload workflow. New users get a large drop zone, centered Add Files and Add Folder actions, and host readiness feedback before they start.
 
-![Connie's Uploader 2.0.0 empty upload queue with Pixhost selected, ready status, and centered Add Files and Add Folder actions](docs/assets/screenshots/empty-drop-zone.png)
+![Connie's Uploader 3.0.0 empty upload queue with Pixhost selected, ready status, and centered Add Files and Add Folder actions](docs/assets/screenshots/empty-drop-zone.png)
 
 ### Organize Batches Automatically
 
@@ -92,16 +92,19 @@ The active upload plugins are:
 
 ## Latest Changelog
 
-### Unreleased - Bleeding-Edge BETA
+### v3.0.0 - Python-Owned Workflows & Generic Transport
+
+Released July 12, 2026.
 
 **Added**
 
-- Added a `BETA` app build label and shortened the main window title to `Connie's Uploader BETA`.
 - Added `Tools > Scheduled Posts` for persisted ViperGirls scheduled post records.
 - Added `View > Activity Terminal` to tail `~/.conniesuploader/activity.log`.
+- Added a release branch-difference record for the `Bleeding-Edge` compare against `main`.
 
 **Changed**
 
+- Promoted the app, build scripts, and active plugin metadata to `v3.0.0`.
 - Completed the move toward Python-owned host workflows: Python now owns gallery/forum sequencing, parsing, and success checks while Go remains the generic transport runner.
 - Moved host-specific default rate limits into Python job/request payloads.
 - Updated the Go sidecar action surface around `http_upload`, raw `http_request`, `http_batch_resolve`, and thumbnail generation.
@@ -110,7 +113,7 @@ The active upload plugins are:
 
 - Fixed Turbo deferred result matching when host result pages return sanitized filenames.
 
-The latest published release remains v2.0.0 below. Full history is available in [CHANGELOG.md](docs/CHANGELOG.md).
+Full history is available in [CHANGELOG.md](docs/CHANGELOG.md), and the full v3.0.0 branch comparison is recorded in [BRANCH_DIFF_v3.0.0.md](docs/releases/BRANCH_DIFF_v3.0.0.md).
 
 ### v2.0.0 - Posting, Templates & Gallery Workflows
 
@@ -140,13 +143,13 @@ Full history is available in [CHANGELOG.md](docs/CHANGELOG.md).
 
 ### Download a Release
 
-Download the latest release from [GitHub Releases](https://github.com/conniecombs/ConniesUploader/releases/tag/v2.0.0).
+Download the latest release from [GitHub Releases](https://github.com/conniecombs/ConniesUploader/releases/tag/v3.0.0).
 
 Expected release artifacts:
 
-- `ConniesUploader-v2.0.0-windows-x64.zip`
-- `ConniesUploader-v2.0.0-linux-x64.tar.gz`
-- `ConniesUploader-v2.0.0-macos-x64.zip`
+- `ConniesUploader-v3.0.0-windows-x64.zip`
+- `ConniesUploader-v3.0.0-linux-x64.tar.gz`
+- `ConniesUploader-v3.0.0-macos-x64.zip`
 
 Each release artifact includes a SHA256 checksum.
 

@@ -31,7 +31,7 @@ class ImageHostPlugin(abc.ABC):
 
         Example:
             {
-                "version": "2.0.0",
+                "version": "3.0.0",
                 "author": "Plugin Developer",
                 "description": "Upload images to ServiceName with gallery support",
                 "website": "https://servicenam.com",

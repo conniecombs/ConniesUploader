@@ -4,24 +4,26 @@ This directory contains release notes and publishing guidance for Connie's Uploa
 
 ## Latest Release
 
-**v2.0.0 - "Posting, Templates & Gallery Workflows"**
-Release date: June 22, 2026
-Tag: `v2.0.0`
+**v3.0.0 - "Python-Owned Workflows & Generic Transport"**
+Release date: July 12, 2026
+Tag: `v3.0.0`
 
-Read the full notes: [RELEASE_NOTES_v2.0.0.md](RELEASE_NOTES_v2.0.0.md)
+Read the full notes: [RELEASE_NOTES_v3.0.0.md](RELEASE_NOTES_v3.0.0.md)
+Read the branch comparison: [BRANCH_DIFF_v3.0.0.md](BRANCH_DIFF_v3.0.0.md)
 
 ### Summary
 
-- Added ViperGirls posting targets, previews, background posting, and posting history.
-- Added richer Template Editor workflows, template migration, nested conditionals, image loops, cover loops, and BBCode/HTML warnings.
-- Added a dedicated Gallery Service and persistent Gallery Cache with pins, last-used timestamps, cached fallback display, and stronger Gallery Manager actions.
-- Reworked cover handling and queue controls with compact cover toggles, selection-aware removal, and keyboard shortcuts.
-- Expanded tests across posting targets, templates, galleries, preflight checks, cover behavior, and service integrations.
+- Promoted the app, build scripts, and active plugin metadata to `3.0.0`.
+- Completed the Python-owned website workflow and generic Go transport split.
+- Added generic sidecar actions for standalone HTTP requests and deferred batch result resolution.
+- Moved ViperGirls scheduled posting into Python's form-aware posting path.
+- Recorded the full `Bleeding-Edge` branch comparison against `main` for release review.
 
 ## Release History
 
 | Version | Date | Focus | Notes |
 |---------|------|-------|-------|
+| v3.0.0 | 2026-07-12 | Python-Owned Workflows & Generic Transport | [Notes](RELEASE_NOTES_v3.0.0.md), [Diff](BRANCH_DIFF_v3.0.0.md) |
 | v2.0.0 | 2026-06-22 | Posting, Templates & Gallery Workflows | [Notes](RELEASE_NOTES_v2.0.0.md) |
 | v1.4.0 | 2026-06-20 | User Experience Polish & Safer Upload Controls | [Notes](RELEASE_NOTES_v1.4.0.md) |
 | v1.3.0 | 2026-06-02 | Protocol Hardening & Release Reliability | [Notes](RELEASE_NOTES_v1.3.0.md) |

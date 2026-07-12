@@ -5,18 +5,19 @@ All notable changes to Connie's Uploader Ultimate will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [3.0.0] - 2026-07-12
 
 ### Added
 
-- Added the `BETA` development build label and shortened the runtime window title to `Connie's Uploader BETA`.
 - Added `Tools > Scheduled Posts` for persisted ViperGirls scheduled post records.
 - Added `View > Activity Terminal`, backed by `~/.conniesuploader/activity.log`, for tailing upload activity during longer sessions.
+- Added a dedicated v3.0.0 branch-difference record for the `Bleeding-Edge` comparison against `main`.
 
 ### Changed
 
+- Promoted app, build-script, and active plugin metadata to `3.0.0`.
 - Expanded the user tutorial's Template Editor guide with a safer editing workflow, rendering model, conditional syntax reference, image/cover loop guidance, separator examples, and troubleshooting notes.
-- Refreshed current documentation for the `frontend/` and `backend/` source split, beta build status, scheduled posting, activity logging, current menu layout, and Python-owned transport parsing model.
+- Refreshed current documentation for the `frontend/` and `backend/` source split, v3.0.0 release status, scheduled posting, activity logging, current menu layout, and Python-owned transport parsing model.
 - **Architecture:** Completed migration from Go service modules to a pure generic HTTP runner. The `backend/services/` directory has been removed entirely. All host-specific logic (gallery creation, login flows, forum posting, upload construction) now lives in Python plugins as declarative HTTP request specs.
 - Added `http_request` action to Go sidecar for standalone (non-upload) HTTP operations like login, gallery creation, and forum posting.
 - Added `http_batch_resolve` action to Go sidecar for deferred batch result polling.
