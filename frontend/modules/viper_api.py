@@ -983,7 +983,9 @@ class ViperGirlsAPI:
     def login(self, username, password):
         logger.info("ViperAPI: Logging in...")
         import hashlib
-        md5_pass = hashlib.md5(password.encode()).hexdigest()
+        # ViperGirls/vBulletin expects legacy MD5 login fields; this is not
+        # used for local password storage or security decisions.
+        md5_pass = hashlib.md5(password.encode(), usedforsecurity=False).hexdigest()
 
         seed_spec = build_transport_spec(
             f"{VIPERGIRLS_BASE_URL}/login.php?do=login",
