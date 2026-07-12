@@ -19,7 +19,7 @@ Local builds:
 CI/release workflows currently use:
 
 - Python 3.11
-- Go 1.26.4
+- Go 1.26.5
 
 ## Preferred Build Commands
 

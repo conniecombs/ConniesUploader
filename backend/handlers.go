@@ -9,7 +9,9 @@ import (
 	"encoding/base64"
 	"fmt"
 	"image"
+	_ "image/gif"
 	"image/jpeg"
+	_ "image/png"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -366,16 +368,6 @@ func workerLimit(config map[string]string) int {
 		return w
 	}
 	return 2
-}
-
-func configBool(config map[string]string, keys ...string) bool {
-	for _, key := range keys {
-		value := strings.ToLower(strings.TrimSpace(config[key]))
-		if value == "1" || value == "true" || value == "yes" || value == "on" {
-			return true
-		}
-	}
-	return false
 }
 
 func sendJobEvent(job *JobRequest, event OutputEvent) {

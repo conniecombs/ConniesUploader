@@ -4,6 +4,7 @@
 # modules/settings_manager.py
 import json
 import os
+import shutil
 from datetime import datetime
 from typing import Dict, Any, List
 from loguru import logger
@@ -198,7 +199,7 @@ class SettingsManager:
 
         try:
             if not os.path.exists(target_path):
-                os.replace(legacy_path, target_path)
+                shutil.move(legacy_path, target_path)
                 logger.warning(
                     "Migrated legacy repo-local settings file to user data directory: "
                     f"{target_path}"
@@ -206,7 +207,7 @@ class SettingsManager:
                 return
 
             backup_path = self._unique_backup_path(target_dir)
-            os.replace(legacy_path, backup_path)
+            shutil.move(legacy_path, backup_path)
             logger.warning(
                 "Moved legacy repo-local settings file out of the repository without "
                 f"overwriting existing settings: {backup_path}"

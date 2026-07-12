@@ -33,7 +33,7 @@ jobs:
       if: matrix.language == 'go'
       uses: actions/setup-go@v5
       with:
-        go-version: '1.26.4'
+        go-version: '1.26.5'
         check-latest: true
         cache-dependency-path: backend/go.sum
 
@@ -68,7 +68,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.26.4'
+        go-version: '1.26.5'
         check-latest: true
         cache-dependency-path: backend/go.sum
 
@@ -96,7 +96,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.26.4'
+        go-version: '1.26.5'
         check-latest: true
         cache-dependency-path: backend/go.sum
 

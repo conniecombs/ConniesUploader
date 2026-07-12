@@ -139,19 +139,22 @@ echo.
 
 REM --- Build Go Sidecar ---
 echo [3/6] Building Go sidecar...
-cd backend
+pushd backend
 if not exist "go.mod" (
     echo [ERROR] go.mod not found in backend!
+    popd
     exit /b 1
 )
 if not exist "main.go" (
     echo [ERROR] main.go not found in backend!
+    popd
     exit /b 1
 )
 
 "%GO_EXE%" mod download
 if errorlevel 1 (
     echo [ERROR] go mod download failed!
+    popd
     exit /b 1
 )
 
@@ -165,9 +168,10 @@ if "%ARCH%"=="32" (
 "%GO_EXE%" build -ldflags="-s -w" -o "..\uploader.exe" .
 if errorlevel 1 (
     echo [ERROR] Go build failed!
+    popd
     exit /b 1
 )
-cd ..
+popd
 if not exist "%SCRIPT_DIR%uploader.exe" (
     echo [ERROR] Go build did not create uploader.exe!
     exit /b 1

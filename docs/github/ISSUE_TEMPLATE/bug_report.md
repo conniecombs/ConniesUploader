@@ -31,7 +31,7 @@ If applicable, add screenshots to help explain your problem.
  - App Version: [e.g. v3.0.0 or commit SHA]
  - Run Type: [Packaged release exe/app or source run with python main.py]
  - Python Version: [e.g. 3.11.9, if running from source or building locally]
- - Go Version: [e.g. 1.25.9 or 1.26.4, if running from source or building locally]
+ - Go Version: [e.g. 1.25.9 or 1.26.5, if running from source or building locally]
  - Build Command Used: [e.g. build_uploader.bat --clean, if this is a build/package issue]
 
 **Upload Service:**

@@ -9,7 +9,6 @@ import os
 import re
 import shutil
 import threading
-import time
 import webbrowser
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urljoin, urlparse
@@ -985,6 +984,7 @@ class ViperGirlsAPI:
         import hashlib
         # ViperGirls/vBulletin expects legacy MD5 login fields; this is not
         # used for local password storage or security decisions.
+        # codeql[py/weak-sensitive-data-hashing]
         md5_pass = hashlib.md5(password.encode(), usedforsecurity=False).hexdigest()
 
         seed_spec = build_transport_spec(

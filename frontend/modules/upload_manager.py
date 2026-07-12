@@ -337,7 +337,7 @@ class UploadManager:
                     if service_id in SERVICE_RATE_LIMITS:
                         job_data["rate_limits"] = SERVICE_RATE_LIMITS[service_id]
                     logger.info(f"Using generic HTTP runner for {service_id} ({len(file_list)} files)")
-                    
+
                     self.active_files.update(file_list)
                     if not self.bridge.send_cmd(job_data):
                         for file_path in file_list:

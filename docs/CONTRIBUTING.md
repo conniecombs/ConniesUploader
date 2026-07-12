@@ -62,7 +62,7 @@ python main.py
 Prerequisites:
 
 - Python 3.11 or newer. The Windows build script accepts Python 3.11 through 3.13 because the pinned PyInstaller version supports Python `<3.14`.
-- Go 1.25.9 or newer for local builds. CI currently installs Go 1.26.4.
+- Go 1.25.9 or newer for local builds. CI currently installs Go 1.26.5.
 
 ## Project Layout
 

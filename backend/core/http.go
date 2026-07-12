@@ -24,6 +24,11 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+var defaultPreRequestTransport = &http.Transport{
+	MaxIdleConnsPerHost:   10,
+	ResponseHeaderTimeout: PreRequestHeaderTimeout,
+}
+
 // DoRequest performs a generic HTTP request with the given client.
 // Callers are responsible for setting service-specific headers (e.g. Referer).
 func DoRequest(ctx context.Context, client *http.Client, method, urlStr string, body io.Reader, contentType string) (*http.Response, error) {
@@ -648,10 +653,7 @@ func preRequestClient(base *http.Client, useCookies bool) *http.Client {
 		Timeout:       PreRequestTimeout,
 		Jar:           jar,
 		CheckRedirect: checkRedirect,
-		Transport: firstNonNilTransport(transport, &http.Transport{
-			MaxIdleConnsPerHost:   10,
-			ResponseHeaderTimeout: PreRequestHeaderTimeout,
-		}),
+		Transport:     firstNonNilTransport(transport, defaultPreRequestTransport),
 	}
 }
 

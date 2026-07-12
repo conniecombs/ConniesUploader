@@ -121,17 +121,6 @@ func quoteEscape(s string) string { return core.QuoteEscape(s) }
 
 func getDefaultRetryConfig() *core.RetryConfig { return core.GetDefaultRetryConfig() }
 
-func extractStatusCode(err error) int { return core.ExtractStatusCode(err) }
-
-func retryWithBackoff[T any](
-	ctx context.Context,
-	config *core.RetryConfig,
-	fn func() (T, int, error),
-	logger *log.Entry,
-) (T, error) {
-	return core.RetryWithBackoff(ctx, config, fn, logger)
-}
-
 func NewProgressWriter(w io.Writer, totalBytes int64, filePath string) *core.ProgressWriter {
 	return core.NewProgressWriter(w, totalBytes, filePath)
 }

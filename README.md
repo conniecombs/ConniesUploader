@@ -158,7 +158,7 @@ Each release artifact includes a SHA256 checksum.
 Prerequisites:
 
 - Python 3.11+
-- Go 1.25.9+ for local builds. CI currently builds with Go 1.26.4.
+- Go 1.25.9+ for local builds. CI currently builds with Go 1.26.5.
 
 Windows:
 
@@ -280,7 +280,7 @@ GitHub Actions workflows:
 - [Release - Build and Publish](.github/workflows/release.yml)
 - [Security Scanning](.github/workflows/security.yml)
 
-The CI workflow builds the Go sidecar on Windows, Linux, and macOS with Go 1.26.4; runs Go vet and Go tests; installs Python dependencies; runs the Python test suite; checks dependencies with `govulncheck` and `pip-audit`; and runs Go/Python linting.
+The CI workflow builds the Go sidecar on Windows, Linux, and macOS with Go 1.26.5; runs Go vet and Go tests; installs Python dependencies; runs the Python test suite; checks dependencies with `govulncheck` and `pip-audit`; and runs Go/Python linting.
 
 The release workflow builds Windows, Linux, and macOS artifacts, verifies that the sidecar is bundled, calculates SHA256 checksums, packages the artifacts, and publishes a GitHub release.
 
