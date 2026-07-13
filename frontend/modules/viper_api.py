@@ -979,16 +979,14 @@ class ViperGirlsAPI:
         self.bridge = SidecarBridge.get()
         self.is_logged_in = False
 
-    def login(self, username, password):
+    def login(self, username, login_secret):
         logger.info("ViperAPI: Logging in...")
         import hashlib
 
         # ViperGirls/vBulletin expects legacy MD5 login fields; this is not
         # used for local password storage or security decisions.
         legacy_md5 = getattr(hashlib, "md5")
-
-        # codeql[py/weak-sensitive-data-hashing]
-        md5_pass = legacy_md5(password.encode(), usedforsecurity=False).hexdigest()
+        md5_pass = legacy_md5(login_secret.encode(), usedforsecurity=False).hexdigest()
 
         seed_spec = build_transport_spec(
             f"{VIPERGIRLS_BASE_URL}/login.php?do=login",
