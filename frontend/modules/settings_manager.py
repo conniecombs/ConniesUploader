@@ -198,7 +198,6 @@ class SettingsManager:
         os.makedirs(target_dir, exist_ok=True)
 
         try:
-            import shutil
             if not os.path.exists(target_path):
                 shutil.move(legacy_path, target_path)
                 logger.warning(
