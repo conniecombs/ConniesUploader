@@ -49,10 +49,8 @@ func TestSendJSONMultiple(t *testing.T) {
 // --- Context and Timeout Tests ---
 
 func TestContextTimeout(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
-
-	time.Sleep(20 * time.Millisecond)
 
 	select {
 	case <-ctx.Done():
@@ -60,8 +58,8 @@ func TestContextTimeout(t *testing.T) {
 		if ctx.Err() != context.DeadlineExceeded {
 			t.Errorf("Expected DeadlineExceeded, got %v", ctx.Err())
 		}
-	default:
-		t.Error("Context did not timeout as expected")
+	case <-time.After(2 * time.Second):
+		t.Error("Context did not timeout within expected window")
 	}
 }
 
