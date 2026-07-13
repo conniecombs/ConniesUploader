@@ -308,7 +308,7 @@ This release was validated against:
   2. If persists, check for stuck background threads in execution log
 
 For more help, see:
-- [BUILD_TROUBLESHOOTING.md](../../BUILD_TROUBLESHOOTING.md)
+- [BUILD_TROUBLESHOOTING.md](../guides/BUILD_TROUBLESHOOTING.md)
 - [GitHub Issues](https://github.com/conniecombs/conniesuploader/issues)
 
 ---
@@ -317,19 +317,19 @@ For more help, see:
 
 ### Documentation
 - [README.md](../../README.md) - Main project documentation
-- [CHANGELOG.md](../../CHANGELOG.md) - Detailed version history
-- [ARCHITECTURE.md](../../ARCHITECTURE.md) - System architecture
-- [CONTRIBUTING.md](../../CONTRIBUTING.md) - Development guidelines
+- [CHANGELOG.md](../CHANGELOG.md) - Detailed version history
+- [ARCHITECTURE.md](../ARCHITECTURE.md) - System architecture
+- [CONTRIBUTING.md](../CONTRIBUTING.md) - Development guidelines
 
 ### Previous Releases
-- [v1.2.1 Release Notes](RELEASE_NOTES_v1.2.1.md) - Gallery Fix
+- [v1.2.1 Release Notes](RELEASE_NOTES.md) - Gallery Fix
 - [v1.1.0 Release Notes](RELEASE_NOTES_v1.1.0.md) - Performance & Polish
 - [v1.0.5 Release Notes](RELEASE_NOTES_v1.0.5.md) - Resilience & Intelligence
 
 ### Support
 - [Report Issues](https://github.com/conniecombs/conniesuploader/issues)
-- [Feature Requests](https://github.com/conniecombs/conniesuploader/issues/new?template=feature_request.md)
-- [Bug Reports](https://github.com/conniecombs/conniesuploader/issues/new?template=bug_report.md)
+- [Feature Requests](https://github.com/conniecombs/conniesuploader/issues/new?template=feature_request.yml)
+- [Bug Reports](https://github.com/conniecombs/conniesuploader/issues/new?template=bug_report.yml)
 
 ---
 
@@ -372,7 +372,7 @@ This release was made possible by real-world testing with large file batches. Sp
 - Enhanced thumbnail loading strategies
 
 ### Future Roadmap
-See [REMAINING_ISSUES.md](../../REMAINING_ISSUES.md) for detailed roadmap.
+See [REMAINING_ISSUES.md](../history/REMAINING_ISSUES.md) for detailed roadmap.
 
 ---
 

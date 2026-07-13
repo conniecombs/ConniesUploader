@@ -12,17 +12,21 @@ This directory contains historical documentation from earlier development phases
 | --- | --- |
 | Install or use the app | [README.md](../../README.md) |
 | Full user walkthrough | [User Tutorial](../guides/USER_TUTORIAL.md) |
-| Current architecture | [ARCHITECTURE.md](../../ARCHITECTURE.md) |
-| Contributing | [CONTRIBUTING.md](../../CONTRIBUTING.md) |
+| Current architecture | [ARCHITECTURE.md](../ARCHITECTURE.md) |
+| Contributing | [CONTRIBUTING.md](../CONTRIBUTING.md) |
 | Create or maintain plugins | [Plugin Creation Guide](../guides/PLUGIN_CREATION_GUIDE.md) |
 | Plugin settings schemas | [Schema Plugin Guide](../guides/SCHEMA_PLUGIN_GUIDE.md) |
 | Build/package troubleshooting | [Build Troubleshooting](../guides/BUILD_TROUBLESHOOTING.md) |
 | Release process | [Release Process](../releases/RELEASE_PROCESS.md) |
-| Current change history | [CHANGELOG.md](../../CHANGELOG.md) |
+| Current change history | [CHANGELOG.md](../CHANGELOG.md) |
 
-`REMAINING_ISSUES.md` is retained at the repository root as an older tracker/status document. Treat active GitHub issues, pull requests, and `CHANGELOG.md` as the current source of truth for ongoing work.
+[REMAINING_ISSUES.md](REMAINING_ISSUES.md) is archived here as an older tracker/status document. Treat active GitHub issues, pull requests, and `CHANGELOG.md` as the current source of truth for ongoing work.
 
 ## Archived Documents
+
+### Trackers And Status Documents
+
+- [REMAINING_ISSUES.md](REMAINING_ISSUES.md)
 
 ### Phase Implementation Summaries
 

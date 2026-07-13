@@ -7,16 +7,23 @@
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
+import subprocess
+import time
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+WINDOWS_APP_IMAGE = "ConniesUploader.exe"
 
 DEFAULT_DIRS = (
     "build",
     "dist",
     "htmlcov",
     ".pytest_cache",
+    "frontend/htmlcov",
+    "frontend/.pytest_cache",
+    "backend/.pytest_cache",
 )
 
 DEFAULT_FILES = (
@@ -27,11 +34,17 @@ DEFAULT_FILES = (
     "ConniesUploader",
     "ConniesUploader.exe",
     "ConniesUploader.spec",
+    "frontend/.coverage",
+    "backend/coverage.out",
+    "packaging/ConniesUploader.spec",
 )
 
 DEFAULT_PATTERNS = (
     ".coverage.*",
     "crash_log*.log",
+    "frontend/.coverage.*",
+    "frontend/crash_log*.log",
+    "logs/crash_log*.log",
 )
 
 OPTIONAL_USER_DIRS = (
@@ -108,6 +121,41 @@ def collect_targets(include_output: bool, include_user_data: bool) -> list[Path]
     return sorted(unique.values(), key=lambda path: str(path).lower())
 
 
+def is_windows_app_running() -> bool:
+    result = subprocess.run(
+        ["tasklist", "/FI", f"IMAGENAME eq {WINDOWS_APP_IMAGE}"],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    return result.returncode == 0 and WINDOWS_APP_IMAGE.lower() in result.stdout.lower()
+
+
+def stop_running_windows_app(dry_run: bool) -> bool:
+    if os.name != "nt" or not is_windows_app_running():
+        return True
+    if dry_run:
+        print(f"would close  running {WINDOWS_APP_IMAGE}")
+        return True
+
+    print(f"closing      running {WINDOWS_APP_IMAGE}")
+    result = subprocess.run(
+        ["taskkill", "/F", "/IM", WINDOWS_APP_IMAGE],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    if result.returncode != 0:
+        message = (result.stderr or result.stdout).strip()
+        print(f"blocked      running {WINDOWS_APP_IMAGE}")
+        if message:
+            print(message)
+        return False
+
+    time.sleep(1)
+    return True
+
+
 def remove_target(path: Path, dry_run: bool) -> str:
     if not path.exists():
         return "missing"
@@ -129,6 +177,8 @@ def main() -> int:
     print(f"Repository: {REPO_ROOT}")
     if args.dry_run:
         print("Mode: dry run")
+    if not stop_running_windows_app(args.dry_run):
+        return 1
 
     actions = {"removed": 0, "would remove": 0, "missing": 0, "unsafe": 0}
     for target in targets:

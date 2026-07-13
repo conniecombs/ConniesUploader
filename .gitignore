@@ -1,5 +1,9 @@
 # Python
 __pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
 *.py[cod]
 *$py.class
 *.so
@@ -25,6 +29,7 @@ MANIFEST
 
 # Virtual Environment
 venv/
+.venv/
 env/
 ENV/
 env.bak/
@@ -40,7 +45,6 @@ venv.bak/
 *.swp
 *.swo
 *~
-.DS_Store
 
 # Go
 *.exe
@@ -51,6 +55,9 @@ venv.bak/
 *.test
 *.out
 go.work
+coverage.out
+coverage.html
+profile.out
 
 # Build artifacts
 uploader.exe
@@ -63,38 +70,35 @@ go_installer.msi
 go_installer.zip
 .build-tools/
 
-# Output and temporary files
+# Output, Logs, and temporary files
 Output/
+logs/
 *.log
-crash_log.log
 crash_log*.log
 .coverage
 .coverage.*
-coverage.out
 htmlcov/
+*.tmp
+*.temp
 
-# User settings and credentials
+# User settings, credentials, environment variables
 user_settings.json
 user_templates.json
-
-# Build directories
-dist/
-build/
-
-# PyInstaller
-*.spec
-
-# Logs
-*.log
-logs/
+gallery_cache.json
+saved_threads.json
+posting_history.json
+session.json
+cookies.json
+.env
+.env.*
+!.env.example
 
 # OS
 Thumbs.db
+ehthumbs.db
 .DS_Store
-
-# Temporary files
-*.tmp
-*.temp
+.AppleDouble
+.LSOverride
 
 # Application specific
 .conniesuploader/

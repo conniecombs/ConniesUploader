@@ -16,7 +16,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        go-version: ['1.26.4']
+        go-version: ['1.26.5']
 
     steps:
     - uses: actions/checkout@v5
@@ -24,17 +24,26 @@ jobs:
       with:
         go-version: ${{ matrix.go-version }}
         check-latest: true
+        cache-dependency-path: backend/go.sum
 
     - run: go mod download
+      working-directory: backend
     - run: |
         go mod tidy
         git diff --exit-code go.mod go.sum
+      working-directory: backend
 
     - run: go mod verify
+      working-directory: backend
     - run: go vet ./...
+      working-directory: backend
     - run: go test -v -coverprofile coverage.out ./...
+      working-directory: backend
     - run: go tool cover -func coverage.out | tail -1
+      working-directory: backend
+      shell: bash
     - run: go build -v -ldflags="-s -w" -o uploader${{ runner.os == 'Windows' && '.exe' || '' }} .
+      working-directory: backend
 
   python-build:
     name: Build Python Application
@@ -50,12 +59,15 @@ jobs:
     - uses: actions/setup-python@v6
       with:
         python-version: ${{ matrix.python-version }}
+        cache: 'pip'
+        cache-dependency-path: frontend/requirements.txt
 
     - run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
+        pip install -r frontend/requirements.txt
 
     - run: pytest tests/ -v --tb=short
+      working-directory: frontend
 
   dependency-check:
     runs-on: ubuntu-latest
@@ -63,18 +75,22 @@ jobs:
     - uses: actions/checkout@v5
     - uses: actions/setup-go@v5
       with:
-        go-version: '1.26.4'
+        go-version: '1.26.5'
         check-latest: true
+        cache-dependency-path: backend/go.sum
     - run: |
         go install golang.org/x/vuln/cmd/govulncheck@latest
         govulncheck ./...
+      working-directory: backend
 
     - uses: actions/setup-python@v6
       with:
         python-version: '3.11'
+        cache: 'pip'
+        cache-dependency-path: frontend/requirements.txt
 
     - run: python -m pip install pip-audit==2.10.0
-    - run: pip-audit -r requirements.txt
+    - run: pip-audit -r frontend/requirements.txt
 
   code-quality:
     runs-on: ubuntu-latest
@@ -82,19 +98,24 @@ jobs:
     - uses: actions/checkout@v5
     - uses: actions/setup-go@v5
       with:
-        go-version: '1.26.4'
+        go-version: '1.26.5'
         check-latest: true
+        cache-dependency-path: backend/go.sum
 
     - name: Build golangci-lint v2 with workflow Go toolchain
       run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
 
     - name: Run golangci-lint
       run: golangci-lint run --timeout=5m
+      working-directory: backend
 
     - uses: actions/setup-python@v6
       with:
         python-version: '3.11'
+        cache: 'pip'
+        cache-dependency-path: frontend/requirements.txt
 
     - run: python -m pip install flake8==7.1.1
     - run: flake8 main.py modules/ --max-line-length=120 --ignore=E501,W503 --exclude=__pycache__
+      working-directory: frontend
 

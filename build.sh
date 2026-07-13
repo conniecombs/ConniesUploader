@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Connie's Uploader Ultimate - Linux/macOS build script.
+# Connie's Uploader - Linux/macOS build script.
 
 set -euo pipefail
 
@@ -13,7 +13,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 APP_NAME="ConniesUploader"
-VERSION="2.0.0"
+VERSION="3.0.0"
 PYTHON_MIN_MINOR=11
 PYTHON_MAX_MINOR=13
 GO_VERSION_MIN="1.25.9"
@@ -41,7 +41,7 @@ esac
 
 print_header() {
     echo -e "${BLUE}========================================================${NC}"
-    echo -e "${BLUE}      Connie's Uploader Ultimate - Build Tool${NC}"
+    echo -e "${BLUE}      Connie's Uploader - Build Tool${NC}"
     echo -e "${BLUE}      Version: $VERSION${NC}"
     echo -e "${BLUE}      Platform: $PLATFORM $(uname -m)${NC}"
     echo -e "${BLUE}========================================================${NC}"
@@ -116,35 +116,94 @@ find_python() {
     return 1
 }
 
+install_packages() {
+    local debian_pkgs="$1"
+    local brew_pkgs="$2"
+    local dnf_pkgs="$3"
+    local pacman_pkgs="$4"
+
+    if command -v brew >/dev/null 2>&1; then
+        echo "  - Using Homebrew to install packages..."
+        brew install $brew_pkgs
+    elif command -v apt-get >/dev/null 2>&1; then
+        echo "  - Using apt-get to install packages (requires sudo)..."
+        sudo apt-get update
+        sudo apt-get install -y $debian_pkgs
+    elif command -v dnf >/dev/null 2>&1; then
+        echo "  - Using dnf to install packages (requires sudo)..."
+        sudo dnf install -y $dnf_pkgs
+    elif command -v pacman >/dev/null 2>&1; then
+        echo "  - Using pacman to install packages (requires sudo)..."
+        sudo pacman -Sy --noconfirm $pacman_pkgs
+    else
+        print_error "No supported package manager found (brew, apt-get, dnf, pacman)."
+        return 1
+    fi
+}
+
 check_python() {
     print_step "1/6" "Checking Python installation..."
 
     if ! find_python; then
-        print_error "Compatible Python not found."
-        echo "Need Python 3.$PYTHON_MIN_MINOR through 3.$PYTHON_MAX_MINOR because requirements.txt pins pyinstaller==6.11.1."
-        echo "Install Python 3.11, 3.12, or 3.13 and rerun this script."
-        exit 1
+        print_warning "Compatible Python not found. Attempting to install via package manager..."
+        install_packages "python3 python3-venv python3-pip" "python@3.11" "python3" "python311" || exit 1
+        
+        if ! find_python; then
+            print_error "Failed to install a compatible Python via package manager."
+            echo "Install Python 3.11, 3.12, or 3.13 manually and rerun this script."
+            exit 1
+        fi
     fi
 
     local python_version
     python_version="$($PYTHON_CMD --version 2>&1 | awk '{print $2}')"
     echo "  - Found Python $python_version via $PYTHON_CMD"
+
+    if ! "$PYTHON_CMD" -c "import tkinter" >/dev/null 2>&1; then
+        print_warning "tkinter module not found. Attempting to install via package manager..."
+        install_packages "python3-tk" "tcl-tk" "python3-tkinter" "tk" || exit 1
+        
+        if ! "$PYTHON_CMD" -c "import tkinter" >/dev/null 2>&1; then
+            print_error "Failed to install tkinter via package manager."
+            echo "Install your system's tkinter package manually and rerun this script."
+            exit 1
+        fi
+    fi
+    echo "  - Python tkinter module is available"
 }
 
 check_go() {
     print_step "2/6" "Checking Go installation..."
 
+    local go_missing=false
     if ! command -v go >/dev/null 2>&1; then
-        print_error "Go not found."
-        echo "Install Go $GO_VERSION_MIN or newer from https://go.dev/dl/ and rerun this script."
-        exit 1
+        print_warning "Go not found. Attempting to install via package manager..."
+        go_missing=true
+    else
+        local go_version
+        go_version="$(go version | awk '{print $3}' | sed 's/^go//')"
+        if ! version_ge "$go_version" "$GO_VERSION_MIN"; then
+            print_warning "Go $go_version found, but Go $GO_VERSION_MIN or newer is required."
+            echo "  - Attempting to upgrade via package manager..."
+            go_missing=true
+        fi
     fi
 
-    local go_version
-    go_version="$(go version | awk '{print $3}' | sed 's/^go//')"
-    if ! version_ge "$go_version" "$GO_VERSION_MIN"; then
-        print_error "Go $go_version found, but Go $GO_VERSION_MIN or newer is required."
-        exit 1
+    if [ "$go_missing" = true ]; then
+        install_packages "golang" "go" "golang" "go" || exit 1
+        
+        if ! command -v go >/dev/null 2>&1; then
+            print_error "Failed to install Go via package manager."
+            exit 1
+        fi
+        
+        local new_go_version
+        new_go_version="$(go version | awk '{print $3}' | sed 's/^go//')"
+        if ! version_ge "$new_go_version" "$GO_VERSION_MIN"; then
+            print_error "Package manager provided Go $new_go_version, but $GO_VERSION_MIN or newer is required."
+            exit 1
+        fi
+        go_version="$new_go_version"
     fi
 
     echo "  - Found Go $go_version"
@@ -153,12 +212,14 @@ check_go() {
 build_go_sidecar() {
     print_step "3/6" "Building Go sidecar..."
 
+    cd backend
+
     if [ ! -f "go.mod" ]; then
-        print_error "go.mod not found!"
+        print_error "go.mod not found in backend!"
         exit 1
     fi
     if [ ! -f "main.go" ]; then
-        print_error "main.go not found!"
+        print_error "main.go not found in backend!"
         exit 1
     fi
 
@@ -166,7 +227,9 @@ build_go_sidecar() {
     go mod download
 
     echo "  - Compiling optimized binary..."
-    go build -ldflags="-s -w" -o "$SIDECAR_NAME" .
+    go build -ldflags="-s -w" -o "../$SIDECAR_NAME" .
+
+    cd ..
 
     if [ ! -f "$SIDECAR_NAME" ]; then
         print_error "Failed to build uploader binary!"
@@ -180,8 +243,8 @@ build_go_sidecar() {
 setup_python_env() {
     print_step "4/6" "Setting up Python environment..."
 
-    if [ ! -f "requirements.txt" ]; then
-        print_error "requirements.txt not found!"
+    if [ ! -f "frontend/requirements.txt" ]; then
+        print_error "frontend/requirements.txt not found!"
         exit 1
     fi
 
@@ -204,7 +267,7 @@ setup_python_env() {
 
     echo "  - Installing Python dependencies..."
     "$VENV_PYTHON" -m pip install --upgrade pip
-    "$VENV_PYTHON" -m pip install -r requirements.txt
+    "$VENV_PYTHON" -m pip install -r frontend/requirements.txt
 
     echo "  - Python environment ready"
 }
@@ -218,12 +281,16 @@ build_executable() {
     fi
 
     echo "  - Packaging with PyInstaller..."
+    cd frontend
     "$VENV_PYTHON" -m PyInstaller --noconsole --onefile --clean \
         --name "$APP_NAME" \
-        --icon "logo.ico" \
-        --add-data "$SIDECAR_NAME$ADD_DATA_SEP." \
-        --add-data "logo.ico$ADD_DATA_SEP." \
-        --additional-hooks-dir "pyinstaller_hooks" \
+        --icon "../packaging/logo.ico" \
+        --add-data "../$SIDECAR_NAME$ADD_DATA_SEP." \
+        --add-data "../packaging/logo.ico$ADD_DATA_SEP." \
+        --additional-hooks-dir "../packaging/pyinstaller_hooks" \
+        --distpath "../dist" \
+        --workpath "../build" \
+        --specpath "../packaging" \
         --collect-all tkinterdnd2 \
         --collect-submodules modules.plugins \
         --hidden-import modules.plugins.imx \
@@ -233,6 +300,7 @@ build_executable() {
         --hidden-import modules.plugins.imagebam \
         --hidden-import modules.plugins.imgur \
         main.py
+    cd ..
 
     if [ ! -f "$DIST_EXE" ]; then
         print_error "Build failed! No executable found in dist/ folder."
@@ -303,8 +371,8 @@ clean_build() {
     if [ -n "$clean_python" ]; then
         "$clean_python" scripts/maintenance/clean_generated.py
     else
-        rm -rf build dist htmlcov __pycache__ .pytest_cache
-        rm -f "$APP_NAME.spec" uploader uploader.exe .coverage .coverage.* crash_log*.log
+        rm -rf build dist htmlcov __pycache__ .pytest_cache frontend/__pycache__ frontend/.pytest_cache frontend/htmlcov backend/__debug_bin
+        rm -f "packaging/$APP_NAME.spec" uploader uploader.exe .coverage .coverage.* logs/crash_log*.log crash_log*.log
     fi
     echo "Clean complete!"
 }

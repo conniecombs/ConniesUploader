@@ -12,7 +12,8 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO_ROOT))
+FRONTEND_ROOT = REPO_ROOT / "frontend"
+sys.path.insert(0, str(FRONTEND_ROOT))
 
 print("=" * 70)
 print("Plugin Discovery Diagnostic".center(70))
@@ -20,7 +21,7 @@ print("=" * 70)
 
 # Step 1: Check if plugin files exist
 print("\n[1] Checking plugin files...")
-plugin_dir = REPO_ROOT / "modules" / "plugins"
+plugin_dir = FRONTEND_ROOT / "modules" / "plugins"
 plugin_files = [f for f in os.listdir(plugin_dir) if f.endswith(".py") and not f.startswith("_")]
 plugin_files = [f for f in plugin_files if "legacy" not in f and "v2" not in f]
 

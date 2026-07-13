@@ -1,6 +1,6 @@
 # Build Troubleshooting Guide
 
-This guide covers source-run and packaged-build problems for Connie's Uploader Ultimate.
+This guide covers source-run and packaged-build problems for Connie's Uploader.
 
 ## Quick Rules
 
@@ -19,7 +19,7 @@ Local builds:
 CI/release workflows currently use:
 
 - Python 3.11
-- Go 1.26.4
+- Go 1.26.5
 
 ## Preferred Build Commands
 
@@ -52,7 +52,7 @@ build_uploader.bat --ci
 
 ### Symptoms
 
-When running `python main.py`, logs show:
+When running `python main.py` from the repo root, or `cd frontend && python main.py`, logs show:
 
 ```text
 Sidecar executable 'uploader.exe' was not found
@@ -67,14 +67,20 @@ This is expected if you start from source before building the Go sidecar. The Py
 Windows:
 
 ```powershell
-go build -ldflags="-s -w" -o uploader.exe .
+cd backend
+go build -ldflags="-s -w" -o ../uploader.exe .
+cd ..
+cd frontend
 python main.py
 ```
 
 Linux/macOS:
 
 ```bash
-go build -ldflags="-s -w" -o uploader .
+cd backend
+go build -ldflags="-s -w" -o ../uploader .
+cd ..
+cd frontend
 python main.py
 ```
 
@@ -113,7 +119,9 @@ The release workflow uses a minimum final executable threshold of 15 MB to catch
 Use this only for debugging. The command should include local hooks, tkinterdnd2 assets, plugin submodules, and explicit active plugin imports.
 
 ```batch
-go build -ldflags="-s -w" -o uploader.exe .
+cd backend
+go build -ldflags="-s -w" -o ../uploader.exe .
+cd ..
 
 pyinstaller ^
   --noconsole ^
@@ -121,10 +129,10 @@ pyinstaller ^
   --clean ^
   --noupx ^
   --name "ConniesUploader" ^
-  --icon "logo.ico" ^
+  --icon "packaging/logo.ico" ^
   --add-data "uploader.exe;." ^
-  --add-data "logo.ico;." ^
-  --additional-hooks-dir "pyinstaller_hooks" ^
+  --add-data "packaging/logo.ico;." ^
+  --additional-hooks-dir "packaging/pyinstaller_hooks" ^
   --collect-all tkinterdnd2 ^
   --collect-submodules modules.plugins ^
   --hidden-import modules.plugins.imx ^
@@ -133,15 +141,20 @@ pyinstaller ^
   --hidden-import modules.plugins.turbo ^
   --hidden-import modules.plugins.imagebam ^
   --hidden-import modules.plugins.imgur ^
-  main.py
+  --workpath build ^
+  --distpath dist ^
+  --specpath packaging ^
+  frontend/main.py
 ```
 
-If a new active plugin is added, update this command, `build_uploader.bat`, `build.sh`, `Makefile`, `.github/workflows/release.yml`, and `tests/test_build_contract.py`.
+If a new active plugin is added, update this command, `build_uploader.bat`, `build.sh`, `Makefile`, `.github/workflows/release.yml`, and `frontend/tests/test_build_contract.py`.
 
 ## Manual Linux/macOS PyInstaller Build
 
 ```bash
-go build -ldflags="-s -w" -o uploader .
+cd backend
+go build -ldflags="-s -w" -o ../uploader .
+cd ..
 
 pyinstaller \
   --noconsole \
@@ -149,8 +162,8 @@ pyinstaller \
   --clean \
   --name "ConniesUploader" \
   --add-binary "uploader:." \
-  --add-data "logo.ico:." \
-  --additional-hooks-dir "pyinstaller_hooks" \
+  --add-data "packaging/logo.ico:." \
+  --additional-hooks-dir "packaging/pyinstaller_hooks" \
   --collect-all tkinterdnd2 \
   --collect-submodules modules.plugins \
   --hidden-import modules.plugins.imx \
@@ -159,7 +172,10 @@ pyinstaller \
   --hidden-import modules.plugins.turbo \
   --hidden-import modules.plugins.imagebam \
   --hidden-import modules.plugins.imgur \
-  main.py
+  --workpath build \
+  --distpath dist \
+  --specpath packaging \
+  frontend/main.py
 ```
 
 ## EXE Crashes Importing `_tkinter`
@@ -184,10 +200,10 @@ PyInstaller did not bundle the Python Tkinter extension or the Tcl/Tk runtime co
 build_uploader.bat --clean
 ```
 
-2. Confirm `pyinstaller_hooks/` exists and the build command includes:
+2. Confirm `packaging/pyinstaller_hooks/` exists and the build command includes:
 
 ```text
---additional-hooks-dir "pyinstaller_hooks"
+--additional-hooks-dir "packaging/pyinstaller_hooks"
 ```
 
 3. Let the build script run its archive verification. It checks for:
@@ -218,14 +234,14 @@ An old `tkinterdnd2` version is installed.
 ### Fix
 
 ```batch
-pip install -r requirements.txt
+pip install -r frontend/requirements.txt
 build_uploader.bat --clean
 ```
 
-`requirements.txt` should pin:
+`frontend/requirements.txt` should pin:
 
 ```text
-tkinterdnd2==0.4.3
+tkinterdnd2==0.5.0
 ```
 
 ## Plugins Missing In Packaged Build
@@ -280,7 +296,7 @@ Install Python with your system package manager or pyenv. Then recreate the venv
 ```bash
 python -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt
+pip install -r frontend/requirements.txt
 ```
 
 ## Go Not Found
@@ -297,8 +313,8 @@ Verify:
 
 ```bash
 go version
-go mod download
-go build -ldflags="-s -w" -o uploader .
+(cd backend && go mod download)
+(cd backend && go build -ldflags="-s -w" -o ../uploader .)
 ```
 
 ## Dependency Installation Fails
@@ -312,7 +328,7 @@ rmdir /s /q venv
 python -m venv venv
 call venv\Scripts\activate
 python -m pip install --upgrade pip
-pip install -r requirements.txt
+pip install -r frontend/requirements.txt
 ```
 
 Linux/macOS:
@@ -322,7 +338,7 @@ rm -rf venv
 python -m venv venv
 source venv/bin/activate
 python -m pip install --upgrade pip
-pip install -r requirements.txt
+pip install -r frontend/requirements.txt
 ```
 
 The pip “new release available” notice is informational and does not mean the build failed.
@@ -344,7 +360,7 @@ The cleanup helper removes generated build/test artifacts such as:
 - `dist/`
 - `.pytest_cache/`
 - `uploader`, `uploader.exe`
-- `ConniesUploader.spec`
+- `packaging/ConniesUploader.spec`
 - `crash_log*.log`
 
 It leaves user data alone unless explicitly told otherwise.
@@ -360,6 +376,7 @@ Before distributing a build:
 - [ ] Archive verification found Tk/Tcl runtime files on Windows.
 - [ ] Plugins load and show six active services.
 - [ ] `View > Execution Log` does not show startup import errors.
+- [ ] `View > Activity Terminal` can open the persisted activity log when testing long uploads.
 - [ ] A one-file upload works.
 - [ ] Drag and drop works.
 - [ ] Gallery Manager opens.
@@ -377,4 +394,5 @@ Include:
 - Final executable size, if packaged.
 - `python scripts/diagnostics/check_sidecar_location.py` output for source-run sidecar issues.
 - Relevant `View > Execution Log` output.
+- Relevant `View > Activity Terminal` output from `~/.conniesuploader/activity.log`, if upload activity is involved.
 - Screenshot of the error dialog, if present.

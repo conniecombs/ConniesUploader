@@ -4,12 +4,16 @@ This project keeps source files, developer helpers, generated build output, and 
 
 ## Source Directories
 
-- `modules/` contains the Python application, UI, plugin manager, plugins, template system, and sidecar bridge.
-- `core/`, `services/`, `handlers.go`, and `main.go` contain the Go sidecar.
-- `tests/` contains the Python test suite.
+- `frontend/` contains the Python application (`main.py`), `modules/`, UI, plugins, templates, and Python test suite (`tests/`).
+- `backend/` contains the Go sidecar (`main.go`, `handlers.go`), along with `core/` logic and Go tests.
+- `packaging/` contains PyInstaller build assets and custom hooks (`packaging/pyinstaller_hooks/`).
+- `logs/` is available for optional local diagnostics and is ignored by git.
 - `docs/` contains user, developer, release, and troubleshooting documentation.
 - `docs/assets/screenshots/` contains tutorial and README screenshots.
-- `pyinstaller_hooks/` contains packaging hooks required by the Windows, Linux, and macOS builds.
+
+The repository root intentionally keeps the primary `README.md`, build scripts, and cross-project configuration files. The `uploader*_test.go` files inside `backend/` use `package main` internals such as the sidecar HTTP client, job handlers, and package-level compatibility wrappers, so they stay beside `main.go` and `handlers.go`.
+
+Large Python modules should be split only when a real ownership boundary is clear. The main window implementation now lives under `frontend/modules/ui/Main_Window/`, with `frontend/modules/ui/main_window.py` kept as the compatibility import wrapper. `frontend/modules/dnd.py` still owns queue selection, drag/reorder, and context-menu behavior. Move code across those boundaries only with focused contract updates and verification, not as cosmetic layout cleanup.
 
 ## Developer Helpers
 
@@ -37,7 +41,7 @@ These files and folders are generated locally and should not be committed:
 - `.build-tools/`
 - `uploader` and `uploader.exe`
 - `ConniesUploader` and `ConniesUploader.exe`
-- `ConniesUploader.spec`
+- `packaging/ConniesUploader.spec`
 - `crash_log*.log`
 
 Use `python scripts/maintenance/clean_generated.py` to remove these safely.
@@ -47,15 +51,18 @@ Use `python scripts/maintenance/clean_generated.py` to remove these safely.
 These files are user-specific runtime data and should not be committed:
 
 - `Output/`
-- `user_settings.json`
+- legacy repo-local `user_settings.json`
 - legacy `user_templates.json`
 
 The app stores current persistent data under `~/.conniesuploader/`, including:
 
+- `user_settings.json`
 - `templates.json`
 - `gallery_cache.json`
 - `saved_threads.json`
 - `posting_history.json`
+- `scheduled_posts.json`
+- `activity.log`
 - `history/`
 
 The cleanup helper leaves local user data alone by default. To remove it intentionally, pass `--include-output` or `--include-user-data`.

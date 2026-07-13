@@ -1,6 +1,7 @@
-# Connie's Uploader Ultimate
+# Connie's Uploader
 
-![Project version badge showing v2.0.0](https://img.shields.io/badge/version-2.0.0-blue.svg)
+![Current app build badge showing v3.0.0](https://img.shields.io/badge/app-v3.0.0-orange.svg)
+![Latest tagged release badge showing v3.0.0](https://img.shields.io/badge/latest%20release-v3.0.0-blue.svg)
 ![MIT License badge](https://img.shields.io/badge/license-MIT-green.svg)
 ![Supported platforms: Windows, Linux, and macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)
 ![Continuous integration workflow status: passing](https://github.com/conniecombs/ConniesUploader/actions/workflows/ci.yml/badge.svg?branch=main)
@@ -9,9 +10,11 @@
 ![Go programming language version 1.25.9 or higher](https://img.shields.io/badge/Go-1.25.9+-00ADD8.svg)
 ![Python version 3.11 or higher required](https://img.shields.io/badge/Python-3.11+-3776AB.svg)
 
-Connie's Uploader Ultimate is a desktop image-uploading tool with a CustomTkinter GUI and a Go sidecar for concurrent uploads. It supports batch uploads, gallery workflows, custom output templates, drag and drop, secure credential storage, and automated release builds for Windows, Linux, and macOS.
+Connie's Uploader is a desktop image-uploading tool with a CustomTkinter GUI and a Go sidecar for concurrent uploads. It supports batch uploads, gallery workflows, custom output templates, drag and drop, secure credential storage, ViperGirls posting workflows, and automated release builds for Windows, Linux, and macOS.
 
-**Latest release:** v2.0.0 "Posting, Templates & Gallery Workflows" (June 22, 2026)
+**Latest tagged release:** v3.0.0 "Python-Owned Workflows & Generic Transport" (July 12, 2026)
+
+**Current release branch:** `Bleeding-Edge`
 
 ## Screenshots
 
@@ -19,7 +22,7 @@ Connie's Uploader Ultimate is a desktop image-uploading tool with a CustomTkinte
 
 The main screen opens directly into the upload workflow. New users get a large drop zone, centered Add Files and Add Folder actions, and host readiness feedback before they start.
 
-![Connie's Uploader 2.0.0 empty upload queue with Pixhost selected, ready status, and centered Add Files and Add Folder actions](docs/assets/screenshots/empty-drop-zone.png)
+![Connie's Uploader 3.0.0 empty upload queue with Pixhost selected, ready status, and centered Add Files and Add Folder actions](docs/assets/screenshots/empty-drop-zone.png)
 
 ### Organize Batches Automatically
 
@@ -39,9 +42,9 @@ Import Checks and Upload Checks explain what needs attention inside the main win
 
 ![Import Checks and Upload Checks panels showing rejected files, preflight warnings, and fix buttons](docs/assets/screenshots/import-upload-checks.png)
 
-### Track Upload Activity Inline
+### Track Upload Activity
 
-The activity panel records the work as it happens: host readiness, queueing, active uploads, completed files, and progress. It can be hidden when users want the queue to take more space.
+The activity panel records the work as it happens: host readiness, queueing, active uploads, completed files, and progress. `View > Activity Terminal` can also tail the persisted activity log in PowerShell during longer upload sessions.
 
 ![Connie's Uploader upload progress view with uploaded, uploading, and queued rows plus a visible activity timeline](docs/assets/screenshots/activity-progress.png)
 
@@ -74,7 +77,7 @@ The Gallery Manager can refresh host galleries, search and sort results, pin fre
 - Save output files to `Output/` and keep history under `~/.conniesuploader/history/`.
 - Use dark, light, or system appearance modes.
 - Auto-copy completed output to the clipboard.
-- Integrate with ViperGirls forum posting workflows, including live thread-title names, target search, notes/tags, import/export, preview, confirmation, and posting history.
+- Integrate with ViperGirls forum posting workflows, including live thread-title names, target search, notes/tags, import/export, preview, confirmation, scheduled posts, and posting history.
 
 ## Supported Services
 
@@ -88,6 +91,29 @@ The active upload plugins are:
 - `vipr.im`
 
 ## Latest Changelog
+
+### v3.0.0 - Python-Owned Workflows & Generic Transport
+
+Released July 12, 2026.
+
+**Added**
+
+- Added `Tools > Scheduled Posts` for persisted ViperGirls scheduled post records.
+- Added `View > Activity Terminal` to tail `~/.conniesuploader/activity.log`.
+- Added a release branch-difference record for the `Bleeding-Edge` compare against `main`.
+
+**Changed**
+
+- Promoted the app, build scripts, and active plugin metadata to `v3.0.0`.
+- Completed the move toward Python-owned host workflows: Python now owns gallery/forum sequencing, parsing, and success checks while Go remains the generic transport runner.
+- Moved host-specific default rate limits into Python job/request payloads.
+- Updated the Go sidecar action surface around `http_upload`, raw `http_request`, `http_batch_resolve`, and thumbnail generation.
+
+**Fixed**
+
+- Fixed Turbo deferred result matching when host result pages return sanitized filenames.
+
+Full history is available in [CHANGELOG.md](docs/CHANGELOG.md), and the full v3.0.0 branch comparison is recorded in [BRANCH_DIFF_v3.0.0.md](docs/releases/BRANCH_DIFF_v3.0.0.md).
 
 ### v2.0.0 - Posting, Templates & Gallery Workflows
 
@@ -111,19 +137,19 @@ Released June 22, 2026.
 - Improved ViperGirls target parsing, auto-poster failure reporting, posting-history recovery, and upload preflight blockers.
 - Fixed Template Editor preview, validation, and toolbar output-format behavior for BBCode/forum workflows.
 
-Full history is available in [CHANGELOG.md](CHANGELOG.md).
+Full history is available in [CHANGELOG.md](docs/CHANGELOG.md).
 
 ## Installation
 
 ### Download a Release
 
-Download the latest release from [GitHub Releases](https://github.com/conniecombs/ConniesUploader/releases/tag/v2.0.0).
+Download the latest release from [GitHub Releases](https://github.com/conniecombs/ConniesUploader/releases/tag/v3.0.0).
 
 Expected release artifacts:
 
-- `ConniesUploader-v2.0.0-windows-x64.zip`
-- `ConniesUploader-v2.0.0-linux-x64.tar.gz`
-- `ConniesUploader-v2.0.0-macos-x64.zip`
+- `ConniesUploader-v3.0.0-windows-x64.zip`
+- `ConniesUploader-v3.0.0-linux-x64.tar.gz`
+- `ConniesUploader-v3.0.0-macos-x64.zip`
 
 Each release artifact includes a SHA256 checksum.
 
@@ -132,7 +158,7 @@ Each release artifact includes a SHA256 checksum.
 Prerequisites:
 
 - Python 3.11+
-- Go 1.25.9+ for local builds. CI currently builds with Go 1.26.4.
+- Go 1.25.9+ for local builds. CI currently builds with Go 1.26.5.
 
 Windows:
 
@@ -165,12 +191,15 @@ python scripts/maintenance/clean_generated.py --dry-run
 python scripts/maintenance/clean_generated.py
 ```
 
-The cleanup helper removes generated artifacts such as `build/`, `dist/`, `htmlcov/`, coverage files, sidecar binaries, PyInstaller spec files, and crash logs. It leaves `Output/`, `user_settings.json`, and legacy `user_templates.json` alone unless you pass the explicit `--include-output` or `--include-user-data` flags.
+The cleanup helper removes generated artifacts such as `build/`, `dist/`, `htmlcov/`, coverage files, sidecar binaries, PyInstaller spec files, and crash logs. It leaves `Output/` and legacy repo-local user data files alone unless you pass the explicit `--include-output` or `--include-user-data` flags.
 
 Manual development run on Windows PowerShell:
 
 ```powershell
-go build -ldflags="-s -w" -o uploader.exe .
+cd backend
+go build -ldflags="-s -w" -o ../uploader.exe .
+cd ..
+cd frontend
 python -m venv venv
 .\venv\Scripts\Activate.ps1
 pip install -r requirements.txt
@@ -180,7 +209,10 @@ python main.py
 Manual development run on Linux/macOS:
 
 ```bash
-go build -ldflags="-s -w" -o uploader .
+cd backend
+go build -ldflags="-s -w" -o ../uploader .
+cd ..
+cd frontend
 python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
@@ -192,7 +224,7 @@ python main.py
 1. Set service credentials from `Tools > Set Credentials`.
 2. Choose an image host from the service dropdown.
 3. Add files or folders with `File > Add Files`, `File > Add Folder`, or drag and drop.
-4. Adjust gallery, thumbnail, thread, and output settings as needed.
+4. Adjust gallery, thumbnail, thread, scheduling, and output settings as needed.
 5. Click `Start Upload`.
 6. Review generated output in `Output/` or the history directory.
 
@@ -202,12 +234,14 @@ Additional tools are available from the application menus:
 - `Tools > Template Editor`
 - `Tools > ViperGirls Posting Targets`
 - `Tools > ViperGirls Posting History`
+- `Tools > Scheduled Posts`
 - `Tools > Install Context Menu` on Windows
 - `View > Execution Log`
+- `View > Activity Terminal`
 
 ## Configuration and Data
 
-- Application settings are stored in `user_settings.json`.
+- Application settings are stored in `~/.conniesuploader/user_settings.json`; legacy repo-local `user_settings.json` files are migrated there automatically.
 - Credentials are stored through the system keyring.
 - Session output is written to `Output/`.
 - Persistent output history is written to `~/.conniesuploader/history/`.
@@ -215,28 +249,27 @@ Additional tools are available from the application menus:
 - Gallery cache, pinned galleries, and last-used gallery timestamps are written to `~/.conniesuploader/gallery_cache.json`.
 - Saved ViperGirls posting targets, including fetched thread titles, are written to `~/.conniesuploader/saved_threads.json`.
 - ViperGirls posting history is written to `~/.conniesuploader/posting_history.json`.
+- ViperGirls scheduled posts are written to `~/.conniesuploader/scheduled_posts.json`.
+- Upload activity events are written to `~/.conniesuploader/activity.log`.
 - Runtime crash logs are written to `crash_log.log` when applicable.
 
 ## Architecture
 
 Connie's Uploader uses a hybrid desktop architecture:
 
-- `main.py` starts the Python GUI.
-- `modules/ui/` contains the CustomTkinter interface.
-- `modules/plugins/` contains service plugins and plugin helpers.
-- `modules/sidecar.py` manages the Go sidecar process.
-- `main.go` and `handlers.go` provide the Go sidecar entry point and request handlers.
-- `core/` contains shared Go upload utilities such as validation, retry, rate limiting, HTTP helpers, and output handling.
-- `services/` contains Go service compatibility helpers and host-specific operations that are not fully expressed as generic upload specs, such as gallery/finalization/posting support.
+- `frontend/` contains the Python GUI (`main.py`) and all `modules/`.
+- `backend/` contains the Go sidecar (`main.go`, `handlers.go`), along with the generic `core/` HTTP runner.
+- `packaging/` contains PyInstaller build assets and custom hooks.
+- `logs/` is ignored for optional local diagnostics.
 - `scripts/maintenance/` contains repository cleanup and maintenance helpers.
 - `scripts/diagnostics/` contains local troubleshooting helpers that are not part of the app runtime.
 - Python and Go communicate through JSON events over standard input and output.
 
 Generated folders and runtime data are intentionally kept out of source control:
 
-- Build output: `build/`, `dist/`, `uploader`, `uploader.exe`, `ConniesUploader.spec`
+- Build output: `build/`, `dist/`, `uploader`, `uploader.exe`, `packaging/ConniesUploader.spec`
 - Test output: `.coverage`, `htmlcov/`, `.pytest_cache/`
-- Local app data: `Output/`, `user_settings.json`, legacy `user_templates.json`, `~/.conniesuploader/*.json`
+- Local app data: `Output/`, legacy repo-local `user_settings.json` and `user_templates.json`, `~/.conniesuploader/*.json`, `~/.conniesuploader/history/`, `~/.conniesuploader/activity.log`
 - Runtime diagnostics: `crash_log*.log`
 
 ## CI, Security, and Releases
@@ -247,7 +280,7 @@ GitHub Actions workflows:
 - [Release - Build and Publish](.github/workflows/release.yml)
 - [Security Scanning](.github/workflows/security.yml)
 
-The CI workflow builds the Go sidecar on Windows, Linux, and macOS with Go 1.26.4; runs Go vet and Go tests; installs Python dependencies; runs the Python test suite; checks dependencies with `govulncheck` and `pip-audit`; and runs Go/Python linting.
+The CI workflow builds the Go sidecar on Windows, Linux, and macOS with Go 1.26.5; runs Go vet and Go tests; installs Python dependencies; runs the Python test suite; checks dependencies with `govulncheck` and `pip-audit`; and runs Go/Python linting.
 
 The release workflow builds Windows, Linux, and macOS artifacts, verifies that the sidecar is bundled, calculates SHA256 checksums, packages the artifacts, and publishes a GitHub release.
 
@@ -258,9 +291,9 @@ The security workflow runs CodeQL, gosec, govulncheck, Bandit, pip-audit, depend
 Common commands:
 
 ```bash
-go test ./...
-pytest tests/ -v
-flake8 main.py modules/ --max-line-length=120 --ignore=E501,W503 --exclude=__pycache__
+(cd backend && go test ./...)
+(cd frontend && pytest tests/ -v)
+(cd frontend && flake8 main.py modules/ --max-line-length=120 --ignore=E501,W503 --exclude=__pycache__)
 ```
 
 Build helpers:
@@ -281,9 +314,9 @@ python scripts/diagnostics/check_sidecar_location.py
 
 ## Documentation
 
-- [Architecture](ARCHITECTURE.md)
-- [Contributing](CONTRIBUTING.md)
-- [Changelog](CHANGELOG.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Contributing](docs/CONTRIBUTING.md)
+- [Changelog](docs/CHANGELOG.md)
 - [User Tutorial](docs/guides/USER_TUTORIAL.md)
 - [Build Troubleshooting](docs/guides/BUILD_TROUBLESHOOTING.md)
 - [Plugin Creation Guide](docs/guides/PLUGIN_CREATION_GUIDE.md)
@@ -296,7 +329,7 @@ python scripts/diagnostics/check_sidecar_location.py
 
 **`uploader.exe` or `uploader` not found**
 
-Build the Go sidecar with `go build -ldflags="-s -w" -o uploader.exe .` on Windows or `go build -ldflags="-s -w" -o uploader .` on Linux/macOS.
+Build the Go sidecar with `cd backend && go build -ldflags="-s -w" -o ../uploader.exe .` on Windows or `cd backend && go build -ldflags="-s -w" -o ../uploader .` on Linux/macOS.
 
 **Uploads fail immediately**
 
@@ -316,11 +349,11 @@ Confirm Python 3.11+ and Go 1.25.9+ are installed, then rerun the appropriate bu
 
 **Dependency installation fails**
 
-Recreate the virtual environment and reinstall from `requirements.txt`.
+Recreate the virtual environment and reinstall from `frontend/requirements.txt`.
 
 ## Contributing
 
-Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, coding standards, and pull request guidance.
+Contributions are welcome. See [CONTRIBUTING.md](docs/CONTRIBUTING.md) for development setup, coding standards, and pull request guidance.
 
 ## License
 

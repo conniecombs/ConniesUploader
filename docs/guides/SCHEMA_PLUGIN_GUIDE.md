@@ -352,9 +352,9 @@ Legacy plugins still work, but active maintained plugins should use schemas so s
 Run:
 
 ```bash
-pytest tests/test_plugins.py -v
-pytest tests/test_service_settings_contract.py -v
-pytest tests/ -v
+(cd frontend && pytest tests/test_plugins.py -v)
+(cd frontend && pytest tests/test_service_settings_contract.py -v)
+(cd frontend && pytest tests/ -v)
 ```
 
 For UI-affecting schema changes, manually check:
@@ -396,8 +396,8 @@ If `settings_schema` returns an empty list, the base class falls back to legacy 
 ## Related Docs
 
 - [Plugin Creation Guide](PLUGIN_CREATION_GUIDE.md)
-- [Architecture](../../ARCHITECTURE.md)
+- [Architecture](../ARCHITECTURE.md)
 - [Repository Layout](REPOSITORY_LAYOUT.md)
 
-- **Guide Version:** 2.0
-- **Last Updated:** 2026-06-21
+- **Guide Version:** 2.1
+- **Last Updated:** 2026-06-30

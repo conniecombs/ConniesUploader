@@ -1,6 +1,6 @@
 # Release Process Guide
 
-This document describes how to create and publish releases for Connie's Uploader Ultimate.
+This document describes how to create and publish releases for Connie's Uploader.
 
 ## Table of Contents
 
@@ -18,7 +18,7 @@ Our release process is fully automated using GitHub Actions. When you push a ver
 
 1. ✅ Builds cross-platform binaries (Windows, Linux, macOS)
 2. ✅ Generates SHA256 checksums for verification
-3. ✅ Extracts release notes from CHANGELOG.md
+3. ✅ Extracts release notes from `docs/CHANGELOG.md`
 4. ✅ Creates a GitHub Release with all artifacts
 5. ✅ Uploads packaged distributions (.zip, .tar.gz)
 
@@ -27,7 +27,7 @@ Our release process is fully automated using GitHub Actions. When you push a ver
 Before creating a release, ensure:
 
 - [ ] All tests pass on the main branch
-- [ ] CHANGELOG.md is updated with the new version
+- [ ] `docs/CHANGELOG.md` is updated with the new version
 - [ ] Version number follows [Semantic Versioning](https://semver.org/)
 - [ ] You have push access to the repository
 - [ ] All security scans pass (see `.github/workflows/security.yml`)
@@ -38,9 +38,9 @@ Before creating a release, ensure:
 
 This is the primary method for creating releases.
 
-**Step 1: Update CHANGELOG.md**
+**Step 1: Update docs/CHANGELOG.md**
 
-Add a new version section at the top of `CHANGELOG.md`:
+Add a new version section at the top of `docs/CHANGELOG.md`:
 
 ```markdown
 ## [X.Y.Z] - YYYY-MM-DD
@@ -55,7 +55,7 @@ Add a new version section at the top of `CHANGELOG.md`:
 **Step 2: Commit Changes**
 
 ```bash
-git add CHANGELOG.md README.md ARCHITECTURE.md CONTRIBUTING.md docs/README.md docs/guides docs/releases/RELEASE_NOTES.md docs/releases/RELEASE_NOTES_vX.Y.Z.md docs/releases/RELEASE_PROCESS.md
+git add README.md docs/CHANGELOG.md docs/ARCHITECTURE.md docs/CONTRIBUTING.md docs/README.md docs/guides docs/releases/RELEASE_NOTES.md docs/releases/RELEASE_NOTES_vX.Y.Z.md docs/releases/RELEASE_PROCESS.md docs/github/RELEASE_TEMPLATE.md
 git commit -m "Prepare release vX.Y.Z"
 git push origin main
 ```
@@ -96,16 +96,17 @@ Use this checklist when creating a new release:
 
 ### Pre-Release
 
-- [ ] Run full test suite locally: `go test ./... && python -m pytest`
-- [ ] Update version in CHANGELOG.md
+- [ ] Run the Go suite locally: `cd backend && go test ./...`
+- [ ] Run the Python suite locally: `cd frontend && python -m pytest tests/ -v`
+- [ ] Update version in `docs/CHANGELOG.md`
 - [ ] Review all changes since last release
 - [ ] Ensure security scans pass (check GitHub Actions)
-- [ ] Update README.md if needed (features, installation)
+- [ ] Update `README.md` and `docs/` if needed for features, installation, menus, data paths, or release notes
 - [ ] Test build on all platforms locally (optional but recommended)
 
 ### Release
 
-- [ ] Create version entry in CHANGELOG.md
+- [ ] Create version entry in `docs/CHANGELOG.md`
 - [ ] Commit and push to main branch
 - [ ] Create annotated git tag: `git tag -a vX.Y.Z -m "Release vX.Y.Z"`
 - [ ] Push tag: `git push origin vX.Y.Z`
@@ -123,14 +124,14 @@ Use this checklist when creating a new release:
 
 We follow [Semantic Versioning](https://semver.org/):
 
-- **MAJOR** (v2.0.0): Incompatible API changes
+- **MAJOR** (v3.0.0): Incompatible API or architecture changes
 - **MINOR** (v1.1.0): New functionality, backwards-compatible
 - **PATCH** (v1.0.1): Bug fixes, backwards-compatible
 
 Examples:
 - Bug fix: `v1.0.0` → `v1.0.1`
 - New feature: `v1.0.1` → `v1.1.0`
-- Breaking change: `v1.1.0` → `v2.0.0`
+- Breaking change: `v2.0.0` → `v3.0.0`
 
 ## Release Artifacts
 
@@ -148,7 +149,7 @@ Each release includes:
 - `ConniesUploader-vX.Y.Z-macos-x64.zip` - ZIP package with binary and checksum
 
 ### Additional
-- `CHANGELOG.md` - Full changelog file
+- `docs/CHANGELOG.md` - Full changelog file
 
 ## Verifying Downloads
 
@@ -184,7 +185,7 @@ sha256sum ConniesUploader  # or shasum -a 256 on macOS
 **Problem:** Release has no description or wrong content
 
 **Solution:**
-1. Ensure CHANGELOG.md has a section for this version
+1. Ensure `docs/CHANGELOG.md` has a section for this version
 2. Format must be: `## [X.Y.Z] - YYYY-MM-DD`
 3. Re-run the workflow or edit the release manually on GitHub
 
@@ -236,7 +237,7 @@ If no one has downloaded the release yet:
 If users have already downloaded the release:
 
 1. Fix the critical issue
-2. Update CHANGELOG.md with the patch version
+2. Update `docs/CHANGELOG.md` with the patch version
 3. Create a new patch release (e.g., v1.0.1 → v1.0.2)
 4. Mark the problematic release as pre-release:
    - Edit the release on GitHub
@@ -280,7 +281,7 @@ The workflow uses caching for faster builds:
 
 1. **Never force-push tags** - Tags should be immutable
 2. **Always test locally first** - Build on your machine before releasing
-3. **Keep CHANGELOG.md updated** - Update it with every PR/commit
+3. **Keep docs/CHANGELOG.md updated** - Update it with every PR/commit
 4. **Use draft releases for testing** - Create draft releases to test the process
 5. **Announce releases promptly** - Keep users informed
 6. **Monitor download stats** - Track which platforms are most popular
@@ -311,5 +312,5 @@ If you have questions about the release process:
 
 ---
 
-**Last Updated:** 2026-05-20
+**Last Updated:** 2026-06-30
 **Maintained By:** conniecombs

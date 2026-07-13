@@ -1,6 +1,6 @@
 # Plugin Creation Guide
 
-This guide explains how to add or maintain image-host plugins in Connie's Uploader Ultimate.
+This guide explains how to add or maintain image-host plugins in Connie's Uploader.
 
 The current plugin model is Python-first. A plugin describes service settings and upload HTTP requests, then the bundled Go sidecar executes those requests concurrently. Most new services should not require Go changes.
 
@@ -19,47 +19,49 @@ For the declarative UI field format only, see [Schema Plugin Guide](SCHEMA_PLUGI
 ## Current Architecture
 
 ```text
-modules/plugins/<service>.py
+frontend/modules/plugins/<service>.py
   -> ImageHostPlugin metadata/settings_schema/validation
-  -> build_http_request()
-  -> UploadManager sends http_spec to Go sidecar
-  -> Go sidecar executes upload and parses response
+  -> build_http_request() for uploads or Python transport helpers for non-upload workflows
+  -> UploadManager sends http_spec or resolved transport specs to Go sidecar
+  -> Go sidecar executes transport and emits correlated events
+  -> Python parses host-specific responses, galleries, forum pages, and output
   -> Python generates output templates and optional ViperGirls posts
 ```
 
 The Go sidecar supports:
 
 - Multipart uploads.
-- Pre-request and follow-up request chains.
+- Legacy upload pre-request and follow-up request chains.
 - Cookie sessions.
-- Dynamic values extracted from earlier responses.
+- Legacy dynamic values extracted from earlier upload responses.
 - Header/form/body template substitution.
-- JSON path extraction, including arrays such as `files.0.url`.
-- HTML CSS selector extraction.
-- Regex extraction with `regex:` selectors.
+- Legacy JSON, HTML selector, and regex extraction for upload result compatibility.
 - URL and thumbnail templates.
-- Relative/dynamic endpoint resolution through extracted `endpoint` values.
 - Retry and rate limiting.
 - Correlated request IDs so concurrent uploads do not consume the wrong result.
+- Raw `http_request` execution with optional response body, status code, and final URL return fields.
+- `http_batch_resolve` polling for deferred result pages.
+
+Python should own new website-specific parsing and success/failure decisions. Use Go for transport mechanics and keep service-specific behavior in the plugin or service layer.
 
 ## Active Plugin Examples
 
 Current active plugins:
 
-- `modules/plugins/imagebam.py`
-- `modules/plugins/imgur.py`
-- `modules/plugins/imx.py`
-- `modules/plugins/pixhost.py`
-- `modules/plugins/turbo.py`
-- `modules/plugins/vipr.py`
+- `frontend/modules/plugins/imagebam.py`
+- `frontend/modules/plugins/imgur.py`
+- `frontend/modules/plugins/imx.py`
+- `frontend/modules/plugins/pixhost.py`
+- `frontend/modules/plugins/turbo.py`
+- `frontend/modules/plugins/vipr.py`
 
 There is also a legacy Pixhost file ending in `_legacy`; the plugin manager intentionally skips `_legacy` modules.
 
 ## Plugin Discovery
 
-Plugins are discovered automatically by `modules/plugin_manager.py` using `pkgutil.iter_modules(modules.plugins.__path__)`.
+Plugins are discovered automatically by `frontend/modules/plugin_manager.py` using `pkgutil.iter_modules(modules.plugins.__path__)`.
 
-You do not need to edit `modules/plugins/__init__.py`; that file is not required for registering plugins.
+You do not need to edit `frontend/modules/plugins/__init__.py`; that file is not required for registering plugins.
 
 The plugin manager skips:
 
@@ -308,7 +310,7 @@ Supported top-level fields:
 
 ## Pre-Requests
 
-Use pre-requests for login, cookies, CSRF tokens, upload tokens, or dynamic endpoints.
+For upload compatibility, existing plugins may still use pre-requests for login, cookies, CSRF tokens, upload tokens, or dynamic endpoints.
 
 ```python
 "pre_request": {
@@ -344,6 +346,8 @@ Use pre-requests for login, cookies, CSRF tokens, upload tokens, or dynamic endp
 Values extracted from one pre-request are available to later follow-up requests, headers, form fields, multipart fields, and the upload URL.
 
 Use `"use_cookies": True` for every request in a login/session chain that should share cookies.
+
+For new non-upload workflows such as gallery listing, gallery creation, ViperGirls login, or forum posting, prefer `frontend/modules/transport.py`. Send one resolved `http_request` at a time, ask Go for `response_body`, `status_code`, and `final_url` when needed, then parse and validate the response in Python.
 
 ## Multipart Fields
 
@@ -514,15 +518,15 @@ Useful test targets:
 Run:
 
 ```bash
-pytest tests/ -v
-go test ./...
-go vet ./...
+(cd frontend && pytest tests/ -v)
+(cd backend && go test ./...)
+(cd backend && go vet ./...)
 ```
 
 For packaging-sensitive plugin changes, also verify the build contract:
 
 ```bash
-pytest tests/test_build_contract.py -v
+(cd frontend && pytest tests/test_build_contract.py -v)
 ```
 
 ## Manual Debugging
@@ -530,14 +534,20 @@ pytest tests/test_build_contract.py -v
 1. Run from source with a built sidecar.
 
 ```bash
-go build -ldflags="-s -w" -o uploader .
+cd backend
+go build -ldflags="-s -w" -o ../uploader .
+cd ..
+cd frontend
 python main.py
 ```
 
 On Windows:
 
 ```powershell
-go build -ldflags="-s -w" -o uploader.exe .
+cd backend
+go build -ldflags="-s -w" -o ../uploader.exe .
+cd ..
+cd frontend
 python main.py
 ```
 
@@ -570,7 +580,7 @@ If you add a new active plugin, update the build scripts, release workflow, and 
 
 ## Checklist
 
-- [ ] Plugin file added under `modules/plugins/`.
+- [ ] Plugin file added under `frontend/modules/plugins/`.
 - [ ] Class inherits from `ImageHostPlugin`.
 - [ ] `id` is unique and stable.
 - [ ] `metadata` describes credentials, features, and limits.
@@ -587,9 +597,9 @@ If you add a new active plugin, update the build scripts, release workflow, and 
 ## Related Docs
 
 - [Schema Plugin Guide](SCHEMA_PLUGIN_GUIDE.md)
-- [Architecture](../../ARCHITECTURE.md)
+- [Architecture](../ARCHITECTURE.md)
 - [Build Troubleshooting](BUILD_TROUBLESHOOTING.md)
 - [Repository Layout](REPOSITORY_LAYOUT.md)
 
-- **Guide Version:** 2.6.0
-- **Last Updated:** 2026-06-21
+- **Guide Version:** 2.7.0
+- **Last Updated:** 2026-06-30

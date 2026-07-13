@@ -79,8 +79,11 @@ def test_sidecar_location():
         print("FAILURE: uploader.exe NOT found!")
         print()
         print("Troubleshooting:")
-        print('1. Ensure you built uploader.exe with: go build -ldflags="-s -w" -o uploader.exe .')
-        print("2. Check PyInstaller command includes: --add-data 'uploader.exe;.'")
+        print(
+            '1. Ensure you built uploader.exe with: cd backend && go build '
+            '-ldflags="-s -w" -o ../uploader.exe .'
+        )
+        print("2. Check PyInstaller command includes: --add-data '../uploader.exe;.'")
         print("3. Verify uploader.exe exists in project root before building")
         print("4. Try deleting dist/ and build/ folders and rebuilding")
     print("=" * 60)
