@@ -10,8 +10,6 @@ import (
 	"fmt"
 	"image"
 	_ "image/gif"
-	"image"
-	_ "image/gif"
 	"image/jpeg"
 	_ "image/png"
 	"os"

@@ -1,4 +1,4 @@
-@echo off
+@echo on
 setlocal EnableExtensions
 
 REM Connie's Uploader - Windows Build Script
