@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025 conniecombs
 
+import threading
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -8,7 +9,7 @@ from fastapi.testclient import TestClient
 from modules import config
 from modules.credential_store import JsonCredentialStore
 from modules.settings_manager import SettingsManager
-from modules.upload_models import UploadFileResult
+from modules.upload_models import UploadBatch, UploadFileResult
 from modules.upload_session import UploadSessionRegistry
 from web.app import create_app
 
@@ -45,6 +46,11 @@ class SlowUploadManager(FakeUploadManager):
         for files in pending_by_group.values():
             for file_path in files:
                 self.progress_queue.put(("status", file_path, "queued"))
+
+
+class AtomicOnlyRegistry(UploadSessionRegistry):
+    def has_active(self):
+        raise AssertionError("Upload API should use create_if_idle()")
 
 
 class FakeViperGirlsPoster:
@@ -362,9 +368,77 @@ def test_upload_failures_mark_session_failed(monkeypatch, tmp_path):
     assert upload["results"][0]["error"] == "Upload failed"
 
 
+def test_upload_rejects_empty_groups_without_starting_session(monkeypatch, tmp_path):
+    client, paths = make_web_client(monkeypatch, tmp_path)
+    client.app.state.manager_factory = SlowUploadManager
+    image_path = paths["input"] / "queued.jpg"
+    image_path.write_bytes(b"fake image bytes")
+
+    empty_response = client.post(
+        "/api/uploads",
+        json={
+            "settings": {"service": "pixhost.to", "global_worker_count": 1},
+            "groups": [{"title": "Empty Batch", "files": []}],
+        },
+    )
+    valid_response = client.post(
+        "/api/uploads",
+        json={
+            "settings": {"service": "pixhost.to", "global_worker_count": 1},
+            "groups": [{"title": "Batch", "files": [str(image_path)]}],
+        },
+    )
+
+    assert empty_response.status_code == 400
+    assert empty_response.json()["detail"] == "At least one upload file is required"
+    assert valid_response.status_code == 200
+    assert valid_response.json()["upload"]["state"] == "running"
+
+
+def test_registry_create_if_idle_reserves_active_slot_atomically(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "INPUT_DIR", str(tmp_path))
+    image_path = tmp_path / "queued.jpg"
+    image_path.write_bytes(b"fake image bytes")
+    registry = UploadSessionRegistry()
+    group = UploadBatch("Batch", [str(image_path)])
+    settings = {"service": "pixhost.to", "global_worker_count": 1}
+    barrier = threading.Barrier(6)
+    results = []
+    errors = []
+    result_lock = threading.Lock()
+
+    def create_session():
+        try:
+            barrier.wait(timeout=5)
+            session = registry.create_if_idle(
+                [group],
+                settings,
+                {},
+                manager_factory=SlowUploadManager,
+            )
+            with result_lock:
+                results.append(session)
+        except Exception as exc:
+            with result_lock:
+                errors.append(exc)
+
+    threads = [threading.Thread(target=create_session) for _ in range(6)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=5)
+
+    winners = [session for session in results if session is not None]
+    assert errors == []
+    assert len(results) == 6
+    assert len(winners) == 1
+    assert registry.has_active() is True
+
+
 def test_only_one_upload_can_run_at_a_time(monkeypatch, tmp_path):
     client, paths = make_web_client(monkeypatch, tmp_path)
     client.app.state.manager_factory = SlowUploadManager
+    client.app.state.registry = AtomicOnlyRegistry()
     image_path = paths["input"] / "queued.jpg"
     image_path.write_bytes(b"fake image bytes")
     payload = {

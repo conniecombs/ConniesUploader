@@ -377,6 +377,31 @@ class UploadSessionRegistry:
             self._sessions[session.id] = session
         return session
 
+    def create_if_idle(
+        self,
+        groups: Iterable[UploadBatch],
+        settings: Dict[str, Any],
+        credentials: Dict[str, Any],
+        *,
+        manager_factory: UploadManagerFactory = UploadManager,
+        template_manager: Any | None = None,
+        viper_api_factory: ViperApiFactory | None = None,
+    ) -> UploadSession | None:
+        with self._lock:
+            self.prune_locked()
+            if self._has_active_locked():
+                return None
+            session = UploadSession(
+                groups,
+                settings,
+                credentials,
+                manager_factory=manager_factory,
+                template_manager=template_manager,
+                viper_api_factory=viper_api_factory,
+            )
+            self._sessions[session.id] = session
+            return session
+
     def get(self, session_id: str) -> UploadSession | None:
         with self._lock:
             self.prune_locked()
@@ -390,10 +415,13 @@ class UploadSessionRegistry:
     def has_active(self) -> bool:
         with self._lock:
             self.prune_locked()
-            return any(
-                session.state not in {"complete", "cancelled", "failed"}
-                for session in self._sessions.values()
-            )
+            return self._has_active_locked()
+
+    def _has_active_locked(self) -> bool:
+        return any(
+            session.state not in {"complete", "cancelled", "failed"}
+            for session in self._sessions.values()
+        )
 
     def prune_locked(self) -> None:
         cutoff = datetime.now(timezone.utc) - timedelta(

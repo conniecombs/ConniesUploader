@@ -599,16 +599,12 @@ def start_upload(payload: UploadStartRequest, request: Request) -> Dict[str, Any
     if not payload.groups:
         raise HTTPException(status_code=400, detail="At least one upload group is required")
 
-    registry = _registry(request)
-    if registry.has_active():
-        raise HTTPException(status_code=409, detail="Another upload is already running")
-
-    settings_manager = _settings_manager(request)
-    settings = {**settings_manager.load(), **payload.settings}
     groups = []
+    total_files = 0
     for index, group_request in enumerate(payload.groups):
         files = [_resolve_allowed_upload_file(file_path) for file_path in group_request.files]
         covers = [_resolve_allowed_upload_file(file_path) for file_path in group_request.cover_files]
+        total_files += len(files)
         group = UploadBatch(
             title=group_request.title,
             files=files,
@@ -627,17 +623,26 @@ def start_upload(payload: UploadStartRequest, request: Request) -> Dict[str, Any
             group.gallery_upload_hash = str(gallery.get("upload_hash") or "")
         groups.append(group)
 
+    if total_files == 0:
+        raise HTTPException(status_code=400, detail="At least one upload file is required")
+
+    settings_manager = _settings_manager(request)
+    settings = {**settings_manager.load(), **payload.settings}
+
     factory = _manager_factory(request)
     create_kwargs = {"manager_factory": factory} if factory else {}
     viper_factory = _viper_api_factory(request)
     if viper_factory:
         create_kwargs["viper_api_factory"] = viper_factory
-    session = registry.create(
+    session = _registry(request).create_if_idle(
         groups,
         settings,
         _credential_store(request).load_all(),
         **create_kwargs,
     )
+    if session is None:
+        raise HTTPException(status_code=409, detail="Another upload is already running")
+
     session.start()
     return {"upload": _snapshot_payload(session.snapshot())}
 
