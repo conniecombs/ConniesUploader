@@ -346,6 +346,9 @@ class RuntimeMixin:
 
     def _reset_row_for_retry(self, row_data: Dict[str, Any]) -> None:
         row_data["state"] = "pending"
+        group = row_data.get("group")
+        if group is not None and hasattr(group, "is_completed"):
+            group.is_completed = False
         self._set_row_error(row_data, "")
         row_data["status"].configure(text="Retry")
         row_data["prog"].set(0)
@@ -451,16 +454,30 @@ class RuntimeMixin:
             if total == 0:
                 return
             done = 0
+            failed = 0
             for f in group.files:
                 with self.lock:
                     if f in self.file_widgets:
-                        if self.file_widgets[f]["state"] in ["success", "failed"]:
+                        state = self.file_widgets[f]["state"]
+                        if state in ["success", "failed"]:
                             done += 1
+                            if state == "failed":
+                                failed += 1
             group.prog.set(done / total)
             group.lbl_counts.configure(text=f"({done}/{total})")
             if done == total and not group.is_completed:
                 group.mark_complete()
-                self.generate_group_output(group)
+                if failed:
+                    self.log(
+                        f"Warning: Output skipped for '{group.title}' because "
+                        f"{failed} upload(s) failed."
+                    )
+                    self.add_activity(
+                        f"Skipped output for {group.title}: {failed} upload(s) failed.",
+                        "warning",
+                    )
+                else:
+                    self.generate_group_output(group)
         except Exception as e:
             logger.error(f"Group Update Error: {e}", exc_info=True)
 
@@ -592,11 +609,22 @@ class RuntimeMixin:
         self.add_activity("Stopping upload after current work finishes.", "warning")
 
     def generate_group_output(self, group):
-        res_map = {r[0]: (r[1], r[2]) for r in self.results}
+        res_map = {}
+        for fp, viewer_url, thumb_url in self.results:
+            viewer_url = str(viewer_url or "").strip()
+            thumb_url = str(thumb_url or "").strip()
+            if viewer_url:
+                res_map[fp] = (viewer_url, thumb_url)
         group_results = []
         svc = self.settings.get("service", "")
+        group_files = self._ordered_group_files_for_output(group)
 
-        for fp in self._ordered_group_files_for_output(group):
+        if not group_files:
+            self.log(f"Warning: Output skipped for '{group.title}' because the group has no files.")
+            self.add_activity(f"Skipped output for {group.title}: no files in group.", "warning")
+            return
+
+        for fp in group_files:
             if fp in res_map:
                 val = res_map[fp]
                 viewer_url = val[0]
@@ -607,9 +635,15 @@ class RuntimeMixin:
                         direct_url = thumb_url.replace("/t/", "/i/")
                 group_results.append((viewer_url, thumb_url, direct_url))
 
-        if not group_results:
-            self.log(f"Warning: No successful uploads for '{group.title}'.")
-            self.add_activity(f"No successful uploads for {group.title}.", "warning")
+        if len(group_results) != len(group_files):
+            self.log(
+                f"Warning: Output skipped for '{group.title}' because "
+                f"only {len(group_results)}/{len(group_files)} upload result(s) were usable."
+            )
+            self.add_activity(
+                f"Skipped output for {group.title}: incomplete upload results.",
+                "warning",
+            )
             return
 
         gallery = self._gallery_for_group(group, svc, self.settings) or {}

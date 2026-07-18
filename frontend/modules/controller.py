@@ -121,11 +121,21 @@ class UploadController:
         self, group_title: str, group_files: List[str], gallery_id: Optional[str], batch_index: int
     ) -> None:
         # Map file paths to results
-        res_map = {r[0]: (r[1], r[2]) for r in self.results}
+        res_map = {}
+        for fp, viewer_url, thumb_url in self.results:
+            viewer_url = str(viewer_url or "").strip()
+            thumb_url = str(thumb_url or "").strip()
+            if viewer_url:
+                res_map[fp] = (viewer_url, thumb_url)
         group_results = []
         svc = self.settings.get("service", "")
+        ordered_files = list(group_files)
 
-        for fp in group_files:
+        if not ordered_files:
+            logger.warning(f"Output skipped for '{group_title}' because the group has no files.")
+            return
+
+        for fp in ordered_files:
             if fp in res_map:
                 viewer_url, thumb_url = res_map[fp]
                 direct_url = viewer_url
@@ -136,8 +146,11 @@ class UploadController:
 
                 group_results.append((viewer_url, thumb_url, direct_url))
 
-        if not group_results:
-            logger.warning(f"No successful uploads for '{group_title}'.")
+        if len(group_results) != len(ordered_files):
+            logger.warning(
+                f"Output skipped for '{group_title}' because "
+                f"only {len(group_results)}/{len(ordered_files)} upload result(s) were usable."
+            )
             return
 
         # Prepare Template Context
