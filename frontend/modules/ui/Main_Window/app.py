@@ -124,6 +124,7 @@ class UploaderApp(
         self.upload_count = 0
         self.is_uploading = False
         self.current_output_files = []
+        self.copyable_output_files = []
         self.current_completion_summary = None
         self.pix_galleries_to_finalize = []
         self.output_dir = "Output"

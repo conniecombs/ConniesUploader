@@ -72,13 +72,26 @@ class RuntimeMixin:
 
     def _process_result_queue(self):
         """Process upload results from result_queue."""
+        touched_files = []
         try:
             while True:
                 fp, img, thumb = self.result_queue.get_nowait()
+                viewer_url = str(img or "").strip()
+                thumb_url = str(thumb or "").strip()
                 with self.lock:
-                    self.results.append((fp, img, thumb))
+                    self.results.append((fp, viewer_url, thumb_url))
+                    row_data = self.file_widgets.get(fp)
+                    if row_data is not None:
+                        if viewer_url:
+                            row_data["upload_result"] = (viewer_url, thumb_url)
+                            touched_files.append(fp)
+                        else:
+                            row_data.pop("upload_result", None)
         except queue.Empty:
             pass
+
+        for fp in touched_files:
+            self._update_group_progress(fp)
 
     def _process_ui_queue(self):
         """Process UI updates from ui_queue (batch file additions)."""
@@ -346,6 +359,7 @@ class RuntimeMixin:
 
     def _reset_row_for_retry(self, row_data: Dict[str, Any]) -> None:
         row_data["state"] = "pending"
+        row_data.pop("upload_result", None)
         group = row_data.get("group")
         if group is not None and hasattr(group, "is_completed"):
             group.is_completed = False
@@ -466,8 +480,8 @@ class RuntimeMixin:
             group.prog.set(done / total)
             group.lbl_counts.configure(text=f"({done}/{total})")
             if done == total and not group.is_completed:
-                group.mark_complete()
                 if failed:
+                    group.mark_complete()
                     self.log(
                         f"Warning: Output skipped for '{group.title}' because "
                         f"{failed} upload(s) failed."
@@ -476,8 +490,14 @@ class RuntimeMixin:
                         f"Skipped output for {group.title}: {failed} upload(s) failed.",
                         "warning",
                     )
-                else:
+                    self.generate_failed_group_output(group, failed)
+                elif self._group_has_complete_results(group):
+                    group.mark_complete()
                     self.generate_group_output(group)
+                else:
+                    logger.debug(
+                        f"Waiting for upload result URLs before completing group '{group.title}'."
+                    )
         except Exception as e:
             logger.error(f"Group Update Error: {e}", exc_info=True)
 
@@ -555,8 +575,9 @@ class RuntimeMixin:
         total_count = len(states)
         output_files = list(self.current_output_files)
         generated_count = len(output_files)
+        copyable_output_files = list(self.__dict__.get("copyable_output_files", output_files))
         auto_copy_requested = bool(self.var_auto_copy.get())
-        has_copy_text = bool(self.clipboard_buffer or output_files)
+        has_copy_text = bool(self.clipboard_buffer or copyable_output_files)
 
         if failed_count:
             status_text = f"Upload complete: {uploaded_count} uploaded, {failed_count} failed."
@@ -570,6 +591,7 @@ class RuntimeMixin:
             "total_count": total_count,
             "generated_count": generated_count,
             "output_files": output_files,
+            "copyable_output_files": copyable_output_files,
             "auto_copy_requested": auto_copy_requested,
             "copied_to_clipboard": False,
             "has_copy_text": has_copy_text,
@@ -581,7 +603,11 @@ class RuntimeMixin:
             return "\n\n".join(self.clipboard_buffer)
 
         chunks = []
-        for output_file in summary.get("output_files", []):
+        output_files = summary.get("copyable_output_files")
+        if output_files is None:
+            output_files = summary.get("output_files", [])
+
+        for output_file in output_files:
             try:
                 with open(output_file, "r", encoding="utf-8") as handle:
                     text = handle.read().strip()
@@ -603,18 +629,57 @@ class RuntimeMixin:
             logger.warning(f"Could not copy output to clipboard: {exc}")
             return False
 
+    def _upload_result_map(self) -> Dict[str, Tuple[str, str]]:
+        res_map = {}
+        for fp, viewer_url, thumb_url in self.__dict__.get("results", []):
+            viewer_url = str(viewer_url or "").strip()
+            thumb_url = str(thumb_url or "").strip()
+            if viewer_url:
+                res_map[fp] = (viewer_url, thumb_url)
+
+        file_widgets = self.__dict__.get("file_widgets", {})
+        lock = self.__dict__.get("lock")
+        if lock is not None:
+            with lock:
+                stored_results = {
+                    fp: data.get("upload_result")
+                    for fp, data in file_widgets.items()
+                    if isinstance(data, dict)
+                }
+        else:
+            stored_results = {
+                fp: data.get("upload_result")
+                for fp, data in file_widgets.items()
+                if isinstance(data, dict)
+            }
+
+        for fp, result in stored_results.items():
+            if not result:
+                continue
+            try:
+                viewer_url, thumb_url = result[:2]
+            except (TypeError, ValueError):
+                continue
+            viewer_url = str(viewer_url or "").strip()
+            thumb_url = str(thumb_url or "").strip()
+            if viewer_url:
+                res_map[fp] = (viewer_url, thumb_url)
+        return res_map
+
+    def _group_has_complete_results(self, group) -> bool:
+        group_files = self._ordered_group_files_for_output(group)
+        if not group_files:
+            return False
+        res_map = self._upload_result_map()
+        return all(fp in res_map for fp in group_files)
+
     def stop_upload(self):
         self.cancel_event.set()
         self.lbl_eta.configure(text="Stopping...")
         self.add_activity("Stopping upload after current work finishes.", "warning")
 
     def generate_group_output(self, group):
-        res_map = {}
-        for fp, viewer_url, thumb_url in self.results:
-            viewer_url = str(viewer_url or "").strip()
-            thumb_url = str(thumb_url or "").strip()
-            if viewer_url:
-                res_map[fp] = (viewer_url, thumb_url)
+        res_map = self._upload_result_map()
         group_results = []
         svc = self.settings.get("service", "")
         group_files = self._ordered_group_files_for_output(group)
@@ -706,6 +771,9 @@ class RuntimeMixin:
             with open(out_name, "w", encoding="utf-8") as f:
                 f.write(text)
             self.current_output_files.append(out_name)
+            if "copyable_output_files" not in self.__dict__:
+                self.copyable_output_files = []
+            self.copyable_output_files.append(out_name)
             self.log(f"Saved: {out_name}")
             self.add_activity(f"Saved output: {os.path.basename(out_name)}.", "success")
 
@@ -758,6 +826,74 @@ class RuntimeMixin:
             self.log(f"Error writing output: {e}")
             self.add_activity(f"Error writing output: {e}", "error")
 
+    def generate_failed_group_output(self, group, failed_count: Optional[int] = None):
+        res_map = self._upload_result_map()
+        group_files = self._ordered_group_files_for_output(group)
+        svc = self.settings.get("service", "")
+
+        try:
+            from modules.file_handler import sanitize_filename
+
+            batch_name = self._batch_display_name(group)
+            safe_title = sanitize_filename(group.title) or "Batch"
+            now = datetime.now()
+            ts = now.strftime("%Y%m%d_%H%M")
+            out_dir = getattr(self, "output_dir", "Output")
+            os.makedirs(out_dir, exist_ok=True)
+
+            lines = [
+                f"Batch: {batch_name}",
+                "Status: FAILED",
+                f"Service: {svc or 'Unknown'}",
+                f"Generated: {now.strftime('%Y-%m-%d %H:%M:%S')}",
+            ]
+            if failed_count is not None:
+                lines.append(f"Failed uploads: {failed_count}")
+            lines.extend(["", "Files:"])
+
+            for fp in group_files:
+                with self.lock:
+                    row_data = dict(self.file_widgets.get(fp, {}))
+                state = str(row_data.get("state") or "pending").strip().lower()
+                error = str(row_data.get("error") or "").strip()
+                name = os.path.basename(fp)
+                if state == "success":
+                    lines.append(f"- {name}: Uploaded")
+                    viewer_url, thumb_url = res_map.get(fp, ("", ""))
+                    if viewer_url:
+                        lines.append(f"  URL: {viewer_url}")
+                    if thumb_url:
+                        lines.append(f"  Thumb: {thumb_url}")
+                elif state == "failed":
+                    lines.append(f"- {name}: FAILED")
+                    lines.append(f"  Reason: {error or 'Upload failed without more detail.'}")
+                else:
+                    lines.append(f"- {name}: {state.title() or 'Pending'}")
+                lines.append(f"  Path: {fp}")
+
+            text = "\n".join(lines) + "\n"
+            out_name = os.path.join(out_dir, f"{safe_title}_{ts}_FAILED.txt")
+            with open(out_name, "w", encoding="utf-8") as f:
+                f.write(text)
+            self.current_output_files.append(out_name)
+
+            history_dir = getattr(self, "central_history_path", "")
+            if history_dir:
+                os.makedirs(history_dir, exist_ok=True)
+                central_name = os.path.join(history_dir, f"{safe_title}_{ts}_FAILED.txt")
+                with open(central_name, "w", encoding="utf-8") as f:
+                    f.write(text)
+
+            self.btn_open.configure(state="normal")
+            self.log(f"Saved failed batch report: {out_name}")
+            self.add_activity(
+                f"Saved failed batch report: {os.path.basename(out_name)}.",
+                "warning",
+            )
+        except Exception as e:
+            self.log(f"Error writing failed batch report: {e}")
+            self.add_activity(f"Error writing failed batch report: {e}", "error")
+
     def open_output_folder(self):
         if self.current_output_files:
             folder = os.path.dirname(os.path.abspath(self.current_output_files[0]))
@@ -798,6 +934,7 @@ class RuntimeMixin:
         self.upload_total = 0
         self.group_counter = 0
         self.current_output_files = []
+        self.copyable_output_files = []
         self.clipboard_buffer = []
         for grp in self.groups:
             grp.destroy()

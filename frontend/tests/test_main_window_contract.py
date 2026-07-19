@@ -1710,6 +1710,7 @@ def test_generate_group_output_populates_supported_template_context(tmp_path):
 def test_group_output_waits_for_all_group_files_to_succeed():
     group = FakeGroup("Batch Alpha", ["ok.jpg", "bad.jpg"])
     generated = []
+    failed_reports = []
     activity = []
     logs = []
 
@@ -1720,6 +1721,11 @@ def test_group_output_waits_for_all_group_files_to_succeed():
         "bad.jpg": {"state": "failed", "group": group},
     }
     app.generate_group_output = lambda completed_group: generated.append(completed_group)
+
+    def capture_failed_report(completed_group, failed_count=None):
+        failed_reports.append((completed_group, failed_count))
+
+    app.generate_failed_group_output = capture_failed_report
     app.log = lambda message: logs.append(message)
     app.add_activity = lambda message, level="info": activity.append((message, level))
 
@@ -1729,6 +1735,7 @@ def test_group_output_waits_for_all_group_files_to_succeed():
     assert group.prog_value == 1.0
     assert group.lbl_counts.text == "(2/2)"
     assert generated == []
+    assert failed_reports == [(group, 1)]
     assert logs == ["Warning: Output skipped for 'Batch Alpha' because 1 upload(s) failed."]
     assert activity == [("Skipped output for Batch Alpha: 1 upload(s) failed.", "warning")]
 
@@ -1741,8 +1748,16 @@ def test_group_output_generates_when_all_group_files_succeed():
     app = UploaderApp.__new__(UploaderApp)
     app.lock = Lock()
     app.file_widgets = {
-        "one.jpg": {"state": "success", "group": group},
-        "two.jpg": {"state": "success", "group": group},
+        "one.jpg": {
+            "state": "success",
+            "group": group,
+            "upload_result": ("https://img.test/one", "https://img.test/one-thumb"),
+        },
+        "two.jpg": {
+            "state": "success",
+            "group": group,
+            "upload_result": ("https://img.test/two", "https://img.test/two-thumb"),
+        },
     }
     app.generate_group_output = lambda completed_group: generated.append(completed_group)
 
@@ -1751,6 +1766,38 @@ def test_group_output_generates_when_all_group_files_succeed():
     assert group.is_completed is True
     assert group.prog_value == 1.0
     assert group.lbl_counts.text == "(2/2)"
+    assert generated == [group]
+
+
+@pytest.mark.unit
+def test_group_output_waits_for_result_urls_before_completion():
+    group = FakeGroup("Batch Alpha", ["one.jpg", "two.jpg"])
+    generated = []
+
+    app = UploaderApp.__new__(UploaderApp)
+    app.lock = Lock()
+    app.results = []
+    app.result_queue = queue.Queue()
+    app.file_widgets = {
+        "one.jpg": {
+            "state": "success",
+            "group": group,
+            "upload_result": ("https://img.test/one", "https://img.test/one-thumb"),
+        },
+        "two.jpg": {"state": "success", "group": group},
+    }
+    app.generate_group_output = lambda completed_group: generated.append(completed_group)
+
+    UploaderApp._update_group_progress(app, "two.jpg")
+
+    assert group.is_completed is False
+    assert generated == []
+
+    app.result_queue.put(("two.jpg", "https://img.test/two", "https://img.test/two-thumb"))
+
+    UploaderApp._process_result_queue(app)
+
+    assert group.is_completed is True
     assert generated == [group]
 
 
@@ -1811,6 +1858,122 @@ def test_generate_group_output_skips_empty_groups():
     assert app.current_output_files == []
     assert logs == ["Warning: Output skipped for 'Batch Alpha' because the group has no files."]
     assert activity == [("Skipped output for Batch Alpha: no files in group.", "warning")]
+
+
+@pytest.mark.unit
+def test_generate_group_output_uses_stored_row_results_after_retry(tmp_path):
+    class FakeTemplateManager:
+        def apply(self, template_name, context, group_results):
+            return "\n".join(result[0] for result in group_results)
+
+    first = str(tmp_path / "first.jpg")
+    second = str(tmp_path / "second.jpg")
+    group = FakeGroup("Batch Alpha", [first, second])
+    group.selected_template = "BBCode"
+    group.selected_thread = "Do Not Post"
+
+    app = UploaderApp.__new__(UploaderApp)
+    app.lock = Lock()
+    app.results = [(second, "https://img.test/second", "https://img.test/second-thumb")]
+    app.file_widgets = {
+        first: {
+            "state": "success",
+            "group": group,
+            "upload_result": ("https://img.test/first", "https://img.test/first-thumb"),
+        },
+        second: {"state": "success", "group": group},
+    }
+    app.settings = {"service": "imagebam.com", "imagebam_thumb": "180"}
+    app.template_mgr = FakeTemplateManager()
+    app.output_dir = str(tmp_path / "Output")
+    app.central_history_path = str(tmp_path / "history")
+    app.current_output_files = []
+    app.copyable_output_files = []
+    app.clipboard_buffer = []
+    app.saved_threads_data = {}
+    app.auto_poster = SimpleNamespace(queue_post=lambda *args, **kwargs: None)
+    app.lbl_eta = FakeLabel()
+    app.btn_open = FakeFrame()
+    app.var_auto_copy = FakeVar(False)
+    app.var_imx_links = FakeVar(False)
+    app.var_pix_links = FakeVar(False)
+    app.var_turbo_links = FakeVar(False)
+    app.var_vipr_links = FakeVar(False)
+    app.log = lambda _message: None
+    app.add_activity = lambda _message, level="info": None
+
+    UploaderApp.generate_group_output(app, group)
+
+    assert len(app.current_output_files) == 1
+    assert app.copyable_output_files == app.current_output_files
+    assert Path(app.current_output_files[0]).read_text(encoding="utf-8") == (
+        "https://img.test/first\nhttps://img.test/second"
+    )
+
+
+@pytest.mark.unit
+def test_failed_batch_report_is_written_but_not_copyable(tmp_path):
+    ok_file = str(tmp_path / "ok.jpg")
+    bad_file = str(tmp_path / "bad.jpg")
+    group = FakeGroup("Batch Alpha", [ok_file, bad_file])
+    activity = []
+    logs = []
+
+    app = UploaderApp.__new__(UploaderApp)
+    app.lock = Lock()
+    app.results = []
+    app.file_widgets = {
+        ok_file: {
+            "state": "success",
+            "group": group,
+            "upload_result": (
+                "https://imagebam.test/ok",
+                "https://imagebam.test/ok-thumb",
+            ),
+        },
+        bad_file: {"state": "failed", "group": group, "error": "server rejected image"},
+    }
+    app.settings = {"service": "imagebam.com"}
+    app.output_dir = str(tmp_path / "Output")
+    app.central_history_path = str(tmp_path / "history")
+    app.current_output_files = []
+    app.copyable_output_files = []
+    app.clipboard_buffer = []
+    app.btn_open = FakeFrame()
+    app.var_auto_copy = FakeVar(False)
+    app.log = lambda message: logs.append(message)
+    app.add_activity = lambda message, level="info": activity.append((message, level))
+
+    UploaderApp.generate_failed_group_output(app, group, 1)
+
+    assert len(app.current_output_files) == 1
+    report_path = Path(app.current_output_files[0])
+    assert report_path.name.endswith("_FAILED.txt")
+    assert app.copyable_output_files == []
+    assert app.btn_open.options["state"] == "normal"
+    report_text = report_path.read_text(encoding="utf-8")
+    assert "Batch: Batch Alpha" in report_text
+    assert "Status: FAILED" in report_text
+    assert "Service: imagebam.com" in report_text
+    assert "Failed uploads: 1" in report_text
+    assert "- ok.jpg: Uploaded" in report_text
+    assert "URL: https://imagebam.test/ok" in report_text
+    assert "- bad.jpg: FAILED" in report_text
+    assert "Reason: server rejected image" in report_text
+    assert Path(app.central_history_path, report_path.name).read_text(
+        encoding="utf-8"
+    ) == report_text
+    assert activity == [
+        (f"Saved failed batch report: {report_path.name}.", "warning")
+    ]
+    assert logs == [f"Saved failed batch report: {report_path}"]
+
+    summary = UploaderApp._build_completion_summary(app)
+
+    assert summary["generated_count"] == 1
+    assert summary["output_files"] == [str(report_path)]
+    assert summary["copyable_output_files"] == []
+    assert summary["has_copy_text"] is False
 
 
 @pytest.mark.unit
@@ -2319,6 +2482,7 @@ def test_retry_file_resets_only_target_failed_row_and_starts_upload():
             "retry": target_retry,
             "error_label": target_error_label,
             "error": "timeout",
+            "upload_result": ("https://img.test/stale", "https://img.test/stale-thumb"),
         },
         "other.jpg": {
             "state": "failed",
@@ -2339,6 +2503,7 @@ def test_retry_file_resets_only_target_failed_row_and_starts_upload():
 
     assert app.file_widgets["target.jpg"]["state"] == "pending"
     assert app.file_widgets["target.jpg"]["error"] == ""
+    assert "upload_result" not in app.file_widgets["target.jpg"]
     assert target_status.text == "Retry"
     assert target_prog.value == 0
     assert target_prog.options["progress_color"] == ["#3B8ED0", "#1F6AA5"]
