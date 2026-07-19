@@ -133,7 +133,7 @@ func ExecuteHttpUploadWithData(ctx context.Context, client *http.Client, fp stri
 		for k, v := range preValues {
 			extractedValues[k] = v
 		}
-		sessionClient = preClient
+		sessionClient = uploadClientWithPreRequestCookies(client, preClient)
 	}
 
 	uploadURL, err := resolveUploadURL(spec.URL, extractedValues)
@@ -654,6 +654,29 @@ func preRequestClient(base *http.Client, useCookies bool) *http.Client {
 		Jar:           jar,
 		CheckRedirect: checkRedirect,
 		Transport:     firstNonNilTransport(transport, defaultPreRequestTransport),
+	}
+}
+
+func uploadClientWithPreRequestCookies(base *http.Client, preClient *http.Client) *http.Client {
+	if preClient == nil {
+		return base
+	}
+	if preClient.Jar == nil {
+		return preClient
+	}
+	if base == nil {
+		return &http.Client{
+			Timeout:       ClientTimeout,
+			Jar:           preClient.Jar,
+			CheckRedirect: preClient.CheckRedirect,
+			Transport:     preClient.Transport,
+		}
+	}
+	return &http.Client{
+		Timeout:       base.Timeout,
+		Jar:           preClient.Jar,
+		CheckRedirect: base.CheckRedirect,
+		Transport:     firstNonNilTransport(base.Transport, preClient.Transport),
 	}
 }
 

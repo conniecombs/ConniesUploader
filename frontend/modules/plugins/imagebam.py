@@ -142,6 +142,7 @@ class ImageBamPlugin(ImageHostPlugin):
             "headers": {
                 "Accept": "application/json",
                 "Cache-Control": "no-cache",
+                "Referer": "https://www.imagebam.com/",
                 "X-Requested-With": "XMLHttpRequest",
             },
             "pre_request": pre_request_spec,
@@ -230,6 +231,7 @@ class ImageBamPlugin(ImageHostPlugin):
                 "X-Requested-With": "XMLHttpRequest",
                 "X-CSRF-TOKEN": "{csrf_token}",
                 "Accept": "application/json",
+                "Referer": "https://www.imagebam.com/",
             },
             "form_fields": session_fields,
             "use_cookies": True,
@@ -274,7 +276,9 @@ class ImageBamPlugin(ImageHostPlugin):
                 "action": "submit_login",
                 "url": "https://www.imagebam.com/auth/login",
                 "method": "POST",
-                "headers": {},
+                "headers": {
+                    "Referer": "https://www.imagebam.com/auth/login",
+                },
                 "form_fields": {
                     "_token": "{login_token}",
                     "email": creds.get("imagebam_user", ""),
@@ -282,7 +286,9 @@ class ImageBamPlugin(ImageHostPlugin):
                     "remember": "on",
                 },
                 "use_cookies": True,
-                "extract_fields": {},
+                "extract_fields": {
+                    "imagebam_login_marker": "form[action*='logout']",
+                },
                 "response_type": "html",
                 "follow_up_request": get_api_csrf,
             },

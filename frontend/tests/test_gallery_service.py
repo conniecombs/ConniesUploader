@@ -328,7 +328,12 @@ def test_list_galleries_parses_imagebam_upload_gallery_dropdown():
                     "response_body": '<input type="hidden" name="_token" value="tok">'
                 },
             },
-            {"status": "success", "data": {"response_body": "logged in"}},
+            {
+                "status": "success",
+                "data": {
+                    "response_body": '<form action="https://www.imagebam.com/auth/logout"></form>'
+                },
+            },
             {
                 "status": "success",
                 "data": {
@@ -359,8 +364,48 @@ def test_list_galleries_parses_imagebam_upload_gallery_dropdown():
     )
     login_payload = bridge.calls[1][0]
     assert login_payload["service"] == "imagebam.com"
+    assert (
+        login_payload["generic_spec"]["headers"]["Referer"]
+        == "https://www.imagebam.com/auth/login"
+    )
     assert login_payload["generic_spec"]["form_fields"]["email"] == "user"
     assert "pre_request" not in login_payload["generic_spec"]
+
+
+def test_list_imagebam_galleries_rejects_login_page_after_post():
+    bridge = FakeBridge(
+        responses=[
+            {
+                "status": "success",
+                "data": {
+                    "response_body": '<input type="hidden" name="_token" value="tok">'
+                },
+            },
+            {
+                "status": "success",
+                "data": {
+                    "response_body": """
+                    <html>
+                      <body>
+                        <form action="https://www.imagebam.com/auth/login">
+                          <input name="email">
+                        </form>
+                      </body>
+                    </html>
+                    """
+                },
+            },
+        ]
+    )
+    service = GalleryService(
+        bridge, {"imagebam_user": "user", "imagebam_pass": "wrong"}
+    )
+
+    result = service.list_galleries("imagebam.com")
+
+    assert result.status == GalleryStatus.LOGIN_FAILED
+    assert "login failed" in result.message.lower()
+    assert len(bridge.calls) == 2
 
 
 def test_gallery_response_parsing_reports_unreadable_and_failed_shapes():

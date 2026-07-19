@@ -832,6 +832,7 @@ class GalleryService:
             "imagebam.com",
             "https://www.imagebam.com/auth/login",
             method="POST",
+            headers={"Referer": "https://www.imagebam.com/auth/login"},
             form_fields={
                 "_token": token,
                 "email": self.creds.get("imagebam_user", ""),
@@ -840,7 +841,7 @@ class GalleryService:
             },
             timeout=30,
         )
-        return response.ok
+        return response.ok and _looks_like_imagebam_logged_in(response.body)
 
     def _records_from_sidecar_response(
         self, service: str, resp: Any, page: int = 1
@@ -1264,3 +1265,8 @@ def _looks_like_imx_login_page(html: str) -> bool:
     lowered = (html or "").lower()
     login_markers = ("usr_email", "dologin", "login_form", "incorrect username")
     return any(marker in lowered for marker in login_markers)
+
+
+def _looks_like_imagebam_logged_in(html: str) -> bool:
+    soup = BeautifulSoup(html or "", "html.parser")
+    return bool(soup.select_one("form[action*='logout'], a[href*='/logout']"))

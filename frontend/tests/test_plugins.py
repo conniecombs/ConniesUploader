@@ -899,18 +899,29 @@ class TestImageBamPlugin(unittest.TestCase):
 
         self.assertEqual(request["url"], "https://www.imagebam.com/upload")
         self.assertEqual(request["headers"]["X-Requested-With"], "XMLHttpRequest")
+        self.assertEqual(request["headers"]["Referer"], "https://www.imagebam.com/")
         fields = request["multipart_fields"]
         self.assertEqual(fields["files[0]"]["value"], "/tmp/image.jpg")
         self.assertEqual(fields["_token"]["value"], "csrf_token")
         self.assertEqual(fields["data"]["value"], "upload_token")
         self.assertNotIn("upload_session", fields)
 
+        login_request = request["pre_request"]["follow_up_request"]
+        self.assertEqual(
+            login_request["headers"]["Referer"],
+            "https://www.imagebam.com/auth/login",
+        )
+        self.assertEqual(
+            login_request["extract_fields"],
+            {"imagebam_login_marker": "form[action*='logout']"},
+        )
         session_request = (
             request["pre_request"]["follow_up_request"]["follow_up_request"][
                 "follow_up_request"
             ]
         )
         self.assertEqual(session_request["url"], "https://www.imagebam.com/upload/session")
+        self.assertEqual(session_request["headers"]["Referer"], "https://www.imagebam.com/")
         self.assertEqual(
             session_request["form_fields"],
             {
@@ -946,6 +957,7 @@ class TestImageBamPlugin(unittest.TestCase):
 
         self.assertEqual(request["pre_request"]["action"], "get_api_csrf")
         session_request = request["pre_request"]["follow_up_request"]
+        self.assertEqual(session_request["headers"]["Referer"], "https://www.imagebam.com/")
         self.assertEqual(
             session_request["form_fields"],
             {
