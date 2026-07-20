@@ -1,0 +1,411 @@
+=========== Begin .\crash_log.log ===========
+
+2026-07-20 10:27:37.814 | INFO | modules.sidecar:_start_process:161 - Sidecar started: z:\temp\Windows\_MEI9682\uploader.exe (workers: 8)
+2026-07-20 10:27:37.815 | INFO | modules.plugin_manager:load_plugins:37 - Discovering plugins in modules.plugins package
+2026-07-20 10:27:37.815 | DEBUG | modules.plugin_manager:load_plugins:39 - Found 10 potential plugin modules: ['base', 'helpers', 'imagebam', 'imgur', 'imx', 'pixhost', 'pixhost_v2_legacy', 'schema_renderer', 'turbo', 'vipr']
+2026-07-20 10:27:37.815 | DEBUG | modules.plugin_manager:load_plugins:43 - Skipping special module: base
+2026-07-20 10:27:37.815 | DEBUG | modules.plugin_manager:load_plugins:43 - Skipping special module: helpers
+2026-07-20 10:27:37.816 | INFO | modules.plugin_manager:load_plugins:59 - ✓ Loaded plugin: ImageBam (v3.0.0, go, id=imagebam.com)
+2026-07-20 10:27:37.816 | INFO | modules.plugin_manager:load_plugins:59 - ✓ Loaded plugin: Imgur (v3.0.0, go, id=imgur.com)
+2026-07-20 10:27:37.816 | INFO | modules.plugin_manager:load_plugins:59 - ✓ Loaded plugin: IMX.to (v2.0.1, go, id=imx.to)
+2026-07-20 10:27:37.817 | INFO | modules.plugin_manager:load_plugins:59 - ✓ Loaded plugin: Pixhost.to (v2.0.2, go, id=pixhost.to)
+2026-07-20 10:27:37.817 | DEBUG | modules.plugin_manager:load_plugins:46 - Skipping legacy file: pixhost_v2_legacy
+2026-07-20 10:27:37.817 | DEBUG | modules.plugin_manager:load_plugins:43 - Skipping special module: schema_renderer
+2026-07-20 10:27:37.817 | INFO | modules.plugin_manager:load_plugins:59 - ✓ Loaded plugin: TurboImageHost (v3.0.0, go, id=turboimagehost)
+2026-07-20 10:27:37.818 | INFO | modules.plugin_manager:load_plugins:59 - ✓ Loaded plugin: Vipr.im (v3.0.0, go, id=vipr.im)
+2026-07-20 10:27:37.818 | INFO | modules.plugin_manager:load_plugins:76 - Plugin discovery complete: 6 plugins loaded
+2026-07-20 10:27:37.844 | INFO | modules.sidecar:_dispatch_event:262 - [GO] === GO SIDECAR STARTED - WORKERS: 8 ===
+2026-07-20 10:27:37.910 | INFO | modules.plugin_manager:load_plugins:37 - Discovering plugins in modules.plugins package
+2026-07-20 10:27:37.910 | DEBUG | modules.plugin_manager:load_plugins:39 - Found 10 potential plugin modules: ['base', 'helpers', 'imagebam', 'imgur', 'imx', 'pixhost', 'pixhost_v2_legacy', 'schema_renderer', 'turbo', 'vipr']
+2026-07-20 10:27:37.910 | DEBUG | modules.plugin_manager:load_plugins:43 - Skipping special module: base
+2026-07-20 10:27:37.910 | DEBUG | modules.plugin_manager:load_plugins:43 - Skipping special module: helpers
+2026-07-20 10:27:37.910 | INFO | modules.plugin_manager:load_plugins:59 - ✓ Loaded plugin: ImageBam (v3.0.0, go, id=imagebam.com)
+2026-07-20 10:27:37.910 | INFO | modules.plugin_manager:load_plugins:59 - ✓ Loaded plugin: Imgur (v3.0.0, go, id=imgur.com)
+2026-07-20 10:27:37.910 | INFO | modules.plugin_manager:load_plugins:59 - ✓ Loaded plugin: IMX.to (v2.0.1, go, id=imx.to)
+2026-07-20 10:27:37.910 | INFO | modules.plugin_manager:load_plugins:59 - ✓ Loaded plugin: Pixhost.to (v2.0.2, go, id=pixhost.to)
+2026-07-20 10:27:37.910 | DEBUG | modules.plugin_manager:load_plugins:46 - Skipping legacy file: pixhost_v2_legacy
+2026-07-20 10:27:37.910 | DEBUG | modules.plugin_manager:load_plugins:43 - Skipping special module: schema_renderer
+2026-07-20 10:27:37.910 | INFO | modules.plugin_manager:load_plugins:59 - ✓ Loaded plugin: TurboImageHost (v3.0.0, go, id=turboimagehost)
+2026-07-20 10:27:37.910 | INFO | modules.plugin_manager:load_plugins:59 - ✓ Loaded plugin: Vipr.im (v3.0.0, go, id=vipr.im)
+2026-07-20 10:27:37.910 | INFO | modules.plugin_manager:load_plugins:76 - Plugin discovery complete: 6 plugins loaded
+2026-07-20 10:27:38.451 | INFO | modules.ui.Main_Window.app:_register_drop_targets:250 - Registering drop targets on scrollable containers...
+2026-07-20 10:27:38.453 | INFO | modules.ui.Main_Window.app:_register_drop_targets:262 - ✓ Registered drop target on list_container canvas: .!ctkframe.!ctkframe2.!ctkframe3.!canvas
+2026-07-20 10:27:38.453 | INFO | modules.ui.Main_Window.app:_register_drop_targets:279 - ✓ Registered drop target on settings_frame_container canvas: .!ctkframe.!ctkframe.!canvas
+2026-07-20 10:27:38.453 | INFO | modules.ui.Main_Window.app:_register_drop_targets:292 - Drop target registration complete
+2026-07-20 10:28:51.558 | INFO | modules.ui.Main_Window.diagnostics:graceful_shutdown:120 - Initiating graceful shutdown...
+2026-07-20 10:28:51.559 | INFO | modules.ui.Main_Window.diagnostics:graceful_shutdown:130 - Stopping AutoPoster...
+2026-07-20 10:28:51.559 | INFO | modules.auto_poster:stop:296 - AutoPoster stopped
+2026-07-20 10:28:51.559 | INFO | modules.ui.Main_Window.diagnostics:graceful_shutdown:138 - Stopping ViperGirls scheduler...
+2026-07-20 10:28:51.559 | INFO | modules.ui.Main_Window.diagnostics:graceful_shutdown:146 - Stopping System Tray...
+2026-07-20 10:28:51.559 | INFO | modules.ui.Main_Window.diagnostics:graceful_shutdown:164 - Shutting down thumbnail executor...
+2026-07-20 10:28:51.860 | INFO | modules.ui.Main_Window.diagnostics:graceful_shutdown:175 - Shutting down upload manager...
+2026-07-20 10:28:51.860 | INFO | modules.upload_manager:shutdown:454 - UploadManager shut down
+2026-07-20 10:28:51.860 | INFO | modules.ui.Main_Window.diagnostics:graceful_shutdown:182 - Terminating sidecar process...
+2026-07-20 10:28:51.860 | INFO | modules.sidecar:shutdown:409 - Shutting down sidecar process
+2026-07-20 10:28:51.860 | INFO | modules.sidecar:_dispatch_event:262 - [GO] === GO SIDECAR SHUTDOWN COMPLETE ===
+2026-07-20 10:28:51.862 | INFO | modules.sidecar:_terminate_process:378 - Sidecar terminated gracefully
+2026-07-20 10:28:51.866 | INFO | modules.ui.Main_Window.diagnostics:graceful_shutdown:198 - Graceful shutdown complete
+2026-07-20 10:30:14.650 | INFO | modules.sidecar:_start_process:161 - Sidecar started: z:\temp\Windows\_MEI232482\uploader.exe (workers: 8)
+2026-07-20 10:30:14.651 | INFO | modules.plugin_manager:load_plugins:37 - Discovering plugins in modules.plugins package
+2026-07-20 10:30:14.652 | DEBUG | modules.plugin_manager:load_plugins:39 - Found 10 potential plugin modules: ['base', 'helpers', 'imagebam', 'imgur', 'imx', 'pixhost', 'pixhost_v2_legacy', 'schema_renderer', 'turbo', 'vipr']
+2026-07-20 10:30:14.652 | DEBUG | modules.plugin_manager:load_plugins:43 - Skipping special module: base
+2026-07-20 10:30:14.652 | DEBUG | modules.plugin_manager:load_plugins:43 - Skipping special module: helpers
+2026-07-20 10:30:14.652 | INFO | modules.plugin_manager:load_plugins:59 - ✓ Loaded plugin: ImageBam (v3.0.0, go, id=imagebam.com)
+2026-07-20 10:30:14.652 | INFO | modules.plugin_manager:load_plugins:59 - ✓ Loaded plugin: Imgur (v3.0.0, go, id=imgur.com)
+2026-07-20 10:30:14.653 | INFO | modules.plugin_manager:load_plugins:59 - ✓ Loaded plugin: IMX.to (v2.0.1, go, id=imx.to)
+2026-07-20 10:30:14.653 | INFO | modules.plugin_manager:load_plugins:59 - ✓ Loaded plugin: Pixhost.to (v2.0.2, go, id=pixhost.to)
+2026-07-20 10:30:14.653 | DEBUG | modules.plugin_manager:load_plugins:46 - Skipping legacy file: pixhost_v2_legacy
+2026-07-20 10:30:14.653 | DEBUG | modules.plugin_manager:load_plugins:43 - Skipping special module: schema_renderer
+2026-07-20 10:30:14.653 | INFO | modules.plugin_manager:load_plugins:59 - ✓ Loaded plugin: TurboImageHost (v3.0.0, go, id=turboimagehost)
+2026-07-20 10:30:14.653 | INFO | modules.plugin_manager:load_plugins:59 - ✓ Loaded plugin: Vipr.im (v3.0.0, go, id=vipr.im)
+2026-07-20 10:30:14.653 | INFO | modules.plugin_manager:load_plugins:76 - Plugin discovery complete: 6 plugins loaded
+2026-07-20 10:30:14.675 | INFO | modules.sidecar:_dispatch_event:262 - [GO] === GO SIDECAR STARTED - WORKERS: 8 ===
+2026-07-20 10:30:14.742 | INFO | modules.plugin_manager:load_plugins:37 - Discovering plugins in modules.plugins package
+2026-07-20 10:30:14.742 | DEBUG | modules.plugin_manager:load_plugins:39 - Found 10 potential plugin modules: ['base', 'helpers', 'imagebam', 'imgur', 'imx', 'pixhost', 'pixhost_v2_legacy', 'schema_renderer', 'turbo', 'vipr']
+2026-07-20 10:30:14.742 | DEBUG | modules.plugin_manager:load_plugins:43 - Skipping special module: base
+2026-07-20 10:30:14.742 | DEBUG | modules.plugin_manager:load_plugins:43 - Skipping special module: helpers
+2026-07-20 10:30:14.742 | INFO | modules.plugin_manager:load_plugins:59 - ✓ Loaded plugin: ImageBam (v3.0.0, go, id=imagebam.com)
+2026-07-20 10:30:14.742 | INFO | modules.plugin_manager:load_plugins:59 - ✓ Loaded plugin: Imgur (v3.0.0, go, id=imgur.com)
+2026-07-20 10:30:14.742 | INFO | modules.plugin_manager:load_plugins:59 - ✓ Loaded plugin: IMX.to (v2.0.1, go, id=imx.to)
+2026-07-20 10:30:14.742 | INFO | modules.plugin_manager:load_plugins:59 - ✓ Loaded plugin: Pixhost.to (v2.0.2, go, id=pixhost.to)
+2026-07-20 10:30:14.742 | DEBUG | modules.plugin_manager:load_plugins:46 - Skipping legacy file: pixhost_v2_legacy
+2026-07-20 10:30:14.742 | DEBUG | modules.plugin_manager:load_plugins:43 - Skipping special module: schema_renderer
+2026-07-20 10:30:14.742 | INFO | modules.plugin_manager:load_plugins:59 - ✓ Loaded plugin: TurboImageHost (v3.0.0, go, id=turboimagehost)
+2026-07-20 10:30:14.742 | INFO | modules.plugin_manager:load_plugins:59 - ✓ Loaded plugin: Vipr.im (v3.0.0, go, id=vipr.im)
+2026-07-20 10:30:14.742 | INFO | modules.plugin_manager:load_plugins:76 - Plugin discovery complete: 6 plugins loaded
+2026-07-20 10:30:15.210 | INFO | modules.ui.Main_Window.app:_register_drop_targets:250 - Registering drop targets on scrollable containers...
+2026-07-20 10:30:15.259 | INFO | modules.ui.Main_Window.app:_register_drop_targets:262 - ✓ Registered drop target on list_container canvas: .!ctkframe.!ctkframe2.!ctkframe3.!canvas
+2026-07-20 10:30:15.259 | INFO | modules.ui.Main_Window.app:_register_drop_targets:279 - ✓ Registered drop target on settings_frame_container canvas: .!ctkframe.!ctkframe.!canvas
+2026-07-20 10:30:15.259 | INFO | modules.ui.Main_Window.app:_register_drop_targets:292 - Drop target registration complete
+2026-07-20 10:30:55.477 | INFO | modules.dnd:drop_files:32 - DROP EVENT RECEIVED!
+2026-07-20 10:30:55.477 | INFO | modules.dnd:drop_files:33 - Raw event.data: Z:/upload/01 Z:/upload/02 Z:/upload/03
+2026-07-20 10:30:55.477 | INFO | modules.dnd:drop_files:34 - Event coordinates: (1922, 566)
+2026-07-20 10:30:55.477 | INFO | modules.dnd:drop_files:38 - Parsed 3 file(s)/folder(s): ('Z:/upload/01', 'Z:/upload/02', 'Z:/upload/03')
+2026-07-20 10:30:55.477 | DEBUG | modules.dnd:drop_files:53 - Drop target widget: .!ctkframe.!ctkframe2.!ctkframe3.!canvas.!scrollableframe
+2026-07-20 10:30:55.477 | INFO | modules.dnd:drop_files:66 - No specific group targeted, will create new group(s)
+2026-07-20 10:30:55.477 | INFO | modules.dnd:drop_files:71 - Calling _process_files()...
+2026-07-20 10:30:55.477 | INFO | modules.ui.Main_Window.file_queue:_process_files:112 - 📁 Processing 3 input(s)...
+2026-07-20 10:30:55.480 | DEBUG | modules.ui.Main_Window.file_queue:_process_files:131 - Processing: Z:\upload\01
+2026-07-20 10:30:55.480 | INFO | modules.ui.Main_Window.file_queue:_process_files:135 - 📂 Scanning folder: 01
+2026-07-20 10:30:55.482 | INFO | modules.ui.Main_Window.file_queue:_process_files:146 - ✓ Found 3 valid image(s)
+2026-07-20 10:30:55.497 | DEBUG | modules.ui.Main_Window.file_queue:_process_files:131 - Processing: Z:\upload\02
+2026-07-20 10:30:55.497 | INFO | modules.ui.Main_Window.file_queue:_process_files:135 - 📂 Scanning folder: 02
+2026-07-20 10:30:55.522 | INFO | modules.ui.Main_Window.file_queue:_process_files:146 - ✓ Found 3 valid image(s)
+2026-07-20 10:30:55.535 | DEBUG | modules.ui.Main_Window.file_queue:_process_files:131 - Processing: Z:\upload\03
+2026-07-20 10:30:55.535 | INFO | modules.ui.Main_Window.file_queue:_process_files:135 - 📂 Scanning folder: 03
+2026-07-20 10:30:55.562 | INFO | modules.ui.Main_Window.file_queue:_process_files:146 - ✓ Found 3 valid image(s)
+2026-07-20 10:30:55.574 | INFO | modules.ui.Main_Window.file_queue:_process_files:219 - ✓ Successfully processed 9 file(s) from 3 folder(s)
+2026-07-20 10:31:16.598 | INFO | modules.dnd:drop_files:32 - DROP EVENT RECEIVED!
+2026-07-20 10:31:16.598 | INFO | modules.dnd:drop_files:33 - Raw event.data: Z:/upload/01 Z:/upload/02 Z:/upload/03
+2026-07-20 10:31:16.598 | INFO | modules.dnd:drop_files:34 - Event coordinates: (1947, 613)
+2026-07-20 10:31:16.598 | INFO | modules.dnd:drop_files:38 - Parsed 3 file(s)/folder(s): ('Z:/upload/01', 'Z:/upload/02', 'Z:/upload/03')
+2026-07-20 10:31:16.598 | DEBUG | modules.dnd:drop_files:53 - Drop target widget: .!ctkframe.!ctkframe2.!ctkframe3.!canvas.!scrollableframe
+2026-07-20 10:31:16.598 | INFO | modules.dnd:drop_files:66 - No specific group targeted, will create new group(s)
+2026-07-20 10:31:16.598 | INFO | modules.dnd:drop_files:71 - Calling _process_files()...
+2026-07-20 10:31:16.598 | INFO | modules.ui.Main_Window.file_queue:_process_files:112 - 📁 Processing 3 input(s)...
+2026-07-20 10:31:16.601 | DEBUG | modules.ui.Main_Window.file_queue:_process_files:131 - Processing: Z:\upload\01
+2026-07-20 10:31:16.601 | INFO | modules.ui.Main_Window.file_queue:_process_files:135 - 📂 Scanning folder: 01
+2026-07-20 10:31:16.603 | INFO | modules.ui.Main_Window.file_queue:_process_files:146 - ✓ Found 3 valid image(s)
+2026-07-20 10:31:16.617 | DEBUG | modules.ui.Main_Window.file_queue:_process_files:131 - Processing: Z:\upload\02
+2026-07-20 10:31:16.617 | INFO | modules.ui.Main_Window.file_queue:_process_files:135 - 📂 Scanning folder: 02
+2026-07-20 10:31:16.643 | INFO | modules.ui.Main_Window.file_queue:_process_files:146 - ✓ Found 3 valid image(s)
+2026-07-20 10:31:16.656 | DEBUG | modules.ui.Main_Window.file_queue:_process_files:131 - Processing: Z:\upload\03
+2026-07-20 10:31:16.657 | INFO | modules.ui.Main_Window.file_queue:_process_files:135 - 📂 Scanning folder: 03
+2026-07-20 10:31:16.681 | INFO | modules.ui.Main_Window.file_queue:_process_files:146 - ✓ Found 3 valid image(s)
+2026-07-20 10:31:16.693 | INFO | modules.ui.Main_Window.file_queue:_process_files:219 - ✓ Successfully processed 9 file(s) from 3 folder(s)
+2026-07-20 10:31:55.411 | INFO | modules.settings_manager:save:444 - Settings saved to C:\Users\Windows\.conniesuploader\user_settings.json
+2026-07-20 10:31:55.427 | INFO | modules.upload_manager:_dispatch_jobs:107 - --- Starting Phase 1: Gallery Creation ---
+2026-07-20 10:31:55.427 | INFO | modules.upload_manager:_dispatch_jobs:133 - --- Starting Phase 2: Upload Dispatch ---
+2026-07-20 10:31:55.427 | INFO | modules.upload_manager:_send_job:312 - _send_job for imagebam.com: thumbnail_size='250'
+2026-07-20 10:31:55.427 | INFO | modules.upload_manager:_send_job:339 - Using generic HTTP runner for imagebam.com (3 files)
+2026-07-20 10:31:55.429 | INFO | modules.upload_manager:_send_job:312 - _send_job for imagebam.com: thumbnail_size='250'
+2026-07-20 10:31:55.429 | INFO | modules.upload_manager:_send_job:339 - Using generic HTTP runner for imagebam.com (3 files)
+2026-07-20 10:31:55.430 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\01\rubber-duck A.jpg, status=Waiting
+2026-07-20 10:31:55.430 | INFO | modules.upload_manager:_send_job:312 - _send_job for imagebam.com: thumbnail_size='250'
+2026-07-20 10:31:55.430 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Upload slot acquired: rubber-duck A.jpg (service imagebam.com, limit 6)
+2026-07-20 10:31:55.430 | INFO | modules.upload_manager:_send_job:339 - Using generic HTTP runner for imagebam.com (3 files)
+2026-07-20 10:31:55.430 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\01\rubber-duck A.jpg, status=Preparing
+2026-07-20 10:31:55.430 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Upload slot acquired: rubber-duck A.jpg (service imagebam.com, limit 6)
+2026-07-20 10:31:55.431 | INFO | modules.upload_manager:_dispatch_jobs:220 - Upload dispatch finished
+2026-07-20 10:31:55.431 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\01\rubber-duck A.jpg, status=Preparing
+2026-07-20 10:31:55.431 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\01\rubber-duck A.jpg, status=Waiting
+2026-07-20 10:31:55.431 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Waiting for rate limit: rubber-duck A.jpg
+2026-07-20 10:31:55.431 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Rate limit cleared: rubber-duck A.jpg
+2026-07-20 10:31:55.431 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Waiting for rate limit: rubber-duck A.jpg
+2026-07-20 10:31:55.431 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\01\rubber-duck A.jpg, status=Preparing
+2026-07-20 10:31:55.431 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Rate limit cleared: rubber-duck A.jpg
+2026-07-20 10:31:55.431 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\01\rubber-duck B.jpg, status=Waiting
+2026-07-20 10:31:55.431 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Upload slot acquired: rubber-duck B.jpg (service imagebam.com, limit 6)
+2026-07-20 10:31:55.432 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\01\rubber-duck B.jpg, status=Preparing
+2026-07-20 10:31:55.432 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Upload slot acquired: rubber-duck B.jpg (service imagebam.com, limit 6)
+2026-07-20 10:31:55.432 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\01\rubber-duck B.jpg, status=Preparing
+2026-07-20 10:31:55.432 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\01\rubber-duck B.jpg, status=Waiting
+2026-07-20 10:31:55.432 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Waiting for rate limit: rubber-duck B.jpg
+2026-07-20 10:31:55.432 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Rate limit cleared: rubber-duck B.jpg
+2026-07-20 10:31:55.432 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Waiting for rate limit: rubber-duck B.jpg
+2026-07-20 10:31:55.432 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\01\rubber-duck B.jpg, status=Preparing
+2026-07-20 10:31:55.432 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Rate limit cleared: rubber-duck B.jpg
+2026-07-20 10:31:55.432 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\01\rubber-duck B.jpg, status=Preparing
+2026-07-20 10:31:55.432 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Preparing session data: rubber-duck B.jpg
+2026-07-20 10:31:55.432 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\01\rubber-duck A.jpg, status=Preparing
+2026-07-20 10:31:55.432 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Preparing session data: rubber-duck B.jpg
+2026-07-20 10:31:55.433 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Preparing session data: rubber-duck A.jpg
+2026-07-20 10:31:55.433 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\01\rubber-duck C.jpg, status=Waiting
+2026-07-20 10:31:55.433 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Preparing session data: rubber-duck A.jpg
+2026-07-20 10:31:55.433 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Upload slot acquired: rubber-duck C.jpg (service imagebam.com, limit 6)
+2026-07-20 10:31:55.433 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\01\rubber-duck C.jpg, status=Preparing
+2026-07-20 10:31:55.433 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Upload slot acquired: rubber-duck C.jpg (service imagebam.com, limit 6)
+2026-07-20 10:31:55.433 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\01\rubber-duck C.jpg, status=Preparing
+2026-07-20 10:31:55.433 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\01\rubber-duck C.jpg, status=Waiting
+2026-07-20 10:31:55.433 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Waiting for rate limit: rubber-duck C.jpg
+2026-07-20 10:31:55.433 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Rate limit cleared: rubber-duck C.jpg
+2026-07-20 10:31:55.433 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Waiting for rate limit: rubber-duck C.jpg
+2026-07-20 10:31:55.433 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\01\rubber-duck C.jpg, status=Preparing
+2026-07-20 10:31:55.434 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Rate limit cleared: rubber-duck C.jpg
+2026-07-20 10:31:55.434 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\01\rubber-duck C.jpg, status=Preparing
+2026-07-20 10:31:55.434 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Preparing session data: rubber-duck C.jpg
+2026-07-20 10:31:55.434 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\02\rubber-duck A.jpg, status=Waiting
+2026-07-20 10:31:55.434 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Preparing session data: rubber-duck C.jpg
+2026-07-20 10:31:55.434 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Upload slot acquired: rubber-duck A.jpg (service imagebam.com, limit 6)
+2026-07-20 10:31:55.434 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\02\rubber-duck A.jpg, status=Preparing
+2026-07-20 10:31:55.434 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Upload slot acquired: rubber-duck A.jpg (service imagebam.com, limit 6)
+2026-07-20 10:31:55.434 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\02\rubber-duck A.jpg, status=Preparing
+2026-07-20 10:31:55.434 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\02\rubber-duck A.jpg, status=Waiting
+2026-07-20 10:31:55.434 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Waiting for rate limit: rubber-duck A.jpg
+2026-07-20 10:31:55.434 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Rate limit cleared: rubber-duck A.jpg
+2026-07-20 10:31:55.434 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Waiting for rate limit: rubber-duck A.jpg
+2026-07-20 10:31:55.434 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\02\rubber-duck A.jpg, status=Preparing
+2026-07-20 10:31:55.434 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Rate limit cleared: rubber-duck A.jpg
+2026-07-20 10:31:55.434 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\02\rubber-duck A.jpg, status=Preparing
+2026-07-20 10:31:55.434 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Preparing session data: rubber-duck A.jpg
+2026-07-20 10:31:55.434 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Preparing session data: rubber-duck A.jpg
+2026-07-20 10:31:55.434 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\02\rubber-duck B.jpg, status=Waiting
+2026-07-20 10:31:55.435 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Upload slot acquired: rubber-duck B.jpg (service imagebam.com, limit 6)
+2026-07-20 10:31:55.435 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\02\rubber-duck B.jpg, status=Preparing
+2026-07-20 10:31:55.435 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Upload slot acquired: rubber-duck B.jpg (service imagebam.com, limit 6)
+2026-07-20 10:31:55.435 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\02\rubber-duck B.jpg, status=Preparing
+2026-07-20 10:31:55.435 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\02\rubber-duck B.jpg, status=Waiting
+2026-07-20 10:31:55.435 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Waiting for rate limit: rubber-duck B.jpg
+2026-07-20 10:31:55.435 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Rate limit cleared: rubber-duck B.jpg
+2026-07-20 10:31:55.435 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Waiting for rate limit: rubber-duck B.jpg
+2026-07-20 10:31:55.435 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\02\rubber-duck B.jpg, status=Preparing
+2026-07-20 10:31:55.435 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Rate limit cleared: rubber-duck B.jpg
+2026-07-20 10:31:55.435 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\02\rubber-duck B.jpg, status=Preparing
+2026-07-20 10:31:55.435 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Preparing session data: rubber-duck B.jpg
+2026-07-20 10:31:55.435 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\02\rubber-duck C.jpg, status=Waiting
+2026-07-20 10:31:55.435 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Preparing session data: rubber-duck B.jpg
+2026-07-20 10:31:55.435 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Upload slot acquired: rubber-duck C.jpg (service imagebam.com, limit 6)
+2026-07-20 10:31:55.435 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\02\rubber-duck C.jpg, status=Preparing
+2026-07-20 10:31:55.435 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Upload slot acquired: rubber-duck C.jpg (service imagebam.com, limit 6)
+2026-07-20 10:31:55.435 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\02\rubber-duck C.jpg, status=Preparing
+2026-07-20 10:31:55.435 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\02\rubber-duck C.jpg, status=Waiting
+2026-07-20 10:31:55.436 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Waiting for rate limit: rubber-duck C.jpg
+2026-07-20 10:31:55.436 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Rate limit cleared: rubber-duck C.jpg
+2026-07-20 10:31:55.436 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Waiting for rate limit: rubber-duck C.jpg
+2026-07-20 10:31:55.436 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\02\rubber-duck C.jpg, status=Preparing
+2026-07-20 10:31:55.436 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Rate limit cleared: rubber-duck C.jpg
+2026-07-20 10:31:55.436 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\02\rubber-duck C.jpg, status=Preparing
+2026-07-20 10:31:55.436 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Preparing session data: rubber-duck C.jpg
+2026-07-20 10:31:55.436 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\03\rubber-duck A.jpg, status=Waiting
+2026-07-20 10:31:55.436 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\03\rubber-duck B.jpg, status=Waiting
+2026-07-20 10:31:55.436 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Preparing session data: rubber-duck C.jpg
+2026-07-20 10:31:55.436 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\03\rubber-duck C.jpg, status=Waiting
+2026-07-20 10:31:56.373 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\01\rubber-duck B.jpg, status=Failed
+2026-07-20 10:31:56.373 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=error, file=Z:\upload\01\rubber-duck B.jpg, status=N/A
+2026-07-20 10:31:56.373 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Upload slot acquired: rubber-duck C.jpg (service imagebam.com, limit 6)
+2026-07-20 10:31:56.373 | ERROR | modules.upload_manager:_process_events:426 - SIDECAR ERROR: required JSON field "upload_token" not found using path "data"
+2026-07-20 10:31:56.373 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\03\rubber-duck C.jpg, status=Preparing
+2026-07-20 10:31:56.373 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Upload slot acquired: rubber-duck C.jpg (service imagebam.com, limit 6)
+2026-07-20 10:31:56.373 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\03\rubber-duck C.jpg, status=Preparing
+2026-07-20 10:31:56.373 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\03\rubber-duck C.jpg, status=Waiting
+2026-07-20 10:31:56.373 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Waiting for rate limit: rubber-duck C.jpg
+2026-07-20 10:31:56.373 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Rate limit cleared: rubber-duck C.jpg
+2026-07-20 10:31:56.373 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Waiting for rate limit: rubber-duck C.jpg
+2026-07-20 10:31:56.373 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\03\rubber-duck C.jpg, status=Preparing
+2026-07-20 10:31:56.373 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Rate limit cleared: rubber-duck C.jpg
+2026-07-20 10:31:56.373 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\03\rubber-duck C.jpg, status=Preparing
+2026-07-20 10:31:56.373 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Preparing session data: rubber-duck C.jpg
+2026-07-20 10:31:56.374 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Preparing session data: rubber-duck C.jpg
+2026-07-20 10:31:56.378 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\01\rubber-duck A.jpg, status=Failed
+2026-07-20 10:31:56.378 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=error, file=Z:\upload\01\rubber-duck A.jpg, status=N/A
+2026-07-20 10:31:56.378 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Upload slot acquired: rubber-duck B.jpg (service imagebam.com, limit 6)
+2026-07-20 10:31:56.378 | ERROR | modules.upload_manager:_process_events:426 - SIDECAR ERROR: required JSON field "upload_token" not found using path "data"
+2026-07-20 10:31:56.379 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\03\rubber-duck B.jpg, status=Preparing
+2026-07-20 10:31:56.379 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Upload slot acquired: rubber-duck B.jpg (service imagebam.com, limit 6)
+2026-07-20 10:31:56.379 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\03\rubber-duck B.jpg, status=Preparing
+2026-07-20 10:31:56.379 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\03\rubber-duck B.jpg, status=Waiting
+2026-07-20 10:31:56.379 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Waiting for rate limit: rubber-duck B.jpg
+2026-07-20 10:31:56.379 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Rate limit cleared: rubber-duck B.jpg
+2026-07-20 10:31:56.379 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\03\rubber-duck B.jpg, status=Preparing
+2026-07-20 10:31:56.379 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\03\rubber-duck B.jpg, status=Preparing
+2026-07-20 10:31:56.379 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Preparing session data: rubber-duck B.jpg
+2026-07-20 10:31:56.379 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Waiting for rate limit: rubber-duck B.jpg
+2026-07-20 10:31:56.380 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Rate limit cleared: rubber-duck B.jpg
+2026-07-20 10:31:56.380 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Preparing session data: rubber-duck B.jpg
+2026-07-20 10:31:56.381 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Session data ready: rubber-duck C.jpg
+2026-07-20 10:31:56.381 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Session data ready: rubber-duck C.jpg
+2026-07-20 10:31:56.381 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\02\rubber-duck C.jpg, status=Uploading
+2026-07-20 10:31:56.382 | INFO | modules.sidecar:_dispatch_event:262 - [GO] HTTP upload request started: rubber-duck C.jpg
+2026-07-20 10:31:56.382 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Session data ready: rubber-duck A.jpg
+2026-07-20 10:31:56.382 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: HTTP upload request started: rubber-duck C.jpg
+2026-07-20 10:31:56.382 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\02\rubber-duck A.jpg, status=Uploading
+2026-07-20 10:31:56.382 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Session data ready: rubber-duck A.jpg
+2026-07-20 10:31:56.382 | INFO | modules.sidecar:_dispatch_event:262 - [GO] HTTP upload request started: rubber-duck A.jpg
+2026-07-20 10:31:56.382 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: HTTP upload request started: rubber-duck A.jpg
+2026-07-20 10:31:56.390 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\01\rubber-duck C.jpg, status=Failed
+2026-07-20 10:31:56.390 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=error, file=Z:\upload\01\rubber-duck C.jpg, status=N/A
+2026-07-20 10:31:56.390 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=batch_complete, file=N/A, status=done
+2026-07-20 10:31:56.390 | ERROR | modules.upload_manager:_process_events:426 - SIDECAR ERROR: required JSON field "upload_token" not found using path "data"
+2026-07-20 10:31:56.391 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Upload slot acquired: rubber-duck A.jpg (service imagebam.com, limit 6)
+2026-07-20 10:31:56.391 | DEBUG | modules.upload_manager:_process_events:420 - SIDECAR: batch complete
+2026-07-20 10:31:56.391 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\03\rubber-duck A.jpg, status=Preparing
+2026-07-20 10:31:56.391 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Upload slot acquired: rubber-duck A.jpg (service imagebam.com, limit 6)
+2026-07-20 10:31:56.391 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\03\rubber-duck A.jpg, status=Preparing
+2026-07-20 10:31:56.391 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\03\rubber-duck A.jpg, status=Waiting
+2026-07-20 10:31:56.391 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Waiting for rate limit: rubber-duck A.jpg
+2026-07-20 10:31:56.391 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Rate limit cleared: rubber-duck A.jpg
+2026-07-20 10:31:56.391 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Waiting for rate limit: rubber-duck A.jpg
+2026-07-20 10:31:56.392 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\03\rubber-duck A.jpg, status=Preparing
+2026-07-20 10:31:56.392 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Rate limit cleared: rubber-duck A.jpg
+2026-07-20 10:31:56.392 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Session data ready: rubber-duck B.jpg
+2026-07-20 10:31:56.392 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\03\rubber-duck A.jpg, status=Preparing
+2026-07-20 10:31:56.392 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Session data ready: rubber-duck B.jpg
+2026-07-20 10:31:56.392 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Preparing session data: rubber-duck A.jpg
+2026-07-20 10:31:56.392 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\02\rubber-duck B.jpg, status=Uploading
+2026-07-20 10:31:56.392 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Preparing session data: rubber-duck A.jpg
+2026-07-20 10:31:56.392 | INFO | modules.sidecar:_dispatch_event:262 - [GO] HTTP upload request started: rubber-duck B.jpg
+2026-07-20 10:31:56.392 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: HTTP upload request started: rubber-duck B.jpg
+2026-07-20 10:31:56.405 | INFO | modules.ui.Main_Window.diagnostics:log:112 - Warning: Output skipped for '01' because 3 upload(s) failed.
+2026-07-20 10:31:56.760 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Session data ready: rubber-duck C.jpg
+2026-07-20 10:31:56.760 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\03\rubber-duck C.jpg, status=Uploading
+2026-07-20 10:31:56.760 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Session data ready: rubber-duck C.jpg
+2026-07-20 10:31:56.760 | INFO | modules.sidecar:_dispatch_event:262 - [GO] HTTP upload request started: rubber-duck C.jpg
+2026-07-20 10:31:56.760 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: HTTP upload request started: rubber-duck C.jpg
+2026-07-20 10:31:56.768 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Session data ready: rubber-duck B.jpg
+2026-07-20 10:31:56.768 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\03\rubber-duck B.jpg, status=Uploading
+2026-07-20 10:31:56.768 | INFO | modules.sidecar:_dispatch_event:262 - [GO] HTTP upload request started: rubber-duck B.jpg
+2026-07-20 10:31:56.768 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Session data ready: rubber-duck B.jpg
+2026-07-20 10:31:56.769 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: HTTP upload request started: rubber-duck B.jpg
+2026-07-20 10:31:56.789 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Session data ready: rubber-duck A.jpg
+2026-07-20 10:31:56.789 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Session data ready: rubber-duck A.jpg
+2026-07-20 10:31:56.789 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\03\rubber-duck A.jpg, status=Uploading
+2026-07-20 10:31:56.789 | INFO | modules.sidecar:_dispatch_event:262 - [GO] HTTP upload request started: rubber-duck A.jpg
+2026-07-20 10:31:56.789 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: HTTP upload request started: rubber-duck A.jpg
+2026-07-20 10:31:57.455 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=result, file=Z:\upload\02\rubber-duck B.jpg, status=N/A
+2026-07-20 10:31:57.455 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\02\rubber-duck B.jpg, status=Done
+2026-07-20 10:31:57.460 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=result, file=Z:\upload\02\rubber-duck C.jpg, status=N/A
+2026-07-20 10:31:57.460 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\02\rubber-duck C.jpg, status=Done
+2026-07-20 10:31:57.499 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=result, file=Z:\upload\02\rubber-duck A.jpg, status=N/A
+2026-07-20 10:31:57.499 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\02\rubber-duck A.jpg, status=Done
+2026-07-20 10:31:57.499 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=batch_complete, file=N/A, status=done
+2026-07-20 10:31:57.499 | DEBUG | modules.upload_manager:_process_events:420 - SIDECAR: batch complete
+2026-07-20 10:31:57.507 | INFO | modules.ui.Main_Window.diagnostics:log:112 - Saved: Output\02_20260720_1031.txt
+2026-07-20 10:31:57.767 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=result, file=Z:\upload\03\rubber-duck B.jpg, status=N/A
+2026-07-20 10:31:57.767 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\03\rubber-duck B.jpg, status=Done
+2026-07-20 10:31:57.792 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=result, file=Z:\upload\03\rubber-duck C.jpg, status=N/A
+2026-07-20 10:31:57.793 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\03\rubber-duck C.jpg, status=Done
+2026-07-20 10:31:57.852 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=result, file=Z:\upload\03\rubber-duck A.jpg, status=N/A
+2026-07-20 10:31:57.852 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\03\rubber-duck A.jpg, status=Done
+2026-07-20 10:31:57.852 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=batch_complete, file=N/A, status=done
+2026-07-20 10:31:57.852 | DEBUG | modules.upload_manager:_process_events:420 - SIDECAR: batch complete
+2026-07-20 10:31:57.866 | INFO | modules.ui.Main_Window.diagnostics:log:112 - Saved: Output\03_20260720_1031.txt
+2026-07-20 10:32:49.049 | INFO | modules.ui.Main_Window.runtimepen_output_folder:769 - Opened output folder: Z:\connup\Output
+2026-07-20 10:33:40.060 | INFO | modules.settings_manager:save:444 - Settings saved to C:\Users\Windows\.conniesuploader\user_settings.json
+2026-07-20 10:33:40.066 | INFO | modules.upload_manager:_dispatch_jobs:107 - --- Starting Phase 1: Gallery Creation ---
+2026-07-20 10:33:40.066 | INFO | modules.upload_manager:_dispatch_jobs:133 - --- Starting Phase 2: Upload Dispatch ---
+2026-07-20 10:33:40.066 | INFO | modules.upload_manager:_send_job:312 - _send_job for imagebam.com: thumbnail_size='250'
+2026-07-20 10:33:40.066 | INFO | modules.upload_manager:_send_job:339 - Using generic HTTP runner for imagebam.com (1 files)
+2026-07-20 10:33:40.067 | INFO | modules.upload_manager:_dispatch_jobs:220 - Upload dispatch finished
+2026-07-20 10:33:40.067 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\01\rubber-duck A.jpg, status=Waiting
+2026-07-20 10:33:40.067 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Upload slot acquired: rubber-duck A.jpg (service imagebam.com, limit 6)
+2026-07-20 10:33:40.068 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\01\rubber-duck A.jpg, status=Preparing
+2026-07-20 10:33:40.068 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Upload slot acquired: rubber-duck A.jpg (service imagebam.com, limit 6)
+2026-07-20 10:33:40.068 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\01\rubber-duck A.jpg, status=Preparing
+2026-07-20 10:33:40.068 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\01\rubber-duck A.jpg, status=Waiting
+2026-07-20 10:33:40.068 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Waiting for rate limit: rubber-duck A.jpg
+2026-07-20 10:33:40.068 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Rate limit cleared: rubber-duck A.jpg
+2026-07-20 10:33:40.068 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Waiting for rate limit: rubber-duck A.jpg
+2026-07-20 10:33:40.068 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\01\rubber-duck A.jpg, status=Preparing
+2026-07-20 10:33:40.068 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Rate limit cleared: rubber-duck A.jpg
+2026-07-20 10:33:40.068 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\01\rubber-duck A.jpg, status=Preparing
+2026-07-20 10:33:40.068 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Preparing session data: rubber-duck A.jpg
+2026-07-20 10:33:40.069 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Preparing session data: rubber-duck A.jpg
+2026-07-20 10:33:41.017 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Session data ready: rubber-duck A.jpg
+2026-07-20 10:33:41.017 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Session data ready: rubber-duck A.jpg
+2026-07-20 10:33:41.017 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\01\rubber-duck A.jpg, status=Uploading
+2026-07-20 10:33:41.017 | INFO | modules.sidecar:_dispatch_event:262 - [GO] HTTP upload request started: rubber-duck A.jpg
+2026-07-20 10:33:41.017 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: HTTP upload request started: rubber-duck A.jpg
+2026-07-20 10:33:42.123 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=result, file=Z:\upload\01\rubber-duck A.jpg, status=N/A
+2026-07-20 10:33:42.123 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\01\rubber-duck A.jpg, status=Done
+2026-07-20 10:33:42.123 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=batch_complete, file=N/A, status=done
+2026-07-20 10:33:42.123 | DEBUG | modules.upload_manager:_process_events:420 - SIDECAR: batch complete
+2026-07-20 10:33:42.128 | INFO | modules.ui.Main_Window.diagnostics:log:112 - Warning: Output skipped for '01' because 2 upload(s) failed.
+2026-07-20 10:33:51.633 | INFO | modules.ui.Main_Window.runtimepen_output_folder:769 - Opened output folder: Z:\connup\Output
+2026-07-20 10:34:12.705 | INFO | modules.settings_manager:save:444 - Settings saved to C:\Users\Windows\.conniesuploader\user_settings.json
+2026-07-20 10:34:12.710 | INFO | modules.upload_manager:_dispatch_jobs:107 - --- Starting Phase 1: Gallery Creation ---
+2026-07-20 10:34:12.712 | INFO | modules.upload_manager:_dispatch_jobs:133 - --- Starting Phase 2: Upload Dispatch ---
+2026-07-20 10:34:12.712 | INFO | modules.upload_manager:_send_job:312 - _send_job for imagebam.com: thumbnail_size='250'
+2026-07-20 10:34:12.712 | INFO | modules.upload_manager:_send_job:339 - Using generic HTTP runner for imagebam.com (2 files)
+2026-07-20 10:34:12.712 | INFO | modules.upload_manager:_dispatch_jobs:220 - Upload dispatch finished
+2026-07-20 10:34:12.713 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\01\rubber-duck B.jpg, status=Waiting
+2026-07-20 10:34:12.713 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Upload slot acquired: rubber-duck B.jpg (service imagebam.com, limit 6)
+2026-07-20 10:34:12.713 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\01\rubber-duck B.jpg, status=Preparing
+2026-07-20 10:34:12.713 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\01\rubber-duck C.jpg, status=Waiting
+2026-07-20 10:34:12.713 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Upload slot acquired: rubber-duck B.jpg (service imagebam.com, limit 6)
+2026-07-20 10:34:12.713 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Upload slot acquired: rubber-duck C.jpg (service imagebam.com, limit 6)
+2026-07-20 10:34:12.713 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\01\rubber-duck C.jpg, status=Preparing
+2026-07-20 10:34:12.713 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Upload slot acquired: rubber-duck C.jpg (service imagebam.com, limit 6)
+2026-07-20 10:34:12.713 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\01\rubber-duck B.jpg, status=Preparing
+2026-07-20 10:34:12.714 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\01\rubber-duck C.jpg, status=Preparing
+2026-07-20 10:34:12.714 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\01\rubber-duck C.jpg, status=Waiting
+2026-07-20 10:34:12.714 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Waiting for rate limit: rubber-duck C.jpg
+2026-07-20 10:34:12.714 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Rate limit cleared: rubber-duck C.jpg
+2026-07-20 10:34:12.714 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Waiting for rate limit: rubber-duck C.jpg
+2026-07-20 10:34:12.714 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\01\rubber-duck C.jpg, status=Preparing
+2026-07-20 10:34:12.714 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Rate limit cleared: rubber-duck C.jpg
+2026-07-20 10:34:12.714 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\01\rubber-duck C.jpg, status=Preparing
+2026-07-20 10:34:12.714 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Preparing session data: rubber-duck C.jpg
+2026-07-20 10:34:12.715 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\01\rubber-duck B.jpg, status=Waiting
+2026-07-20 10:34:12.715 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Preparing session data: rubber-duck C.jpg
+2026-07-20 10:34:12.715 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Waiting for rate limit: rubber-duck B.jpg
+2026-07-20 10:34:12.715 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Rate limit cleared: rubber-duck B.jpg
+2026-07-20 10:34:12.715 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Waiting for rate limit: rubber-duck B.jpg
+2026-07-20 10:34:12.715 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\01\rubber-duck B.jpg, status=Preparing
+2026-07-20 10:34:12.715 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Rate limit cleared: rubber-duck B.jpg
+2026-07-20 10:34:12.715 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\01\rubber-duck B.jpg, status=Preparing
+2026-07-20 10:34:12.715 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Preparing session data: rubber-duck B.jpg
+2026-07-20 10:34:12.715 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Preparing session data: rubber-duck B.jpg
+2026-07-20 10:34:13.608 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Session data ready: rubber-duck B.jpg
+2026-07-20 10:34:13.608 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Session data ready: rubber-duck B.jpg
+2026-07-20 10:34:13.608 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\01\rubber-duck B.jpg, status=Uploading
+2026-07-20 10:34:13.608 | INFO | modules.sidecar:_dispatch_event:262 - [GO] HTTP upload request started: rubber-duck B.jpg
+2026-07-20 10:34:13.608 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: HTTP upload request started: rubber-duck B.jpg
+2026-07-20 10:34:13.615 | INFO | modules.sidecar:_dispatch_event:262 - [GO] Session data ready: rubber-duck C.jpg
+2026-07-20 10:34:13.615 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\01\rubber-duck C.jpg, status=Uploading
+2026-07-20 10:34:13.615 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: Session data ready: rubber-duck C.jpg
+2026-07-20 10:34:13.616 | INFO | modules.sidecar:_dispatch_event:262 - [GO] HTTP upload request started: rubber-duck C.jpg
+2026-07-20 10:34:13.616 | DEBUG | modules.upload_manager:_process_events:423 - SIDECAR: HTTP upload request started: rubber-duck C.jpg
+2026-07-20 10:34:14.677 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=result, file=Z:\upload\01\rubber-duck B.jpg, status=N/A
+2026-07-20 10:34:14.677 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\01\rubber-duck B.jpg, status=Done
+2026-07-20 10:34:14.727 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=result, file=Z:\upload\01\rubber-duck C.jpg, status=N/A
+2026-07-20 10:34:14.727 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=status, file=Z:\upload\01\rubber-duck C.jpg, status=Done
+2026-07-20 10:34:14.727 | DEBUG | modules.sidecar:_dispatch_event:264 - [GO-EVENT] type=batch_complete, file=N/A, status=done
+2026-07-20 10:34:14.727 | DEBUG | modules.upload_manager:_process_events:420 - SIDECAR: batch complete
+2026-07-20 10:34:14.745 | INFO | modules.ui.Main_Window.diagnostics:log:112 - Warning: Output skipped for '01' because only 2/3 upload result(s) were usable.
+2026-07-20 10:34:21.983 | INFO | modules.ui.Main_Window.runtimepen_output_folder:769 - Opened output folder: Z:\connup\Output
+2026-07-20 11:19:18.665 | INFO | modules.ui.Main_Window.diagnostics:graceful_shutdown:120 - Initiating graceful shutdown...
+2026-07-20 11:19:18.665 | INFO | modules.ui.Main_Window.diagnostics:graceful_shutdown:130 - Stopping AutoPoster...
+2026-07-20 11:19:18.665 | INFO | modules.auto_poster:stop:296 - AutoPoster stopped
+2026-07-20 11:19:18.665 | INFO | modules.ui.Main_Window.diagnostics:graceful_shutdown:138 - Stopping ViperGirls scheduler...
+2026-07-20 11:19:18.667 | INFO | modules.ui.Main_Window.diagnostics:graceful_shutdown:146 - Stopping System Tray...
+2026-07-20 11:19:18.667 | INFO | modules.ui.Main_Window.diagnostics:graceful_shutdown:164 - Shutting down thumbnail executor...
+2026-07-20 11:19:18.968 | INFO | modules.ui.Main_Window.diagnostics:graceful_shutdown:175 - Shutting down upload manager...
+2026-07-20 11:19:19.012 | INFO | modules.upload_manager:shutdown:454 - UploadManager shut down
+2026-07-20 11:19:19.012 | INFO | modules.ui.Main_Window.diagnostics:graceful_shutdown:182 - Terminating sidecar process...
+2026-07-20 11:19:19.012 | INFO | modules.sidecar:shutdown:409 - Shutting down sidecar process
+2026-07-20 11:19:19.013 | INFO | modules.sidecar:_dispatch_event:262 - [GO] === GO SIDECAR SHUTDOWN COMPLETE ===
+2026-07-20 11:19:19.015 | INFO | modules.sidecar:_terminate_process:378 - Sidecar terminated gracefully
+2026-07-20 11:19:19.015 | INFO | modules.ui.Main_Window.diagnostics:graceful_shutdown:198 - Graceful shutdown complete
+
+
+=========== End .\crash_log.log ===========

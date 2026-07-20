@@ -125,7 +125,7 @@ func ExecuteHttpUploadWithData(ctx context.Context, client *http.Client, fp stri
 		var err error
 		emitUploadStatus(job, fp, "Preparing")
 		emitUploadLog(job, fp, fmt.Sprintf("Preparing session data: %s", filepath.Base(fp)))
-		preValues, preClient, err := executePreRequestWithRetryConfig(ctx, client, spec.PreRequest, retryConfig)
+		preValues, preClient, err := executeUploadPreRequestWithRetryConfig(ctx, client, spec.PreRequest, retryConfig)
 		if err != nil {
 			return HTTPUploadResult{}, err
 		}
@@ -332,6 +332,22 @@ func executePreRequestWithRetryConfig(
 		retryConfig = GetDefaultRetryConfig()
 	}
 	return executePreRequest(ctx, preRequestClient(client, spec.UseCookies), spec, values, retryConfig)
+}
+
+func executeUploadPreRequestWithRetryConfig(
+	ctx context.Context,
+	client *http.Client,
+	spec *PreRequestSpec,
+	retryConfig *RetryConfig,
+) (map[string]string, *http.Client, error) {
+	values := make(map[string]string)
+	if spec == nil {
+		return values, client, nil
+	}
+	if retryConfig == nil {
+		retryConfig = GetDefaultRetryConfig()
+	}
+	return executePreRequest(ctx, isolatedPreRequestClient(client, spec.UseCookies), spec, values, retryConfig)
 }
 
 func executePreRequest(
@@ -643,6 +659,25 @@ func preRequestClient(base *http.Client, useCookies bool) *http.Client {
 	if jar == nil {
 		jar, _ = cookiejar.New(nil)
 	}
+	var transport http.RoundTripper
+	var checkRedirect func(req *http.Request, via []*http.Request) error
+	if base != nil {
+		transport = base.Transport
+		checkRedirect = base.CheckRedirect
+	}
+	return &http.Client{
+		Timeout:       PreRequestTimeout,
+		Jar:           jar,
+		CheckRedirect: checkRedirect,
+		Transport:     firstNonNilTransport(transport, defaultPreRequestTransport),
+	}
+}
+
+func isolatedPreRequestClient(base *http.Client, useCookies bool) *http.Client {
+	if !useCookies {
+		return base
+	}
+	jar, _ := cookiejar.New(nil)
 	var transport http.RoundTripper
 	var checkRedirect func(req *http.Request, via []*http.Request) error
 	if base != nil {

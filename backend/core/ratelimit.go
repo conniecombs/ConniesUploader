@@ -44,10 +44,15 @@ func UpdateRateLimiter(service string, config *RateLimitConfig) {
 	}
 	RateLimiterMutex.Lock()
 	defer RateLimiterMutex.Unlock()
-	RateLimiters[service] = rate.NewLimiter(rate.Limit(config.RequestsPerSecond), config.BurstSize)
+	limiter := RateLimiters[service]
+	if limiter == nil {
+		RateLimiters[service] = rate.NewLimiter(rate.Limit(config.RequestsPerSecond), config.BurstSize)
+	} else {
+		limiter.SetLimit(rate.Limit(config.RequestsPerSecond))
+		limiter.SetBurst(config.BurstSize)
+	}
 	if config.GlobalLimit > 0 {
-		oldBurst := globalRateLimiter.Burst()
-		globalRateLimiter = rate.NewLimiter(rate.Limit(config.GlobalLimit), oldBurst)
+		globalRateLimiter.SetLimit(rate.Limit(config.GlobalLimit))
 	}
 }
 

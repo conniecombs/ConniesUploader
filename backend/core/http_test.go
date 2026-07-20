@@ -192,6 +192,34 @@ func TestUploadClientWithPreRequestCookiesPreservesBaseUploadSettings(t *testing
 	}
 }
 
+func TestUploadPreRequestClientUsesIsolatedCookieJar(t *testing.T) {
+	baseJar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatalf("cookiejar.New failed: %v", err)
+	}
+	baseTransport := &http.Transport{}
+	base := &http.Client{
+		Timeout:   3 * time.Minute,
+		Jar:       baseJar,
+		Transport: baseTransport,
+	}
+
+	preClient := isolatedPreRequestClient(base, true)
+
+	if preClient == base {
+		t.Fatal("pre-request client reused the base client")
+	}
+	if preClient.Jar == nil {
+		t.Fatal("pre-request client did not get a cookie jar")
+	}
+	if preClient.Jar == baseJar {
+		t.Fatal("pre-request client reused the shared base cookie jar")
+	}
+	if preClient.Transport != baseTransport {
+		t.Fatal("pre-request client did not preserve the base transport")
+	}
+}
+
 func TestExecuteGenericRequestOptionalPreRequestFieldSubstitutesEmptyValue(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
