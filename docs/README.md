@@ -34,6 +34,7 @@ Complete guide to the current documentation for Connie's Uploader.
 ## Release Docs
 
 - [Current Release Notes](releases/RELEASE_NOTES.md)
+- [v3.0.1 Release Notes](releases/RELEASE_NOTES_v3.0.1.md)
 - [v3.0.0 Release Notes](releases/RELEASE_NOTES_v3.0.0.md)
 - [v3.0.0 Branch Difference Record](releases/BRANCH_DIFF_v3.0.0.md)
 - [v2.0.0 Release Notes](releases/RELEASE_NOTES_v2.0.0.md)
@@ -96,6 +97,7 @@ docs/
 │   └── USER_TUTORIAL.md
 ├── releases/
 │   ├── RELEASE_NOTES.md
+│   ├── RELEASE_NOTES_v3.0.1.md
 │   ├── RELEASE_NOTES_v3.0.0.md
 │   ├── BRANCH_DIFF_v3.0.0.md
 │   ├── RELEASE_NOTES_v2.0.0.md
@@ -118,6 +120,12 @@ docs/
 ```
 
 ## Recent Documentation Updates
+
+### 2026-07-28
+
+- Promoted current release documentation, build metadata, and app metadata to `v3.0.1`.
+- Added v3.0.1 release notes for the Pixhost.cc migration and large-folder import responsiveness patch.
+- Kept v3.0.0 release notes and branch-difference records as historical release artifacts.
 
 ### 2026-07-12
 
@@ -157,6 +165,6 @@ docs/
 - Update plugin docs when plugin discovery, schema fields, request specs, or packaging hidden imports change.
 - Keep historical docs clearly separated from current guidance.
 
-- **Last Updated:** 2026-07-12
-- **Documentation Version:** 3.0
-- **Project Version:** v3.0.0
+- **Last Updated:** 2026-07-28
+- **Documentation Version:** 3.0.1
+- **Project Version:** v3.0.1

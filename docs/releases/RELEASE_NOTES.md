@@ -4,25 +4,25 @@ This directory contains release notes and publishing guidance for Connie's Uploa
 
 ## Latest Release
 
-**v3.0.0 - "Python-Owned Workflows & Generic Transport"**
-Release date: July 12, 2026
-Tag: `v3.0.0`
+**v3.0.1 - "Pixhost.cc & Import Performance Patch"**
+Release date: July 28, 2026
+Tag: `v3.0.1`
 
-Read the full notes: [RELEASE_NOTES_v3.0.0.md](RELEASE_NOTES_v3.0.0.md)
-Read the branch comparison: [BRANCH_DIFF_v3.0.0.md](BRANCH_DIFF_v3.0.0.md)
+Read the full notes: [RELEASE_NOTES_v3.0.1.md](RELEASE_NOTES_v3.0.1.md)
+Previous architecture release notes: [RELEASE_NOTES_v3.0.0.md](RELEASE_NOTES_v3.0.0.md)
 
 ### Summary
 
-- Promoted the app, build scripts, and active plugin metadata to `3.0.0`.
-- Completed the Python-owned website workflow and generic Go transport split.
-- Added generic sidecar actions for standalone HTTP requests and deferred batch result resolution.
-- Moved ViperGirls scheduled posting into Python's form-aware posting path.
-- Recorded the full `Bleeding-Edge` branch comparison against `main` for release review.
+- Bumped app, build scripts, and active plugin metadata to `3.0.1`.
+- Updated Pixhost from `pixhost.to` to `pixhost.cc` across active upload, gallery, output, docs, and test surfaces.
+- Preserved legacy `pixhost.to` saved settings and gallery cache records by normalizing them to `pixhost.cc`.
+- Improved large-folder import responsiveness with background scanning, larger bounded UI batches, and deferred thumbnails.
 
 ## Release History
 
 | Version | Date | Focus | Notes |
 |---------|------|-------|-------|
+| v3.0.1 | 2026-07-28 | Pixhost.cc & Import Performance Patch | [Notes](RELEASE_NOTES_v3.0.1.md) |
 | v3.0.0 | 2026-07-12 | Python-Owned Workflows & Generic Transport | [Notes](RELEASE_NOTES_v3.0.0.md), [Diff](BRANCH_DIFF_v3.0.0.md) |
 | v2.0.0 | 2026-06-22 | Posting, Templates & Gallery Workflows | [Notes](RELEASE_NOTES_v2.0.0.md) |
 | v1.4.0 | 2026-06-20 | User Experience Polish & Safer Upload Controls | [Notes](RELEASE_NOTES_v1.4.0.md) |

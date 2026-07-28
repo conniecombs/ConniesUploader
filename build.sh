@@ -13,7 +13,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 APP_NAME="ConniesUploader"
-VERSION="3.0.0"
+VERSION="3.0.1"
 PYTHON_MIN_MINOR=11
 PYTHON_MAX_MINOR=13
 GO_VERSION_MIN="1.25.9"

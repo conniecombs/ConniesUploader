@@ -31,7 +31,7 @@ class ImxPlugin(ImageHostPlugin):
     def metadata(self) -> Dict[str, Any]:
         """Plugin metadata for IMX.to"""
         return {
-            "version": "2.0.1",
+            "version": "3.0.1",
             "author": "Connie's Uploader Team",
             "description": "Upload images to IMX.to with gallery support, multiple thumbnail formats, and API-based uploads",
             "website": "https://imx.to",

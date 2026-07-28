@@ -1,13 +1,13 @@
-[CENTER][SIZE=6][B]Connie's Uploader 3.0.0 (Python-Owned Workflows & Generic Transport)[/B][/SIZE]
+[CENTER][SIZE=6][B]Connie's Uploader 3.0.1 (Pixhost.cc & Import Performance Patch)[/B][/SIZE]
 
 
 [size=6][b]Connie's Uploader[/b][/size]
 
 [size=4]A powerful, multi-service image hosting uploader with an intuitive CustomTkinter GUI, Python-owned site workflows, and a fast generic Go transport sidecar. Upload images to multiple image hosting services with batch processing, gallery management, persistent gallery caching, advanced templates, ViperGirls posting workflows, scheduled posts, automatic retry logic, preflight checks, and real-time progress tracking.[/size][/center]
 
-[size=5][b]🎉 Latest Release: v3.0.0 "Python-Owned Workflows & Generic Transport" (Published July 13, 2026)[/b][/size]
+[size=5][b]🎉 Latest Release: v3.0.1 "Pixhost.cc & Import Performance Patch" (Published July 28, 2026)[/b][/size]
 
-[center][size=6][b]👉 [url=https://github.com/conniecombs/ConniesUploader/releases/tag/v3.0.0]Download v3.0.0 Now[/url][/b][/size]
+[center][size=6][b]👉 [url=https://github.com/conniecombs/ConniesUploader/releases/tag/v3.0.1]Download v3.0.1 Now[/url][/b][/size]
 [i]Available for Windows, Linux, and macOS[/i][/center]
 
 [size=5][b]✨ Key Features[/b][/size]
@@ -46,56 +46,54 @@
 [*]🌙 [b]Dark/Light Mode[/b] - System-aware appearance modes
 [/list]
 
-[size=5][b]🚀 What's New in v3.0.0[/b][/size]
+[size=5][b]🚀 What's New in v3.0.1[/b][/size]
 
 [list]
-[*][b]Major architecture update:[/b] Host-specific Go service modules have been replaced by Python-owned plugin workflows and a generic Go HTTP transport runner.
-[*][b]New sidecar actions:[/b] Generic upload, raw HTTP request, and deferred batch-result resolution make host integrations easier to debug and extend.
-[*][b]Scheduled ViperGirls posting:[/b] Scheduled posts now use the same Python form-aware flow as immediate posts.
-[*][b]Activity terminal:[/b] Use [b]View > Activity Terminal[/b] to tail the persisted upload activity log during longer sessions.
-[*][b]Cleaner project layout:[/b] Python runtime code now lives under [b]frontend/[/b], Go sidecar code under [b]backend/[/b], and packaging assets under [b]packaging/[/b].
-[*][b]Settings migration:[/b] App settings are preserved and moved out of the checkout to [b]~/.conniesuploader/user_settings.json[/b].
-[*][b]Turbo reliability fix:[/b] Deferred Turbo result matching now handles result pages that refer to sanitized filenames.
+[*][b]Pixhost.cc update:[/b] Pixhost uploads, gallery creation, gallery finalization, and generated output now use [b]pixhost.cc[/b] and [b]api.pixhost.cc[/b].
+[*][b]Legacy Pixhost compatibility:[/b] Existing [b]pixhost.to[/b] saved settings and cached galleries are normalized forward automatically.
+[*][b]Faster large-folder imports:[/b] Folder scans run in the background, rows load in larger bounded batches, and thumbnails are deferred so big queues stay more responsive.
+[*][b]Queue cleanup:[/b] Clearing the list now cancels stale background import work so old scans do not repopulate the queue.
+[*][b]Release metadata refresh:[/b] App, build-script, active plugin, docs, and test metadata are aligned on [b]v3.0.1[/b].
 [/list]
 
 [size=5][b]📸 Screenshots & Workflow Tour[/b][/size]
 
 [b]Start clean, then drop in files or folders[/b]
 The empty queue keeps first-run setup simple: pick a host, choose a template, then add images with the menu buttons or drag-and-drop.
-[center][img]https://raw.githubusercontent.com/conniecombs/ConniesUploader/v3.0.0/docs/assets/screenshots/empty-drop-zone.png[/img][/center]
+[center][img]https://raw.githubusercontent.com/conniecombs/ConniesUploader/v3.0.1/docs/assets/screenshots/empty-drop-zone.png[/img][/center]
 
 [b]Batch queue with cover-aware controls[/b]
 Folders are grouped into batches, selected rows can be managed together, and the compact Cover checkbox keeps cover-image choices visible without crowding the queue.
-[center][img]https://raw.githubusercontent.com/conniecombs/ConniesUploader/v3.0.0/docs/assets/screenshots/batched-upload-queue.png[/img][/center]
+[center][img]https://raw.githubusercontent.com/conniecombs/ConniesUploader/v3.0.1/docs/assets/screenshots/batched-upload-queue.png[/img][/center]
 
 [b]Import and upload checks before anything leaves your machine[/b]
 Preflight checks flag invalid files, missing credentials, gallery conflicts, posting-target problems, and other blockers before a long upload starts.
-[center][img]https://raw.githubusercontent.com/conniecombs/ConniesUploader/v3.0.0/docs/assets/screenshots/import-upload-checks.png[/img][/center]
+[center][img]https://raw.githubusercontent.com/conniecombs/ConniesUploader/v3.0.1/docs/assets/screenshots/import-upload-checks.png[/img][/center]
 
 [b]Live upload activity and a useful finish screen[/b]
 The activity view shows what is queued, running, completed, or failed, while the completion summary makes it easy to copy output, open generated files, or retry failures. For long sessions, [b]View > Activity Terminal[/b] can tail the persisted activity log.
-[center][img]https://raw.githubusercontent.com/conniecombs/ConniesUploader/v3.0.0/docs/assets/screenshots/activity-progress.png[/img]
-[img]https://raw.githubusercontent.com/conniecombs/ConniesUploader/v3.0.0/docs/assets/screenshots/completion-summary.png[/img][/center]
+[center][img]https://raw.githubusercontent.com/conniecombs/ConniesUploader/v3.0.1/docs/assets/screenshots/activity-progress.png[/img]
+[img]https://raw.githubusercontent.com/conniecombs/ConniesUploader/v3.0.1/docs/assets/screenshots/completion-summary.png[/img][/center]
 
 [b]Gallery and template workflows[/b]
 Gallery Manager supports searching, sorting, pinning, assigning, copying IDs/URLs, opening galleries, and cached fallback data. The Template Editor handles BBCode, HTML, Markdown, ViperGirls posting templates, rendered previews, import/export, duplication, and custom placeholders.
-[center][img]https://raw.githubusercontent.com/conniecombs/ConniesUploader/v3.0.0/docs/assets/screenshots/gallery-manager.png[/img]
-[img]https://raw.githubusercontent.com/conniecombs/ConniesUploader/v3.0.0/docs/assets/screenshots/template-editor-v140.png[/img][/center]
+[center][img]https://raw.githubusercontent.com/conniecombs/ConniesUploader/v3.0.1/docs/assets/screenshots/gallery-manager.png[/img]
+[img]https://raw.githubusercontent.com/conniecombs/ConniesUploader/v3.0.1/docs/assets/screenshots/template-editor-v140.png[/img][/center]
 
 [b]Advanced settings without digging through config files[/b]
 Worker count, thread limit, and other application settings are grouped in the UI so upload behavior can be tuned safely.
-[center][img]https://raw.githubusercontent.com/conniecombs/ConniesUploader/v3.0.0/docs/assets/screenshots/advanced-app-settings.png[/img][/center]
+[center][img]https://raw.githubusercontent.com/conniecombs/ConniesUploader/v3.0.1/docs/assets/screenshots/advanced-app-settings.png[/img][/center]
 
 [size=5][b]📥 Installation[/b][/size]
 
 [size=4][b]Option 1: Pre-built Release (Recommended)[/b][/size]
-[url=https://github.com/conniecombs/ConniesUploader/releases/tag/v3.0.0]Download the latest release for your platform here.[/url]
+[url=https://github.com/conniecombs/ConniesUploader/releases/tag/v3.0.1]Download the latest release for your platform here.[/url]
 
 [b]Available builds:[/b]
 [list]
-[*][b]Windows:[/b] ConniesUploader-v3.0.0-windows-x64.zip and standalone ConniesUploader.exe, plus SHA256 checksums
-[*][b]Linux:[/b] ConniesUploader-v3.0.0-linux-x64.tar.gz and standalone ConniesUploader-linux, plus SHA256 checksums
-[*][b]macOS:[/b] ConniesUploader-v3.0.0-macos-x64.zip and standalone ConniesUploader-macos, plus SHA256 checksums
+[*][b]Windows:[/b] ConniesUploader-v3.0.1-windows-x64.zip and standalone ConniesUploader.exe, plus SHA256 checksums
+[*][b]Linux:[/b] ConniesUploader-v3.0.1-linux-x64.tar.gz and standalone ConniesUploader-linux, plus SHA256 checksums
+[*][b]macOS:[/b] ConniesUploader-v3.0.1-macos-x64.zip and standalone ConniesUploader-macos, plus SHA256 checksums
 [/list]
 All releases are automatically built via GitHub Actions CI/CD and include SHA256 verification files.
 
@@ -146,7 +144,7 @@ Use the ViperGirls tools to save posting targets with thread URLs, fetched threa
 
 [list]
 [*][b]GitHub Repository:[/b] [url=https://github.com/conniecombs/ConniesUploader]https://github.com/conniecombs/ConniesUploader[/url]
-[*][b]Latest Release:[/b] [url=https://github.com/conniecombs/ConniesUploader/releases/tag/v3.0.0]v3.0.0 Download Page[/url]
+[*][b]Latest Release:[/b] [url=https://github.com/conniecombs/ConniesUploader/releases/tag/v3.0.1]v3.0.1 Download Page[/url]
 [*][b]Changelog:[/b] [url=https://github.com/conniecombs/ConniesUploader/blob/main/docs/CHANGELOG.md]CHANGELOG.md[/url]
-[*][b]Release Notes:[/b] [url=https://github.com/conniecombs/ConniesUploader/blob/main/docs/releases/RELEASE_NOTES_v3.0.0.md]RELEASE_NOTES_v3.0.0.md[/url]
+[*][b]Release Notes:[/b] [url=https://github.com/conniecombs/ConniesUploader/blob/main/docs/releases/RELEASE_NOTES_v3.0.1.md]RELEASE_NOTES_v3.0.1.md[/url]
 [/list]
