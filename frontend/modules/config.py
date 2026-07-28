@@ -43,6 +43,7 @@ IMAGEBAM_SESSION_URL = "https://www.imagebam.com/upload/session"
 IMAGEBAM_UPLOAD_URL = "https://www.imagebam.com/upload"
 IMAGEBAM_GALLERIES_URL = "https://www.imagebam.com/my/galleries"
 
+
 def normalize_service_id(service_id: str) -> str:
     service_id = str(service_id or "").strip()
     if service_id == PIXHOST_LEGACY_SERVICE_ID:
