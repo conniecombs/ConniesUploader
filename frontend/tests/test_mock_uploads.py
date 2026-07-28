@@ -91,8 +91,8 @@ class MockUploadResponses:
         """Mock Pixhost upload response."""
         hash_id = f"abc{len(filename)}def"
         return MockUploadResult(
-            viewer_url=f"https://pixhost.to/show/{hash_id}",
-            thumb_url=f"https://t0.pixhost.to/thumbs/{hash_id}/test.jpg",
+            viewer_url=f"https://pixhost.cc/show/{hash_id}",
+            thumb_url=f"https://t0.pixhost.cc/thumbs/{hash_id}/test.jpg",
         )
 
     @staticmethod
@@ -490,7 +490,7 @@ def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(description="Mock Upload Test Program - Plugin System Testing")
     parser.add_argument(
-        "--plugin", help="Test specific plugin only (e.g., 'pixhost.to', 'imgur.com')", default=None
+        "--plugin", help="Test specific plugin only (e.g., 'pixhost.cc', 'imgur.com')", default=None
     )
     parser.add_argument(
         "--verbose", "-v", action="store_true", help="Verbose output with detailed information"

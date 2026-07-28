@@ -58,7 +58,7 @@ def test_upload_controller_skips_output_for_incomplete_results(tmp_path, monkeyp
         (first, "https://img.test/first", "https://img.test/first-thumb"),
         (second, "", ""),
     ]
-    upload_controller.settings = {"service": "pixhost.to"}
+    upload_controller.settings = {"service": "pixhost.cc"}
     upload_controller.template_mgr = FailingTemplateManager()
     upload_controller.current_output_files = []
 

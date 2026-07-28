@@ -159,6 +159,14 @@ class DiagnosticsMixin:
             except Exception as e:
                 logger.warning(f"Error stopping RenameWorker: {e}")
 
+        # Shutdown import executor
+        if hasattr(self, "import_executor") and self.import_executor:
+            logger.info("Shutting down import executor...")
+            try:
+                self.import_executor.shutdown(wait=False, cancel_futures=True)
+            except Exception as e:
+                logger.warning(f"Error shutting down import_executor: {e}")
+
         # Shutdown thumbnail executor
         if hasattr(self, "thumb_executor") and self.thumb_executor:
             logger.info("Shutting down thumbnail executor...")

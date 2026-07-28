@@ -34,6 +34,7 @@ from .common import (  # noqa: F401
     config,
     ctk,
     datetime,
+    deque,
     file_handler,
     filedialog,
     gallery_url_for_service,
@@ -108,135 +109,47 @@ class FileQueueMixin:
         self._process_files([folder])
 
     def _process_files(self, inputs, target_group=None):
-        """Process dropped or selected files/folders and add them to groups."""
+        """Process dropped or selected files/folders without blocking the UI thread."""
+        inputs = [os.path.normpath(str(path)) for path in (inputs or [])]
+        if not inputs:
+            return
+
         logger.info(f"📁 Processing {len(inputs)} input(s)...")
         self._set_completion_summary(None)
         self._set_import_checks([])
 
-        # Show processing status to user
-        self.lbl_eta.configure(text=f"Processing {len(inputs)} item(s)...")
-        self.add_activity(f"Processing {len(inputs)} selected item(s).")
-        self.update_idletasks()  # Force UI update
+        self._ensure_import_state()
+        preview_var = self.__dict__.get("var_show_previews")
+        separate_var = self.__dict__.get("var_separate_batches")
+        show_previews = bool(preview_var.get()) if preview_var else True
+        separate_batches = bool(separate_var.get()) if separate_var else False
+        import_id, epoch = self._register_import()
 
-        misc_files = []
-        show_previews = self.var_show_previews.get()
-        folder_count = 0
-        file_count = 0
-        rejected_details = []
-        empty_folders = []
+        self.lbl_eta.configure(text=f"Scanning {len(inputs)} item(s)...")
+        self.add_activity(f"Processing {len(inputs)} selected item(s).")
+        if hasattr(self, "update_idletasks"):
+            self.update_idletasks()
+
+        executor = self.__dict__.get("import_executor")
+        if executor is None:
+            result = self._scan_import_inputs(inputs)
+            self._handle_import_complete(
+                import_id, epoch, result, target_group, show_previews, separate_batches
+            )
+            return
 
         try:
-            for idx, path in enumerate(inputs, 1):
-                path = os.path.normpath(path)
-                logger.debug(f"   Processing: {path}")
-
-                if os.path.isdir(path):
-                    folder_name = os.path.basename(path.rstrip(os.sep))
-                    logger.info(f"   📂 Scanning folder: {folder_name}")
-
-                    # Update status with current folder being scanned
-                    self.lbl_eta.configure(
-                        text=f"Scanning folder {idx}/{len(inputs)}: {folder_name}..."
-                    )
-                    self.update_idletasks()  # Force UI update
-
-                    try:
-                        files_in_folder = file_handler.get_files_from_directory(path)
-                        if files_in_folder:
-                            logger.info(f"      ✓ Found {len(files_in_folder)} valid image(s)")
-                            files_in_folder.sort(key=config.natural_sort_key)
-                            folder_count += 1
-                            file_count += len(files_in_folder)
-
-                            if target_group:
-                                self.thumb_executor.submit(
-                                    self._thumb_worker, files_in_folder, target_group, show_previews
-                                )
-                            else:
-                                grp = self._create_group(folder_name)
-                                self.thumb_executor.submit(
-                                    self._thumb_worker, files_in_folder, grp, show_previews
-                                )
-                        else:
-                            logger.warning(f"      ⚠ No valid images in folder: {folder_name}")
-                            empty_folders.append(folder_name)
-                    except Exception as e:
-                        logger.error(
-                            f"      ✗ Error scanning folder {folder_name}: {e}", exc_info=True
-                        )
-                        rejected_details.append(f"{folder_name}: could not scan folder ({e})")
-
-                elif os.path.isfile(path):
-                    if path.lower().endswith(file_handler.VALID_EXTENSIONS):
-                        try:
-                            # Validate file size before adding to processing queue
-                            file_handler.validate_file_size(path)
-                            logger.debug(f"      ✓ Valid image file: {os.path.basename(path)}")
-                            misc_files.append(path)
-                            file_count += 1
-                        except Exception as e:
-                            logger.warning(f"      ⚠ Rejected file {os.path.basename(path)}: {e}")
-                            rejected_details.append(f"{os.path.basename(path)}: {e}")
-                    else:
-                        ext = os.path.splitext(path)[1]
-                        logger.warning(
-                            f"      ⚠ Rejected (invalid extension): {os.path.basename(path)} ({ext})"
-                        )
-                        rejected_details.append(
-                            f"{os.path.basename(path)}: unsupported extension {ext or '(none)'}"
-                        )
-                else:
-                    logger.warning(f"      ⚠ Path does not exist or is not accessible: {path}")
-                    rejected_details.append(
-                        f"{os.path.basename(path) or path}: not found or inaccessible"
-                    )
-
-            if misc_files:
-                logger.info(f"   📄 Processing {len(misc_files)} miscellaneous file(s)")
-                misc_files.sort(key=config.natural_sort_key)
-                if target_group:
-                    self.thumb_executor.submit(
-                        self._thumb_worker, misc_files, target_group, show_previews
-                    )
-                elif self.var_separate_batches.get():
-                    for f in misc_files:
-                        grp_name = os.path.basename(f)
-                        grp = self._create_group(grp_name)
-                        self.thumb_executor.submit(self._thumb_worker, [f], grp, show_previews)
-                else:
-                    misc_group = next((g for g in self.groups if g.title == "Miscellaneous"), None)
-                    if not misc_group:
-                        misc_group = self._create_group("Miscellaneous")
-                    self.thumb_executor.submit(
-                        self._thumb_worker, misc_files, misc_group, show_previews
-                    )
-
-            # Provide user feedback
-            if file_count == 0:
-                logger.warning("⚠ No valid files were processed from the drop")
-                self._notify_no_valid_files(empty_folders, rejected_details)
-            else:
-                logger.info(
-                    f"✓ Successfully processed {file_count} file(s) from {folder_count} folder(s)"
-                )
-                status_msg = f"Added {file_count} file(s) from {folder_count} folder(s)"
-                rejected_count = len(rejected_details)
-                if rejected_count > 0:
-                    logger.info(f"   ({rejected_count} file(s) rejected)")
-                    status_msg += f" ({rejected_count} rejected)"
-                self._set_import_checks([])
-
-                # Show loading message for large batches
-                if file_count > 100:
-                    status_msg += " - Loading thumbnails..."
-                    logger.info(
-                        f"Loading thumbnails for {file_count} files (this may take a moment)..."
-                    )
-
-                self.lbl_eta.configure(text=status_msg)
-                self.add_activity(status_msg, "success")
-
+            executor.submit(
+                self._scan_import_worker,
+                import_id,
+                epoch,
+                inputs,
+                target_group,
+                show_previews,
+                separate_batches,
+            )
         except Exception as e:
+            self._finish_import(import_id, epoch)
             logger.error(f"✗ Error in _process_files: {e}", exc_info=True)
             self.lbl_eta.configure(text="Error processing files")
             self.add_activity(f"Error processing files: {e}", "error")
@@ -244,7 +157,258 @@ class FileQueueMixin:
                 "Processing Error", f"An error occurred while processing files:\n\n{str(e)}"
             )
 
-    def _notify_no_valid_files(self, empty_folders: List[str], rejected_details: List[str]) -> None:
+    def _ensure_import_state(self) -> None:
+        if "import_epoch" not in self.__dict__:
+            self.import_epoch = 0
+        if "import_counter" not in self.__dict__:
+            self.import_counter = 0
+        if "active_import_ids" not in self.__dict__:
+            self.active_import_ids = set()
+        if "pending_filepaths" not in self.__dict__:
+            self.pending_filepaths = set()
+        if "pending_ui_rows" not in self.__dict__:
+            self.pending_ui_rows = deque()
+        if "pending_thumbnails" not in self.__dict__:
+            self.pending_thumbnails = {}
+
+    def _import_lock(self):
+        return self.__dict__.get("lock") or nullcontext()
+
+    def _register_import(self) -> Tuple[int, int]:
+        self._ensure_import_state()
+        with self._import_lock():
+            self.import_counter += 1
+            import_id = self.import_counter
+            self.active_import_ids.add(import_id)
+            return import_id, self.import_epoch
+
+    def _finish_import(self, import_id: int, epoch: int) -> None:
+        self._ensure_import_state()
+        with self._import_lock():
+            if epoch == self.import_epoch:
+                self.active_import_ids.discard(import_id)
+
+    def _is_import_epoch_current(self, epoch: Optional[int]) -> bool:
+        if epoch is None:
+            return True
+        self._ensure_import_state()
+        with self._import_lock():
+            return epoch == self.import_epoch
+
+    def _scan_import_worker(
+        self,
+        import_id: int,
+        epoch: int,
+        inputs: List[str],
+        target_group: Any,
+        show_previews: bool,
+        separate_batches: bool,
+    ) -> None:
+        result = self._scan_import_inputs(inputs)
+        if not self._is_import_epoch_current(epoch):
+            return
+        try:
+            self.ui_queue.put(
+                (
+                    "import_complete",
+                    import_id,
+                    epoch,
+                    result,
+                    target_group,
+                    show_previews,
+                    separate_batches,
+                ),
+                timeout=5.0,
+            )
+        except queue.Full:
+            self._finish_import(import_id, epoch)
+            logger.warning("UI queue full, dropping completed import scan.")
+
+    def _scan_import_inputs(self, inputs: List[str]) -> Dict[str, Any]:
+        result = {
+            "folder_batches": [],
+            "misc_files": [],
+            "folder_count": 0,
+            "file_count": 0,
+            "rejected_details": [],
+            "empty_folders": [],
+        }
+
+        for path in inputs:
+            logger.debug(f"   Processing: {path}")
+
+            if os.path.isdir(path):
+                folder_name = os.path.basename(path.rstrip(os.sep)) or path
+                logger.info(f"   📂 Scanning folder: {folder_name}")
+                try:
+                    files_in_folder = file_handler.get_files_from_directory(path)
+                    if files_in_folder:
+                        files_in_folder.sort(key=config.natural_sort_key)
+                        logger.info(f"      ✓ Found {len(files_in_folder)} valid image(s)")
+                        result["folder_batches"].append((folder_name, files_in_folder))
+                        result["folder_count"] += 1
+                        result["file_count"] += len(files_in_folder)
+                    else:
+                        logger.warning(f"      ⚠ No valid images in folder: {folder_name}")
+                        result["empty_folders"].append(folder_name)
+                except Exception as e:
+                    logger.error(
+                        f"      ✗ Error scanning folder {folder_name}: {e}", exc_info=True
+                    )
+                    result["rejected_details"].append(
+                        f"{folder_name}: could not scan folder ({e})"
+                    )
+
+            elif os.path.isfile(path):
+                if path.lower().endswith(file_handler.VALID_EXTENSIONS):
+                    try:
+                        file_handler.validate_file_size(path)
+                        logger.debug(f"      ✓ Valid image file: {os.path.basename(path)}")
+                        result["misc_files"].append(path)
+                        result["file_count"] += 1
+                    except Exception as e:
+                        logger.warning(f"      ⚠ Rejected file {os.path.basename(path)}: {e}")
+                        result["rejected_details"].append(f"{os.path.basename(path)}: {e}")
+                else:
+                    ext = os.path.splitext(path)[1]
+                    logger.warning(
+                        f"      ⚠ Rejected (invalid extension): {os.path.basename(path)} ({ext})"
+                    )
+                    result["rejected_details"].append(
+                        f"{os.path.basename(path)}: unsupported extension {ext or '(none)'}"
+                    )
+            else:
+                logger.warning(f"      ⚠ Path does not exist or is not accessible: {path}")
+                result["rejected_details"].append(
+                    f"{os.path.basename(path) or path}: not found or inaccessible"
+                )
+
+        result["misc_files"].sort(key=config.natural_sort_key)
+        return result
+
+    def _handle_import_complete(
+        self,
+        import_id: int,
+        epoch: int,
+        result: Dict[str, Any],
+        target_group: Any,
+        show_previews: bool,
+        separate_batches: bool,
+    ) -> None:
+        self._finish_import(import_id, epoch)
+        if not self._is_import_epoch_current(epoch):
+            return
+
+        file_count = result.get("file_count", 0)
+        folder_count = result.get("folder_count", 0)
+        rejected_details = list(result.get("rejected_details", []))
+        empty_folders = list(result.get("empty_folders", []))
+
+        if file_count == 0:
+            logger.warning("⚠ No valid files were processed from the drop")
+            self._notify_no_valid_files(empty_folders, rejected_details)
+            return
+
+        queued_count = self._queue_import_rows(
+            result, target_group, show_previews, separate_batches, epoch
+        )
+        if queued_count == 0:
+            status_msg = "No new files were added."
+            self.lbl_eta.configure(text=status_msg)
+            self.add_activity(status_msg, "warning")
+            return
+
+        logger.info(f"✓ Queued {queued_count} file(s) from {folder_count} folder(s)")
+        status_msg = f"Queued {queued_count} file(s) from {folder_count} folder(s)"
+        rejected_count = len(rejected_details)
+        if rejected_count > 0:
+            logger.info(f"   ({rejected_count} file(s) rejected)")
+            status_msg += f" ({rejected_count} rejected)"
+        self._set_import_checks([])
+        if queued_count > 100:
+            status_msg += " - Loading rows and thumbnails..."
+            logger.info(f"Loading rows and thumbnails for {queued_count} files...")
+
+        self.lbl_eta.configure(text=status_msg)
+        self.add_activity(status_msg, "success")
+
+    def _queue_import_rows(
+        self,
+        result: Dict[str, Any],
+        target_group: Any,
+        show_previews: bool,
+        separate_batches: bool,
+        epoch: int,
+    ) -> int:
+        queued_count = 0
+
+        for folder_name, files_in_folder in result.get("folder_batches", []):
+            group = (
+                target_group
+                if target_group
+                else self._create_group(folder_name, refresh=False)
+            )
+            queued_count += len(
+                self._enqueue_rows_for_group(files_in_folder, group, show_previews, epoch)
+            )
+
+        misc_files = list(result.get("misc_files", []))
+        if target_group:
+            queued_count += len(
+                self._enqueue_rows_for_group(misc_files, target_group, show_previews, epoch)
+            )
+        elif separate_batches:
+            for filepath in misc_files:
+                group = self._create_group(os.path.basename(filepath), refresh=False)
+                queued_count += len(
+                    self._enqueue_rows_for_group([filepath], group, show_previews, epoch)
+                )
+        elif misc_files:
+            misc_group = next((g for g in self.groups if g.title == "Miscellaneous"), None)
+            if not misc_group:
+                misc_group = self._create_group("Miscellaneous", refresh=False)
+            queued_count += len(
+                self._enqueue_rows_for_group(misc_files, misc_group, show_previews, epoch)
+            )
+
+        if queued_count:
+            self._refresh_queue_state()
+        return queued_count
+
+    def _enqueue_rows_for_group(
+        self, files: List[str], group_widget: Any, show_previews: bool, epoch: int
+    ) -> List[str]:
+        if not files or not self._group_widget_exists(group_widget):
+            return []
+
+        queued_files = []
+        self._ensure_import_state()
+        with self._import_lock():
+            for filepath in files:
+                if filepath in self.file_widgets or filepath in self.pending_filepaths:
+                    logger.debug(f"File already queued, skipping: {filepath}")
+                    continue
+                self.pending_filepaths.add(filepath)
+                self.pending_ui_rows.append((epoch, filepath, group_widget, show_previews))
+                queued_files.append(filepath)
+
+        if show_previews and queued_files and self.__dict__.get("thumb_executor"):
+            self.thumb_executor.submit(
+                self._thumb_worker, queued_files, group_widget, show_previews, epoch
+            )
+        return queued_files
+
+    def _group_widget_exists(self, group_widget: Any) -> bool:
+        if group_widget is None:
+            return False
+        try:
+            return bool(group_widget.winfo_exists())
+        except (tk.TclError, AttributeError):
+            return True
+
+    def _notify_no_valid_files(
+        self, empty_folders: List[str], rejected_details: List[str]
+    ) -> None:
         supported = ", ".join(file_handler.VALID_EXTENSIONS)
         issues = [f"No valid image files found. Supported formats: {supported}."]
 
@@ -266,7 +430,7 @@ class FileQueueMixin:
         self._set_import_checks(issues)
         self.add_activity("No valid image files found. Check Import Checks for details.", "warning")
 
-    def _create_group(self, title):
+    def _create_group(self, title, refresh=True):
         t_names = list(self.saved_threads_data.keys()) if self.saved_threads_data else []
         tpl_names = self.template_mgr.get_all_keys()
         default_tpl = self.settings.get("output_format", "BBCode")
@@ -282,7 +446,8 @@ class FileQueueMixin:
         group.batch_index = self.group_counter
         self.group_counter += 1
         self.groups.append(group)
-        self._refresh_queue_state()
+        if refresh:
+            self._refresh_queue_state()
 
         def bind_header(w):
             w.bind("<Button-1>", lambda e, g=group: self._on_group_drag_start(e, g))
@@ -297,25 +462,31 @@ class FileQueueMixin:
                 bind_header(child)
         return group
 
-    def _thumb_worker(self, files, group_widget, show_previews):
-        for idx, f in enumerate(files, 1):
+    def _thumb_worker(self, files, group_widget, show_previews, epoch=None):
+        if not show_previews:
+            return
+
+        for f in files:
+            if not self._is_import_epoch_current(epoch):
+                return
             with self.lock:
-                if f in self.file_widgets:
-                    logger.debug(f"File already in widgets, skipping: {f}")
-                    continue
+                known_file = f in self.file_widgets or f in self.pending_filepaths
+            if not known_file:
+                logger.debug(f"File no longer queued, skipping thumbnail: {f}")
+                continue
+
             pil_image = None
-            if show_previews:
-                try:
-                    pil_image = file_handler.generate_thumbnail(f)
-                except Exception as e:
-                    logger.debug(f"Thumbnail generation failed for {os.path.basename(f)}: {e}")
-                    pil_image = None
             try:
-                self.ui_queue.put(("add", f, pil_image, group_widget, show_previews), timeout=5.0)
+                pil_image = file_handler.generate_thumbnail(f)
+            except Exception as e:
+                logger.debug(f"Thumbnail generation failed for {os.path.basename(f)}: {e}")
+                pil_image = None
+            if not self._is_import_epoch_current(epoch):
+                return
+            try:
+                self.ui_queue.put(("thumbnail", epoch, f, pil_image), timeout=5.0)
             except queue.Full:
-                logger.warning(f"UI queue full, skipping thumbnail for {os.path.basename(f)}")
-                # Still add the file without thumbnail
-                self.ui_queue.put(("add", f, None, group_widget, show_previews), timeout=5.0)
+                logger.warning(f"UI queue full, dropping thumbnail for {os.path.basename(f)}")
             time.sleep(0.001)
 
     def _increment_firebase_counter(self) -> None:

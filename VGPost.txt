@@ -17,7 +17,7 @@
 [*][b]imagebam.com[/b] - Popular image hosting service
 [*][b]imgur.com[/b] - Imgur uploads through the sidecar workflow
 [*][b]imx.to[/b] - API-based uploads with gallery support
-[*][b]pixhost.to[/b] - Fast uploads with gallery management
+[*][b]pixhost.cc[/b] - Fast uploads with gallery management
 [*][b]TurboImageHost[/b] - High-performance image hosting
 [*][b]vipr.im[/b] - Upload with folder organization
 [/list]

@@ -97,8 +97,8 @@ class LayoutMixin:
         self.plugin_manager = PluginManager()
         available_services = self.plugin_manager.get_service_names()
         default_service = (
-            "pixhost.to"
-            if "pixhost.to" in available_services
+            config.PIXHOST_SERVICE_ID
+            if config.PIXHOST_SERVICE_ID in available_services
             else (available_services[0] if available_services else "imx.to")
         )
 

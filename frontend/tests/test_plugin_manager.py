@@ -182,7 +182,7 @@ class TestPluginRetrieval:
     def test_get_plugin_by_service_id(self):
         """Test retrieving plugin by service ID"""
         # Mock data structure
-        plugins = {"imx.to": Mock(service_id="imx.to"), "pixhost.to": Mock(service_id="pixhost.to")}
+        plugins = {"imx.to": Mock(service_id="imx.to"), "pixhost.cc": Mock(service_id="pixhost.cc")}
 
         # Simulate get_plugin
         service_id = "imx.to"
@@ -190,6 +190,14 @@ class TestPluginRetrieval:
 
         assert plugin is not None
         assert plugin.service_id == "imx.to"
+
+    def test_get_plugin_accepts_legacy_pixhost_service_id(self):
+        """Test legacy Pixhost service ID resolves to the current plugin."""
+        manager = PluginManager.__new__(PluginManager)
+        pixhost_plugin = Mock(id="pixhost.cc")
+        manager._plugins = {"pixhost.cc": pixhost_plugin}
+
+        assert manager.get_plugin("pixhost.to") is pixhost_plugin
 
     def test_get_nonexistent_plugin(self):
         """Test retrieval of non-existent plugin"""

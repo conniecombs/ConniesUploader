@@ -21,7 +21,7 @@ from .sidecar import SidecarBridge
 
 SERVICE_THREAD_KEYS = {
     "imx.to": "imx_threads",
-    "pixhost.to": "pix_threads",
+    config.PIXHOST_SERVICE_ID: "pix_threads",
     "turboimagehost": "turbo_threads",
     "vipr.im": "vipr_threads",
     "imagebam.com": "imagebam_threads",
@@ -31,7 +31,7 @@ SERVICE_THREAD_KEYS = {
 
 COVER_THUMBNAIL_OVERRIDES = {
     "imx.to": {"thumbnail_size": "600", "imx_thumb": "600"},
-    "pixhost.to": {"thumbnail_size": "500", "pix_thumb": "500"},
+    config.PIXHOST_SERVICE_ID: {"thumbnail_size": "500", "pix_thumb": "500"},
     "turboimagehost": {"thumbnail_size": "600", "turbo_thumb": "600"},
     "vipr.im": {"thumbnail_size": "800x800", "vipr_thumb": "800x800"},
     "imagebam.com": {"thumbnail_size": "300", "imagebam_thumb": "300"},
@@ -41,7 +41,7 @@ COVER_THUMBNAIL_OVERRIDES = {
 
 SERVICE_RATE_LIMITS = {
     "imx.to": {"requests_per_second": 2.0, "burst_size": 5},
-    "pixhost.to": {"requests_per_second": 2.0, "burst_size": 5},
+    config.PIXHOST_SERVICE_ID: {"requests_per_second": 2.0, "burst_size": 5},
     "turboimagehost": {"requests_per_second": 2.0, "burst_size": 5},
     "vipr.im": {"requests_per_second": 2.0, "burst_size": 5},
     "imagebam.com": {"requests_per_second": 2.0, "burst_size": 5},
@@ -106,6 +106,8 @@ class UploadManager:
         """Send job JSON payloads to the Go process via the sidecar bridge."""
         logger.info("--- Starting Phase 1: Gallery Creation ---")
         failed_groups: Dict[Any, str] = {}
+        cfg = cfg.copy()
+        cfg["service"] = config.normalize_service_id(cfg.get("service", ""))
 
         try:
             for group_obj, files in pending_by_group.items():
@@ -251,7 +253,7 @@ class UploadManager:
     @staticmethod
     def _apply_cover_thumbnail_overrides(cfg: Dict[str, Any]) -> Dict[str, Any]:
         """Force cover jobs to the largest exposed thumbnail size for the active host."""
-        service_id = str(cfg.get("service", ""))
+        service_id = config.normalize_service_id(cfg.get("service", ""))
         overrides = COVER_THUMBNAIL_OVERRIDES.get(service_id, {})
         cfg.update(overrides)
         return cfg
@@ -305,6 +307,8 @@ class UploadManager:
         return None
 
     def _send_job(self, file_list: List[str], cfg: Dict[str, Any], creds: Dict[str, str]) -> None:
+        cfg = cfg.copy()
+        cfg["service"] = config.normalize_service_id(cfg.get("service", ""))
         service_id = cfg["service"]
         job_cfg = self._normalize_job_config(cfg)
         str_config = {k: str(v) for k, v in job_cfg.items()}
@@ -367,7 +371,8 @@ class UploadManager:
     def _normalize_job_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
         """Return a sidecar-ready config with service thread controls normalized."""
         normalized = cfg.copy()
-        service_id = str(normalized.get("service", ""))
+        service_id = config.normalize_service_id(normalized.get("service", ""))
+        normalized["service"] = service_id
         thread_value = normalized.get("global_thread_limit")
 
         if thread_value in (None, ""):

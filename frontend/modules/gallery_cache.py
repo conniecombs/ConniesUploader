@@ -13,6 +13,7 @@ from typing import Any, Dict, Iterable, List, Optional
 
 from loguru import logger
 
+from . import config
 from .gallery_service import GalleryRecord, normalize_gallery_record
 
 _USER_DATA_DIR = os.path.join(os.path.expanduser("~"), ".conniesuploader")
@@ -58,6 +59,7 @@ class GalleryCache:
         os.replace(tmp_path, self.filepath)
 
     def records_for_service(self, service: str) -> List[GalleryRecord]:
+        service = config.normalize_service_id(service)
         payload = self.load()
         records = []
         service_records = payload.get("services", {}).get(service, {})
@@ -71,6 +73,7 @@ class GalleryCache:
         return sorted(records, key=self._cached_record_sort_key)
 
     def upsert_records(self, service: str, records: Iterable[GalleryRecord]) -> None:
+        service = config.normalize_service_id(service)
         payload = self.load()
         service_records = self._service_records(payload, service)
         cached_at = _now_iso()
@@ -95,7 +98,7 @@ class GalleryCache:
         self.upsert_records(record.service, [record])
 
     def remove_record(self, service: str, gallery_id: str) -> bool:
-        service = str(service or "").strip()
+        service = config.normalize_service_id(service)
         gallery_id = str(gallery_id or "").strip()
         if not service or not gallery_id:
             return False
@@ -114,8 +117,9 @@ class GalleryCache:
         return True
 
     def mark_used(self, record: GalleryRecord, timestamp: Optional[str] = None) -> str:
+        service = config.normalize_service_id(record.service)
         payload = self.load()
-        service_records = self._service_records(payload, record.service)
+        service_records = self._service_records(payload, service)
         existing = service_records.get(record.id, {})
         item = self._cache_item_from_record(
             record,
@@ -125,13 +129,14 @@ class GalleryCache:
         item["last_used_at"] = used_at
         item["updated_at"] = used_at
         service_records[record.id] = item
-        payload["services"][record.service] = self._trim_service_records(service_records)
+        payload["services"][service] = self._trim_service_records(service_records)
         self.save(payload)
         return used_at
 
     def toggle_pinned(self, record: GalleryRecord) -> bool:
+        service = config.normalize_service_id(record.service)
         payload = self.load()
-        service_records = self._service_records(payload, record.service)
+        service_records = self._service_records(payload, service)
         existing = service_records.get(record.id, {})
         item = self._cache_item_from_record(
             record,
@@ -140,7 +145,7 @@ class GalleryCache:
         item["pinned"] = not bool(item.get("pinned"))
         item["updated_at"] = _now_iso()
         service_records[record.id] = item
-        payload["services"][record.service] = self._trim_service_records(service_records)
+        payload["services"][service] = self._trim_service_records(service_records)
         self.save(payload)
         return bool(item["pinned"])
 
@@ -157,11 +162,11 @@ class GalleryCache:
 
         normalized = self._empty_payload()
         for service, service_records in services.items():
-            service_id = str(service or "").strip()
+            service_id = config.normalize_service_id(service)
             if not service_id or not isinstance(service_records, dict):
                 continue
 
-            normalized_records = {}
+            normalized_records = dict(normalized["services"].get(service_id, {}))
             for gallery_id, raw_record in service_records.items():
                 item = self._normalize_cache_item(service_id, gallery_id, raw_record)
                 if item:
@@ -176,6 +181,7 @@ class GalleryCache:
     def _normalize_cache_item(
         self, service: str, gallery_id: Any, raw_record: Any
     ) -> Optional[Dict[str, Any]]:
+        service = config.normalize_service_id(service)
         if not isinstance(raw_record, dict):
             return None
 
@@ -193,7 +199,7 @@ class GalleryCache:
 
         now = _now_iso()
         return {
-            "service": service,
+            "service": record.service,
             "id": record.id,
             "name": record.name,
             "url": record.url,
@@ -213,11 +219,15 @@ class GalleryCache:
     ) -> Dict[str, Any]:
         existing = existing or {}
         now = _now_iso()
+        service = config.normalize_service_id(record.service)
+        url = record.url
+        if service == config.PIXHOST_SERVICE_ID:
+            url = config.normalize_pixhost_url(url)
         return {
-            "service": record.service,
+            "service": service,
             "id": record.id,
             "name": record.name,
-            "url": record.url,
+            "url": url,
             "upload_hash": record.upload_hash,
             "raw": {
                 key: value
@@ -242,6 +252,7 @@ class GalleryCache:
     def _record_from_cache_item(
         self, service: str, raw_record: Dict[str, Any]
     ) -> Optional[GalleryRecord]:
+        service = config.normalize_service_id(service)
         item = self._normalize_cache_item(service, raw_record.get("id"), raw_record)
         if not item:
             return None
@@ -257,7 +268,7 @@ class GalleryCache:
             }
         )
         return GalleryRecord(
-            service=service,
+            service=item["service"],
             id=item["id"],
             name=item["name"],
             url=item["url"],
@@ -266,6 +277,7 @@ class GalleryCache:
         )
 
     def _service_records(self, payload: Dict[str, Any], service: str) -> Dict[str, Any]:
+        service = config.normalize_service_id(service)
         payload.setdefault("services", {})
         service_records = payload["services"].setdefault(service, {})
         if not isinstance(service_records, dict):

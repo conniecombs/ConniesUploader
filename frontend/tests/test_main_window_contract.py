@@ -2,6 +2,7 @@
 # Copyright (c) 2025 conniecombs
 
 import os
+from collections import deque
 from pathlib import Path
 import queue
 from types import SimpleNamespace
@@ -143,6 +144,15 @@ class FakeSettingsView:
 
     def set_value(self, service_id, key, value):
         self.values[(service_id, key)] = value
+
+
+class FakeExecutor:
+    def __init__(self):
+        self.calls = []
+
+    def submit(self, fn, *args):
+        self.calls.append((fn, args))
+        return SimpleNamespace()
 
 
 class FakeProgress:
@@ -329,9 +339,9 @@ def test_host_readiness_reports_account_free_host_ready():
     app.creds = {}
     app.var_auto_gallery = FakeVar(False)
     app.service_plugins = {
-        "pixhost.to": FakePlugin(
-            "pixhost.to",
-            "Pixhost.to",
+        "pixhost.cc": FakePlugin(
+            "pixhost.cc",
+            "Pixhost.cc",
             {
                 "features": {"authentication": "none"},
                 "credentials": [],
@@ -339,10 +349,10 @@ def test_host_readiness_reports_account_free_host_ready():
         )
     }
 
-    readiness = UploaderApp._host_readiness_for(app, "pixhost.to")
+    readiness = UploaderApp._host_readiness_for(app, "pixhost.cc")
 
     assert readiness["level"] == "ready"
-    assert readiness["message"] == "Pixhost.to ready - no account required."
+    assert readiness["message"] == "Pixhost.cc ready - no account required."
     assert readiness["action_required"] is False
 
 
@@ -479,11 +489,11 @@ def test_start_button_enabled_with_pending_files_and_ready_host():
     app.btn_start = FakeFrame()
     app.creds = {}
     app.var_auto_gallery = FakeVar(False)
-    app.var_service = FakeVar("pixhost.to")
+    app.var_service = FakeVar("pixhost.cc")
     app.service_plugins = {
-        "pixhost.to": FakePlugin(
-            "pixhost.to",
-            "Pixhost.to",
+        "pixhost.cc": FakePlugin(
+            "pixhost.cc",
+            "Pixhost.cc",
             {
                 "features": {"authentication": "none"},
                 "credentials": [],
@@ -641,6 +651,136 @@ def test_process_files_without_valid_images_uses_inline_import_checks(tmp_path, 
         "No valid image files found. Check Import Checks for details.",
         "warning",
     )
+
+
+@pytest.mark.unit
+def test_process_files_submits_background_import_without_scanning_inline(monkeypatch):
+    app = UploaderApp.__new__(UploaderApp)
+    app.lock = Lock()
+    app.lbl_eta = FakeLabel()
+    app.var_show_previews = FakeVar(True)
+    app.var_separate_batches = FakeVar(False)
+    app.import_executor = FakeExecutor()
+    app._set_completion_summary = lambda summary: None
+    app._set_import_checks = lambda issues: None
+    app.update_idletasks = lambda: None
+    activity = []
+    app.add_activity = lambda message, level="info": activity.append((message, level))
+
+    def fail_inline_scan(_inputs):
+        raise AssertionError("Folder scanning should happen in the import executor.")
+
+    monkeypatch.setattr(app, "_scan_import_inputs", fail_inline_scan)
+
+    UploaderApp._process_files(app, ["C:/large/folder"])
+
+    assert app.lbl_eta.text == "Scanning 1 item(s)..."
+    assert activity == [("Processing 1 selected item(s).", "info")]
+    assert app.active_import_ids == {1}
+    assert len(app.import_executor.calls) == 1
+    submitted_fn, submitted_args = app.import_executor.calls[0]
+    assert submitted_fn.__name__ == "_scan_import_worker"
+    assert submitted_args[:3] == (1, 0, [os.path.normpath("C:/large/folder")])
+
+
+@pytest.mark.unit
+def test_import_complete_buffers_rows_and_ui_loop_creates_them_in_batches(monkeypatch):
+    app = UploaderApp.__new__(UploaderApp)
+    app.lock = Lock()
+    app.ui_queue = queue.Queue()
+    app.import_epoch = 0
+    app.import_counter = 1
+    app.active_import_ids = {1}
+    app.pending_filepaths = set()
+    app.pending_ui_rows = deque()
+    app.pending_thumbnails = {}
+    app.file_widgets = {}
+    app.groups = []
+    app.image_refs = set()
+    app.lbl_eta = FakeLabel()
+    app.thumb_executor = FakeExecutor()
+    app._set_import_checks = lambda issues: None
+    app.add_activity = lambda message, level="info": None
+    refreshed = []
+    cover_refreshes = []
+    created_rows = []
+
+    def fake_create_group(title, refresh=True):
+        group = FakeGroup(title)
+        app.groups.append(group)
+        return group
+
+    def fake_create_row(
+        fp,
+        pil_image,
+        group_widget,
+        preview_requested=True,
+        thumbnail_pending=False,
+        refresh=True,
+    ):
+        group_widget.add_file(fp)
+        app.file_widgets[fp] = {"group": group_widget, "state": "pending"}
+        app.pending_filepaths.discard(fp)
+        created_rows.append((fp, preview_requested, thumbnail_pending, refresh))
+
+    app._create_group = fake_create_group
+    app._create_row = fake_create_row
+    app._refresh_queue_state = lambda: refreshed.append(True)
+    app._apply_auto_covers_to_group = lambda group, files=None: cover_refreshes.append(
+        (group.title, list(files or []))
+    )
+    monkeypatch.setattr(config, "UI_QUEUE_BATCH_SIZE", 2)
+
+    result = {
+        "folder_batches": [("Folder", ["a.jpg", "b.jpg", "c.jpg"])],
+        "misc_files": [],
+        "folder_count": 1,
+        "file_count": 3,
+        "rejected_details": [],
+        "empty_folders": [],
+    }
+
+    UploaderApp._handle_import_complete(app, 1, 0, result, None, True, False)
+
+    assert app.active_import_ids == set()
+    assert len(app.pending_ui_rows) == 3
+    assert app.pending_filepaths == {"a.jpg", "b.jpg", "c.jpg"}
+    assert app.thumb_executor.calls[0][1][0] == ["a.jpg", "b.jpg", "c.jpg"]
+
+    UploaderApp._process_ui_queue(app)
+
+    assert [row[0] for row in created_rows] == ["a.jpg", "b.jpg"]
+    assert all(row[2] is True and row[3] is False for row in created_rows)
+    assert cover_refreshes == [("Folder", ["a.jpg", "b.jpg"])]
+    assert app.lbl_eta.text == "Loading files... 1 remaining"
+
+    UploaderApp._process_ui_queue(app)
+
+    assert [row[0] for row in created_rows] == ["a.jpg", "b.jpg", "c.jpg"]
+    assert cover_refreshes[-1] == ("Folder", ["c.jpg"])
+    assert app.lbl_eta.text == "Files: 3"
+
+
+@pytest.mark.unit
+def test_clear_import_work_invalidates_pending_rows_and_stale_events():
+    app = UploaderApp.__new__(UploaderApp)
+    app.lock = Lock()
+    app.ui_queue = queue.Queue()
+    app.import_epoch = 0
+    app.active_import_ids = {1}
+    app.pending_filepaths = {"a.jpg"}
+    app.pending_ui_rows = deque([(0, "a.jpg", FakeGroup("Batch"), True)])
+    app.pending_thumbnails = {"a.jpg": (None,)}
+    app.ui_queue.put(("thumbnail", 0, "a.jpg", None))
+
+    UploaderApp._clear_import_work(app)
+
+    assert app.import_epoch == 1
+    assert app.active_import_ids == set()
+    assert app.pending_filepaths == set()
+    assert list(app.pending_ui_rows) == []
+    assert app.pending_thumbnails == {}
+    assert app.ui_queue.empty()
 
 
 @pytest.mark.unit
@@ -961,7 +1101,7 @@ def test_auto_cover_count_marks_first_images_until_user_changes_selection():
     app.file_widgets = {
         filepath: {"group": group, "cover": buttons[filepath]} for filepath in group.files
     }
-    app.var_service = FakeVar("pixhost.to")
+    app.var_service = FakeVar("pixhost.cc")
     app.var_pix_cover_count = FakeVar("2")
 
     UploaderApp._apply_auto_covers_to_group(app, group)
@@ -1001,8 +1141,8 @@ def test_upload_preflight_reports_ready_summary(tmp_path):
     app.central_history_path = str(tmp_path / "history")
     app.upload_manager = SimpleNamespace(bridge=FakeBridge(alive=True))
     app.service_plugins = {
-        "pixhost.to": FakePlugin(
-            "pixhost.to",
+        "pixhost.cc": FakePlugin(
+            "pixhost.cc",
             "Pixhost",
             {
                 "implementation": "go",
@@ -1018,7 +1158,7 @@ def test_upload_preflight_reports_ready_summary(tmp_path):
     issues, summary = UploaderApp._run_upload_preflight(
         app,
         {object(): [str(image_path)]},
-        {"service": "pixhost.to", "auto_copy": True},
+        {"service": "pixhost.cc", "auto_copy": True},
     )
 
     assert issues == []
@@ -1037,27 +1177,27 @@ def test_gallery_manager_selection_preserves_gallery_metadata():
     app.add_activity = lambda message, level="info": activity.append((message, level))
 
     record = GalleryRecord(
-        service="pixhost.to",
+        service="pixhost.cc",
         id="abc123",
         name="Site Gallery Name",
-        url="https://pixhost.to/gallery/abc123",
+        url="https://pixhost.cc/gallery/abc123",
         upload_hash="upload456",
     )
 
-    UploaderApp.on_gallery_created(app, "pixhost.to", "abc123", record)
+    UploaderApp.on_gallery_created(app, "pixhost.cc", "abc123", record)
 
-    assert app.settings_view.values[("pixhost.to", "gallery_hash")] == "abc123"
-    assert app.var_service.get() == "pixhost.to"
-    assert swapped == ["pixhost.to"]
-    assert app.selected_gallery_by_service["pixhost.to"] == {
-        "service": "pixhost.to",
+    assert app.settings_view.values[("pixhost.cc", "gallery_hash")] == "abc123"
+    assert app.var_service.get() == "pixhost.cc"
+    assert swapped == ["pixhost.cc"]
+    assert app.selected_gallery_by_service["pixhost.cc"] == {
+        "service": "pixhost.cc",
         "id": "abc123",
         "name": "Site Gallery Name",
-        "url": "https://pixhost.to/gallery/abc123",
+        "url": "https://pixhost.cc/gallery/abc123",
         "upload_hash": "upload456",
     }
     assert activity[-1] == (
-        "Selected gallery for pixhost.to: Site Gallery Name (abc123).",
+        "Selected gallery for pixhost.cc: Site Gallery Name (abc123).",
         "success",
     )
 
@@ -1111,8 +1251,8 @@ def test_upload_preflight_shows_selected_gallery_details_and_validates_hash(tmp_
     app.upload_manager = SimpleNamespace(bridge=FakeBridge(alive=True))
     app.selected_gallery_by_service = {}
     app.service_plugins = {
-        "pixhost.to": FakePlugin(
-            "pixhost.to",
+        "pixhost.cc": FakePlugin(
+            "pixhost.cc",
             "Pixhost",
             {
                 "implementation": "go",
@@ -1129,7 +1269,7 @@ def test_upload_preflight_shows_selected_gallery_details_and_validates_hash(tmp_
         app,
         {FakeGroup("Batch Alpha", [str(image_path)]): [str(image_path)]},
         {
-            "service": "pixhost.to",
+            "service": "pixhost.cc",
             "gallery_hash": "bad-hash",
             "selected_gallery_name": "Manual Hash",
         },
@@ -1138,7 +1278,7 @@ def test_upload_preflight_shows_selected_gallery_details_and_validates_hash(tmp_
     assert summary == ""
     assert (
         'Selected gallery for "Batch Alpha": Manual Hash (bad-hash). '
-        "(https://pixhost.to/gallery/bad-hash)"
+        "(https://pixhost.cc/gallery/bad-hash)"
     ) in app.preflight_detail_lines
     assert 'Gallery selected for "Batch Alpha" has an invalid gallery hash: bad-hash.' in issues
 
@@ -1146,11 +1286,11 @@ def test_upload_preflight_shows_selected_gallery_details_and_validates_hash(tmp_
 @pytest.mark.unit
 def test_gallery_id_from_url_extracts_pixhost_hash():
     assert (
-        UploaderApp._gallery_id_from_url("pixhost.to", "https://pixhost.to/gallery/tXgDH")
+        UploaderApp._gallery_id_from_url("pixhost.cc", "https://pixhost.cc/gallery/tXgDH")
         == "tXgDH"
     )
     assert (
-        UploaderApp._gallery_id_from_url("pixhost.to", "https://pixhost.to/galleries/tXgDH")
+        UploaderApp._gallery_id_from_url("pixhost.cc", "https://pixhost.cc/galleries/tXgDH")
         == "tXgDH"
     )
 
@@ -1169,8 +1309,8 @@ def test_upload_preflight_previews_one_gallery_per_folder(tmp_path):
     app.upload_manager = SimpleNamespace(bridge=FakeBridge(alive=True))
     app.selected_gallery_by_service = {}
     app.service_plugins = {
-        "pixhost.to": FakePlugin(
-            "pixhost.to",
+        "pixhost.cc": FakePlugin(
+            "pixhost.cc",
             "Pixhost",
             {
                 "implementation": "go",
@@ -1189,7 +1329,7 @@ def test_upload_preflight_previews_one_gallery_per_folder(tmp_path):
             FakeGroup("Batch Alpha", [str(first)]): [str(first)],
             FakeGroup("Batch Beta", [str(second)]): [str(second)],
         },
-        {"service": "pixhost.to", "auto_gallery": True},
+        {"service": "pixhost.cc", "auto_gallery": True},
     )
 
     assert issues == []
@@ -1307,8 +1447,8 @@ def test_upload_preflight_reports_vipergirls_posting_blockers(tmp_path, monkeypa
     app.central_history_path = str(tmp_path / "history")
     app.upload_manager = SimpleNamespace(bridge=FakeBridge(alive=True))
     app.service_plugins = {
-        "pixhost.to": FakePlugin(
-            "pixhost.to",
+        "pixhost.cc": FakePlugin(
+            "pixhost.cc",
             "Pixhost",
             {
                 "implementation": "go",
@@ -1337,7 +1477,7 @@ def test_upload_preflight_reports_vipergirls_posting_blockers(tmp_path, monkeypa
             invalid_group: [str(image_path)],
             ignored_group: [str(image_path)],
         },
-        {"service": "pixhost.to"},
+        {"service": "pixhost.cc"},
     )
 
     assert summary == ""
@@ -1369,8 +1509,8 @@ def test_upload_preflight_accepts_valid_vipergirls_posting_target(tmp_path, monk
     app.central_history_path = str(tmp_path / "history")
     app.upload_manager = SimpleNamespace(bridge=FakeBridge(alive=True))
     app.service_plugins = {
-        "pixhost.to": FakePlugin(
-            "pixhost.to",
+        "pixhost.cc": FakePlugin(
+            "pixhost.cc",
             "Pixhost",
             {
                 "implementation": "go",
@@ -1395,7 +1535,7 @@ def test_upload_preflight_accepts_valid_vipergirls_posting_target(tmp_path, monk
     issues, summary = UploaderApp._run_upload_preflight(
         app,
         {group: [str(image_path)]},
-        {"service": "pixhost.to"},
+        {"service": "pixhost.cc"},
     )
 
     assert issues == []
@@ -1415,8 +1555,8 @@ def test_upload_preflight_records_problem_folder_action(tmp_path):
     app.central_history_path = str(tmp_path / "history")
     app.upload_manager = SimpleNamespace(bridge=FakeBridge(alive=True))
     app.service_plugins = {
-        "pixhost.to": FakePlugin(
-            "pixhost.to",
+        "pixhost.cc": FakePlugin(
+            "pixhost.cc",
             "Pixhost",
             {
                 "implementation": "go",
@@ -1438,7 +1578,7 @@ def test_upload_preflight_records_problem_folder_action(tmp_path):
     issues, summary = UploaderApp._run_upload_preflight(
         app,
         {object(): [str(image_path)]},
-        {"service": "pixhost.to", "auto_copy": True},
+        {"service": "pixhost.cc", "auto_copy": True},
     )
 
     assert summary == ""
@@ -1593,7 +1733,7 @@ def test_vipergirls_post_preview_uses_batch_target_thread_and_template_text():
             assert context["thumb_size"] == "200"
             assert context["batch_name"] == "Batch Alpha"
             assert context["image_count"] == 1
-            assert context["service"] == "pixhost.to"
+            assert context["service"] == "pixhost.cc"
             assert context["thread_name"] == "My Target"
             assert context["thread_id"] == "98765"
             assert context["upload_date"]
@@ -1607,7 +1747,7 @@ def test_vipergirls_post_preview_uses_batch_target_thread_and_template_text():
     group.selected_template = "BBCode"
 
     app = UploaderApp.__new__(UploaderApp)
-    app.settings = {"service": "pixhost.to", "pix_thumb": "200"}
+    app.settings = {"service": "pixhost.cc", "pix_thumb": "200"}
     app.template_mgr = FakeTemplateManager()
     app.saved_threads_data = {
         "My Target": {
@@ -1656,7 +1796,7 @@ def test_generate_group_output_populates_supported_template_context(tmp_path):
 
     app = UploaderApp.__new__(UploaderApp)
     app.results = [(file_path, "https://img.test/view", "https://img.test/thumb")]
-    app.settings = {"service": "pixhost.to", "pix_thumb": "200"}
+    app.settings = {"service": "pixhost.cc", "pix_thumb": "200"}
     app.template_mgr = FakeTemplateManager()
     app.output_dir = str(output_dir)
     app.central_history_path = str(history_dir)
@@ -1688,20 +1828,20 @@ def test_generate_group_output_populates_supported_template_context(tmp_path):
     assert captured["group_results"] == [
         ("https://img.test/view", "https://img.test/thumb", "https://img.test/view")
     ]
-    assert context["gallery_link"] == "https://pixhost.to/gallery/G123"
+    assert context["gallery_link"] == "https://pixhost.cc/gallery/G123"
     assert context["gallery_name"] == "Batch Alpha"
     assert context["gallery_id"] == "G123"
     assert context["cover_url"] == "https://img.test/thumb"
     assert context["thumb_size"] == "200"
     assert context["batch_name"] == "Batch Alpha"
     assert context["image_count"] == 1
-    assert context["service"] == "pixhost.to"
+    assert context["service"] == "pixhost.cc"
     assert context["thread_name"] == "My Target"
     assert context["thread_id"] == "98765"
     assert context["upload_date"]
     assert len(app.current_output_files) == 1
     assert Path(app.current_output_files[0]).read_text(encoding="utf-8") == (
-        "Batch Alpha|1|pixhost.to|My Target|98765"
+        "Batch Alpha|1|pixhost.cc|My Target|98765"
     )
     assert queued
 
@@ -1820,7 +1960,7 @@ def test_generate_group_output_skips_incomplete_or_blank_results(tmp_path):
         (first, "https://img.test/first", "https://img.test/first-thumb"),
         (second, "", ""),
     ]
-    app.settings = {"service": "pixhost.to"}
+    app.settings = {"service": "pixhost.cc"}
     app.template_mgr = FailingTemplateManager()
     app.current_output_files = []
     app.log = lambda message: logs.append(message)
@@ -1847,7 +1987,7 @@ def test_generate_group_output_skips_empty_groups():
 
     app = UploaderApp.__new__(UploaderApp)
     app.results = []
-    app.settings = {"service": "pixhost.to"}
+    app.settings = {"service": "pixhost.cc"}
     app.template_mgr = FailingTemplateManager()
     app.current_output_files = []
     app.log = lambda message: logs.append(message)
@@ -1991,12 +2131,12 @@ def test_generate_group_output_uses_real_gallery_name_when_available(tmp_path):
     group.selected_thread = "Do Not Post"
     group.gallery_id = "G123"
     group.gallery_name = "Real Site Gallery"
-    group.gallery_url = "https://pixhost.to/gallery/G123"
-    group.gallery_service = "pixhost.to"
+    group.gallery_url = "https://pixhost.cc/gallery/G123"
+    group.gallery_service = "pixhost.cc"
 
     app = UploaderApp.__new__(UploaderApp)
     app.results = [(file_path, "https://img.test/view", "https://img.test/thumb")]
-    app.settings = {"service": "pixhost.to", "pix_thumb": "200"}
+    app.settings = {"service": "pixhost.cc", "pix_thumb": "200"}
     app.template_mgr = FakeTemplateManager()
     app.output_dir = str(tmp_path / "Output")
     app.central_history_path = str(tmp_path / "history")
@@ -2017,7 +2157,7 @@ def test_generate_group_output_uses_real_gallery_name_when_available(tmp_path):
     UploaderApp.generate_group_output(app, group)
 
     assert captured["context"]["gallery_name"] == "Real Site Gallery"
-    assert captured["context"]["gallery_link"] == "https://pixhost.to/gallery/G123"
+    assert captured["context"]["gallery_link"] == "https://pixhost.cc/gallery/G123"
     assert captured["context"]["gallery_id"] == "G123"
 
 
@@ -2029,11 +2169,11 @@ def test_selected_pixhost_gallery_with_upload_hash_registers_for_finalization(tm
     app = UploaderApp.__new__(UploaderApp)
     app.pix_galleries_to_finalize = []
     app.selected_gallery_by_service = {
-        "pixhost.to": {
-            "service": "pixhost.to",
+        "pixhost.cc": {
+            "service": "pixhost.cc",
             "id": "abc123",
             "name": "Site Gallery",
-            "url": "https://pixhost.to/gallery/abc123",
+            "url": "https://pixhost.cc/gallery/abc123",
             "upload_hash": "upload456",
         }
     }
@@ -2042,7 +2182,7 @@ def test_selected_pixhost_gallery_with_upload_hash_registers_for_finalization(tm
         app,
         {group: [image_path]},
         {
-            "service": "pixhost.to",
+            "service": "pixhost.cc",
             "selected_gallery_by_service": app.selected_gallery_by_service,
         },
     )
@@ -2050,7 +2190,7 @@ def test_selected_pixhost_gallery_with_upload_hash_registers_for_finalization(tm
         app,
         {group: [image_path]},
         {
-            "service": "pixhost.to",
+            "service": "pixhost.cc",
             "selected_gallery_by_service": app.selected_gallery_by_service,
         },
     )
@@ -2059,7 +2199,7 @@ def test_selected_pixhost_gallery_with_upload_hash_registers_for_finalization(tm
         {
             "gallery_hash": "abc123",
             "gallery_upload_hash": "upload456",
-            "gallery_url": "https://pixhost.to/gallery/abc123",
+            "gallery_url": "https://pixhost.cc/gallery/abc123",
             "gallery_name": "Site Gallery",
         }
     ]
@@ -2112,7 +2252,7 @@ def test_generate_group_output_uses_selected_covers_before_standard_images(tmp_p
         (second, "https://img.test/second", "https://img.test/t-second"),
         (third, "https://img.test/third", "https://img.test/t-third"),
     ]
-    app.settings = {"service": "pixhost.to", "pix_thumb": "200"}
+    app.settings = {"service": "pixhost.cc", "pix_thumb": "200"}
     app.template_mgr = FakeTemplateManager()
     app.output_dir = str(output_dir)
     app.central_history_path = str(history_dir)

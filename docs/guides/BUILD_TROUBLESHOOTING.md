@@ -257,7 +257,7 @@ tkinterdnd2==0.5.0
 - `imagebam.com`
 - `imgur.com`
 - `imx.to`
-- `pixhost.to`
+- `pixhost.cc`
 - `turboimagehost`
 - `vipr.im`
 

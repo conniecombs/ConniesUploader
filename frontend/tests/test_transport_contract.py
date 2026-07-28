@@ -61,7 +61,7 @@ def test_production_go_stays_host_agnostic():
     banned = {
         "vipergirls.to",
         "vipr.im",
-        "pixhost.to",
+        "pixhost.cc",
         "imx.to",
         "imagebam.com",
         "turboimagehost",

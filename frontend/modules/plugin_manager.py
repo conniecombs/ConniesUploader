@@ -12,6 +12,7 @@ from typing import Dict, List, Optional, Tuple
 from loguru import logger
 
 import modules.plugins
+from . import config
 from .plugins.base import ImageHostPlugin
 
 PRIORITY_CRITICAL = 10
@@ -89,6 +90,7 @@ class PluginManager:
         return "CUSTOM"
 
     def get_plugin(self, plugin_id: str) -> Optional[ImageHostPlugin]:
+        plugin_id = config.normalize_service_id(plugin_id)
         return self._plugins.get(plugin_id)
 
     def get_all_plugins(self) -> List[ImageHostPlugin]:

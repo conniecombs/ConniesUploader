@@ -60,7 +60,7 @@ class SettingsMixin:
         grp = next((g for g in self.groups if g.files), None)
         if not grp:
             return None, None, None
-        current_service = self.var_service.get()
+        current_service = config.normalize_service_id(self.var_service.get())
         size = "200"
         try:
             if hasattr(self, "settings_view"):
@@ -73,7 +73,7 @@ class SettingsMixin:
                     )
             elif current_service == "imx.to":
                 size = self.var_imx_thumb.get()
-            elif current_service == "pixhost.to":
+            elif current_service == config.PIXHOST_SERVICE_ID:
                 size = self.var_pix_thumb.get()
             elif current_service == "turboimagehost":
                 size = self.var_turbo_thumb.get()
@@ -177,11 +177,11 @@ class SettingsMixin:
 
         available_services = list(getattr(self, "service_frames", {}).keys())
         fallback_service = (
-            "pixhost.to"
-            if "pixhost.to" in available_services
+            config.PIXHOST_SERVICE_ID
+            if config.PIXHOST_SERVICE_ID in available_services
             else (available_services[0] if available_services else "imx.to")
         )
-        saved_service = s.get("service", fallback_service)
+        saved_service = config.normalize_service_id(s.get("service", fallback_service))
         if saved_service not in available_services:
             logger.warning(
                 f"Saved service '{saved_service}' is not available; using '{fallback_service}'"
@@ -221,7 +221,7 @@ class SettingsMixin:
         return bounded
 
     def _gather_settings(self) -> Dict[str, Any]:
-        selected_service = self.var_service.get()
+        selected_service = config.normalize_service_id(self.var_service.get())
         worker_count = self._set_bounded_var(
             self.var_global_worker_count,
             self.var_global_worker_count.get(),
@@ -311,7 +311,7 @@ class SettingsMixin:
                     "selected_gallery_upload_hash": selected_gallery.get("upload_hash", ""),
                 }
             )
-            if selected_service == "pixhost.to" and selected_gallery.get("upload_hash"):
+            if selected_service == config.PIXHOST_SERVICE_ID and selected_gallery.get("upload_hash"):
                 cfg["gallery_upload_hash"] = selected_gallery["upload_hash"]
 
         return cfg

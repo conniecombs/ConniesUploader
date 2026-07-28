@@ -12,6 +12,7 @@ from .common import (  # noqa: F401
     ctk,
     config,
     logger,
+    deque,
     os,
     queue,
     sys,
@@ -94,11 +95,12 @@ class UploaderApp(
         self.var_show_previews = tk.BooleanVar(value=True)
         self.var_separate_batches = tk.BooleanVar(value=False)
         self.var_appearance_mode = tk.StringVar(value="System")
+        self.import_executor = ThreadPoolExecutor(max_workers=config.IMPORT_WORKERS)
         self.thumb_executor = ThreadPoolExecutor(max_workers=config.THUMBNAIL_WORKERS)
 
         # Queues for thread communication
         self.progress_queue = queue.Queue(maxsize=1000)
-        self.ui_queue = queue.Queue(maxsize=500)
+        self.ui_queue = queue.Queue(maxsize=config.UI_QUEUE_MAXSIZE)
         self.result_queue = queue.Queue(maxsize=1000)
         self.cancel_event = threading.Event()
         self.lock = threading.Lock()
@@ -106,6 +108,12 @@ class UploaderApp(
         # UI state
         self.file_widgets = {}
         self.groups = []
+        self.import_epoch = 0
+        self.import_counter = 0
+        self.active_import_ids = set()
+        self.pending_filepaths = set()
+        self.pending_ui_rows = deque()
+        self.pending_thumbnails = {}
         self.results = []
         self.log_cache = []
         self.activity_events = []

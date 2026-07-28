@@ -16,6 +16,7 @@ import pyperclip
 import subprocess
 import platform
 import time
+from collections import deque
 from contextlib import nullcontext
 from datetime import datetime
 from typing import Dict, Any, List, Optional, Tuple
@@ -70,6 +71,7 @@ __all__ = [
     "config",
     "ctk",
     "datetime",
+    "deque",
     "file_handler",
     "filedialog",
     "gallery_url_for_service",

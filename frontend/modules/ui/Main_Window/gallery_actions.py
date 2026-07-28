@@ -79,10 +79,12 @@ class GalleryActionsMixin:
             service = record.service
             gid = record.id
 
-        service = str(service or getattr(record, "service", "") or "").strip()
+        service = config.normalize_service_id(service or getattr(record, "service", ""))
         gid = str(gid or getattr(record, "id", "") or "").strip()
         name = str(getattr(record, "name", "") or gid).strip()
         url = str(getattr(record, "url", "") or gallery_url_for_service(service, gid)).strip()
+        if service == config.PIXHOST_SERVICE_ID:
+            url = config.normalize_pixhost_url(url)
         upload_hash = str(getattr(record, "upload_hash", "") or "").strip()
         return {
             "service": service,
@@ -100,8 +102,8 @@ class GalleryActionsMixin:
         gid = record_data["id"]
         if service == "imx.to":
             settings_view.set_value("imx.to", "gallery_id", gid)
-        elif service == "pixhost.to":
-            settings_view.set_value("pixhost.to", "gallery_hash", gid)
+        elif service == config.PIXHOST_SERVICE_ID:
+            settings_view.set_value(config.PIXHOST_SERVICE_ID, "gallery_hash", gid)
         elif service == "vipr.im":
             self._apply_vipr_gallery_selection(record_data)
         elif service == "imagebam.com":
@@ -176,7 +178,7 @@ class GalleryActionsMixin:
         group.gallery_url = record_data["url"]
         group.gallery_service = record_data["service"]
         group.gallery_upload_hash = record_data.get("upload_hash", "")
-        if record_data["service"] == "pixhost.to" and record_data.get("upload_hash"):
+        if record_data["service"] == config.PIXHOST_SERVICE_ID and record_data.get("upload_hash"):
             group.pix_data = {
                 "gallery_hash": record_data["id"],
                 "gallery_upload_hash": record_data["upload_hash"],
@@ -236,11 +238,12 @@ class GalleryActionsMixin:
     def _register_selected_pixhost_galleries_for_finalization(
         self, pending_by_group: Dict[Any, List[str]], cfg: Dict[str, Any]
     ) -> None:
-        if cfg.get("service") != "pixhost.to":
+        service = config.normalize_service_id(cfg.get("service"))
+        if service != config.PIXHOST_SERVICE_ID:
             return
 
         for group in pending_by_group.keys():
-            gallery = self._gallery_for_group(group, "pixhost.to", cfg)
+            gallery = self._gallery_for_group(group, config.PIXHOST_SERVICE_ID, cfg)
             if not gallery or not gallery.get("upload_hash"):
                 continue
             self._register_pixhost_gallery_for_finalization(
@@ -271,29 +274,39 @@ class GalleryActionsMixin:
     def _selected_gallery_for_service(
         self, service_id: str, cfg: Optional[Dict[str, Any]] = None
     ) -> Optional[Dict[str, str]]:
+        service_id = config.normalize_service_id(service_id)
         selected = self.__dict__.get("selected_gallery_by_service", {}) or {}
         record = selected.get(service_id) if isinstance(selected, dict) else None
+        if not isinstance(record, dict) and service_id == config.PIXHOST_SERVICE_ID:
+            record = selected.get(config.PIXHOST_LEGACY_SERVICE_ID)
         if not isinstance(record, dict):
             cfg = cfg or {}
             selected_by_service = cfg.get("selected_gallery_by_service", {})
             if isinstance(selected_by_service, dict):
                 record = selected_by_service.get(service_id)
+                if not isinstance(record, dict) and service_id == config.PIXHOST_SERVICE_ID:
+                    record = selected_by_service.get(config.PIXHOST_LEGACY_SERVICE_ID)
         if not isinstance(record, dict):
             return None
 
         gallery_id = str(record.get("id") or "").strip()
         if not gallery_id:
             return None
+        record_service = config.normalize_service_id(record.get("service") or service_id)
+        url = str(record.get("url") or gallery_url_for_service(record_service, gallery_id))
+        if record_service == config.PIXHOST_SERVICE_ID:
+            url = config.normalize_pixhost_url(url)
         return {
-            "service": str(record.get("service") or service_id),
+            "service": record_service,
             "id": gallery_id,
             "name": str(record.get("name") or gallery_id),
-            "url": str(record.get("url") or gallery_url_for_service(service_id, gallery_id)),
+            "url": url,
             "upload_hash": str(record.get("upload_hash") or ""),
         }
 
     def _gallery_id_from_settings(self, service_id: str, cfg: Dict[str, Any]) -> str:
-        if service_id == "pixhost.to":
+        service_id = config.normalize_service_id(service_id)
+        if service_id == config.PIXHOST_SERVICE_ID:
             return str(cfg.get("gallery_hash") or cfg.get("pix_gallery_hash") or "").strip()
         if service_id == "vipr.im":
             gallery_name = str(cfg.get("vipr_gallery_name") or "").strip()
@@ -312,19 +325,25 @@ class GalleryActionsMixin:
     def _gallery_for_group(
         self, group: Any, service_id: str, cfg: Dict[str, Any]
     ) -> Optional[Dict[str, str]]:
+        service_id = config.normalize_service_id(service_id)
         group_gallery_id = str(getattr(group, "gallery_id", "") or "").strip()
         group_gallery_url = str(getattr(group, "gallery_url", "") or "").strip()
         if group_gallery_id or group_gallery_url:
-            group_service = str(getattr(group, "gallery_service", "") or service_id).strip()
+            group_service = config.normalize_service_id(
+                getattr(group, "gallery_service", "") or service_id
+            )
             if not group_gallery_id:
                 group_gallery_id = self._gallery_id_from_url(group_service, group_gallery_url)
+            group_gallery_url = str(
+                group_gallery_url or gallery_url_for_service(group_service, group_gallery_id)
+            )
+            if group_service == config.PIXHOST_SERVICE_ID:
+                group_gallery_url = config.normalize_pixhost_url(group_gallery_url)
             return {
                 "service": group_service,
                 "id": group_gallery_id,
                 "name": str(getattr(group, "gallery_name", "") or ""),
-                "url": str(
-                    group_gallery_url or gallery_url_for_service(group_service, group_gallery_id)
-                ),
+                "url": group_gallery_url,
                 "upload_hash": str(getattr(group, "gallery_upload_hash", "") or ""),
             }
 
@@ -339,23 +358,27 @@ class GalleryActionsMixin:
         gallery_name = str(cfg.get("selected_gallery_name") or "").strip()
         if service_id == "vipr.im":
             gallery_name = str(cfg.get("vipr_gallery_name") or gallery_name).strip()
+        selected_gallery_url = str(
+            cfg.get("selected_gallery_url") or gallery_url_for_service(service_id, gallery_id)
+        )
+        if service_id == config.PIXHOST_SERVICE_ID:
+            selected_gallery_url = config.normalize_pixhost_url(selected_gallery_url)
         return {
             "service": service_id,
             "id": gallery_id,
             "name": gallery_name,
-            "url": str(
-                cfg.get("selected_gallery_url") or gallery_url_for_service(service_id, gallery_id)
-            ),
+            "url": selected_gallery_url,
             "upload_hash": str(cfg.get("selected_gallery_upload_hash") or ""),
         }
 
     @staticmethod
     def _gallery_id_from_url(service_id: str, gallery_url: str) -> str:
+        service_id = config.normalize_service_id(service_id)
         if service_id == "turboimagehost" and "/album/" in gallery_url:
             return gallery_url.split("/album/", 1)[1].split("/", 1)[0].strip()
         if service_id == "imagebam.com" and "/view/" in gallery_url:
             return gallery_url.split("/view/", 1)[1].split("/", 1)[0].strip()
-        if service_id == "pixhost.to":
+        if service_id == config.PIXHOST_SERVICE_ID:
             for marker in ("/gallery/", "/galleries/"):
                 if marker in gallery_url:
                     return gallery_url.split(marker, 1)[1].split("/", 1)[0].strip()
@@ -397,6 +420,7 @@ class GalleryActionsMixin:
         return self._batch_display_name(group)
 
     def _gallery_id_is_valid_for_service(self, service_id: str, gallery_id: str) -> bool:
+        service_id = config.normalize_service_id(service_id)
         gallery_id = str(gallery_id or "").strip()
         if not gallery_id:
             return True
@@ -407,7 +431,8 @@ class GalleryActionsMixin:
         return gallery_id.isalnum()
 
     def _gallery_label_for_service(self, service_id: str) -> str:
-        if service_id == "pixhost.to":
+        service_id = config.normalize_service_id(service_id)
+        if service_id == config.PIXHOST_SERVICE_ID:
             return "gallery hash"
         if service_id == "vipr.im":
             return "gallery ID"

@@ -202,7 +202,7 @@ class UploadChecksMixin:
         issues: List[str] = []
         self._reset_preflight_actions()
         self.preflight_detail_lines = []
-        service_id = cfg.get("service", "")
+        service_id = config.normalize_service_id(cfg.get("service", ""))
         plugin = self._plugin_for_service(service_id)
         file_count = sum(len(files) for files in pending_by_group.values())
         gallery_summary = ""
@@ -240,6 +240,7 @@ class UploadChecksMixin:
         return [], summary
 
     def _plugin_for_service(self, service_id):
+        service_id = config.normalize_service_id(service_id)
         plugin = getattr(self, "service_plugins", {}).get(service_id)
         if plugin:
             return plugin
@@ -353,7 +354,7 @@ class UploadChecksMixin:
         cfg: Dict[str, Any],
         issues: List[str],
     ) -> str:
-        service_id = plugin.id
+        service_id = config.normalize_service_id(plugin.id)
         if cfg.get("auto_gallery"):
             return self._preflight_check_auto_galleries(plugin, pending_by_group, issues)
 
@@ -365,7 +366,7 @@ class UploadChecksMixin:
             if not gallery:
                 continue
 
-            gallery_service = gallery.get("service") or service_id
+            gallery_service = config.normalize_service_id(gallery.get("service") or service_id)
             gallery_id = gallery.get("id", "")
             detail = self._format_gallery_preflight_detail(batch_name, gallery)
             if detail not in seen:
@@ -411,11 +412,17 @@ class UploadChecksMixin:
         pending_by_group: Dict[Any, List[str]],
         issues: List[str],
     ) -> str:
-        supported = {"imx.to", "pixhost.to", "turboimagehost", "vipr.im", "imagebam.com"}
-        if plugin.id not in supported:
+        supported = {
+            "imx.to",
+            config.PIXHOST_SERVICE_ID,
+            "turboimagehost",
+            "vipr.im",
+            "imagebam.com",
+        }
+        if config.normalize_service_id(plugin.id) not in supported:
             issues.append(
                 f"One Gallery Per Folder is not implemented for {plugin.name}. "
-                "Turn it off or choose IMX.to/Pixhost.to/Vipr/ImageBam."
+                "Turn it off or choose IMX.to/Pixhost.cc/Vipr/ImageBam."
             )
             return ""
 

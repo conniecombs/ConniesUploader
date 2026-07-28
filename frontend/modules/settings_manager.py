@@ -378,6 +378,9 @@ class SettingsManager:
             # Merge with defaults. Older settings files did not have a global
             # thread limit, so seed it from the previous representative value.
             merged_input = {**self.defaults, **data}
+            merged_input["service"] = config.normalize_service_id(
+                merged_input.get("service", "")
+            )
             if "global_thread_limit" not in data:
                 merged_input["global_thread_limit"] = data.get(
                     "imx_threads", self.defaults["global_thread_limit"]
@@ -422,6 +425,8 @@ class SettingsManager:
         Raises:
             InvalidConfigException: If data contains invalid configuration
         """
+        data = dict(data or {})
+        data["service"] = config.normalize_service_id(data.get("service", ""))
         data = self.normalize_numeric_ranges(data)
 
         # Validate before saving

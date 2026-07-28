@@ -23,7 +23,7 @@ The current auto-discovered upload plugins are:
 - `imagebam.com`
 - `imgur.com`
 - `imx.to`
-- `pixhost.to`
+- `pixhost.cc`
 - `turboimagehost`
 - `vipr.im`
 
@@ -102,7 +102,7 @@ The Gallery Manager UI is backed by service/plugin code and normalized gallery r
 
 ```python
 {
-    "service": "pixhost.to",
+    "service": "pixhost.cc",
     "id": "...",
     "name": "...",
     "url": "...",

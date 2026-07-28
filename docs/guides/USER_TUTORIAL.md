@@ -11,7 +11,7 @@ If you are new, do not start by changing every setting. Use the first example be
 This example avoids credentials, galleries, and forum posting. It proves the app, sidecar, queue, upload host, template engine, and output folder are working.
 
 1. Open Connie's Uploader.
-2. Set `Select Image Host` to `pixhost.to`.
+2. Set `Select Image Host` to `pixhost.cc`.
 3. Leave `One Gallery Per Folder` off.
 4. Leave ViperGirls thread dropdowns at `Do Not Post`.
 5. Set `Worker Count` to `1`.
@@ -43,7 +43,7 @@ Leave these alone until a simple upload works:
 | Term | Meaning |
 | --- | --- |
 | Batch | A group of images uploaded together. A folder usually becomes one batch. |
-| Host | The image site, such as `pixhost.to`, `imx.to`, or `vipr.im`. |
+| Host | The image site, such as `pixhost.cc`, `imx.to`, or `vipr.im`. |
 | Template | The text layout generated after upload, such as BBCode for forums. |
 | Cover | One or more images shown first/larger in template output. Covers are not duplicated in `#all_images#`. |
 | Gallery | A host-side album/folder, when the selected image host supports it. |
@@ -110,7 +110,7 @@ If one file fails, let the batch finish. Use `Retry Failed` afterward.
 
 Use this when you have one folder named `Example Set` with 10 images.
 
-1. Select `pixhost.to`.
+1. Select `pixhost.cc`.
 2. Set `Content` to the correct value, usually `Safe` or `Adult`.
 3. Set `Thumb Size` to `250`.
 4. Set `Auto Covers` to `0` if you do not need covers.
@@ -265,13 +265,13 @@ Use this as a starting point:
 
 | Goal | Suggested host | Why |
 | --- | --- | --- |
-| First test with no login | `pixhost.to` | No credentials required and simple settings. |
-| Forum thumbnails with galleries | `pixhost.to`, `imx.to`, or `vipr.im` | These have gallery-related workflows in the app. |
+| First test with no login | `pixhost.cc` | No credentials required and simple settings. |
+| Forum thumbnails with galleries | `pixhost.cc`, `imx.to`, or `vipr.im` | These have gallery-related workflows in the app. |
 | Largest cover thumbnails | `vipr.im` or `turboimagehost` | Current cover settings expose larger cover thumbnail sizes. |
 | Account-based Vipr gallery workflow | `vipr.im` | Requires saved Vipr credentials. |
 | Imgur testing | `imgur.com` | Available through plugin metadata, but use a small test batch first. |
 
-If you are not sure, start with `pixhost.to`, upload 2 files, and check the output.
+If you are not sure, start with `pixhost.cc`, upload 2 files, and check the output.
 
 ### `imx.to`
 
@@ -287,7 +287,7 @@ If you are not sure, start with `pixhost.to`, upload 2 files, and check the outp
 
 If `One Gallery Per Folder` is enabled, the app tries to create a new IMX gallery for each batch using the batch title. This requires IMX username/password credentials, not just the API key.
 
-### `pixhost.to`
+### `pixhost.cc`
 
 Pixhost does not require credentials.
 
@@ -393,13 +393,13 @@ If a feature says credentials are missing after you saved them, close and reopen
 
 Open it with `Tools > Manage Galleries`.
 
-The Gallery Manager supports `imx.to`, `pixhost.to`, and `vipr.im`, but each service exposes different gallery features. It can also remember recently loaded or created galleries locally, so you can still see known galleries when a host refresh fails.
+The Gallery Manager supports `imx.to`, `pixhost.cc`, and `vipr.im`, but each service exposes different gallery features. It can also remember recently loaded or created galleries locally, so you can still see known galleries when a host refresh fails.
 
 | Service | Gallery Manager support |
 | --- | --- |
 | `imx.to` | List, select, create, and load additional pages. |
 | `vipr.im` | List, select, and create with saved Vipr credentials. |
-| `pixhost.to` | Create new galleries and return their gallery hash. Recently created Pixhost galleries may appear from the local cache, but listing existing Pixhost galleries from the host is not available yet. |
+| `pixhost.cc` | Create new galleries and return their gallery hash. Recently created Pixhost galleries may appear from the local cache, but listing existing Pixhost galleries from the host is not available yet. |
 
 Controls:
 
@@ -1293,7 +1293,7 @@ Gallery Manager uses the credentials for the selected image host only.
 
 - For `vipr.im`, save the Vipr username and password.
 - For `imx.to`, save the IMX username and password. The IMX API key is still needed for uploads, but gallery listing/login uses the username and password.
-- For `pixhost.to`, credentials are not required, but live listing existing Pixhost galleries is not available yet.
+- For `pixhost.cc`, credentials are not required, but live listing existing Pixhost galleries is not available yet.
 
 After saving credentials, click `Refresh from host`. If IMX still shows a login failure, use `Set IMX Cookie` and paste a current `PHPSESSID` cookie value from your browser session.
 

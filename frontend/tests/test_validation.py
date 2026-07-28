@@ -210,6 +210,7 @@ class TestValidateServiceName:
         """Test that known service names are valid"""
         valid_services = [
             "imx.to",
+            "pixhost.cc",
             "pixhost.to",
             "turboimagehost",
             "vipr.im",

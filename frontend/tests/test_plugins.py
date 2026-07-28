@@ -473,7 +473,7 @@ class TestPixhostGalleryIntegration(unittest.TestCase):
         new_gallery = {
             "gallery_hash": "abc123",
             "gallery_upload_hash": "upload456",
-            "gallery_url": "https://pixhost.to/gallery/abc123",
+            "gallery_url": "https://pixhost.cc/gallery/abc123",
         }
 
         with patch("modules.plugins.pixhost.api.create_pixhost_gallery", return_value=new_gallery):
@@ -518,7 +518,7 @@ class TestPixhostGalleryIntegration(unittest.TestCase):
         group = Group()
         manager._dispatch_jobs(
             {group: ["image.jpg"]},
-            {"service": "pixhost.to", "auto_gallery": True},
+            {"service": "pixhost.cc", "auto_gallery": True},
             {},
         )
 
@@ -561,16 +561,27 @@ class TestUploadManagerJobConfig(unittest.TestCase):
         from modules.upload_manager import UploadManager
 
         config = UploadManager._normalize_job_config(
+            {"service": "pixhost.cc", "pix_threads": 7, "threads": 2}
+        )
+
+        self.assertEqual(config["threads"], 7)
+        self.assertEqual(config["service"], "pixhost.cc")
+
+    def test_legacy_pixhost_service_threads_normalize_to_current_service(self):
+        from modules.upload_manager import UploadManager
+
+        config = UploadManager._normalize_job_config(
             {"service": "pixhost.to", "pix_threads": 7, "threads": 2}
         )
 
+        self.assertEqual(config["service"], "pixhost.cc")
         self.assertEqual(config["threads"], 7)
 
     def test_global_thread_limit_takes_precedence_over_service_threads(self):
         from modules.upload_manager import UploadManager
 
         config = UploadManager._normalize_job_config(
-            {"service": "pixhost.to", "global_thread_limit": 4, "pix_threads": 7}
+            {"service": "pixhost.cc", "global_thread_limit": 4, "pix_threads": 7}
         )
 
         self.assertEqual(config["threads"], 4)
@@ -588,10 +599,10 @@ class TestUploadManagerJobConfig(unittest.TestCase):
         from modules.upload_manager import UploadManager
 
         too_high = UploadManager._normalize_job_config(
-            {"service": "pixhost.to", "pix_threads": 99}
+            {"service": "pixhost.cc", "pix_threads": 99}
         )
         too_low = UploadManager._normalize_job_config(
-            {"service": "pixhost.to", "pix_threads": 0}
+            {"service": "pixhost.cc", "pix_threads": 0}
         )
 
         self.assertEqual(too_high["threads"], 10)

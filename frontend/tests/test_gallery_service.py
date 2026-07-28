@@ -99,7 +99,7 @@ class FakePagedImxSession(FakeImxSession):
 
 def test_normalize_gallery_record_uses_standard_shape_and_service_url():
     record = normalize_gallery_record(
-        "pixhost.to",
+        "pixhost.cc",
         {
             "gallery_hash": "abc123",
             "gallery_name": "Release Gallery",
@@ -108,37 +108,55 @@ def test_normalize_gallery_record_uses_standard_shape_and_service_url():
         },
     )
 
-    assert record.service == "pixhost.to"
+    assert record.service == "pixhost.cc"
     assert record.id == "abc123"
     assert record.name == "Release Gallery"
-    assert record.url == "https://pixhost.to/gallery/abc123"
+    assert record.url == "https://pixhost.cc/gallery/abc123"
     assert record.upload_hash == "upload456"
     assert record.raw["extra"] == "kept"
 
 
+def test_normalize_gallery_record_rewrites_legacy_pixhost_service_and_url():
+    record = normalize_gallery_record(
+        "pixhost.to",
+        {
+            "gallery_hash": "abc123",
+            "gallery_name": "Legacy Gallery",
+            "gallery_url": "https://pixhost.to/gallery/abc123",
+        },
+    )
+
+    assert record.service == "pixhost.cc"
+    assert record.url == "https://pixhost.cc/gallery/abc123"
+
+
 def test_parse_pixhost_gallery_import_accepts_url_or_hash():
     from_url = parse_pixhost_gallery_import(
-        "https://pixhost.to/gallery/AbC123?utm=ignored",
+        "https://pixhost.cc/gallery/AbC123?utm=ignored",
         "Imported Gallery",
     )
     from_hash = parse_pixhost_gallery_import("xyz789")
 
     assert from_url == GalleryRecord(
-        service="pixhost.to",
+        service="pixhost.cc",
         id="AbC123",
         name="Imported Gallery",
-        url="https://pixhost.to/gallery/AbC123",
+        url="https://pixhost.cc/gallery/AbC123",
         raw={
             "gallery_hash": "AbC123",
             "gallery_name": "Imported Gallery",
-            "gallery_url": "https://pixhost.to/gallery/AbC123",
+            "gallery_url": "https://pixhost.cc/gallery/AbC123",
             "source": "imported",
         },
     )
     assert from_hash.id == "xyz789"
     assert from_hash.name == "xyz789"
-    assert from_hash.url == "https://pixhost.to/gallery/xyz789"
-    assert parse_pixhost_gallery_import("https://pixhost.to/not-a-gallery/abc") is None
+    assert from_hash.url == "https://pixhost.cc/gallery/xyz789"
+    assert (
+        parse_pixhost_gallery_import("https://pixhost.to/gallery/Legacy1").url
+        == "https://pixhost.cc/gallery/Legacy1"
+    )
+    assert parse_pixhost_gallery_import("https://pixhost.cc/not-a-gallery/abc") is None
 
 
 def test_parse_imx_gallery_html_supports_plain_and_icon_wrapped_names():
@@ -442,7 +460,7 @@ def test_list_galleries_reports_unsupported_operation_for_pixhost_listing():
     bridge = FakeBridge()
     service = GalleryService(bridge, {})
 
-    result = service.list_galleries("pixhost.to")
+    result = service.list_galleries("pixhost.cc")
 
     assert result.status == GalleryStatus.UNSUPPORTED
     assert "listing is not supported" in result.message
@@ -511,13 +529,13 @@ def test_create_gallery_normalizes_pixhost_success_response():
                 "gallery_name": "Created Gallery",
                 "gallery_hash": "abc123",
                 "gallery_upload_hash": "upload456",
-                "gallery_url": "https://pixhost.to/gallery/abc123",
+                "gallery_url": "https://pixhost.cc/gallery/abc123",
             },
         }
     )
     service = GalleryService(bridge, {})
 
-    result = service.create_gallery("pixhost.to", "Created Gallery")
+    result = service.create_gallery("pixhost.cc", "Created Gallery")
 
     assert result.status == GalleryStatus.SUCCESS
     assert result.record.id == "abc123"
@@ -789,7 +807,7 @@ def test_delete_gallery_rejects_unsupported_service_without_sidecar_call():
     bridge = FakeBridge()
     service = GalleryService(bridge, {})
 
-    result = service.delete_gallery("pixhost.to", "abc123")
+    result = service.delete_gallery("pixhost.cc", "abc123")
 
     assert result.status == GalleryStatus.UNSUPPORTED
     assert bridge.calls == []
@@ -1113,17 +1131,17 @@ def test_gallery_manager_pixhost_refresh_uses_saved_records_only(tmp_path):
     cache = GalleryCache(str(tmp_path / "gallery_cache.json"))
     cache.upsert_record(
         GalleryRecord(
-            service="pixhost.to",
+            service="pixhost.cc",
             id="abc123",
             name="Saved Pixhost",
-            url="https://pixhost.to/gallery/abc123",
+            url="https://pixhost.cc/gallery/abc123",
         )
     )
     statuses = []
     render_calls = []
     manager = GalleryManager.__new__(GalleryManager)
     manager.gallery_cache = cache
-    manager.service_var = FakeVar("pixhost.to")
+    manager.service_var = FakeVar("pixhost.cc")
     manager.scroll = FakeWidget()
     manager.winfo_exists = lambda: True
     manager._refresh_request_id = 4
@@ -1149,10 +1167,10 @@ def test_gallery_manager_pixhost_refresh_uses_saved_records_only(tmp_path):
 def test_gallery_manager_toggle_pin_persists_and_rerenders(tmp_path):
     cache = GalleryCache(str(tmp_path / "gallery_cache.json"))
     record = GalleryRecord(
-        service="pixhost.to",
+        service="pixhost.cc",
         id="abc123",
         name="Reusable Gallery",
-        url="https://pixhost.to/gallery/abc123",
+        url="https://pixhost.cc/gallery/abc123",
     )
     statuses = []
     render_calls = []
@@ -1168,7 +1186,39 @@ def test_gallery_manager_toggle_pin_persists_and_rerenders(tmp_path):
     assert record.raw["pinned"] is True
     assert statuses[-1] == ("Pinned Reusable Gallery.", False, False)
     assert render_calls == [True]
-    assert cache.records_for_service("pixhost.to")[0].raw["pinned"] is True
+    assert cache.records_for_service("pixhost.cc")[0].raw["pinned"] is True
+
+
+def test_gallery_cache_merges_legacy_pixhost_service_bucket(tmp_path):
+    cache_path = tmp_path / "gallery_cache.json"
+    cache_path.write_text(
+        """
+{
+  "version": 1,
+  "services": {
+    "pixhost.to": {
+      "abc123": {
+        "id": "abc123",
+        "name": "Legacy Gallery",
+        "url": "https://pixhost.to/gallery/abc123",
+        "raw": {},
+        "pinned": true
+      }
+    }
+  }
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    cache = GalleryCache(str(cache_path))
+
+    records = cache.records_for_service("pixhost.cc")
+
+    assert len(records) == 1
+    assert records[0].service == "pixhost.cc"
+    assert records[0].url == "https://pixhost.cc/gallery/abc123"
+    assert records[0].raw["pinned"] is True
+    assert cache.records_for_service("pixhost.to")[0].id == "abc123"
 
 
 def test_gallery_manager_result_messages_show_expected_empty_and_error_actions():
@@ -1224,7 +1274,7 @@ def test_gallery_manager_result_messages_show_expected_empty_and_error_actions()
             GalleryResult(
                 status=GalleryStatus.EMPTY,
                 message="No saved Pixhost galleries.",
-                service="pixhost.to",
+                service="pixhost.cc",
             ),
         )
 
@@ -1236,16 +1286,16 @@ def test_gallery_manager_result_messages_show_expected_empty_and_error_actions()
 def test_gallery_manager_create_success_caches_and_renders_created_gallery(tmp_path):
     cache = GalleryCache(str(tmp_path / "gallery_cache.json"))
     record = GalleryRecord(
-        service="pixhost.to",
+        service="pixhost.cc",
         id="abc123",
         name="Created Gallery",
-        url="https://pixhost.to/gallery/abc123",
+        url="https://pixhost.cc/gallery/abc123",
     )
     statuses = []
     rendered = []
     manager = GalleryManager.__new__(GalleryManager)
     manager.gallery_cache = cache
-    manager.service_var = FakeVar("pixhost.to")
+    manager.service_var = FakeVar("pixhost.cc")
     manager._create_request_id = 7
     manager._set_status = lambda message, is_error=False: statuses.append((message, is_error))
     manager._render_created_gallery = lambda created: rendered.append(created)
@@ -1256,11 +1306,11 @@ def test_gallery_manager_create_success_caches_and_renders_created_gallery(tmp_p
     GalleryManager._handle_create_result(
         manager,
         7,
-        "pixhost.to",
+        "pixhost.cc",
         GalleryResult(
             status=GalleryStatus.SUCCESS,
             message="Created gallery 'Created Gallery' (abc123).",
-            service="pixhost.to",
+            service="pixhost.cc",
             records=[record],
             record=record,
         ),
@@ -1268,7 +1318,7 @@ def test_gallery_manager_create_success_caches_and_renders_created_gallery(tmp_p
 
     assert statuses[-1] == ("Created gallery 'Created Gallery' (abc123).", False)
     assert rendered == [record]
-    assert cache.records_for_service("pixhost.to")[0].id == "abc123"
+    assert cache.records_for_service("pixhost.cc")[0].id == "abc123"
 
 
 def test_gallery_manager_import_pixhost_gallery_caches_record(tmp_path):
@@ -1277,7 +1327,7 @@ def test_gallery_manager_import_pixhost_gallery_caches_record(tmp_path):
     rendered = []
     manager = GalleryManager.__new__(GalleryManager)
     manager.gallery_cache = cache
-    manager.ent_pixhost_import = FakeVar("https://pixhost.to/gallery/AbC123")
+    manager.ent_pixhost_import = FakeVar("https://pixhost.cc/gallery/AbC123")
     manager.ent_name = FakeVar("Imported Pixhost")
     manager._set_status = lambda message, is_error=False: statuses.append((message, is_error))
     manager._render_created_gallery = lambda record: rendered.append(record)
@@ -1286,16 +1336,16 @@ def test_gallery_manager_import_pixhost_gallery_caches_record(tmp_path):
 
     assert statuses[-1] == ("Imported Pixhost gallery 'Imported Pixhost' (AbC123).", False)
     assert rendered[0].id == "AbC123"
-    saved = cache.records_for_service("pixhost.to")[0]
+    saved = cache.records_for_service("pixhost.cc")[0]
     assert saved.id == "AbC123"
     assert saved.name == "Imported Pixhost"
-    assert saved.url == "https://pixhost.to/gallery/AbC123"
+    assert saved.url == "https://pixhost.cc/gallery/AbC123"
 
 
 def test_gallery_manager_import_pixhost_gallery_rejects_invalid_input(tmp_path):
     manager = GalleryManager.__new__(GalleryManager)
     manager.gallery_cache = GalleryCache(str(tmp_path / "gallery_cache.json"))
-    manager.ent_pixhost_import = FakeVar("https://pixhost.to/not-a-gallery/AbC123")
+    manager.ent_pixhost_import = FakeVar("https://pixhost.cc/not-a-gallery/AbC123")
     manager.ent_name = FakeVar("")
     statuses = []
     manager._set_status = lambda message, is_error=False: statuses.append((message, is_error))
@@ -1306,19 +1356,19 @@ def test_gallery_manager_import_pixhost_gallery_rejects_invalid_input(tmp_path):
     GalleryManager._import_pixhost_gallery(manager)
 
     assert statuses[-1] == ("Enter a valid Pixhost gallery URL or hash.", True)
-    assert manager.gallery_cache.records_for_service("pixhost.to") == []
+    assert manager.gallery_cache.records_for_service("pixhost.cc") == []
 
 
 def test_gallery_manager_remove_saved_pixhost_gallery_deletes_local_cache_only(tmp_path):
     cache = GalleryCache(str(tmp_path / "gallery_cache.json"))
-    remove = GalleryRecord(service="pixhost.to", id="43", name="Remove")
-    keep = GalleryRecord(service="pixhost.to", id="42", name="Keep")
-    cache.upsert_records("pixhost.to", [keep, remove])
+    remove = GalleryRecord(service="pixhost.cc", id="43", name="Remove")
+    keep = GalleryRecord(service="pixhost.cc", id="42", name="Keep")
+    cache.upsert_records("pixhost.cc", [keep, remove])
     statuses = []
     render_calls = []
     manager = GalleryManager.__new__(GalleryManager)
     manager.gallery_cache = cache
-    manager.service_var = FakeVar("pixhost.to")
+    manager.service_var = FakeVar("pixhost.cc")
     manager._refresh_request_id = 3
     manager._records = [keep, remove]
     manager._set_status = lambda message, is_error=False, is_warning=False: statuses.append(
@@ -1333,7 +1383,7 @@ def test_gallery_manager_remove_saved_pixhost_gallery_deletes_local_cache_only(t
     confirm.assert_called_once()
     assert statuses[-1] == ("Removed saved gallery 'Remove' (43).", False, False)
     assert [record.id for record in manager._records] == ["42"]
-    assert [record.id for record in cache.records_for_service("pixhost.to")] == ["42"]
+    assert [record.id for record in cache.records_for_service("pixhost.cc")] == ["42"]
     assert render_calls and render_calls[-1][0].id == "42"
 
 
@@ -1416,10 +1466,10 @@ def test_gallery_manager_filters_and_sorts_records():
             raw={"last_used_at": "2026-06-21T00:00:00+00:00"},
         ),
         GalleryRecord(
-            service="pixhost.to",
+            service="pixhost.cc",
             id="200",
             name="Alpha",
-            url="https://pixhost.to/gallery/200",
+            url="https://pixhost.cc/gallery/200",
             raw={"last_used": "2026-06-20T00:00:00+00:00", "pinned": True},
         ),
     ]

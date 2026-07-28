@@ -94,23 +94,127 @@ class RuntimeMixin:
             self._update_group_progress(fp)
 
     def _process_ui_queue(self):
-        """Process UI updates from ui_queue (batch file additions)."""
-        ui_limit = config.UI_QUEUE_BATCH_SIZE
-        processed = 0
+        """Process import, row, and thumbnail UI work in bounded batches."""
+        row_limit = config.UI_QUEUE_BATCH_SIZE
+        event_limit = config.UI_QUEUE_BATCH_SIZE * 2
+        processed_rows = 0
+        touched_groups = {}
         try:
-            while ui_limit > 0:
+            while event_limit > 0:
                 item = self.ui_queue.get_nowait()
-                a, f, p, g = item[:4]
-                preview_requested = item[4] if len(item) > 4 else True
-                if a == "add" and g.winfo_exists():
-                    self._create_row(f, p, g, preview_requested=preview_requested)
-                    processed += 1
-                ui_limit -= 1
+                action = item[0]
+                if action == "import_complete":
+                    self._handle_import_complete(*item[1:])
+                elif action == "thumbnail":
+                    self._apply_thumbnail_result(*item[1:])
+                elif action == "add":
+                    f, p, g = item[1:4]
+                    preview_requested = item[4] if len(item) > 4 else True
+                    if self._group_widget_exists(g):
+                        self._create_row(
+                            f,
+                            p,
+                            g,
+                            preview_requested=preview_requested,
+                            refresh=False,
+                        )
+                        self._mark_group_touched(touched_groups, g, f)
+                        processed_rows += 1
+                event_limit -= 1
         except queue.Empty:
             pass
-        # Log queue status for large batches to help diagnose stalling
-        if processed > 0 and self.ui_queue.qsize() > 100:
-            logger.debug(f"UI queue processed {processed} items, {self.ui_queue.qsize()} remaining")
+
+        while row_limit > 0 and self.__dict__.get("pending_ui_rows"):
+            epoch, f, g, preview_requested = self.pending_ui_rows.popleft()
+            if not self._is_import_epoch_current(epoch) or not self._group_widget_exists(g):
+                with self.lock:
+                    self.pending_filepaths.discard(f)
+                row_limit -= 1
+                continue
+            self._create_row(
+                f,
+                None,
+                g,
+                preview_requested=preview_requested,
+                thumbnail_pending=preview_requested,
+                refresh=False,
+            )
+            self._mark_group_touched(touched_groups, g, f)
+            processed_rows += 1
+            row_limit -= 1
+
+        if touched_groups:
+            self._finish_ui_row_batch(touched_groups)
+
+        remaining = len(self.__dict__.get("pending_ui_rows", []) or [])
+        if processed_rows > 0 and (self.ui_queue.qsize() > 100 or remaining > 100):
+            logger.debug(
+                f"UI queue processed {processed_rows} rows, "
+                f"{self.ui_queue.qsize()} events and {remaining} rows remaining"
+            )
+
+    def _mark_group_touched(
+        self, touched_groups: Dict[int, Any], group_widget: Any, filepath: str
+    ) -> None:
+        touched = touched_groups.setdefault(
+            id(group_widget), {"group": group_widget, "files": []}
+        )
+        touched["files"].append(filepath)
+
+    def _finish_ui_row_batch(self, touched_groups: Dict[int, Dict[str, Any]]) -> None:
+        for touched in touched_groups.values():
+            group = touched["group"]
+            if self._group_widget_exists(group):
+                self._apply_auto_covers_to_group(group, touched["files"])
+        with self.lock:
+            file_count = len(self.file_widgets)
+        remaining = len(self.__dict__.get("pending_ui_rows", []) or [])
+        self.lbl_eta.configure(
+            text=(
+                f"Loading files... {remaining} remaining"
+                if remaining
+                else f"Files: {file_count}"
+            )
+        )
+        self._refresh_queue_state()
+
+    def _apply_thumbnail_result(self, epoch: Optional[int], fp: str, pil_image: Any) -> None:
+        self._ensure_import_state()
+        if not self._is_import_epoch_current(epoch):
+            return
+
+        with self.lock:
+            row_data = self.file_widgets.get(fp)
+            if row_data is None:
+                self.pending_thumbnails[fp] = (pil_image,)
+                return
+
+        label = row_data.get("thumbnail_label")
+        if not label:
+            row_data["thumbnail_pending"] = False
+            return
+
+        old_ref = row_data.get("image_ref")
+        if pil_image:
+            img_widget = ctk.CTkImage(
+                light_image=pil_image, dark_image=pil_image, size=config.UI_THUMB_SIZE
+            )
+            try:
+                label.configure(image=img_widget, text="")
+            except (tk.TclError, AttributeError):
+                return
+            row_data["image_ref"] = img_widget
+            self.image_refs.add(img_widget)
+            if old_ref and old_ref in self.image_refs:
+                self.image_refs.discard(old_ref)
+        else:
+            try:
+                label.configure(image=None, text="No preview")
+            except (tk.TclError, AttributeError, TypeError):
+                label.configure(text="No preview")
+            row_data["image_ref"] = None
+
+        row_data["thumbnail_pending"] = False
 
     def _process_progress_queue(self):
         """Process progress updates from progress_queue (status changes, progress bars)."""
@@ -182,7 +286,15 @@ class RuntimeMixin:
         except queue.Empty:
             pass
 
-    def _create_row(self, fp, pil_image, group_widget, preview_requested=True):
+    def _create_row(
+        self,
+        fp,
+        pil_image,
+        group_widget,
+        preview_requested=True,
+        thumbnail_pending=False,
+        refresh=True,
+    ):
         """Create a UI row for a file with thumbnail, status, and progress bar.
 
         Args:
@@ -190,6 +302,7 @@ class RuntimeMixin:
             pil_image: PIL Image object for thumbnail (or None)
             group_widget: CollapsibleGroupFrame to add the row to
         """
+        self._ensure_import_state()
         group_widget.add_file(fp)
         row = ctk.CTkFrame(group_widget.content_frame)
         row.pack(fill="x", pady=1)
@@ -226,9 +339,15 @@ class RuntimeMixin:
             image_label.pack(side="left", padx=5)
             self.image_refs.add(img_widget)
         elif preview_requested:
-            ctk.CTkLabel(row, text="No preview", width=78, text_color="gray").pack(
-                side="left", padx=5
+            image_label = ctk.CTkLabel(
+                row,
+                text="Loading..." if thumbnail_pending else "No preview",
+                width=78,
+                text_color="gray",
             )
+            image_label.pack(side="left", padx=5)
+        else:
+            image_label = None
         st = ctk.CTkLabel(row, text="Waiting", width=86, anchor="center")
         st.pack(side="left")
         text_frame = ctk.CTkFrame(row, fg_color="transparent")
@@ -282,6 +401,8 @@ class RuntimeMixin:
                 "state": "pending",
                 "group": group_widget,
                 "image_ref": img_widget,  # Store reference for cleanup
+                "thumbnail_label": image_label,
+                "thumbnail_pending": thumbnail_pending,
                 "text_frame": text_frame,
                 "filename": filename_label,
                 "error_label": error_label,
@@ -294,9 +415,15 @@ class RuntimeMixin:
                 "error": "",
             }
             file_count = len(self.file_widgets)
-        self._apply_auto_covers_to_group(group_widget)
-        self.lbl_eta.configure(text=f"Files: {file_count}")
-        self._refresh_queue_state()
+            self.pending_filepaths.discard(fp)
+        if refresh:
+            self._apply_auto_covers_to_group(group_widget)
+            self.lbl_eta.configure(text=f"Files: {file_count}")
+            self._refresh_queue_state()
+
+        pending_thumbnail = self.pending_thumbnails.pop(fp, None)
+        if pending_thumbnail is not None:
+            self._apply_thumbnail_result(None, fp, pending_thumbnail[0])
 
         def bind_row(w):
             w.bind("<Button-1>", lambda e, w=row, f=fp: self._on_row_drag_start(e, w, f))
@@ -681,7 +808,7 @@ class RuntimeMixin:
     def generate_group_output(self, group):
         res_map = self._upload_result_map()
         group_results = []
-        svc = self.settings.get("service", "")
+        svc = config.normalize_service_id(self.settings.get("service", ""))
         group_files = self._ordered_group_files_for_output(group)
 
         if not group_files:
@@ -719,7 +846,7 @@ class RuntimeMixin:
         thumb_size = "250"  # Default
         if svc == "imx.to":
             thumb_size = self.settings.get("imx_thumb", "180")
-        elif svc == "pixhost.to":
+        elif svc == config.PIXHOST_SERVICE_ID:
             thumb_size = self.settings.get("pix_thumb", "200")
         elif svc == "turboimagehost":
             thumb_size = self.settings.get("turbo_thumb", "180")
@@ -807,7 +934,7 @@ class RuntimeMixin:
             need_links_txt = bool(self.settings.get("save_links", False))
             if svc == "imx.to" and self.var_imx_links.get():
                 need_links_txt = True
-            elif svc == "pixhost.to" and self.var_pix_links.get():
+            elif svc == config.PIXHOST_SERVICE_ID and self.var_pix_links.get():
                 need_links_txt = True
             elif svc == "turboimagehost" and self.var_turbo_links.get():
                 need_links_txt = True
@@ -829,7 +956,7 @@ class RuntimeMixin:
     def generate_failed_group_output(self, group, failed_count: Optional[int] = None):
         res_map = self._upload_result_map()
         group_files = self._ordered_group_files_for_output(group)
-        svc = self.settings.get("service", "")
+        svc = config.normalize_service_id(self.settings.get("service", ""))
 
         try:
             from modules.file_handler import sanitize_filename
@@ -929,6 +1056,7 @@ class RuntimeMixin:
 
     def clear_list(self) -> None:
         self.cancel_event.set()
+        self._clear_import_work()
         self.is_uploading = False
         self.upload_count = 0
         self.upload_total = 0
@@ -953,6 +1081,20 @@ class RuntimeMixin:
         self._set_completion_summary(None)
         self._refresh_queue_state()
         self.add_activity("Cleared upload queue.")
+
+    def _clear_import_work(self) -> None:
+        self._ensure_import_state()
+        with self.lock:
+            self.import_epoch += 1
+            self.active_import_ids.clear()
+            self.pending_filepaths.clear()
+            self.pending_ui_rows.clear()
+            self.pending_thumbnails.clear()
+        try:
+            while True:
+                self.ui_queue.get_nowait()
+        except queue.Empty:
+            pass
 
     def _cleanup_orphaned_images(self):
         """Periodically clean up image references that are no longer in use."""

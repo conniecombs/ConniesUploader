@@ -57,10 +57,11 @@ class CoverHelpersMixin:
     def _thumbnail_size_for_service(
         self, service_id: str, settings: Optional[Dict[str, Any]] = None
     ) -> str:
+        service_id = config.normalize_service_id(service_id)
         settings = settings or self.settings
         if service_id == "imx.to":
             return str(settings.get("imx_thumb", "180"))
-        if service_id == "pixhost.to":
+        if service_id == config.PIXHOST_SERVICE_ID:
             return str(settings.get("pix_thumb", "200"))
         if service_id == "turboimagehost":
             return str(settings.get("turbo_thumb", "180"))
@@ -79,6 +80,7 @@ class CoverHelpersMixin:
             if hasattr(self, "var_service")
             else str(getattr(self, "settings", {}).get("service", ""))
         )
+        service_id = config.normalize_service_id(service_id)
         settings_view = self.__dict__.get("settings_view")
         if settings_view is not None:
             raw_config = settings_view.get_raw_config(service_id)
@@ -87,7 +89,7 @@ class CoverHelpersMixin:
 
         variable_names = {
             "imx.to": "var_imx_cover_count",
-            "pixhost.to": "var_pix_cover_count",
+            config.PIXHOST_SERVICE_ID: "var_pix_cover_count",
             "turboimagehost": "var_turbo_cover_count",
             "vipr.im": "var_vipr_cover_count",
         }
@@ -100,11 +102,17 @@ class CoverHelpersMixin:
             value = 0
         return max(0, min(10, self._safe_int(value, 0)))
 
-    def _apply_auto_covers_to_group(self, group: Any) -> None:
+    def _apply_auto_covers_to_group(
+        self, group: Any, refresh_filepaths: Optional[List[str]] = None
+    ) -> None:
         auto_select = getattr(group, "auto_select_covers", None)
         if not callable(auto_select):
             return
         auto_select(self._auto_cover_count_for_current_service())
+        if refresh_filepaths is not None:
+            for filepath in refresh_filepaths:
+                self._refresh_cover_button(filepath)
+            return
         self._refresh_cover_buttons(group)
 
     def _cover_files_for_group(self, group: Any) -> List[str]:

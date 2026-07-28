@@ -109,7 +109,7 @@ def test_settings_manager_moves_legacy_settings_to_backup_when_current_exists(
     manager = SettingsManager()
     loaded = manager.load()
 
-    assert loaded["service"] == "pixhost.to"
+    assert loaded["service"] == "pixhost.cc"
     assert not legacy_path.exists()
     assert list(settings_path.parent.glob("user_settings.repo-local-*.json"))
 
@@ -124,14 +124,14 @@ def test_imgur_credentials_are_configurable():
 
 @pytest.mark.unit
 def test_upload_manager_accepts_schema_cover_count():
-    cfg = {"service": "pixhost.to", "cover_count": "3"}
+    cfg = {"service": "pixhost.cc", "cover_count": "3"}
 
     assert UploadManager._cover_count_for_service(cfg) == 3
 
 
 @pytest.mark.unit
 def test_upload_manager_prefers_service_specific_cover_count():
-    cfg = {"service": "pixhost.to", "pix_cover_count": 4, "cover_count": "1"}
+    cfg = {"service": "pixhost.cc", "pix_cover_count": 4, "cover_count": "1"}
 
     assert UploadManager._cover_count_for_service(cfg) == 4
 
@@ -159,7 +159,7 @@ def test_upload_manager_uses_explicit_cover_files_before_legacy_count():
     group = Group()
     manager._dispatch_jobs(
         {group: list(group.files)},
-        {"service": "pixhost.to", "pix_cover_count": 1},
+        {"service": "pixhost.cc", "pix_cover_count": 1},
         {},
     )
 
@@ -174,7 +174,7 @@ def test_upload_manager_uses_explicit_cover_files_before_legacy_count():
     ("service_id", "expected"),
     [
         ("imx.to", {"thumbnail_size": "600", "imx_thumb": "600"}),
-        ("pixhost.to", {"thumbnail_size": "500", "pix_thumb": "500"}),
+        ("pixhost.cc", {"thumbnail_size": "500", "pix_thumb": "500"}),
         ("turboimagehost", {"thumbnail_size": "600", "turbo_thumb": "600"}),
         ("vipr.im", {"thumbnail_size": "800x800", "vipr_thumb": "800x800"}),
         ("imagebam.com", {"thumbnail_size": "300", "imagebam_thumb": "300"}),
@@ -272,3 +272,21 @@ def test_service_aliases_store_imgur_thumbnail_code_from_readable_label():
     )
 
     assert aliases["imgur_thumb"] == "m"
+
+
+@pytest.mark.unit
+def test_service_settings_view_accepts_legacy_pixhost_service_id():
+    class FakeVar:
+        def __init__(self):
+            self.value = ""
+
+        def set(self, value):
+            self.value = value
+
+    gallery_hash = FakeVar()
+    view = ServiceSettingsView.__new__(ServiceSettingsView)
+    view.service_handles = {"pixhost.cc": {"gallery_hash": gallery_hash}}
+
+    view.set_value("pixhost.to", "gallery_hash", "abc123")
+
+    assert gallery_hash.value == "abc123"

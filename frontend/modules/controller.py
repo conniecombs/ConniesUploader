@@ -156,9 +156,10 @@ class UploadController:
         # Prepare Template Context
         cover_url = group_results[0][1] if group_results else ""
         cover_count = 0
+        svc = config.normalize_service_id(svc)
         cover_count_keys = {
             "imx.to": "imx_cover_count",
-            "pixhost.to": "pix_cover_count",
+            config.PIXHOST_SERVICE_ID: "pix_cover_count",
             "turboimagehost": "turbo_cover_count",
             "vipr.im": "vipr_cover_count",
         }
@@ -173,8 +174,8 @@ class UploadController:
                 break
         gal_link = ""
         if gallery_id:
-            if svc == "pixhost.to":
-                gal_link = f"https://pixhost.to/gallery/{gallery_id}"
+            if svc == config.PIXHOST_SERVICE_ID:
+                gal_link = f"{config.PIXHOST_BASE_URL}/gallery/{gallery_id}"
             elif svc == "imx.to":
                 gal_link = f"https://imx.to/g/{gallery_id}"
             elif svc == "vipr.im":
@@ -184,7 +185,7 @@ class UploadController:
         thumb_size = "250"  # Default
         if svc == "imx.to":
             thumb_size = self.settings.get("imx_thumb", "180")
-        elif svc == "pixhost.to":
+        elif svc == config.PIXHOST_SERVICE_ID:
             thumb_size = self.settings.get("pix_thumb", "200")
         elif svc == "turboimagehost":
             thumb_size = self.settings.get("turbo_thumb", "180")
@@ -270,7 +271,7 @@ class UploadController:
             need_links = False
             if svc == "imx.to" and self.settings.get("imx_links"):
                 need_links = True
-            elif svc == "pixhost.to" and self.settings.get("pix_links"):
+            elif svc == config.PIXHOST_SERVICE_ID and self.settings.get("pix_links"):
                 need_links = True
             elif svc == "turboimagehost" and self.settings.get("turbo_links"):
                 need_links = True

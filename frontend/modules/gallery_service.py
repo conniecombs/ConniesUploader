@@ -15,6 +15,7 @@ import requests
 from bs4 import BeautifulSoup
 from loguru import logger
 
+from modules import config
 from modules.transport import build_transport_spec, execute_transport_request
 
 
@@ -56,25 +57,26 @@ class GalleryResult:
 
 SERVICE_LABELS = {
     "imx.to": "IMX.to",
-    "pixhost.to": "Pixhost.to",
+    config.PIXHOST_SERVICE_ID: "Pixhost.cc",
     "vipr.im": "Vipr.im",
     "imagebam.com": "ImageBam",
 }
 
 LIST_SUPPORTED = {"imx.to", "vipr.im", "imagebam.com"}
-CREATE_SUPPORTED = {"imx.to", "pixhost.to", "vipr.im"}
+CREATE_SUPPORTED = {"imx.to", config.PIXHOST_SERVICE_ID, "vipr.im"}
 DELETE_SUPPORTED = {"imx.to", "vipr.im"}
 IMX_GALLERY_PAGE_SIZE = 100
 GALLERY_SYNC_MAX_PAGES = 250
 
 
 def gallery_url_for_service(service: str, gallery_id: str) -> str:
+    service = config.normalize_service_id(service)
     if not gallery_id:
         return ""
     if service == "imx.to":
         return f"https://imx.to/g/{gallery_id}"
-    if service == "pixhost.to":
-        return f"https://pixhost.to/gallery/{gallery_id}"
+    if service == config.PIXHOST_SERVICE_ID:
+        return f"{config.PIXHOST_BASE_URL}/gallery/{gallery_id}"
     if service == "vipr.im":
         return ""
     if service == "imagebam.com" and gallery_id and not gallery_id.isdigit():
@@ -83,6 +85,7 @@ def gallery_url_for_service(service: str, gallery_id: str) -> str:
 
 
 def normalize_gallery_record(service: str, raw: Mapping[str, Any]) -> Optional[GalleryRecord]:
+    service = config.normalize_service_id(service)
     gallery_id = str(
         raw.get("id")
         or raw.get("gallery_id")
@@ -95,6 +98,8 @@ def normalize_gallery_record(service: str, raw: Mapping[str, Any]) -> Optional[G
 
     name = str(raw.get("name") or raw.get("gallery_name") or gallery_id).strip()
     url = str(raw.get("url") or raw.get("gallery_url") or "").strip()
+    if service == config.PIXHOST_SERVICE_ID:
+        url = config.normalize_pixhost_url(url)
     upload_hash = str(raw.get("upload_hash") or raw.get("gallery_upload_hash") or "").strip()
     if not url:
         url = gallery_url_for_service(service, gallery_id)
@@ -134,11 +139,11 @@ def parse_pixhost_gallery_import(value: str, name: str = "") -> Optional[Gallery
 
     display_name = str(name or "").strip() or gallery_id
     return normalize_gallery_record(
-        "pixhost.to",
+        config.PIXHOST_SERVICE_ID,
         {
             "gallery_hash": gallery_id,
             "gallery_name": display_name,
-            "gallery_url": gallery_url_for_service("pixhost.to", gallery_id),
+            "gallery_url": gallery_url_for_service(config.PIXHOST_SERVICE_ID, gallery_id),
             "source": "imported",
         },
     )
@@ -302,7 +307,7 @@ class GalleryService:
         )
 
     def list_galleries(self, service: str, page: int = 1) -> GalleryResult:
-        service = service.strip()
+        service = config.normalize_service_id(service)
         if service not in SERVICE_LABELS:
             return self._result(
                 GalleryStatus.UNSUPPORTED,
@@ -340,7 +345,7 @@ class GalleryService:
         max_pages: int = GALLERY_SYNC_MAX_PAGES,
         progress_callback: Optional[Any] = None,
     ) -> GalleryResult:
-        service = service.strip()
+        service = config.normalize_service_id(service)
         if service != "imx.to":
             return self._result(
                 GalleryStatus.UNSUPPORTED,
@@ -350,7 +355,7 @@ class GalleryService:
         return self._sync_all_imx_galleries(max_pages, progress_callback)
 
     def create_gallery(self, service: str, name: str) -> GalleryResult:
-        service = service.strip()
+        service = config.normalize_service_id(service)
         name = name.strip()
         if not name:
             return self._result(GalleryStatus.ERROR, "Enter a gallery name.", service)
@@ -375,7 +380,7 @@ class GalleryService:
         return self._create_sidecar_gallery(service, name)
 
     def delete_gallery(self, service: str, record_or_id: Any) -> GalleryResult:
-        service = service.strip()
+        service = config.normalize_service_id(service)
         gallery_id = self._gallery_id_from_record_or_id(record_or_id)
         gallery_name = self._gallery_name_from_record_or_id(record_or_id, gallery_id)
         if not gallery_id:
@@ -579,10 +584,10 @@ class GalleryService:
             return self._create_vipr_gallery(name)
 
         try:
-            if service == "pixhost.to":
+            if service == config.PIXHOST_SERVICE_ID:
                 response = self._transport_request(
                     service,
-                    "https://api.pixhost.to/galleries",
+                    f"{config.PIXHOST_API_BASE_URL}/galleries",
                     method="POST",
                     headers={"Accept": "application/json"},
                     form_fields={"gallery_name": name},
@@ -785,6 +790,7 @@ class GalleryService:
         form_fields: Optional[Mapping[str, Any]] = None,
         timeout: float = 20,
     ):
+        service = config.normalize_service_id(service)
         spec = build_transport_spec(
             url,
             method=method,

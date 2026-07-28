@@ -968,7 +968,7 @@ class TestTemplateManagerAdvanced:
                 "Metadata",
                 {
                     "batch_name": "Batch Alpha",
-                    "service": "pixhost.to",
+                    "service": "pixhost.cc",
                     "upload_date": "2026-06-21",
                     "image_count": 2,
                     "thread_name": "Thread Alpha",
@@ -978,7 +978,7 @@ class TestTemplateManagerAdvanced:
             )
 
             assert result.startswith(
-                "Batch Alpha|pixhost.to|2026-06-21|2|Thread Alpha|98765|"
+                "Batch Alpha|pixhost.cc|2026-06-21|2|Thread Alpha|98765|"
             )
             assert "[url=viewer1][img]thumb1[/img][/url]" in result
 
