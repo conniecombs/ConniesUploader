@@ -121,12 +121,16 @@ def sanitize_filename(filename: str, max_length: int = 255) -> str:
 
 def validate_service_name(service: str, plugin_manager=None) -> bool:
     """Validate that a service name is recognized."""
+    service = config.normalize_service_id(service)
     if plugin_manager is not None:
-        valid_services = {plugin.service_id for plugin in plugin_manager.get_all_plugins()}
+        valid_services = {
+            config.normalize_service_id(getattr(plugin, "service_id", getattr(plugin, "id", "")))
+            for plugin in plugin_manager.get_all_plugins()
+        }
     else:
         valid_services = {
             "imx.to",
-            "pixhost.to",
+            config.PIXHOST_SERVICE_ID,
             "turboimagehost",
             "vipr.im",
             "imagebam.com",

@@ -20,7 +20,7 @@ from .gallery_service import (
 )
 
 
-PIXHOST_SERVICE = "pixhost.to"
+PIXHOST_SERVICE = config.PIXHOST_SERVICE_ID
 IMX_SERVICE = "imx.to"
 
 GALLERY_CACHE_FALLBACK_STATUSES = {
@@ -68,7 +68,7 @@ class GalleryManager(ctk.CTkToplevel):
         self.cb_service = ctk.CTkOptionMenu(
             top,
             variable=self.service_var,
-            values=["imx.to", "pixhost.to", "vipr.im"],
+            values=["imx.to", PIXHOST_SERVICE, "vipr.im"],
             command=lambda _choice: self._on_service_changed(),
         )
         self.cb_service.pack(side="left")
@@ -135,7 +135,7 @@ class GalleryManager(ctk.CTkToplevel):
         ).pack(anchor="w", padx=5, pady=(8, 2))
         self.ent_pixhost_import = ctk.CTkEntry(
             self.pixhost_import_frame,
-            placeholder_text="https://pixhost.to/gallery/abc123 or abc123",
+            placeholder_text="https://pixhost.cc/gallery/abc123 or abc123",
         )
         self.ent_pixhost_import.pack(fill="x", padx=5, pady=(0, 5))
         ctk.CTkButton(
@@ -151,7 +151,7 @@ class GalleryManager(ctk.CTkToplevel):
         self._load_cached_or_refresh()
 
     def _update_service_mode(self):
-        service = self.service_var.get()
+        service = config.normalize_service_id(self.service_var.get())
         try:
             self.btn_refresh.configure(text=self._list_action_label(service))
         except Exception:
@@ -175,7 +175,7 @@ class GalleryManager(ctk.CTkToplevel):
             pass
 
     def _list_action_label(self, service: str = "") -> str:
-        service = service or self.service_var.get()
+        service = config.normalize_service_id(service or self.service_var.get())
         return "Show saved" if service == PIXHOST_SERVICE else "Refresh from host"
 
     def _ask_cookies_dialog(self):
@@ -189,7 +189,7 @@ class GalleryManager(ctk.CTkToplevel):
 
     def _load_cached_or_refresh(self):
         self._update_service_mode()
-        service = self.service_var.get()
+        service = config.normalize_service_id(self.service_var.get())
         if service == PIXHOST_SERVICE:
             self._render_pixhost_local_result(self._refresh_request_id)
             return
@@ -225,7 +225,7 @@ class GalleryManager(ctk.CTkToplevel):
         # Clear UI
         self._clear_scroll()
 
-        service = self.service_var.get()
+        service = config.normalize_service_id(self.service_var.get())
         self._set_status("")
         if service == PIXHOST_SERVICE:
             self._render_pixhost_local_result(request_id)
@@ -240,7 +240,7 @@ class GalleryManager(ctk.CTkToplevel):
         threading.Thread(target=_task, daemon=True).start()
 
     def _sync_all_galleries(self):
-        service = self.service_var.get()
+        service = config.normalize_service_id(self.service_var.get())
         if service != IMX_SERVICE:
             self._set_status("Sync All is only available for IMX.to.", is_error=True)
             return
@@ -300,7 +300,7 @@ class GalleryManager(ctk.CTkToplevel):
 
         self._clear_scroll()
 
-        service = self.service_var.get()
+        service = config.normalize_service_id(self.service_var.get())
         self._set_status("")
         ctk.CTkLabel(self.scroll, text=f"Loading Page {page}...").pack(pady=20)
 
@@ -461,7 +461,7 @@ class GalleryManager(ctk.CTkToplevel):
 
         # Append "Load More" button at the bottom if we found data
         # (Assuming if we found data, there *might* be another page)
-        if self.service_var.get() == IMX_SERVICE and not self._imx_all_synced:
+        if config.normalize_service_id(self.service_var.get()) == IMX_SERVICE and not self._imx_all_synced:
             self.btn_load_more = ctk.CTkButton(
                 self.scroll,
                 text="Load Next Page",
@@ -652,7 +652,7 @@ class GalleryManager(ctk.CTkToplevel):
             self._set_status("Enter a gallery name.", is_error=True)
             return
 
-        service = self.service_var.get()
+        service = config.normalize_service_id(self.service_var.get())
         self._create_request_id += 1
         request_id = self._create_request_id
         self._set_status(f"Creating gallery '{name}'...")
@@ -793,6 +793,7 @@ class GalleryManager(ctk.CTkToplevel):
         self._clear_scroll()
         is_error = result.status != GalleryStatus.EMPTY
         self._set_status(result.message, is_error=is_error)
+        service = config.normalize_service_id(result.service)
 
         title = {
             GalleryStatus.EMPTY: "No galleries found",
@@ -808,21 +809,21 @@ class GalleryManager(ctk.CTkToplevel):
             pady=(0, 12)
         )
 
-        if result.service == PIXHOST_SERVICE:
+        if service == PIXHOST_SERVICE:
             actions = [
-                (self._list_action_label(result.service), self._refresh_list),
+                (self._list_action_label(service), self._refresh_list),
                 ("Import Gallery", self._focus_import_gallery),
             ]
         else:
             actions = [("Refresh from host", self._refresh_list)]
-            if result.service == IMX_SERVICE:
+            if service == IMX_SERVICE:
                 actions.append(("Sync All", self._sync_all_galleries))
         if result.status in {GalleryStatus.MISSING_CREDENTIALS, GalleryStatus.LOGIN_FAILED}:
             actions.insert(0, ("Set Credentials", self._open_credentials))
-        if result.service in CREATE_SUPPORTED:
+        if service in CREATE_SUPPORTED:
             actions.append(("Create Gallery", self._focus_create_gallery))
 
-        if result.status == GalleryStatus.LOGIN_FAILED and result.service == "imx.to":
+        if result.status == GalleryStatus.LOGIN_FAILED and service == "imx.to":
             actions.append(("Set IMX Cookie", self._ask_cookies_dialog))
 
         self._render_empty_actions(actions)
@@ -902,13 +903,29 @@ class GalleryManager(ctk.CTkToplevel):
         self.status_label.configure(text=message, text_color=text_color)
 
     def _is_stale_refresh(self, request_id: int, service: str) -> bool:
-        return request_id != self._refresh_request_id or service != self.service_var.get()
+        return (
+            request_id != self._refresh_request_id
+            or config.normalize_service_id(service)
+            != config.normalize_service_id(self.service_var.get())
+        )
 
     def _is_stale_create(self, request_id: int, service: str) -> bool:
-        return request_id != self._create_request_id or service != self.service_var.get()
+        return (
+            request_id != self._create_request_id
+            or config.normalize_service_id(service)
+            != config.normalize_service_id(self.service_var.get())
+        )
 
     def _is_stale_delete(self, request_id: int, service: str) -> bool:
-        return request_id != self._delete_request_id or service != self.service_var.get()
+        return (
+            request_id != self._delete_request_id
+            or config.normalize_service_id(service)
+            != config.normalize_service_id(self.service_var.get())
+        )
 
     def _is_stale_sync(self, request_id: int, service: str) -> bool:
-        return request_id != self._sync_request_id or service != self.service_var.get()
+        return (
+            request_id != self._sync_request_id
+            or config.normalize_service_id(service)
+            != config.normalize_service_id(self.service_var.get())
+        )

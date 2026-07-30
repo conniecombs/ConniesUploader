@@ -24,7 +24,7 @@ from .upload_models import (
     UploadGeneratedOutput,
     UploadProgressEvent,
 )
-from .upload_output import generate_group_output
+from .upload_output import generate_failed_group_output, generate_group_output
 
 
 UploadManagerFactory = Callable[
@@ -163,23 +163,37 @@ class UploadSession:
             return
         self._outputs_finalized = True
 
-        result_tuples = [
-            (result.file_path, result.viewer_url, result.thumb_url)
-            for result in self.results
-            if result.success
-        ]
+        result_by_path = {result.file_path: result for result in self.results}
         saved_threads = self._load_vipergirls_targets()
         for group in self.groups:
+            group_results = [
+                result_by_path[file_path]
+                for file_path in group.files
+                if file_path in result_by_path
+            ]
+            incomplete = len(group_results) != len(group.files) or any(
+                not result.success or not str(result.viewer_url or "").strip()
+                for result in group_results
+            )
             try:
-                output = generate_group_output(
-                    group,
-                    result_tuples,
-                    self.settings,
-                    self.template_manager,
-                    output_dir=config.OUTPUT_DIR,
-                    history_dir=config.HISTORY_DIR,
-                    saved_threads_data=saved_threads,
-                )
+                if incomplete:
+                    output = generate_failed_group_output(
+                        group,
+                        group_results,
+                        self.settings,
+                        output_dir=config.OUTPUT_DIR,
+                        history_dir=config.HISTORY_DIR,
+                    )
+                else:
+                    output = generate_group_output(
+                        group,
+                        group_results,
+                        self.settings,
+                        self.template_manager,
+                        output_dir=config.OUTPUT_DIR,
+                        history_dir=config.HISTORY_DIR,
+                        saved_threads_data=saved_threads,
+                    )
             except Exception as exc:
                 self._record_event(UploadProgressEvent("output_error", None, str(exc)))
                 continue
@@ -198,10 +212,13 @@ class UploadSession:
                     if output.links_file
                     else None
                 ),
+                copyable=output.copyable,
+                failed_report=output.failed_report,
             )
             self.output_files.append(generated)
             self._record_event(UploadProgressEvent("output", None, generated))
-            self._post_to_vipergirls_if_requested(group, generated, saved_threads)
+            if generated.copyable:
+                self._post_to_vipergirls_if_requested(group, generated, saved_threads)
 
     def _load_vipergirls_targets(self) -> Dict[str, Any]:
         try:

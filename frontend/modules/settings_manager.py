@@ -336,6 +336,8 @@ class SettingsManager:
     def normalize_numeric_ranges(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Return settings with worker and thread counts clamped to supported ranges."""
         normalized = data.copy()
+        service = config.normalize_service_id(normalized.get("service", ""))
+        normalized["service"] = service or self.defaults["service"]
         normalized["global_worker_count"] = self._clamp_int(
             normalized.get("global_worker_count"),
             config.DEFAULT_WORKER_COUNT,

@@ -61,6 +61,13 @@ class FakeGroup(FakeFrame):
         self.files = list(files or [])
         self.cover_files = []
         self.cover_selection_manual = False
+        self.is_completed = False
+        self.prog_value = None
+        self.prog = SimpleNamespace(set=lambda value: setattr(self, "prog_value", value))
+        self.lbl_counts = FakeLabel()
+
+    def mark_complete(self):
+        self.is_completed = True
 
     def add_file(self, filepath):
         if filepath not in self.files:
@@ -1039,18 +1046,18 @@ def test_gallery_manager_selection_preserves_gallery_metadata():
 
     UploaderApp.on_gallery_created(app, "pixhost.to", "abc123", record)
 
-    assert app.settings_view.values[("pixhost.to", "gallery_hash")] == "abc123"
-    assert app.var_service.get() == "pixhost.to"
-    assert swapped == ["pixhost.to"]
-    assert app.selected_gallery_by_service["pixhost.to"] == {
-        "service": "pixhost.to",
+    assert app.settings_view.values[("pixhost.cc", "gallery_hash")] == "abc123"
+    assert app.var_service.get() == "pixhost.cc"
+    assert swapped == ["pixhost.cc"]
+    assert app.selected_gallery_by_service["pixhost.cc"] == {
+        "service": "pixhost.cc",
         "id": "abc123",
         "name": "Site Gallery Name",
-        "url": "https://pixhost.to/gallery/abc123",
+        "url": "https://pixhost.cc/gallery/abc123",
         "upload_hash": "upload456",
     }
     assert activity[-1] == (
-        "Selected gallery for pixhost.to: Site Gallery Name (abc123).",
+        "Selected gallery for pixhost.cc: Site Gallery Name (abc123).",
         "success",
     )
 
@@ -1131,7 +1138,7 @@ def test_upload_preflight_shows_selected_gallery_details_and_validates_hash(tmp_
     assert summary == ""
     assert (
         'Selected gallery for "Batch Alpha": Manual Hash (bad-hash). '
-        "(https://pixhost.to/gallery/bad-hash)"
+        "(https://pixhost.cc/gallery/bad-hash)"
     ) in app.preflight_detail_lines
     assert 'Gallery selected for "Batch Alpha" has an invalid gallery hash: bad-hash.' in issues
 
@@ -1681,22 +1688,141 @@ def test_generate_group_output_populates_supported_template_context(tmp_path):
     assert captured["group_results"] == [
         ("https://img.test/view", "https://img.test/thumb", "https://img.test/view")
     ]
-    assert context["gallery_link"] == "https://pixhost.to/gallery/G123"
+    assert context["gallery_link"] == "https://pixhost.cc/gallery/G123"
     assert context["gallery_name"] == "Batch Alpha"
     assert context["gallery_id"] == "G123"
     assert context["cover_url"] == "https://img.test/thumb"
     assert context["thumb_size"] == "200"
     assert context["batch_name"] == "Batch Alpha"
     assert context["image_count"] == 1
-    assert context["service"] == "pixhost.to"
+    assert context["service"] == "pixhost.cc"
     assert context["thread_name"] == "My Target"
     assert context["thread_id"] == "98765"
     assert context["upload_date"]
     assert len(app.current_output_files) == 1
     assert Path(app.current_output_files[0]).read_text(encoding="utf-8") == (
-        "Batch Alpha|1|pixhost.to|My Target|98765"
+        "Batch Alpha|1|pixhost.cc|My Target|98765"
     )
     assert queued
+
+
+@pytest.mark.unit
+def test_group_output_waits_for_all_group_files_to_succeed(tmp_path):
+    group = FakeGroup("Batch Alpha", ["ok.jpg", "bad.jpg"])
+    generated = []
+    activity = []
+    logs = []
+
+    app = UploaderApp.__new__(UploaderApp)
+    app.lock = Lock()
+    app.output_dir = str(tmp_path / "Output")
+    app.central_history_path = str(tmp_path / "history")
+    app.file_widgets = {
+        "ok.jpg": {"state": "success", "group": group},
+        "bad.jpg": {"state": "failed", "group": group},
+    }
+    app.generate_group_output = lambda completed_group: generated.append(completed_group)
+    app.log = lambda message: logs.append(message)
+    app.add_activity = lambda message, level="info": activity.append((message, level))
+
+    UploaderApp._update_group_progress(app, "bad.jpg")
+
+    assert group.is_completed is True
+    assert group.prog_value == 1.0
+    assert group.lbl_counts.text == "(2/2)"
+    assert generated == []
+    assert logs[0] == "Warning: Output skipped for 'Batch Alpha' because 1 upload(s) failed."
+    assert "Saved failed batch report:" in logs[1]
+    assert activity[0] == ("Skipped output for Batch Alpha: 1 upload(s) failed.", "warning")
+    assert activity[1][0].startswith("Saved failed batch report:")
+
+
+@pytest.mark.unit
+def test_group_output_generates_when_all_group_files_succeed():
+    group = FakeGroup("Batch Alpha", ["one.jpg", "two.jpg"])
+    generated = []
+
+    app = UploaderApp.__new__(UploaderApp)
+    app.lock = Lock()
+    app.file_widgets = {
+        "one.jpg": {
+            "state": "success",
+            "group": group,
+            "upload_result": ("https://img.test/one", "https://img.test/t-one"),
+        },
+        "two.jpg": {
+            "state": "success",
+            "group": group,
+            "upload_result": ("https://img.test/two", "https://img.test/t-two"),
+        },
+    }
+    app.generate_group_output = lambda completed_group: generated.append(completed_group)
+
+    UploaderApp._update_group_progress(app, "two.jpg")
+
+    assert group.is_completed is True
+    assert group.prog_value == 1.0
+    assert group.lbl_counts.text == "(2/2)"
+    assert generated == [group]
+
+
+@pytest.mark.unit
+def test_generate_group_output_skips_incomplete_or_blank_results(tmp_path):
+    class FailingTemplateManager:
+        def apply(self, *_args, **_kwargs):
+            raise AssertionError("partial output should not be rendered")
+
+    first = str(tmp_path / "first.jpg")
+    second = str(tmp_path / "second.jpg")
+    group = FakeGroup("Batch Alpha", [first, second])
+    group.selected_template = "BBCode"
+    group.selected_thread = "Do Not Post"
+    activity = []
+    logs = []
+
+    app = UploaderApp.__new__(UploaderApp)
+    app.results = [
+        (first, "https://img.test/first", "https://img.test/first-thumb"),
+        (second, "", ""),
+    ]
+    app.settings = {"service": "pixhost.to"}
+    app.template_mgr = FailingTemplateManager()
+    app.current_output_files = []
+    app.log = lambda message: logs.append(message)
+    app.add_activity = lambda message, level="info": activity.append((message, level))
+
+    UploaderApp.generate_group_output(app, group)
+
+    assert app.current_output_files == []
+    assert logs == [
+        "Warning: Output skipped for 'Batch Alpha' because only 1/2 upload result(s) were usable."
+    ]
+    assert activity == [("Skipped output for Batch Alpha: incomplete upload results.", "warning")]
+
+
+@pytest.mark.unit
+def test_generate_group_output_skips_empty_groups():
+    class FailingTemplateManager:
+        def apply(self, *_args, **_kwargs):
+            raise AssertionError("empty output should not be rendered")
+
+    group = FakeGroup("Batch Alpha", [])
+    activity = []
+    logs = []
+
+    app = UploaderApp.__new__(UploaderApp)
+    app.results = []
+    app.settings = {"service": "pixhost.to"}
+    app.template_mgr = FailingTemplateManager()
+    app.current_output_files = []
+    app.log = lambda message: logs.append(message)
+    app.add_activity = lambda message, level="info": activity.append((message, level))
+
+    UploaderApp.generate_group_output(app, group)
+
+    assert app.current_output_files == []
+    assert logs == ["Warning: Output skipped for 'Batch Alpha' because the group has no files."]
+    assert activity == [("Skipped output for Batch Alpha: no files in group.", "warning")]
 
 
 @pytest.mark.unit
@@ -1740,7 +1866,7 @@ def test_generate_group_output_uses_real_gallery_name_when_available(tmp_path):
     UploaderApp.generate_group_output(app, group)
 
     assert captured["context"]["gallery_name"] == "Real Site Gallery"
-    assert captured["context"]["gallery_link"] == "https://pixhost.to/gallery/G123"
+    assert captured["context"]["gallery_link"] == "https://pixhost.cc/gallery/G123"
     assert captured["context"]["gallery_id"] == "G123"
 
 
@@ -1782,7 +1908,7 @@ def test_selected_pixhost_gallery_with_upload_hash_registers_for_finalization(tm
         {
             "gallery_hash": "abc123",
             "gallery_upload_hash": "upload456",
-            "gallery_url": "https://pixhost.to/gallery/abc123",
+            "gallery_url": "https://pixhost.cc/gallery/abc123",
             "gallery_name": "Site Gallery",
         }
     ]
@@ -2192,9 +2318,14 @@ def test_retry_file_resets_only_target_failed_row_and_starts_upload():
     other_prog = FakeProgress()
     other_retry = FakeFrame()
     other_error_label = FakeFrame()
+    target_group = FakeGroup("Target Batch", ["target.jpg"])
+    target_group.is_completed = True
+    other_group = FakeGroup("Other Batch", ["other.jpg"])
+    other_group.is_completed = True
     app.file_widgets = {
         "target.jpg": {
             "state": "failed",
+            "group": target_group,
             "status": target_status,
             "prog": target_prog,
             "retry": target_retry,
@@ -2203,6 +2334,7 @@ def test_retry_file_resets_only_target_failed_row_and_starts_upload():
         },
         "other.jpg": {
             "state": "failed",
+            "group": other_group,
             "status": other_status,
             "prog": other_prog,
             "retry": other_retry,
@@ -2226,8 +2358,10 @@ def test_retry_file_resets_only_target_failed_row_and_starts_upload():
     assert target_retry.options["state"] == "disabled"
     assert target_error_label.mapped is False
     assert target_error_label.options["text"] == ""
+    assert target_group.is_completed is False
     assert app.file_widgets["other.jpg"]["state"] == "failed"
     assert app.file_widgets["other.jpg"]["error"] == "server error"
+    assert other_group.is_completed is True
     assert activity == [("Retrying target.jpg.", "info")]
     assert started == [True]
 

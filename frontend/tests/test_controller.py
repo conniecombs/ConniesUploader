@@ -18,6 +18,11 @@ class DummyTemplateManager:
     pass
 
 
+class FailingTemplateManager:
+    def apply(self, *_args, **_kwargs):
+        raise AssertionError("partial output should not be rendered")
+
+
 @pytest.mark.unit
 def test_process_post_queue_does_not_manually_release_condition(monkeypatch):
     monkeypatch.setattr(controller, "TemplateManager", DummyTemplateManager)
@@ -40,3 +45,30 @@ def test_process_post_queue_does_not_manually_release_condition(monkeypatch):
 
     assert upload_controller.next_post_index == 1
     assert upload_controller.post_holding_pen == {}
+
+
+@pytest.mark.unit
+def test_upload_controller_skips_output_for_incomplete_results(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    first = str(tmp_path / "first.jpg")
+    second = str(tmp_path / "second.jpg")
+    upload_controller = controller.UploadController.__new__(controller.UploadController)
+    upload_controller.results = [
+        (first, "https://img.test/first", "https://img.test/first-thumb"),
+        (second, "", ""),
+    ]
+    upload_controller.settings = {"service": "pixhost.to"}
+    upload_controller.template_mgr = FailingTemplateManager()
+    upload_controller.current_output_files = []
+
+    output_file = upload_controller.generate_group_output(
+        "Batch Alpha",
+        [first, second],
+        None,
+        0,
+    )
+
+    assert output_file is None
+    assert upload_controller.current_output_files == []
+    assert not (tmp_path / "Output").exists()

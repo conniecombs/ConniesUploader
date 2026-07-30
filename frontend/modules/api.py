@@ -9,6 +9,7 @@ executes them as a dumb HTTP runner with no host-specific knowledge.
 
 import json
 from typing import Dict, Optional, Tuple, Any
+from modules import config
 from modules.sidecar import SidecarBridge
 from modules.transport import build_transport_spec, execute_transport_request
 from loguru import logger
@@ -49,14 +50,14 @@ def create_pixhost_gallery(name: str) -> Optional[Dict[str, str]]:
         None otherwise.
     """
     spec = build_transport_spec(
-        "https://api.pixhost.to/galleries",
+        config.PIX_GALLERIES_URL,
         method="POST",
         headers={"Accept": "application/json"},
         form_fields={"gallery_name": name},
         use_cookies=True,
     )
 
-    resp = execute_transport_request(spec, timeout=30, service="pixhost.to")
+    resp = execute_transport_request(spec, timeout=30, service=config.PIXHOST_SERVICE_ID)
 
     if resp.ok:
         try:
@@ -68,7 +69,7 @@ def create_pixhost_gallery(name: str) -> Optional[Dict[str, str]]:
             return {
                 "gallery_name": data.get("gallery_name", name),
                 "gallery_hash": data["gallery_hash"],
-                "gallery_url": data.get("gallery_url", ""),
+                "gallery_url": config.normalize_pixhost_url(data.get("gallery_url", "")),
                 "gallery_upload_hash": data.get("gallery_upload_hash", ""),
             }
 
@@ -92,7 +93,7 @@ def finalize_pixhost_gallery(
         return False
 
     spec = build_transport_spec(
-        f"https://api.pixhost.to/galleries/{gallery_hash}/finalize",
+        f"{config.PIX_GALLERIES_URL}/{gallery_hash}/finalize",
         method="POST",
         headers={"Accept": "application/json"},
         form_fields={"gallery_upload_hash": gallery_upload_hash},
@@ -100,7 +101,7 @@ def finalize_pixhost_gallery(
         include_response_body=False,
     )
 
-    resp = execute_transport_request(spec, timeout=15, service="pixhost.to")
+    resp = execute_transport_request(spec, timeout=15, service=config.PIXHOST_SERVICE_ID)
     return resp.ok
 
 

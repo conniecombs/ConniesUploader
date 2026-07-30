@@ -98,7 +98,7 @@ class UploaderApp(
 
         # Queues for thread communication
         self.progress_queue = queue.Queue(maxsize=1000)
-        self.ui_queue = queue.Queue(maxsize=500)
+        self.ui_queue = queue.Queue(maxsize=config.UI_QUEUE_MAXSIZE)
         self.result_queue = queue.Queue(maxsize=1000)
         self.cancel_event = threading.Event()
         self.lock = threading.Lock()
@@ -124,6 +124,7 @@ class UploaderApp(
         self.upload_count = 0
         self.is_uploading = False
         self.current_output_files = []
+        self.copyable_output_files = []
         self.current_completion_summary = None
         self.pix_galleries_to_finalize = []
         self.output_dir = config.OUTPUT_DIR

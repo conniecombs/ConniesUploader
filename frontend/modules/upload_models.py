@@ -92,6 +92,8 @@ class UploadGeneratedOutput:
     history_file: str
     links_file: str | None = None
     links_name: str | None = None
+    copyable: bool = True
+    failed_report: bool = False
 
 
 @dataclass(frozen=True)

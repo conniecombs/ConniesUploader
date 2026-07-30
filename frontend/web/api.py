@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 import uuid
 
-from fastapi import APIRouter, FastAPI, File, HTTPException, Request, Response, UploadFile
+from fastapi import APIRouter, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -245,6 +245,40 @@ def _staged_upload_usage(upload_dir: Path) -> tuple[int, int]:
         count += 1
         total += stat.st_size
     return count, total
+
+
+def _submitted_upload_name(upload: UploadFile, index: int, paths: Optional[List[str]]) -> str:
+    fallback = upload.filename or "upload"
+    if paths and index < len(paths):
+        raw = str(paths[index] or "").replace("\\", "/").strip()
+        if raw:
+            return raw
+    return str(fallback).replace("\\", "/").strip() or "upload"
+
+
+def _safe_staged_upload_name(name: str, fallback: str) -> str:
+    raw_parts = [
+        part.strip()
+        for part in str(name or "").replace("\\", "/").split("/")
+        if part.strip() and part.strip() not in {".", ".."}
+    ]
+    parts = []
+    for index, part in enumerate(raw_parts):
+        part = part.strip()
+        if index == len(raw_parts) - 1:
+            extension = Path(fallback or "").suffix or Path(part).suffix
+            stem = part[: -len(extension)] if extension and part.endswith(extension) else part
+            safe_stem = sanitize_filename(stem) or "upload"
+            safe_part = f"{safe_stem}{extension.lower()}"
+        else:
+            safe_part = sanitize_filename(part)
+        if safe_part:
+            parts.append(safe_part)
+    safe_name = "__".join(parts) or sanitize_filename(fallback or "upload") or "upload"
+    extension = (Path(fallback or "").suffix or Path(name or "").suffix).lower()
+    if extension and not safe_name.lower().endswith(extension):
+        safe_name = f"{safe_name}{extension}"
+    return safe_name
 
 
 @router.get("/services")
@@ -552,21 +586,23 @@ def list_input_files(path: str = "") -> Dict[str, Any]:
 
 
 @router.post("/files/upload")
-async def upload_files(files: List[UploadFile] = File(...)) -> Dict[str, Any]:
+async def upload_files(
+    files: List[UploadFile] = File(...),
+    paths: Optional[List[str]] = Form(None),
+) -> Dict[str, Any]:
     upload_dir = Path(config.WEB_UPLOAD_DIR)
     _cleanup_staged_uploads(upload_dir)
     file_count, total_bytes = _staged_upload_usage(upload_dir)
     saved = []
-    for upload in files:
+    for index, upload in enumerate(files):
         if file_count >= config.WEB_UPLOAD_MAX_FILES:
             raise HTTPException(status_code=413, detail="Staged upload file limit reached")
         original_name = upload.filename or "upload"
-        safe_name = sanitize_filename(original_name)
-        extension = Path(original_name).suffix.lower()
-        if extension and not safe_name.lower().endswith(extension):
-            safe_name = f"{safe_name}{extension}"
+        submitted_name = _submitted_upload_name(upload, index, paths)
+        display_name = Path(submitted_name).name or original_name
+        safe_name = _safe_staged_upload_name(submitted_name, original_name)
         if not safe_name.lower().endswith(config.VALID_EXTENSIONS):
-            raise HTTPException(status_code=400, detail=f"Unsupported file type: {original_name}")
+            raise HTTPException(status_code=400, detail=f"Unsupported file type: {submitted_name}")
 
         target = upload_dir / f"{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}_{safe_name}"
         bytes_written = 0
@@ -579,7 +615,7 @@ async def upload_files(files: List[UploadFile] = File(...)) -> Dict[str, Any]:
                         target.unlink()
                     except OSError:
                         pass
-                    raise HTTPException(status_code=400, detail=f"File too large: {original_name}")
+                    raise HTTPException(status_code=400, detail=f"File too large: {submitted_name}")
                 if total_bytes + bytes_written > config.WEB_UPLOAD_MAX_BYTES:
                     handle.close()
                     try:
@@ -588,7 +624,14 @@ async def upload_files(files: List[UploadFile] = File(...)) -> Dict[str, Any]:
                         pass
                     raise HTTPException(status_code=413, detail="Staged upload storage limit reached")
                 handle.write(chunk)
-        saved.append({"name": original_name, "path": str(target), "size": bytes_written})
+        saved.append(
+            {
+                "name": display_name,
+                "relative_path": submitted_name,
+                "path": str(target),
+                "size": bytes_written,
+            }
+        )
         file_count += 1
         total_bytes += bytes_written
     return {"files": saved}

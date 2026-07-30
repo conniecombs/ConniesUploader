@@ -7,7 +7,7 @@ import pytest
 
 from modules import upload_session
 from modules.upload_models import UploadBatch, UploadFileResult
-from modules.upload_output import generate_group_output
+from modules.upload_output import generate_failed_group_output, generate_group_output
 from modules.upload_session import UploadSession
 
 
@@ -45,8 +45,8 @@ def test_generate_group_output_writes_output_history_and_links(tmp_path):
         selected_thread="Target",
         gallery_id="G123",
         gallery_name="Site Gallery",
-        gallery_url="https://pixhost.to/gallery/G123",
-        gallery_service="pixhost.to",
+        gallery_url="https://pixhost.cc/gallery/G123",
+        gallery_service="pixhost.cc",
     )
     batch.set_cover_file(third)
     template_manager = FakeTemplateManager()
@@ -58,7 +58,7 @@ def test_generate_group_output_writes_output_history_and_links(tmp_path):
             (second, "https://img.test/second", "https://img.test/t-second"),
             (third, "https://img.test/third", "https://img.test/t-third"),
         ],
-        {"service": "pixhost.to", "pix_thumb": "200", "pix_links": True},
+        {"service": "pixhost.cc", "pix_thumb": "200", "pix_links": True},
         template_manager,
         output_dir=str(tmp_path / "output"),
         history_dir=str(tmp_path / "history"),
@@ -80,6 +80,59 @@ def test_generate_group_output_writes_output_history_and_links(tmp_path):
     assert output.history_file.endswith("Batch_Alpha_20260710_1234.txt")
     assert output.links_file and output.links_file.endswith("Batch_Alpha_20260710_1234_links.txt")
     assert template_manager.calls[0][0] == "BBCode"
+
+
+@pytest.mark.unit
+def test_generate_group_output_skips_incomplete_results(tmp_path):
+    first = str(tmp_path / "first.jpg")
+    second = str(tmp_path / "second.jpg")
+    batch = UploadBatch("Batch Alpha", [first, second], selected_template="BBCode")
+    template_manager = FakeTemplateManager()
+
+    output = generate_group_output(
+        batch,
+        [
+            (first, "https://img.test/first", "https://img.test/t-first"),
+            (second, "", ""),
+        ],
+        {"service": "pixhost.cc", "pix_thumb": "200"},
+        template_manager,
+        output_dir=str(tmp_path / "output"),
+        history_dir=str(tmp_path / "history"),
+        now=datetime(2026, 7, 10, 12, 34),
+    )
+
+    assert output is None
+    assert template_manager.calls == []
+    assert not (tmp_path / "output").exists()
+
+
+@pytest.mark.unit
+def test_generate_failed_group_output_writes_non_copyable_report(tmp_path):
+    first = str(tmp_path / "first.jpg")
+    second = str(tmp_path / "second.jpg")
+    batch = UploadBatch("Batch Alpha", [first, second])
+
+    output = generate_failed_group_output(
+        batch,
+        [
+            UploadFileResult(first, "https://img.test/first", "https://img.test/t-first"),
+            UploadFileResult(second, "", "", success=False, error="server rejected upload"),
+        ],
+        {"service": "pixhost.to"},
+        output_dir=str(tmp_path / "output"),
+        history_dir=str(tmp_path / "history"),
+        now=datetime(2026, 7, 10, 12, 34),
+    )
+
+    assert output is not None
+    assert output.copyable is False
+    assert output.failed_report is True
+    assert output.context["service"] == "pixhost.cc"
+    assert output.output_file.endswith("Batch_Alpha_20260710_1234_FAILED.txt")
+    assert "Status: FAILED" in output.text
+    assert "server rejected upload" in output.text
+    assert (tmp_path / "history" / "Batch_Alpha_20260710_1234_FAILED.txt").exists()
 
 
 @pytest.mark.unit
@@ -139,3 +192,4 @@ def test_upload_session_starts_neutral_batches_and_drains_results(monkeypatch, t
     assert snapshot.output_files[0].group_title == "Batch"
     assert snapshot.output_files[0].text == "Batch||1"
     assert snapshot.output_files[0].output_name.endswith(".txt")
+    assert snapshot.output_files[0].copyable is True

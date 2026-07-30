@@ -4,6 +4,8 @@
 import customtkinter as ctk
 from tkinter import ttk
 
+from . import config
+
 
 class ScrollableFrame(ctk.CTkScrollableFrame):
     def __init__(self, master, **kwargs):
@@ -106,7 +108,7 @@ class ServiceSettingsView:
             "save_links": "imx_links",
             "gallery_id": "imx_gallery_id",
         },
-        "pixhost.to": {
+        config.PIXHOST_SERVICE_ID: {
             "content_type": "pix_content",
             "thumbnail_size": "pix_thumb",
             "cover_count": "pix_cover_count",
@@ -262,6 +264,7 @@ class ServiceSettingsView:
             self._install_legacy_aliases(service_id, handle)
 
     def _settings_for_service(self, service_id):
+        service_id = config.normalize_service_id(service_id)
         settings = dict(getattr(self.app, "settings", {}) or {})
         for schema_key, legacy_key in self.SERVICE_ALIASES.get(service_id, {}).items():
             if legacy_key in settings:
@@ -271,6 +274,7 @@ class ServiceSettingsView:
         return settings
 
     def _install_legacy_aliases(self, service_id, handle):
+        service_id = config.normalize_service_id(service_id)
         aliases = self.SERVICE_ALIASES.get(service_id, {})
         for schema_key, legacy_key in aliases.items():
             if schema_key not in handle:
@@ -315,6 +319,7 @@ class ServiceSettingsView:
                 self.app.cb_vipr_gallery = plugin.cb_gallery
 
     def get_raw_config(self, service_id):
+        service_id = config.normalize_service_id(service_id)
         return self._read_handle(self.service_handles.get(service_id, {}))
 
     def get_all_raw_configs(self):
@@ -324,6 +329,7 @@ class ServiceSettingsView:
         }
 
     def get_validated_config(self, service_id):
+        service_id = config.normalize_service_id(service_id)
         plugin = self.service_plugins.get(service_id)
         handle = self.service_handles.get(service_id)
         if not plugin or handle is None:
@@ -331,6 +337,7 @@ class ServiceSettingsView:
         return plugin.get_configuration(handle)
 
     def alias_config(self, service_id, config):
+        service_id = globals()["config"].normalize_service_id(service_id)
         aliases = {}
         plugin = self.service_plugins.get(service_id)
         for schema_key, legacy_key in self.SERVICE_ALIASES.get(service_id, {}).items():
@@ -346,6 +353,7 @@ class ServiceSettingsView:
         return aliases
 
     def normalize_value(self, service_id, key, value, plugin=None):
+        service_id = config.normalize_service_id(service_id)
         plugin = plugin or self.service_plugins.get(service_id)
         if not plugin:
             return value
@@ -370,9 +378,11 @@ class ServiceSettingsView:
         return None
 
     def get_value(self, service_id, key, default=""):
+        service_id = config.normalize_service_id(service_id)
         return self.get_raw_config(service_id).get(key, default)
 
     def set_value(self, service_id, key, value):
+        service_id = config.normalize_service_id(service_id)
         handle = self.service_handles.get(service_id, {})
         var = handle.get(key)
         if var is not None:
@@ -410,7 +420,7 @@ class ServiceSettingsView:
 
     def _build_pix(self):
         p = ctk.CTkFrame(self.parent)
-        self.app.service_frames["pixhost.to"] = p
+        self.app.service_frames[config.PIXHOST_SERVICE_ID] = p
         ctk.CTkLabel(p, text="Content:").pack(anchor="w")
         MouseWheelComboBox(p, variable=self.app.var_pix_content, values=["Safe", "Adult"]).pack(
             fill="x"

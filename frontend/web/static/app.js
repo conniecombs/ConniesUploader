@@ -1,3 +1,6 @@
+const PIXHOST_SERVICE_ID = "pixhost.cc";
+const PIXHOST_LEGACY_SERVICE_ID = "pixhost.to";
+
 const SERVICE_ALIASES = {
   "imx.to": {
     thumbnail_size: "imx_thumb",
@@ -6,7 +9,7 @@ const SERVICE_ALIASES = {
     save_links: "imx_links",
     gallery_id: "imx_gallery_id",
   },
-  "pixhost.to": {
+  [PIXHOST_SERVICE_ID]: {
     content_type: "pix_content",
     thumbnail_size: "pix_thumb",
     cover_count: "pix_cover_count",
@@ -40,12 +43,17 @@ const SERVICE_ALIASES = {
 
 const CREDENTIAL_SERVICE_LABELS = {
   "imx.to": ["imx.to"],
-  "pixhost.to": [],
+  [PIXHOST_SERVICE_ID]: [],
   turboimagehost: ["Turbo"],
   "vipr.im": ["Vipr"],
   "imagebam.com": ["ImageBam"],
   "imgur.com": ["Imgur"],
 };
+
+function normalizeServiceId(serviceId) {
+  const value = String(serviceId || "").trim();
+  return value === PIXHOST_LEGACY_SERVICE_ID ? PIXHOST_SERVICE_ID : value;
+}
 
 const EVENT_TYPES = [
   "snapshot",
@@ -159,12 +167,12 @@ function normalizeValues(values) {
 }
 
 function currentServiceId() {
-  return byId("service-select").value || state.settings.service || "";
+  return normalizeServiceId(byId("service-select").value || state.settings.service || "");
 }
 
 function currentService() {
   const serviceId = currentServiceId();
-  return state.services.find((service) => service.id === serviceId) || null;
+  return state.services.find((service) => normalizeServiceId(service.id) === serviceId) || null;
 }
 
 function flattenSchema(schema) {
@@ -187,6 +195,7 @@ function flattenSchema(schema) {
 }
 
 function optionStore(serviceId) {
+  serviceId = normalizeServiceId(serviceId);
   if (!state.serviceOptionValues[serviceId]) {
     state.serviceOptionValues[serviceId] = {};
   }
@@ -194,6 +203,7 @@ function optionStore(serviceId) {
 }
 
 function settingValue(serviceId, field) {
+  serviceId = normalizeServiceId(serviceId);
   const store = optionStore(serviceId);
   if (Object.prototype.hasOwnProperty.call(store, field.key)) {
     return store[field.key];
@@ -236,16 +246,18 @@ function selectedViperTarget() {
 
 function renderServices() {
   const select = byId("service-select");
-  const previous = select.value || state.settings.service;
+  const previous = normalizeServiceId(select.value || state.settings.service);
   select.replaceChildren();
   for (const service of state.services) {
     const option = document.createElement("option");
-    option.value = service.id;
+    option.value = normalizeServiceId(service.id);
     option.textContent = service.name || service.id;
     select.append(option);
   }
-  const fallback = state.services[0]?.id || "";
-  select.value = state.services.some((service) => service.id === previous) ? previous : fallback;
+  const fallback = normalizeServiceId(state.services[0]?.id || "");
+  select.value = state.services.some((service) => normalizeServiceId(service.id) === previous)
+    ? previous
+    : fallback;
   byId("worker-count").value = state.settings.global_worker_count ?? 8;
   byId("thread-limit").value = state.settings.global_thread_limit ?? 5;
   byId("template-select").value = state.settings.output_format || "BBCode";
@@ -271,7 +283,8 @@ function renderServiceOptions() {
     const label = document.createElement("label");
     label.textContent = field.label || field.key;
     let control;
-    const currentValue = settingValue(service.id, field);
+    const serviceId = normalizeServiceId(service.id);
+    const currentValue = settingValue(serviceId, field);
     if (field.type === "dropdown") {
       control = document.createElement("select");
       const values = normalizeValues(field.values);
@@ -300,7 +313,7 @@ function renderServiceOptions() {
     }
     control.dataset.settingKey = field.key;
     control.addEventListener("change", () => {
-      optionStore(service.id)[field.key] =
+      optionStore(serviceId)[field.key] =
         field.type === "checkbox" ? control.checked : control.value;
     });
     label.append(control);
@@ -624,7 +637,7 @@ function renderQueue() {
 
 function collectSettings() {
   const service = currentService();
-  const serviceId = service?.id || currentServiceId();
+  const serviceId = normalizeServiceId(service?.id || currentServiceId());
   const settings = {
     service: serviceId,
     global_worker_count: Number.parseInt(byId("worker-count").value || "8", 10),
@@ -652,7 +665,7 @@ function collectSettings() {
     settings.gallery_id = galleryId;
     if (serviceId === "imx.to") {
       settings.imx_gallery_id = galleryId;
-    } else if (serviceId === "pixhost.to") {
+    } else if (serviceId === PIXHOST_SERVICE_ID) {
       settings.gallery_hash = galleryId;
       settings.pix_gallery_hash = galleryId;
     } else if (serviceId === "turboimagehost") {
@@ -848,8 +861,8 @@ async function clearViperHistory() {
   setMessage("ViperGirls posting history cleared.", "success");
 }
 
-async function stageBrowserUploads() {
-  const input = byId("browser-file-input");
+async function stageBrowserUploads(inputId = "browser-file-input", source = "uploaded") {
+  const input = byId(inputId);
   if (!input.files.length) {
     setMessage("No browser files selected.");
     return;
@@ -857,6 +870,7 @@ async function stageBrowserUploads() {
   const form = new FormData();
   for (const file of input.files) {
     form.append("files", file);
+    form.append("paths", file.webkitRelativePath || file.name);
   }
   const payload = await apiJson("/api/files/upload", {
     method: "POST",
@@ -864,10 +878,10 @@ async function stageBrowserUploads() {
   });
   for (const file of payload.files || []) {
     addQueueFile({
-      name: file.name,
+      name: file.relative_path || file.name,
       path: file.path,
       size: file.size,
-      source: "uploaded",
+      source,
     });
   }
   input.value = "";
@@ -881,7 +895,7 @@ function galleryPayload(settings) {
   return {
     id,
     name: id,
-    service: settings.service,
+    service: normalizeServiceId(settings.service),
   };
 }
 
@@ -1128,7 +1142,8 @@ function renderResults(upload) {
     }
     linkList.append(row);
   }
-  const generatedText = outputs.map((output) => output.text || "").join("\n\n");
+  const copyableOutputs = outputs.filter((output) => output.copyable !== false);
+  const generatedText = copyableOutputs.map((output) => output.text || "").join("\n\n");
   byId("generated-output").value = generatedText;
   if (generatedText) {
     byId("viper-post-preview").value = generatedText;
@@ -1264,6 +1279,9 @@ function bindEvents() {
   );
   byId("stage-upload-button").addEventListener("click", () =>
     stageBrowserUploads().catch(showError),
+  );
+  byId("stage-folder-button").addEventListener("click", () =>
+    stageBrowserUploads("browser-folder-input", "uploaded folder").catch(showError),
   );
   byId("clear-queue-button").addEventListener("click", clearQueue);
   byId("start-upload-button").addEventListener("click", () => startUpload().catch(showError));

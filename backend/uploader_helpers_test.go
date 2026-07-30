@@ -101,7 +101,7 @@ func TestRateLimiterDefaultCreation(t *testing.T) {
 }
 
 func TestRateLimiterKnownServices(t *testing.T) {
-	services := []string{"imx.to", "pixhost.to", "vipr.im", "turboimagehost", "imagebam.com", "vipergirls.to"}
+	services := []string{"imx.to", "pixhost.cc", "pixhost.to", "vipr.im", "turboimagehost", "imagebam.com", "vipergirls.to"}
 
 	limiters := make(map[string]interface{})
 
@@ -283,7 +283,7 @@ func TestMultipleGalleryConcurrentAccess(t *testing.T) {
 		t.Skip("Skipping concurrent test in short mode")
 	}
 
-	services := []string{"imx.to", "pixhost.to", "vipr.im"}
+	services := []string{"imx.to", "pixhost.cc", "pixhost.to", "vipr.im"}
 	done := make(chan bool, len(services)*10)
 
 	for i := 0; i < 10; i++ {

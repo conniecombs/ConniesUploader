@@ -3,7 +3,7 @@
 
 # modules/plugins/pixhost.py
 """
-Pixhost.to plugin - Schema-based implementation with Go sidecar uploads.
+Pixhost.cc plugin - Schema-based implementation with Go sidecar uploads.
 
 Go-based upload plugin (upload handled by Go sidecar).
 Python side manages UI, configuration validation, and gallery coordination.
@@ -13,28 +13,29 @@ from typing import Dict, Any, List
 from .base import ImageHostPlugin
 from . import helpers
 from .. import api
+from .. import config as app_config
 from loguru import logger
 
 
 class PixhostPlugin(ImageHostPlugin):
-    """Pixhost.to image hosting plugin using schema-based UI."""
+    """Pixhost.cc image hosting plugin using schema-based UI."""
 
     @property
     def id(self) -> str:
-        return "pixhost.to"
+        return app_config.PIXHOST_SERVICE_ID
 
     @property
     def name(self) -> str:
-        return "Pixhost.to"
+        return "Pixhost.cc"
 
     @property
     def metadata(self) -> Dict[str, Any]:
-        """Plugin metadata for Pixhost.to"""
+        """Plugin metadata for Pixhost.cc"""
         return {
             "version": "2.0.2",
             "author": "Connie's Uploader Team",
-            "description": "Upload images to Pixhost.to with gallery support and cover image handling",
-            "website": "https://pixhost.to",
+            "description": "Upload images to Pixhost.cc with gallery support and cover image handling",
+            "website": app_config.PIXHOST_BASE_URL,
             "implementation": "go",
             "features": {
                 "galleries": True,
@@ -134,7 +135,7 @@ class PixhostPlugin(ImageHostPlugin):
         self, file_path: str, config: Dict[str, Any], creds: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
-        Build HTTP request specification for Pixhost.to upload.
+        Build HTTP request specification for Pixhost.cc upload.
         """
         # Map content type to Pixhost API value
         # Support both schema key ("content_type") and UI key ("pix_content")
@@ -165,7 +166,7 @@ class PixhostPlugin(ImageHostPlugin):
             }
 
         return {
-            "url": "https://api.pixhost.to/images",
+            "url": app_config.PIX_URL,
             "method": "POST",
             "headers": {"Accept": "application/json"},
             "multipart_fields": multipart_fields,
@@ -199,8 +200,8 @@ class PixhostPlugin(ImageHostPlugin):
                 group.pix_data = new_data
                 group.gallery_id = new_data.get("gallery_hash", "")
                 group.gallery_name = new_data.get("gallery_name") or clean_title
-                group.gallery_url = new_data.get("gallery_url", "")
-                group.gallery_service = "pixhost.to"
+                group.gallery_url = app_config.normalize_pixhost_url(new_data.get("gallery_url", ""))
+                group.gallery_service = app_config.PIXHOST_SERVICE_ID
                 group.gallery_upload_hash = new_data.get("gallery_upload_hash", "")
 
                 # Store gallery_hash in config so it's used for uploads

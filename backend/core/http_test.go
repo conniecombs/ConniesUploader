@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestSuccessCheckAnyAllowsRedirectedThreadURL(t *testing.T) {
@@ -152,6 +153,70 @@ func TestExecuteGenericRequestPreRequestReusesBaseCookieJar(t *testing.T) {
 	}, nil)
 	if err != nil {
 		t.Fatalf("post request returned error: %v", err)
+	}
+}
+
+func TestUploadClientWithPreRequestCookiesPreservesBaseUploadSettings(t *testing.T) {
+	baseJar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatalf("cookiejar.New failed: %v", err)
+	}
+	sessionJar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatalf("cookiejar.New failed: %v", err)
+	}
+	baseTransport := &http.Transport{}
+	base := &http.Client{
+		Timeout:   3 * time.Minute,
+		Jar:       baseJar,
+		Transport: baseTransport,
+	}
+	preClient := &http.Client{
+		Timeout: PreRequestTimeout,
+		Jar:     sessionJar,
+	}
+
+	uploadClient := uploadClientWithPreRequestCookies(base, preClient)
+
+	if uploadClient == preClient {
+		t.Fatal("upload client reused the pre-request client")
+	}
+	if uploadClient.Timeout != base.Timeout {
+		t.Fatalf("upload timeout = %v, want base timeout %v", uploadClient.Timeout, base.Timeout)
+	}
+	if uploadClient.Jar != sessionJar {
+		t.Fatal("upload client did not preserve the authenticated pre-request cookie jar")
+	}
+	if uploadClient.Transport != baseTransport {
+		t.Fatal("upload client did not preserve the base upload transport")
+	}
+}
+
+func TestUploadPreRequestClientUsesIsolatedCookieJar(t *testing.T) {
+	baseJar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatalf("cookiejar.New failed: %v", err)
+	}
+	baseTransport := &http.Transport{}
+	base := &http.Client{
+		Timeout:   3 * time.Minute,
+		Jar:       baseJar,
+		Transport: baseTransport,
+	}
+
+	preClient := isolatedPreRequestClient(base, true)
+
+	if preClient == base {
+		t.Fatal("pre-request client reused the base client")
+	}
+	if preClient.Jar == nil {
+		t.Fatal("pre-request client did not get a cookie jar")
+	}
+	if preClient.Jar == baseJar {
+		t.Fatal("pre-request client reused the shared base cookie jar")
+	}
+	if preClient.Transport != baseTransport {
+		t.Fatal("pre-request client did not preserve the base transport")
 	}
 }
 

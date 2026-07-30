@@ -58,9 +58,10 @@ class CoverHelpersMixin:
         self, service_id: str, settings: Optional[Dict[str, Any]] = None
     ) -> str:
         settings = settings or self.settings
+        service_id = config.normalize_service_id(service_id)
         if service_id == "imx.to":
             return str(settings.get("imx_thumb", "180"))
-        if service_id == "pixhost.to":
+        if service_id == config.PIXHOST_SERVICE_ID:
             return str(settings.get("pix_thumb", "200"))
         if service_id == "turboimagehost":
             return str(settings.get("turbo_thumb", "180"))
@@ -79,6 +80,7 @@ class CoverHelpersMixin:
             if hasattr(self, "var_service")
             else str(getattr(self, "settings", {}).get("service", ""))
         )
+        service_id = config.normalize_service_id(service_id)
         settings_view = self.__dict__.get("settings_view")
         if settings_view is not None:
             raw_config = settings_view.get_raw_config(service_id)
@@ -87,7 +89,7 @@ class CoverHelpersMixin:
 
         variable_names = {
             "imx.to": "var_imx_cover_count",
-            "pixhost.to": "var_pix_cover_count",
+            config.PIXHOST_SERVICE_ID: "var_pix_cover_count",
             "turboimagehost": "var_turbo_cover_count",
             "vipr.im": "var_vipr_cover_count",
         }

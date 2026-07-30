@@ -18,6 +18,7 @@ func TestGetRateLimiter(t *testing.T) {
 		service string
 	}{
 		{"imx.to", "imx.to"},
+		{"pixhost.cc", "pixhost.cc"},
 		{"pixhost.to", "pixhost.to"},
 		{"vipr.im", "vipr.im"},
 		{"turboimagehost", "turboimagehost"},
@@ -180,7 +181,7 @@ func TestRateLimiterConcurrency(t *testing.T) {
 }
 
 func TestRateLimitMultipleServices(t *testing.T) {
-	services := []string{"imx.to", "pixhost.to", "vipr.im", "turboimagehost", "imagebam.com"}
+	services := []string{"imx.to", "pixhost.cc", "pixhost.to", "vipr.im", "turboimagehost", "imagebam.com"}
 
 	for _, service := range services {
 		t.Run(service, func(t *testing.T) {

@@ -107,13 +107,40 @@ WEB_UPLOAD_MAX_BYTES = _env_int(
 
 # --- Constants ---
 IMX_URL = "https://api.imx.to/v1/upload.php"
-PIX_URL = "https://api.pixhost.to/images"
-PIX_COVERS_URL = "https://api.pixhost.to/covers"
-PIX_GALLERIES_URL = "https://api.pixhost.to/galleries"
+PIXHOST_SERVICE_ID = "pixhost.cc"
+PIXHOST_LEGACY_SERVICE_ID = "pixhost.to"
+PIXHOST_SERVICE_ALIASES = (PIXHOST_SERVICE_ID, PIXHOST_LEGACY_SERVICE_ID)
+PIXHOST_BASE_URL = "https://pixhost.cc"
+PIXHOST_API_BASE_URL = "https://api.pixhost.cc"
+PIX_URL = f"{PIXHOST_API_BASE_URL}/images"
+PIX_COVERS_URL = f"{PIXHOST_API_BASE_URL}/covers"
+PIX_GALLERIES_URL = f"{PIXHOST_API_BASE_URL}/galleries"
 IMX_LOGIN_URL = "https://imx.to/login.php"
 IMX_DASHBOARD_URL = "https://imx.to/user/dashboard"
 IMX_GALLERY_ADD_URL = "https://imx.to/user/gallery/add"
 IMX_GALLERY_EDIT_URL = "https://imx.to/user/gallery/edit"
+
+
+def normalize_service_id(service_id: str) -> str:
+    """Return the canonical service ID while accepting legacy saved values."""
+    normalized = str(service_id or "").strip()
+    if normalized == PIXHOST_LEGACY_SERVICE_ID:
+        return PIXHOST_SERVICE_ID
+    return normalized
+
+
+def normalize_pixhost_url(url: str) -> str:
+    """Rewrite saved Pixhost public/API URLs to the current pixhost.cc host."""
+    text = str(url or "").strip()
+    if not text:
+        return ""
+    return (
+        text.replace("https://api.pixhost.to", PIXHOST_API_BASE_URL)
+        .replace("http://api.pixhost.to", PIXHOST_API_BASE_URL)
+        .replace("https://pixhost.to", PIXHOST_BASE_URL)
+        .replace("http://pixhost.to", PIXHOST_BASE_URL)
+    )
+
 
 # TURBO Constants
 TURBO_HOME_URL = "https://www.turboimagehost.com/"
@@ -172,7 +199,9 @@ MAX_SCAN_FILES = 1000  # Maximum images accepted from a single scan/batch
 
 # UI Update Intervals
 UI_UPDATE_INTERVAL_MS = 10
-UI_QUEUE_BATCH_SIZE = 10
+IMPORT_WORKERS = 2
+UI_QUEUE_MAXSIZE = 2000
+UI_QUEUE_BATCH_SIZE = 25
 PROGRESS_UPDATE_BATCH_SIZE = 50
 UI_CLEANUP_INTERVAL_MS = 30000  # 30 seconds - cleanup orphaned images
 UI_DROP_TARGET_DELAY_MS = 100  # Delay before registering drop targets after widget creation

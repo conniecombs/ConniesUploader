@@ -108,10 +108,10 @@ def test_normalize_gallery_record_uses_standard_shape_and_service_url():
         },
     )
 
-    assert record.service == "pixhost.to"
+    assert record.service == "pixhost.cc"
     assert record.id == "abc123"
     assert record.name == "Release Gallery"
-    assert record.url == "https://pixhost.to/gallery/abc123"
+    assert record.url == "https://pixhost.cc/gallery/abc123"
     assert record.upload_hash == "upload456"
     assert record.raw["extra"] == "kept"
 
@@ -124,20 +124,20 @@ def test_parse_pixhost_gallery_import_accepts_url_or_hash():
     from_hash = parse_pixhost_gallery_import("xyz789")
 
     assert from_url == GalleryRecord(
-        service="pixhost.to",
+        service="pixhost.cc",
         id="AbC123",
         name="Imported Gallery",
-        url="https://pixhost.to/gallery/AbC123",
+        url="https://pixhost.cc/gallery/AbC123",
         raw={
             "gallery_hash": "AbC123",
             "gallery_name": "Imported Gallery",
-            "gallery_url": "https://pixhost.to/gallery/AbC123",
+            "gallery_url": "https://pixhost.cc/gallery/AbC123",
             "source": "imported",
         },
     )
     assert from_hash.id == "xyz789"
     assert from_hash.name == "xyz789"
-    assert from_hash.url == "https://pixhost.to/gallery/xyz789"
+    assert from_hash.url == "https://pixhost.cc/gallery/xyz789"
     assert parse_pixhost_gallery_import("https://pixhost.to/not-a-gallery/abc") is None
 
 
@@ -328,7 +328,12 @@ def test_list_galleries_parses_imagebam_upload_gallery_dropdown():
                     "response_body": '<input type="hidden" name="_token" value="tok">'
                 },
             },
-            {"status": "success", "data": {"response_body": "logged in"}},
+            {
+                "status": "success",
+                "data": {
+                    "response_body": '<form action="https://www.imagebam.com/auth/logout"></form>'
+                },
+            },
             {
                 "status": "success",
                 "data": {
@@ -359,8 +364,48 @@ def test_list_galleries_parses_imagebam_upload_gallery_dropdown():
     )
     login_payload = bridge.calls[1][0]
     assert login_payload["service"] == "imagebam.com"
+    assert (
+        login_payload["generic_spec"]["headers"]["Referer"]
+        == "https://www.imagebam.com/auth/login"
+    )
     assert login_payload["generic_spec"]["form_fields"]["email"] == "user"
     assert "pre_request" not in login_payload["generic_spec"]
+
+
+def test_list_imagebam_galleries_rejects_login_page_after_post():
+    bridge = FakeBridge(
+        responses=[
+            {
+                "status": "success",
+                "data": {
+                    "response_body": '<input type="hidden" name="_token" value="tok">'
+                },
+            },
+            {
+                "status": "success",
+                "data": {
+                    "response_body": """
+                    <html>
+                      <body>
+                        <form action="https://www.imagebam.com/auth/login">
+                          <input name="email">
+                        </form>
+                      </body>
+                    </html>
+                    """
+                },
+            },
+        ]
+    )
+    service = GalleryService(
+        bridge, {"imagebam_user": "user", "imagebam_pass": "wrong"}
+    )
+
+    result = service.list_galleries("imagebam.com")
+
+    assert result.status == GalleryStatus.LOGIN_FAILED
+    assert "login failed" in result.message.lower()
+    assert len(bridge.calls) == 2
 
 
 def test_gallery_response_parsing_reports_unreadable_and_failed_shapes():
@@ -1244,7 +1289,7 @@ def test_gallery_manager_import_pixhost_gallery_caches_record(tmp_path):
     saved = cache.records_for_service("pixhost.to")[0]
     assert saved.id == "AbC123"
     assert saved.name == "Imported Pixhost"
-    assert saved.url == "https://pixhost.to/gallery/AbC123"
+    assert saved.url == "https://pixhost.cc/gallery/AbC123"
 
 
 def test_gallery_manager_import_pixhost_gallery_rejects_invalid_input(tmp_path):

@@ -104,8 +104,8 @@ def test_services_endpoint_returns_plugin_schema(monkeypatch, tmp_path):
 
     assert response.status_code == 200
     services = response.json()["services"]
-    pixhost = next(service for service in services if service["id"] == "pixhost.to")
-    assert pixhost["name"] == "Pixhost.to"
+    pixhost = next(service for service in services if service["id"] == "pixhost.cc")
+    assert pixhost["name"] == "Pixhost.cc"
     assert pixhost["settings_schema"]
 
 
@@ -120,7 +120,7 @@ def test_settings_endpoints_load_validate_and_save(monkeypatch, tmp_path):
 
     assert get_response.status_code == 200
     assert put_response.status_code == 200
-    assert put_response.json()["settings"]["service"] == "pixhost.to"
+    assert put_response.json()["settings"]["service"] == "pixhost.cc"
     assert put_response.json()["settings"]["global_worker_count"] == config.MAX_WORKER_COUNT
     assert (paths["data"] / "user_settings.json").exists()
 
@@ -256,6 +256,25 @@ def test_browser_upload_stages_file_under_data(monkeypatch, tmp_path):
     assert saved_path.is_relative_to(paths["uploads"])
 
 
+def test_browser_folder_upload_preserves_safe_relative_name(monkeypatch, tmp_path):
+    client, paths = make_web_client(monkeypatch, tmp_path)
+
+    response = client.post(
+        "/api/files/upload",
+        data={"paths": "Album One/nested/uploaded.jpg"},
+        files=[("files", ("uploaded.jpg", b"fake image bytes", "image/jpeg"))],
+    )
+
+    assert response.status_code == 200
+    file_record = response.json()["files"][0]
+    saved_path = Path(file_record["path"])
+    assert file_record["name"] == "uploaded.jpg"
+    assert file_record["relative_path"] == "Album One/nested/uploaded.jpg"
+    assert "Album_One__nested__uploaded.jpg" in saved_path.name
+    assert saved_path.exists()
+    assert saved_path.is_relative_to(paths["uploads"])
+
+
 def test_upload_start_status_cancel_and_sse(monkeypatch, tmp_path):
     client, paths = make_web_client(monkeypatch, tmp_path)
     image_path = paths["input"] / "queued.jpg"
@@ -366,6 +385,15 @@ def test_upload_failures_mark_session_failed(monkeypatch, tmp_path):
     assert upload["failed_files"] == 1
     assert upload["results"][0]["success"] is False
     assert upload["results"][0]["error"] == "Upload failed"
+    assert upload["output_files"][0]["failed_report"] is True
+    assert upload["output_files"][0]["copyable"] is False
+    assert upload["output_files"][0]["output_name"].endswith("_FAILED.txt")
+    report_path = Path(upload["output_files"][0]["output_file"])
+    assert report_path.exists()
+    assert report_path.is_relative_to(paths["output"])
+    report_text = report_path.read_text(encoding="utf-8")
+    assert "Status: FAILED" in report_text
+    assert "Failed uploads: 1" in report_text
 
 
 def test_upload_rejects_empty_groups_without_starting_session(monkeypatch, tmp_path):

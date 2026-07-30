@@ -51,7 +51,10 @@ from .common import (  # noqa: F401
     tk,
     viper_api,
 )
-from modules.upload_output import generate_group_output as generate_shared_group_output
+from modules.upload_output import (
+    generate_failed_group_output as generate_shared_failed_group_output,
+    generate_group_output as generate_shared_group_output,
+)
 
 
 class RuntimeMixin:
@@ -73,13 +76,26 @@ class RuntimeMixin:
 
     def _process_result_queue(self):
         """Process upload results from result_queue."""
+        touched_files = []
         try:
             while True:
                 fp, img, thumb = self.result_queue.get_nowait()
+                viewer_url = str(img or "").strip()
+                thumb_url = str(thumb or "").strip()
                 with self.lock:
-                    self.results.append((fp, img, thumb))
+                    self.results.append((fp, viewer_url, thumb_url))
+                    row_data = self.file_widgets.get(fp)
+                    if row_data is not None:
+                        if viewer_url:
+                            row_data["upload_result"] = (viewer_url, thumb_url)
+                            touched_files.append(fp)
+                        else:
+                            row_data.pop("upload_result", None)
         except queue.Empty:
             pass
+
+        for fp in touched_files:
+            self._update_group_progress(fp)
 
     def _process_ui_queue(self):
         """Process UI updates from ui_queue (batch file additions)."""
@@ -347,6 +363,10 @@ class RuntimeMixin:
 
     def _reset_row_for_retry(self, row_data: Dict[str, Any]) -> None:
         row_data["state"] = "pending"
+        row_data.pop("upload_result", None)
+        group = row_data.get("group")
+        if group is not None and hasattr(group, "is_completed"):
+            group.is_completed = False
         self._set_row_error(row_data, "")
         row_data["status"].configure(text="Retry")
         row_data["prog"].set(0)
@@ -452,16 +472,36 @@ class RuntimeMixin:
             if total == 0:
                 return
             done = 0
+            failed = 0
             for f in group.files:
                 with self.lock:
                     if f in self.file_widgets:
-                        if self.file_widgets[f]["state"] in ["success", "failed"]:
+                        state = self.file_widgets[f]["state"]
+                        if state in ["success", "failed"]:
                             done += 1
+                            if state == "failed":
+                                failed += 1
             group.prog.set(done / total)
             group.lbl_counts.configure(text=f"({done}/{total})")
             if done == total and not group.is_completed:
-                group.mark_complete()
-                self.generate_group_output(group)
+                if failed:
+                    group.mark_complete()
+                    self.log(
+                        f"Warning: Output skipped for '{group.title}' because "
+                        f"{failed} upload(s) failed."
+                    )
+                    self.add_activity(
+                        f"Skipped output for {group.title}: {failed} upload(s) failed.",
+                        "warning",
+                    )
+                    self.generate_failed_group_output(group, failed)
+                elif self._group_has_complete_results(group):
+                    group.mark_complete()
+                    self.generate_group_output(group)
+                else:
+                    logger.debug(
+                        f"Waiting for upload result URLs before completing group '{group.title}'."
+                    )
         except Exception as e:
             logger.error(f"Group Update Error: {e}", exc_info=True)
 
@@ -539,8 +579,9 @@ class RuntimeMixin:
         total_count = len(states)
         output_files = list(self.current_output_files)
         generated_count = len(output_files)
+        copyable_output_files = list(self.__dict__.get("copyable_output_files", output_files))
         auto_copy_requested = bool(self.var_auto_copy.get())
-        has_copy_text = bool(self.clipboard_buffer or output_files)
+        has_copy_text = bool(self.clipboard_buffer or copyable_output_files)
 
         if failed_count:
             status_text = f"Upload complete: {uploaded_count} uploaded, {failed_count} failed."
@@ -554,6 +595,7 @@ class RuntimeMixin:
             "total_count": total_count,
             "generated_count": generated_count,
             "output_files": output_files,
+            "copyable_output_files": copyable_output_files,
             "auto_copy_requested": auto_copy_requested,
             "copied_to_clipboard": False,
             "has_copy_text": has_copy_text,
@@ -565,7 +607,11 @@ class RuntimeMixin:
             return "\n\n".join(self.clipboard_buffer)
 
         chunks = []
-        for output_file in summary.get("output_files", []):
+        output_files = summary.get("copyable_output_files")
+        if output_files is None:
+            output_files = summary.get("output_files", [])
+
+        for output_file in output_files:
             try:
                 with open(output_file, "r", encoding="utf-8") as handle:
                     text = handle.read().strip()
@@ -587,6 +633,56 @@ class RuntimeMixin:
             logger.warning(f"Could not copy output to clipboard: {exc}")
             return False
 
+    def _upload_result_map(self) -> Dict[str, Tuple[str, str]]:
+        res_map = {}
+        for fp, viewer_url, thumb_url in self.__dict__.get("results", []):
+            viewer_url = str(viewer_url or "").strip()
+            thumb_url = str(thumb_url or "").strip()
+            if viewer_url:
+                res_map[fp] = (viewer_url, thumb_url)
+
+        file_widgets = self.__dict__.get("file_widgets", {})
+        lock = self.__dict__.get("lock")
+        if lock is not None:
+            with lock:
+                stored_results = {
+                    fp: data.get("upload_result")
+                    for fp, data in file_widgets.items()
+                    if isinstance(data, dict)
+                }
+        else:
+            stored_results = {
+                fp: data.get("upload_result")
+                for fp, data in file_widgets.items()
+                if isinstance(data, dict)
+            }
+
+        for fp, result in stored_results.items():
+            if not result:
+                continue
+            try:
+                viewer_url, thumb_url = result[:2]
+            except (TypeError, ValueError):
+                continue
+            viewer_url = str(viewer_url or "").strip()
+            thumb_url = str(thumb_url or "").strip()
+            if viewer_url:
+                res_map[fp] = (viewer_url, thumb_url)
+        return res_map
+
+    def _upload_result_tuples(self) -> List[Tuple[str, str, str]]:
+        return [
+            (file_path, viewer_url, thumb_url)
+            for file_path, (viewer_url, thumb_url) in self._upload_result_map().items()
+        ]
+
+    def _group_has_complete_results(self, group) -> bool:
+        group_files = self._ordered_group_files_for_output(group)
+        if not group_files:
+            return False
+        res_map = self._upload_result_map()
+        return all(fp in res_map for fp in group_files)
+
     def stop_upload(self):
         self.cancel_event.set()
         self.lbl_eta.configure(text="Stopping...")
@@ -594,9 +690,10 @@ class RuntimeMixin:
 
     def generate_group_output(self, group):
         try:
+            group_files = self._ordered_group_files_for_output(group)
             output = generate_shared_group_output(
                 group,
-                self.results,
+                self._upload_result_tuples(),
                 self.settings,
                 self.template_mgr,
                 output_dir=self.__dict__.get("output_dir", config.OUTPUT_DIR),
@@ -610,12 +707,26 @@ class RuntimeMixin:
             return
 
         if output is None:
-            self.log(f"Warning: No successful uploads for '{group.title}'.")
-            self.add_activity(f"No successful uploads for {group.title}.", "warning")
+            if not group_files:
+                self.log(f"Warning: Output skipped for '{group.title}' because the group has no files.")
+                self.add_activity(f"Skipped output for {group.title}: no files in group.", "warning")
+                return
+            usable = len([fp for fp in group_files if fp in self._upload_result_map()])
+            self.log(
+                f"Warning: Output skipped for '{group.title}' because "
+                f"only {usable}/{len(group_files)} upload result(s) were usable."
+            )
+            self.add_activity(
+                f"Skipped output for {group.title}: incomplete upload results.",
+                "warning",
+            )
             return
 
         try:
             self.current_output_files.append(output.output_file)
+            if "copyable_output_files" not in self.__dict__:
+                self.copyable_output_files = []
+            self.copyable_output_files.append(output.output_file)
             self.log(f"Saved: {output.output_file}")
             self.add_activity(
                 f"Saved output: {os.path.basename(output.output_file)}.", "success"
@@ -653,6 +764,45 @@ class RuntimeMixin:
         except Exception as e:
             self.log(f"Error writing output: {e}")
             self.add_activity(f"Error writing output: {e}", "error")
+
+    def generate_failed_group_output(self, group, failed_count: Optional[int] = None):
+        file_states = {}
+        with self.lock:
+            for fp, row_data in self.file_widgets.items():
+                if not isinstance(row_data, dict):
+                    continue
+                file_states[fp] = {
+                    "state": row_data.get("state"),
+                    "error": row_data.get("error"),
+                }
+
+        try:
+            output = generate_shared_failed_group_output(
+                group,
+                self._upload_result_tuples(),
+                self.__dict__.get("settings", {}),
+                output_dir=self.__dict__.get("output_dir", config.OUTPUT_DIR),
+                history_dir=self.__dict__.get("central_history_path", config.HISTORY_DIR),
+                failed_count=failed_count,
+                file_states=file_states,
+            )
+        except Exception as e:
+            self.log(f"Error writing failed batch report: {e}")
+            self.add_activity(f"Error writing failed batch report: {e}", "error")
+            return
+
+        if output is None:
+            return
+
+        self.__dict__.setdefault("current_output_files", []).append(output.output_file)
+        btn_open = self.__dict__.get("btn_open")
+        if btn_open is not None:
+            btn_open.configure(state="normal")
+        self.log(f"Saved failed batch report: {output.output_file}")
+        self.add_activity(
+            f"Saved failed batch report: {os.path.basename(output.output_file)}.",
+            "warning",
+        )
 
     def open_output_folder(self):
         if self.current_output_files:
@@ -694,6 +844,7 @@ class RuntimeMixin:
         self.upload_total = 0
         self.group_counter = 0
         self.current_output_files = []
+        self.copyable_output_files = []
         self.clipboard_buffer = []
         for grp in self.groups:
             grp.destroy()

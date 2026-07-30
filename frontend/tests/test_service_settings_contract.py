@@ -109,7 +109,7 @@ def test_settings_manager_moves_legacy_settings_to_backup_when_current_exists(
     manager = SettingsManager()
     loaded = manager.load()
 
-    assert loaded["service"] == "pixhost.to"
+    assert loaded["service"] == "pixhost.cc"
     assert not legacy_path.exists()
     assert list(settings_path.parent.glob("user_settings.repo-local-*.json"))
 
@@ -197,7 +197,7 @@ def test_cover_thumbnail_overrides_force_host_max_size(service_id, expected):
 
     for key, value in expected.items():
         assert cfg[key] == value
-    assert COVER_THUMBNAIL_OVERRIDES[service_id] == expected
+    assert COVER_THUMBNAIL_OVERRIDES[config.normalize_service_id(service_id)] == expected
 
 
 @pytest.mark.unit

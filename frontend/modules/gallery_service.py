@@ -15,6 +15,7 @@ import requests
 from bs4 import BeautifulSoup
 from loguru import logger
 
+from modules import config
 from modules.transport import build_transport_spec, execute_transport_request
 
 
@@ -56,25 +57,26 @@ class GalleryResult:
 
 SERVICE_LABELS = {
     "imx.to": "IMX.to",
-    "pixhost.to": "Pixhost.to",
+    config.PIXHOST_SERVICE_ID: "Pixhost.cc",
     "vipr.im": "Vipr.im",
     "imagebam.com": "ImageBam",
 }
 
 LIST_SUPPORTED = {"imx.to", "vipr.im", "imagebam.com"}
-CREATE_SUPPORTED = {"imx.to", "pixhost.to", "vipr.im"}
+CREATE_SUPPORTED = {"imx.to", config.PIXHOST_SERVICE_ID, "vipr.im"}
 DELETE_SUPPORTED = {"imx.to", "vipr.im"}
 IMX_GALLERY_PAGE_SIZE = 100
 GALLERY_SYNC_MAX_PAGES = 250
 
 
 def gallery_url_for_service(service: str, gallery_id: str) -> str:
+    service = config.normalize_service_id(service)
     if not gallery_id:
         return ""
     if service == "imx.to":
         return f"https://imx.to/g/{gallery_id}"
-    if service == "pixhost.to":
-        return f"https://pixhost.to/gallery/{gallery_id}"
+    if service == config.PIXHOST_SERVICE_ID:
+        return f"{config.PIXHOST_BASE_URL}/gallery/{gallery_id}"
     if service == "vipr.im":
         return ""
     if service == "imagebam.com" and gallery_id and not gallery_id.isdigit():
@@ -83,6 +85,7 @@ def gallery_url_for_service(service: str, gallery_id: str) -> str:
 
 
 def normalize_gallery_record(service: str, raw: Mapping[str, Any]) -> Optional[GalleryRecord]:
+    service = config.normalize_service_id(service)
     gallery_id = str(
         raw.get("id")
         or raw.get("gallery_id")
@@ -98,6 +101,7 @@ def normalize_gallery_record(service: str, raw: Mapping[str, Any]) -> Optional[G
     upload_hash = str(raw.get("upload_hash") or raw.get("gallery_upload_hash") or "").strip()
     if not url:
         url = gallery_url_for_service(service, gallery_id)
+    url = config.normalize_pixhost_url(url)
 
     return GalleryRecord(
         service=service,
@@ -134,11 +138,11 @@ def parse_pixhost_gallery_import(value: str, name: str = "") -> Optional[Gallery
 
     display_name = str(name or "").strip() or gallery_id
     return normalize_gallery_record(
-        "pixhost.to",
+        config.PIXHOST_SERVICE_ID,
         {
             "gallery_hash": gallery_id,
             "gallery_name": display_name,
-            "gallery_url": gallery_url_for_service("pixhost.to", gallery_id),
+            "gallery_url": gallery_url_for_service(config.PIXHOST_SERVICE_ID, gallery_id),
             "source": "imported",
         },
     )
@@ -302,7 +306,7 @@ class GalleryService:
         )
 
     def list_galleries(self, service: str, page: int = 1) -> GalleryResult:
-        service = service.strip()
+        service = config.normalize_service_id(service)
         if service not in SERVICE_LABELS:
             return self._result(
                 GalleryStatus.UNSUPPORTED,
@@ -340,7 +344,7 @@ class GalleryService:
         max_pages: int = GALLERY_SYNC_MAX_PAGES,
         progress_callback: Optional[Any] = None,
     ) -> GalleryResult:
-        service = service.strip()
+        service = config.normalize_service_id(service)
         if service != "imx.to":
             return self._result(
                 GalleryStatus.UNSUPPORTED,
@@ -350,7 +354,7 @@ class GalleryService:
         return self._sync_all_imx_galleries(max_pages, progress_callback)
 
     def create_gallery(self, service: str, name: str) -> GalleryResult:
-        service = service.strip()
+        service = config.normalize_service_id(service)
         name = name.strip()
         if not name:
             return self._result(GalleryStatus.ERROR, "Enter a gallery name.", service)
@@ -375,7 +379,7 @@ class GalleryService:
         return self._create_sidecar_gallery(service, name)
 
     def delete_gallery(self, service: str, record_or_id: Any) -> GalleryResult:
-        service = service.strip()
+        service = config.normalize_service_id(service)
         gallery_id = self._gallery_id_from_record_or_id(record_or_id)
         gallery_name = self._gallery_name_from_record_or_id(record_or_id, gallery_id)
         if not gallery_id:
@@ -575,14 +579,15 @@ class GalleryService:
         return {**resp, "data": galleries}
 
     def _create_sidecar_gallery(self, service: str, name: str) -> GalleryResult:
+        service = config.normalize_service_id(service)
         if service == "vipr.im":
             return self._create_vipr_gallery(name)
 
         try:
-            if service == "pixhost.to":
+            if service == config.PIXHOST_SERVICE_ID:
                 response = self._transport_request(
                     service,
-                    "https://api.pixhost.to/galleries",
+                    config.PIX_GALLERIES_URL,
                     method="POST",
                     headers={"Accept": "application/json"},
                     form_fields={"gallery_name": name},
@@ -785,6 +790,8 @@ class GalleryService:
         form_fields: Optional[Mapping[str, Any]] = None,
         timeout: float = 20,
     ):
+        service = config.normalize_service_id(service)
+        url = config.normalize_pixhost_url(url)
         spec = build_transport_spec(
             url,
             method=method,
@@ -832,6 +839,7 @@ class GalleryService:
             "imagebam.com",
             "https://www.imagebam.com/auth/login",
             method="POST",
+            headers={"Referer": "https://www.imagebam.com/auth/login"},
             form_fields={
                 "_token": token,
                 "email": self.creds.get("imagebam_user", ""),
@@ -840,7 +848,7 @@ class GalleryService:
             },
             timeout=30,
         )
-        return response.ok
+        return response.ok and _looks_like_imagebam_logged_in(response.body)
 
     def _records_from_sidecar_response(
         self, service: str, resp: Any, page: int = 1
@@ -1264,3 +1272,8 @@ def _looks_like_imx_login_page(html: str) -> bool:
     lowered = (html or "").lower()
     login_markers = ("usr_email", "dologin", "login_form", "incorrect username")
     return any(marker in lowered for marker in login_markers)
+
+
+def _looks_like_imagebam_logged_in(html: str) -> bool:
+    soup = BeautifulSoup(html or "", "html.parser")
+    return bool(soup.select_one("form[action*='logout'], a[href*='/logout']"))
