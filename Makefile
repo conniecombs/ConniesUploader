@@ -125,4 +125,4 @@ quick: build-go build-python
 # Run the application (for testing)
 run: build-go
 	@echo "Running application..."
-	cd frontend && $(PYTHON) main.py
+	cd frontend && ../$(VENV_BIN)/python main.py
