@@ -88,6 +88,10 @@ class LayoutMixin:
             out_frame, text="Open Output Folder", command=self.open_output_folder, state="disabled"
         )
         self.btn_open.pack(fill="x", padx=5, pady=10)
+
+        # Thread Limit is the primary concurrent-upload control (legacy "threads").
+        # Keep it visible outside Advanced so bulk speed is easy to set.
+        self._create_thread_limit_control(out_frame)
         self._create_global_advanced_section(out_frame)
 
         ctk.CTkLabel(
@@ -222,6 +226,31 @@ class LayoutMixin:
         self.overall_progress.set(0)
         self.overall_progress.pack(fill="x", pady=5)
 
+    def _create_thread_limit_control(self, parent):
+        """Primary simultaneous-upload control (maps to sidecar config threads)."""
+        if not hasattr(self, "menu_thread_var"):
+            self.menu_thread_var = tk.IntVar(value=config.DEFAULT_THREAD_COUNT)
+
+        thread_frame = ctk.CTkFrame(parent, fg_color="transparent")
+        thread_frame.pack(fill="x", padx=5, pady=(0, 6))
+        ctk.CTkLabel(thread_frame, text="Simultaneous Uploads:", width=140).pack(side="left")
+        thread_limit_entry = ctk.CTkEntry(
+            thread_frame, textvariable=self.menu_thread_var, width=60
+        )
+        thread_limit_entry.pack(side="left", padx=5)
+        thread_limit_entry.bind(
+            "<FocusOut>", lambda _event: self.set_global_threads(self.menu_thread_var.get())
+        )
+        thread_limit_entry.bind(
+            "<Return>", lambda _event: self.set_global_threads(self.menu_thread_var.get())
+        )
+        ctk.CTkLabel(
+            thread_frame,
+            text=f"files at once ({config.MIN_THREAD_COUNT}-{config.MAX_THREAD_COUNT})",
+            font=("Segoe UI", 10),
+            text_color="gray",
+        ).pack(side="left")
+
     def _create_global_advanced_section(self, parent):
         self.var_global_worker_count = ctk.IntVar(value=config.DEFAULT_WORKER_COUNT)
 
@@ -251,7 +280,7 @@ class LayoutMixin:
 
         worker_frame = ctk.CTkFrame(content, fg_color="transparent")
         worker_frame.pack(fill="x", pady=5)
-        ctk.CTkLabel(worker_frame, text="Worker Count:", width=100).pack(side="left")
+        ctk.CTkLabel(worker_frame, text="Job Workers:", width=100).pack(side="left")
         worker_spinbox = ctk.CTkEntry(
             worker_frame, textvariable=self.var_global_worker_count, width=60
         )
@@ -278,26 +307,19 @@ class LayoutMixin:
         )
         ctk.CTkLabel(
             worker_frame,
-            text=f"({config.MIN_WORKER_COUNT}-{config.MAX_WORKER_COUNT})",
+            text=f"sidecar jobs ({config.MIN_WORKER_COUNT}-{config.MAX_WORKER_COUNT})",
             font=("Segoe UI", 10),
+            text_color="gray",
         ).pack(side="left")
-
-        thread_frame = ctk.CTkFrame(content, fg_color="transparent")
-        thread_frame.pack(fill="x", pady=5)
-        ctk.CTkLabel(thread_frame, text="Thread Limit:", width=100).pack(side="left")
-        thread_limit_entry = ctk.CTkEntry(thread_frame, textvariable=self.menu_thread_var, width=60)
-        thread_limit_entry.pack(side="left", padx=5)
-        thread_limit_entry.bind(
-            "<FocusOut>", lambda _event: self.set_global_threads(self.menu_thread_var.get())
-        )
-        thread_limit_entry.bind(
-            "<Return>", lambda _event: self.set_global_threads(self.menu_thread_var.get())
-        )
         ctk.CTkLabel(
-            thread_frame,
-            text=f"({config.MIN_THREAD_COUNT}-{config.MAX_THREAD_COUNT})",
+            content,
+            text="Job Workers: how many batch jobs the sidecar can run. "
+            "Simultaneous Uploads (above) is what speeds up multi-file batches.",
             font=("Segoe UI", 10),
-        ).pack(side="left")
+            text_color="gray",
+            wraplength=280,
+            justify="left",
+        ).pack(fill="x", pady=(0, 4))
 
     def _create_empty_queue_state(self):
         self.empty_queue_frame = ctk.CTkFrame(self.list_container, fg_color="transparent")

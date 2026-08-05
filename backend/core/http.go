@@ -25,8 +25,11 @@ import (
 )
 
 var defaultPreRequestTransport = &http.Transport{
-	MaxIdleConnsPerHost:   10,
+	MaxIdleConns:          100,
+	MaxIdleConnsPerHost:   50,
+	MaxConnsPerHost:       50,
 	ResponseHeaderTimeout: PreRequestHeaderTimeout,
+	ForceAttemptHTTP2:     true,
 }
 
 // DoRequest performs a generic HTTP request with the given client.
@@ -99,7 +102,9 @@ func ExecuteHttpUploadWithData(ctx context.Context, client *http.Client, fp stri
 	if spec == nil {
 		return HTTPUploadResult{}, fmt.Errorf("no http_spec")
 	}
-	if job.Service != "" {
+	// Proactive rate limiting only when Python attaches an explicit limit.
+	// Default path matches legacy: start concurrent uploads immediately.
+	if JobHasExplicitRateLimit(job) {
 		emitUploadStatus(job, fp, "Waiting")
 		emitUploadLog(job, fp, fmt.Sprintf("Waiting for rate limit: %s", filepath.Base(fp)))
 		if err := WaitForRateLimit(ctx, job.Service); err != nil {
@@ -116,12 +121,23 @@ func ExecuteHttpUploadWithData(ctx context.Context, client *http.Client, fp stri
 	for k, v := range job.Config {
 		extractedValues[k] = v
 	}
+	for k, v := range job.ContextData {
+		extractedValues[k] = v
+	}
+	for k, v := range job.SessionValues {
+		extractedValues[k] = v
+	}
 	extractedValues["filename"] = filepath.Base(fp)
+	// Unique per-file token for hosts that embed {upload_id} in the URL.
+	extractedValues["upload_id"] = RandomString(12)
 
 	retryConfig := retryConfigForJob(job)
 
 	var sessionClient *http.Client
-	if spec.PreRequest != nil {
+	if job.SessionClient != nil {
+		sessionClient = job.SessionClient
+		emitUploadLog(job, fp, fmt.Sprintf("Reusing job session: %s", filepath.Base(fp)))
+	} else if spec.PreRequest != nil {
 		var err error
 		emitUploadStatus(job, fp, "Preparing")
 		emitUploadLog(job, fp, fmt.Sprintf("Preparing session data: %s", filepath.Base(fp)))
@@ -348,6 +364,43 @@ func executeUploadPreRequestWithRetryConfig(
 		retryConfig = GetDefaultRetryConfig()
 	}
 	return executePreRequest(ctx, isolatedPreRequestClient(client, spec.UseCookies), spec, values, retryConfig)
+}
+
+// PrepareSharedUploadSession runs http_spec.pre_request once for a multi-file
+// job and attaches cookies/extracted values for concurrent file workers.
+// PreRequest is cleared on the job so per-file uploads skip re-login.
+// If PreRequest.OncePerFile is set, this is a no-op.
+func PrepareSharedUploadSession(ctx context.Context, client *http.Client, job *JobRequest) error {
+	if job == nil || job.HttpSpec == nil || job.HttpSpec.PreRequest == nil {
+		return nil
+	}
+	if job.HttpSpec.PreRequest.OncePerFile {
+		return nil
+	}
+	if len(job.Files) <= 1 {
+		// Single-file jobs can run pre_request inline in ExecuteHttpUploadWithData.
+		return nil
+	}
+
+	retryConfig := retryConfigForJob(job)
+	preValues, preClient, err := executeUploadPreRequestWithRetryConfig(
+		ctx, client, job.HttpSpec.PreRequest, retryConfig,
+	)
+	if err != nil {
+		return err
+	}
+
+	job.SessionValues = preValues
+	job.SessionClient = uploadClientWithPreRequestCookies(client, preClient)
+	if job.ContextData == nil {
+		job.ContextData = make(map[string]string, len(preValues))
+	}
+	for k, v := range preValues {
+		job.ContextData[k] = v
+	}
+	// Prevent per-file re-authentication; workers reuse SessionClient/Values.
+	job.HttpSpec.PreRequest = nil
+	return nil
 }
 
 func executePreRequest(

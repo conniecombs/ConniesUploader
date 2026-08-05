@@ -60,16 +60,19 @@ func TestWaitForRateLimitContextTimeout(t *testing.T) {
 	}
 
 	service := "test.ratelimit.timeout"
+	// Use a tight explicit limit so the wait can actually block.
+	updateRateLimiter(service, &RateLimitConfig{RequestsPerSecond: 0.5, BurstSize: 1})
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
 	defer cancel()
 
-	// Create a limiter and exhaust it
+	// Exhaust the single burst token.
 	limiter := getRateLimiter(service)
-	for i := 0; i < 10; i++ {
-		_ = limiter.Wait(context.Background())
+	if limiter == nil {
+		t.Fatal("expected rate limiter after update")
 	}
+	_ = limiter.Wait(context.Background())
 
-	// This should fail due to context timeout
+	// This should fail due to context timeout while waiting for the next token.
 	err := waitForRateLimit(ctx, service)
 	if err == nil {
 		t.Error("waitForRateLimit() should return error on context timeout")

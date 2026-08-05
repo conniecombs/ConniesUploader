@@ -76,9 +76,9 @@ func initHTTPClient() {
 		Timeout: core.ClientTimeout,
 		Jar:     jar,
 		Transport: &http.Transport{
-			MaxIdleConns:          100,
-			MaxIdleConnsPerHost:   10,
-			MaxConnsPerHost:       20,
+			MaxIdleConns:          200,
+			MaxIdleConnsPerHost:   50,
+			MaxConnsPerHost:       50,
 			IdleConnTimeout:       90 * time.Second,
 			ResponseHeaderTimeout: core.ResponseHeaderTimeout,
 			ForceAttemptHTTP2:     true,

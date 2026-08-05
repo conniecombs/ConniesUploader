@@ -587,13 +587,22 @@ class TestUploadManagerJobConfig(unittest.TestCase):
         self.assertEqual(config["threads"], 4)
 
     def test_invalid_threads_fall_back_to_safe_default(self):
+        from modules import config as app_config
         from modules.upload_manager import UploadManager
 
         config = UploadManager._normalize_job_config(
             {"service": "vipr.im", "global_thread_limit": "not-a-number"}
         )
 
-        self.assertEqual(config["threads"], 2)
+        self.assertEqual(config["threads"], app_config.DEFAULT_THREAD_COUNT)
+
+    def test_rate_limits_default_to_none_for_legacy_throughput(self):
+        from modules.upload_manager import UploadManager
+
+        limits = UploadManager._rate_limits_for_job(
+            "pixhost.cc", {"threads": 5}
+        )
+        self.assertIsNone(limits)
 
     def test_threads_are_clamped_to_visible_thread_limit_range(self):
         from modules.upload_manager import UploadManager
@@ -862,6 +871,8 @@ class TestViprPlugin(unittest.TestCase):
         self.assertEqual(fields["thumb_size"]["value"], "250x250")
         self.assertEqual(fields["per_row"]["value"], "750")
         self.assertEqual(fields["sdomain"]["value"], "vipr.im")
+        # Per-file upload_id token for concurrent XFS slots (filled by Go sidecar).
+        self.assertIn("upload_id={upload_id}", request["url"])
         endpoint = request["pre_request"]["follow_up_request"]["extract_fields"]["endpoint"]
         self.assertIn("regex:", endpoint)
         self.assertIn("cgi-bin/upload\\.cgi", endpoint)

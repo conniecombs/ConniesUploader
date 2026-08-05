@@ -141,8 +141,41 @@ func handleHttpUpload(job JobRequest) {
 }
 
 func processUploadFiles(job JobRequest, processor func(string, *JobRequest)) {
-	filesChan := make(chan string, len(job.Files))
 	maxWorkers := workerLimit(job.Config)
+	if maxWorkers < 1 {
+		maxWorkers = 1
+	}
+	// Cap in-job workers to the file count so we do not spawn idle goroutines.
+	if n := len(job.Files); n > 0 && maxWorkers > n {
+		maxWorkers = n
+	}
+
+	// Once-per-job session/login for hosts that declare pre_request (Vipr, Turbo, ImageBam).
+	// Concurrent files then share cookies/tokens instead of re-authenticating per file.
+	if len(job.Files) > 1 && job.HttpSpec != nil && job.HttpSpec.PreRequest != nil && !job.HttpSpec.PreRequest.OncePerFile {
+		sendJobEvent(&job, OutputEvent{
+			Type: "log",
+			Msg:  fmt.Sprintf("Preparing shared upload session for %d files (service %s)", len(job.Files), job.Service),
+		})
+		sessionCtx, sessionCancel := context.WithTimeout(context.Background(), core.PreRequestTimeout*3)
+		err := core.PrepareSharedUploadSession(sessionCtx, client, &job)
+		sessionCancel()
+		if err != nil {
+			msg := fmt.Sprintf("session setup failed: %v", err)
+			for _, fp := range job.Files {
+				sendJobEvent(&job, OutputEvent{Type: "status", FilePath: fp, Status: "Failed"})
+				sendJobEvent(&job, OutputEvent{Type: "error", FilePath: fp, Msg: msg})
+			}
+			sendJobEvent(&job, OutputEvent{Type: "batch_complete", Status: "done"})
+			return
+		}
+		sendJobEvent(&job, OutputEvent{
+			Type: "log",
+			Msg:  fmt.Sprintf("Shared upload session ready (service %s); starting %d concurrent workers", job.Service, maxWorkers),
+		})
+	}
+
+	filesChan := make(chan string, len(job.Files))
 	limiter := getServiceUploadLimiter(job.Service, maxWorkers)
 	var wg sync.WaitGroup
 	for i := 0; i < maxWorkers; i++ {
@@ -150,7 +183,8 @@ func processUploadFiles(job JobRequest, processor func(string, *JobRequest)) {
 		go func() {
 			defer wg.Done()
 			for fp := range filesChan {
-				sendJobEvent(&job, OutputEvent{Type: "status", FilePath: fp, Status: "Waiting"})
+				// Only surface "Waiting" when the service-wide slot is contested.
+				// Otherwise go straight to Preparing so UI matches concurrent progress.
 				limiter.acquire()
 				func() {
 					defer limiter.release()
@@ -158,7 +192,7 @@ func processUploadFiles(job JobRequest, processor func(string, *JobRequest)) {
 						Type:     "log",
 						FilePath: fp,
 						Msg: fmt.Sprintf(
-							"Upload slot acquired: %s (service %s, limit %d)",
+							"Upload slot acquired: %s (service %s, concurrent limit %d)",
 							filepath.Base(fp),
 							job.Service,
 							maxWorkers,

@@ -6,6 +6,7 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -153,6 +154,50 @@ func TestExecuteGenericRequestPreRequestReusesBaseCookieJar(t *testing.T) {
 	}, nil)
 	if err != nil {
 		t.Fatalf("post request returned error: %v", err)
+	}
+}
+
+func TestPrepareSharedUploadSessionReusesLoginOnce(t *testing.T) {
+	var hits int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&hits, 1)
+		w.Header().Set("Set-Cookie", "sess=abc; Path=/")
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(`<input name="sess_id" value="shared-session-1">`))
+	}))
+	defer server.Close()
+
+	job := &JobRequest{
+		Service: "example.host",
+		Files:   []string{"a.jpg", "b.jpg", "c.jpg"},
+		HttpSpec: &HttpRequestSpec{
+			URL: server.URL + "/upload?upload_id={upload_id}",
+			PreRequest: &PreRequestSpec{
+				URL:           server.URL + "/login",
+				Method:        http.MethodGet,
+				UseCookies:    true,
+				ResponseType:  "html",
+				ExtractFields: map[string]string{"sess_id": "input[name='sess_id']"},
+			},
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := PrepareSharedUploadSession(ctx, server.Client(), job); err != nil {
+		t.Fatalf("PrepareSharedUploadSession: %v", err)
+	}
+	if got := atomic.LoadInt32(&hits); got != 1 {
+		t.Fatalf("pre_request hits = %d, want 1", got)
+	}
+	if job.HttpSpec.PreRequest != nil {
+		t.Fatal("expected PreRequest cleared after shared session setup")
+	}
+	if job.SessionClient == nil {
+		t.Fatal("expected SessionClient to be set")
+	}
+	if job.SessionValues["sess_id"] != "shared-session-1" {
+		t.Fatalf("sess_id = %q, want shared-session-1", job.SessionValues["sess_id"])
 	}
 }
 

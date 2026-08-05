@@ -261,14 +261,17 @@ def test_worker_count_is_in_global_advanced_section():
     source = main_window_source()
 
     assert "def _create_global_advanced_section" in source
+    assert "def _create_thread_limit_control" in source
     assert 'text="Advanced App Settings +"' in source
-    assert 'text="Worker Count:"' in source
-    assert 'text="Thread Limit:"' in source
+    assert 'text="Job Workers:"' in source
+    assert 'text="Simultaneous Uploads:"' in source
     assert "thread_limit_entry = ctk.CTkEntry" in source
     assert "set_global_threads(self.menu_thread_var.get())" in source
-    assert 'upload_cfg["global_thread_limit"] = 1' in source
+    # Worker Count must not force sequential file uploads.
+    assert 'upload_cfg["global_thread_limit"] = 1' not in source
     assert 'cfg["imagebam_threads"] = 1' not in source
     assert 'add_cascade(label="Set Thread Limit"' not in source
+    assert "self._create_thread_limit_control(out_frame)" in source
     assert "self._create_global_advanced_section(out_frame)" in source
 
 

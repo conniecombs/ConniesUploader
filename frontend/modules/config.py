@@ -74,10 +74,13 @@ CRASH_LOG_FILE = os.environ.get("CONNIESUPLOADER_CRASH_LOG_FILE", "crash_log.log
 UI_THUMB_SIZE = (40, 40)
 
 # Upload Configuration
+# DEFAULT_THREAD_COUNT is the primary simultaneous-file upload limit (legacy "threads").
 DEFAULT_THREAD_COUNT = 5
 MIN_THREAD_COUNT = 1
 MAX_THREAD_COUNT = 10
 MAX_SERVICE_THREAD_COUNT = MAX_THREAD_COUNT
+# Outer sidecar job-pool size (multiple groups / cover+standard jobs). Does not
+# force sequential file uploads when set to 1.
 DEFAULT_WORKER_COUNT = 8
 MIN_WORKER_COUNT = 1
 MAX_WORKER_COUNT = 16
