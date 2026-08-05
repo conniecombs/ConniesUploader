@@ -115,9 +115,7 @@ class UploaderApp(
         self.pending_ui_rows = deque()
         self.pending_thumbnails = {}
         self.results = []
-        self.log_cache = []
         self.activity_events = []
-        self.activity_log_file = config.ACTIVITY_LOG_FILE
         self.preflight_issues = []
         self.preflight_action_files = []
         self.preflight_action_file_issue_texts = []
@@ -126,7 +124,6 @@ class UploaderApp(
         self.preflight_detail_lines = []
         self.import_check_issues = []
         self.image_refs = set()  # Using set for O(1) add/remove operations
-        self.log_window_ref = None
         self.clipboard_buffer = []
         self.upload_total = 0
         self.upload_count = 0

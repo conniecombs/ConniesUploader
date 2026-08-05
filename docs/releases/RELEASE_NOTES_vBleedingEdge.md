@@ -1,15 +1,15 @@
-# Release Notes - v3.0.1 "Pixhost.cc & Import Performance Patch"
+# Release Notes - vBleedingEdge "Pixhost.cc & Import Performance Patch"
 
-**Git Tag**: `v3.0.1`
+**Git Tag**: `vBleedingEdge`
 **Release Type**: Patch release
 **Release Date**: 2026-07-28
 **Previous Version**: `v3.0.0`
 
-v3.0.1 keeps the v3 Python-owned workflow architecture intact while refreshing the active Pixhost integration and improving large-folder import responsiveness.
+vBleedingEdge keeps the v3 Python-owned workflow architecture intact while refreshing the active Pixhost integration and improving large-folder import responsiveness.
 
 ## Changed
 
-- Bumped the app version, build scripts, and active plugin metadata to `3.0.1`.
+- Bumped the app version, build scripts, and active plugin metadata to `BleedingEdge`.
 - Updated Pixhost as an active service from `pixhost.to` to `pixhost.cc`.
 - Updated Pixhost upload, gallery creation, gallery finalization, Gallery Manager, output context, tests, and current-facing docs to use `pixhost.cc`.
 - Moved folder import scanning off the Tk thread, increased bounded UI queue throughput, and deferred thumbnails so large folder adds remain more responsive.
@@ -32,13 +32,13 @@ The release-prep pass was verified locally with:
 
 ## Download
 
-**[Download v3.0.1](https://github.com/conniecombs/ConniesUploader/releases/tag/v3.0.1)**
+**[Download vBleedingEdge](https://github.com/conniecombs/ConniesUploader/releases/tag/vBleedingEdge)**
 
 Expected release artifacts:
 
-- `ConniesUploader-v3.0.1-windows-x64.zip`
-- `ConniesUploader-v3.0.1-linux-x64.tar.gz`
-- `ConniesUploader-v3.0.1-macos-x64.zip`
+- `ConniesUploader-vBleedingEdge-windows-x64.zip`
+- `ConniesUploader-vBleedingEdge-linux-x64.tar.gz`
+- `ConniesUploader-vBleedingEdge-macos-x64.zip`
 
 Each release artifact includes a SHA256 checksum.
 
@@ -47,6 +47,6 @@ Each release artifact includes a SHA256 checksum.
 Use the annotated release tag when you are ready to publish:
 
 ```bash
-git tag -a v3.0.1 -m "Release v3.0.1"
-git push origin v3.0.1
+git tag -a vBleedingEdge -m "Release vBleedingEdge"
+git push origin vBleedingEdge
 ```

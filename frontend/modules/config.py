@@ -8,7 +8,7 @@ from loguru import logger
 import os
 
 # --- Version ---
-APP_VERSION = "3.0.1"
+APP_VERSION = "BleedingEdge"
 USER_AGENT = f"ConniesUploader/{APP_VERSION}"
 
 # --- Constants ---
@@ -69,7 +69,6 @@ VALID_EXTENSIONS = SUPPORTED_EXTENSIONS
 USER_DATA_DIR = os.path.join(os.path.expanduser("~"), ".conniesuploader")
 SETTINGS_FILE = os.path.join(USER_DATA_DIR, "user_settings.json")
 LEGACY_SETTINGS_FILE = os.path.abspath("user_settings.json")
-ACTIVITY_LOG_FILE = os.path.join(USER_DATA_DIR, "activity.log")
 CRASH_LOG_FILE = os.environ.get("CONNIESUPLOADER_CRASH_LOG_FILE", "crash_log.log")
 UI_THUMB_SIZE = (40, 40)
 

@@ -30,7 +30,7 @@ class PixhostPlugin(ImageHostPlugin):
     def metadata(self) -> Dict[str, Any]:
         """Plugin metadata for Pixhost.cc"""
         return {
-            "version": "3.0.1",
+            "version": "BleedingEdge",
             "author": "Connie's Uploader Team",
             "description": (
                 "Upload images to Pixhost.cc with gallery support and cover image handling"

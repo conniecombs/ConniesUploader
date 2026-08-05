@@ -5,11 +5,11 @@ All notable changes to Connie's Uploader Ultimate will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [3.0.1] - 2026-07-28
+## [BleedingEdge] - 2026-07-28
 
 ### Changed
 
-- Bumped app, build-script, and active plugin metadata to `3.0.1`.
+- Bumped app, build-script, and active plugin metadata to `BleedingEdge`.
 - Moved the active Pixhost host identity, public gallery links, and API endpoints from `pixhost.to` to `pixhost.cc`.
 - Kept legacy `pixhost.to` saved settings, gallery cache records, selected galleries, validation, and upload thread settings compatible by normalizing them to `pixhost.cc`.
 - Improved large-folder import responsiveness by moving folder scans off the Tk thread, queuing rows in larger bounded batches, and deferring thumbnail work.

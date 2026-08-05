@@ -830,15 +830,22 @@ def test_refresh_queue_state_updates_summary_and_empty_state():
 
 
 @pytest.mark.unit
-def test_add_activity_writes_terminal_log_file(tmp_path):
+def test_add_activity_is_session_only_without_disk_writes(tmp_path, monkeypatch):
     app = UploaderApp.__new__(UploaderApp)
     app.activity_events = []
-    app.activity_log_file = str(tmp_path / "activity.log")
+    app.activity_text = None
+    app.activity_panel = None
+    # Guard against any accidental disk path usage.
+    monkeypatch.delattr(config, "ACTIVITY_LOG_FILE", raising=False)
 
     UploaderApp.add_activity(app, "Upload queued.", "info")
+    UploaderApp.add_activity(app, "Uploaded a.jpg.", "success")
+    UploaderApp.add_activity(app, "Failed b.jpg: timeout.", "error")
 
-    assert app.activity_events[-1]["message"] == "Upload queued."
-    assert "[INFO] Upload queued." in Path(app.activity_log_file).read_text(encoding="utf-8")
+    assert app.activity_events[-1]["message"] == "Failed b.jpg: timeout."
+    assert app.activity_events[-1]["level"] == "error"
+    assert app.activity_events[-2]["level"] == "success"
+    assert not list(tmp_path.glob("**/*")), "activity must not write files to disk"
 
 
 @pytest.mark.unit
@@ -2524,13 +2531,31 @@ def test_upload_completion_uses_inline_summary_instead_of_modal():
 def test_activity_events_are_capped_and_keep_latest():
     app = UploaderApp.__new__(UploaderApp)
     app.activity_events = []
+    app.activity_text = None
+    app.activity_panel = None
 
-    for index in range(85):
+    for index in range(250):
         UploaderApp.add_activity(app, f"event {index}")
 
-    assert len(app.activity_events) == 80
-    assert app.activity_events[0]["message"] == "event 5"
-    assert app.activity_events[-1]["message"] == "event 84"
+    assert len(app.activity_events) == 200
+    assert app.activity_events[0]["message"] == "event 50"
+    assert app.activity_events[-1]["message"] == "event 249"
+
+
+@pytest.mark.unit
+def test_activity_panel_and_execution_log_menu_contract():
+    source = main_window_source()
+    assert 'text="Activity"' in source
+    assert "def _create_activity_panel" in source
+    assert "def copy_activity" in source
+    assert 'label="Show Activity"' in source
+    assert 'label="Execution Log"' not in source
+    assert 'label="Activity Terminal"' not in source
+    assert "open_activity_terminal" not in source
+    assert "ACTIVITY_LOG_FILE" not in source
+    assert "class LogWindow" not in Path(
+        Path(__file__).resolve().parents[1] / "modules" / "widgets.py"
+    ).read_text(encoding="utf-8")
 
 
 @pytest.mark.unit
@@ -2541,6 +2566,8 @@ def test_error_status_marks_failed_and_adds_activity_reason():
     app.upload_count = 0
     app.upload_total = 1
     app.activity_events = []
+    app.activity_text = None
+    app.activity_panel = None
     app.overall_progress = FakeProgress()
     status = FakeLabel()
     prog = FakeProgress()

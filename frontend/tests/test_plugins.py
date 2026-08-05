@@ -1046,7 +1046,7 @@ class TestPluginMetadata(unittest.TestCase):
                 self.assertNotEqual(metadata[field], "")
 
     def test_metadata_version_format(self):
-        """Test that plugin versions follow semantic versioning."""
+        """Test that plugin versions are present (semver or development label)."""
         from modules.plugins import pixhost, imgur
 
         for plugin_module in [pixhost, imgur]:
@@ -1056,10 +1056,17 @@ class TestPluginMetadata(unittest.TestCase):
             instance = plugin_class()
             version = instance.metadata.get("version")
 
-            # Check basic semver format (X.Y.Z)
             self.assertIsNotNone(version)
-            parts = version.split(".")
-            self.assertEqual(len(parts), 3, f"Plugin {instance.name} version not semver: {version}")
+            self.assertTrue(str(version).strip(), f"Plugin {instance.name} missing version")
+            # Accept semver (X.Y.Z) or development labels such as BleedingEdge.
+            parts = str(version).split(".")
+            if len(parts) == 3 and all(part.isdigit() for part in parts):
+                continue
+            self.assertRegex(
+                str(version),
+                r"^[A-Za-z][A-Za-z0-9._-]*$",
+                f"Plugin {instance.name} version not recognized: {version}",
+            )
 
     def test_metadata_features_structure(self):
         """Test that plugin features metadata is properly structured."""

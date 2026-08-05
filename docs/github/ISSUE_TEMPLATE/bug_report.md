@@ -28,7 +28,7 @@ If applicable, add screenshots to help explain your problem.
 ## Environment
 **Desktop:**
  - OS: [e.g. Windows 10, Ubuntu 22.04, macOS 13]
- - App Version: [e.g. v3.0.1 or commit SHA]
+ - App Version: [e.g. vBleedingEdge or commit SHA]
  - Run Type: [Packaged release exe/app or source run with python main.py]
  - Python Version: [e.g. 3.11.9, if running from source or building locally]
  - Go Version: [e.g. 1.25.9 or 1.26.5, if running from source or building locally]

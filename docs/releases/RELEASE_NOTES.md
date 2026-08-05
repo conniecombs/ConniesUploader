@@ -4,16 +4,16 @@ This directory contains release notes and publishing guidance for Connie's Uploa
 
 ## Latest Release
 
-**v3.0.1 - "Pixhost.cc & Import Performance Patch"**
+**vBleedingEdge - "Pixhost.cc & Import Performance Patch"**
 Release date: July 28, 2026
-Tag: `v3.0.1`
+Tag: `vBleedingEdge`
 
-Read the full notes: [RELEASE_NOTES_v3.0.1.md](RELEASE_NOTES_v3.0.1.md)
+Read the full notes: [RELEASE_NOTES_vBleedingEdge.md](RELEASE_NOTES_vBleedingEdge.md)
 Previous architecture release notes: [RELEASE_NOTES_v3.0.0.md](RELEASE_NOTES_v3.0.0.md)
 
 ### Summary
 
-- Bumped app, build scripts, and active plugin metadata to `3.0.1`.
+- Bumped app, build scripts, and active plugin metadata to `BleedingEdge`.
 - Updated Pixhost from `pixhost.to` to `pixhost.cc` across active upload, gallery, output, docs, and test surfaces.
 - Preserved legacy `pixhost.to` saved settings and gallery cache records by normalizing them to `pixhost.cc`.
 - Improved large-folder import responsiveness with background scanning, larger bounded UI batches, and deferred thumbnails.
@@ -22,7 +22,7 @@ Previous architecture release notes: [RELEASE_NOTES_v3.0.0.md](RELEASE_NOTES_v3.
 
 | Version | Date | Focus | Notes |
 |---------|------|-------|-------|
-| v3.0.1 | 2026-07-28 | Pixhost.cc & Import Performance Patch | [Notes](RELEASE_NOTES_v3.0.1.md) |
+| vBleedingEdge | 2026-07-28 | Pixhost.cc & Import Performance Patch | [Notes](RELEASE_NOTES_vBleedingEdge.md) |
 | v3.0.0 | 2026-07-12 | Python-Owned Workflows & Generic Transport | [Notes](RELEASE_NOTES_v3.0.0.md), [Diff](BRANCH_DIFF_v3.0.0.md) |
 | v2.0.0 | 2026-06-22 | Posting, Templates & Gallery Workflows | [Notes](RELEASE_NOTES_v2.0.0.md) |
 | v1.4.0 | 2026-06-20 | User Experience Polish & Safer Upload Controls | [Notes](RELEASE_NOTES_v1.4.0.md) |

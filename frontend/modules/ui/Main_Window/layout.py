@@ -17,7 +17,6 @@ from .common import (  # noqa: F401
     Image,
     ImageTk,
     List,
-    LogWindow,
     Optional,
     PluginManager,
     SafeScrollableFrame,
@@ -225,6 +224,139 @@ class LayoutMixin:
         self.overall_progress = ctk.CTkProgressBar(footer)
         self.overall_progress.set(0)
         self.overall_progress.pack(fill="x", pady=5)
+
+        # Session activity (in-memory only) sits above the footer.
+        self._create_activity_panel(right_panel)
+        self.activity_panel.pack(fill="x", padx=5, pady=(0, 4), before=footer)
+
+    def _create_activity_panel(self, parent) -> None:
+        """In-app session activity log (no disk writes)."""
+        self.activity_panel = ctk.CTkFrame(parent, border_width=1, border_color="#3A3F4B")
+        self._activity_placeholder_active = True
+
+        header = ctk.CTkFrame(self.activity_panel, fg_color="transparent")
+        header.pack(fill="x", padx=10, pady=(8, 2))
+        ctk.CTkLabel(
+            header,
+            text="Activity",
+            font=("Segoe UI", 13, "bold"),
+        ).pack(side="left")
+
+        self.btn_activity_clear = ctk.CTkButton(
+            header,
+            text="Clear",
+            command=self.clear_activity,
+            width=62,
+            height=26,
+            fg_color="gray",
+            hover_color="#666666",
+        )
+        self.btn_activity_clear.pack(side="right", padx=(6, 0))
+        self.btn_activity_copy = ctk.CTkButton(
+            header,
+            text="Copy",
+            command=self.copy_activity,
+            width=62,
+            height=26,
+            fg_color="gray",
+            hover_color="#666666",
+        )
+        self.btn_activity_copy.pack(side="right", padx=(6, 0))
+        self.btn_activity_hide = ctk.CTkButton(
+            header,
+            text="Hide",
+            command=self._hide_activity_panel,
+            width=62,
+            height=26,
+            fg_color="gray",
+            hover_color="#666666",
+        )
+        self.btn_activity_hide.pack(side="right")
+
+        self.activity_text = ctk.CTkTextbox(
+            self.activity_panel,
+            height=120,
+            wrap="word",
+            font=("Consolas", 12),
+            activate_scrollbars=True,
+        )
+        self.activity_text.pack(fill="x", expand=False, padx=10, pady=(0, 10))
+
+        # Color tags: success green, failure red (plus warning / info).
+        self.activity_text.tag_config("level_success", foreground="#34C759")
+        self.activity_text.tag_config("level_error", foreground="#FF453A")
+        self.activity_text.tag_config("level_warning", foreground="#FFB340")
+        self.activity_text.tag_config("level_info", foreground="#A8B2C1")
+
+        self.activity_text.insert("end", "Session activity will appear here.\n")
+        self.activity_text.tag_add("level_info", "1.0", "end-1c")
+        self.activity_text.configure(state="disabled")
+
+        # Read-only but selectable: allow navigation + clipboard shortcuts only.
+        self.activity_text.bind("<Key>", self._activity_keypress_filter)
+        self.activity_text.bind("<Control-c>", self._activity_copy_selection)
+        self.activity_text.bind("<Control-C>", self._activity_copy_selection)
+        self.activity_text.bind("<Control-a>", self._activity_select_all)
+        self.activity_text.bind("<Control-A>", self._activity_select_all)
+        # Right-click context menu for copy.
+        self.activity_text.bind("<Button-3>", self._activity_context_menu)
+
+    def _activity_keypress_filter(self, event):
+        """Block edits in the activity textbox while allowing copy/select shortcuts."""
+        # Allow pure modifier keys and navigation.
+        if event.keysym in {
+            "Left",
+            "Right",
+            "Up",
+            "Down",
+            "Home",
+            "End",
+            "Prior",
+            "Next",
+            "Shift_L",
+            "Shift_R",
+            "Control_L",
+            "Control_R",
+            "Alt_L",
+            "Alt_R",
+            "Caps_Lock",
+            "Tab",
+            "Escape",
+        }:
+            return None
+        # Ctrl/Cmd combos (copy/select-all handled by dedicated bindings).
+        if event.state & 0x4:  # Control
+            return None
+        return "break"
+
+    def _activity_copy_selection(self, _event=None):
+        self.copy_activity()
+        return "break"
+
+    def _activity_select_all(self, _event=None):
+        textbox = self.__dict__.get("activity_text")
+        if textbox is None:
+            return "break"
+        textbox.configure(state="normal")
+        textbox.tag_add("sel", "1.0", "end-1c")
+        textbox.mark_set("insert", "1.0")
+        textbox.see("insert")
+        textbox.configure(state="disabled")
+        return "break"
+
+    def _activity_context_menu(self, event):
+        textbox = self.__dict__.get("activity_text")
+        if textbox is None:
+            return
+        menu = tk.Menu(textbox, tearoff=0)
+        menu.add_command(label="Copy", command=self.copy_activity)
+        menu.add_command(label="Select All", command=lambda: self._activity_select_all())
+        menu.add_separator()
+        menu.add_command(label="Clear", command=self.clear_activity)
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
 
     def _create_thread_limit_control(self, parent):
         """Primary simultaneous-upload control (maps to sidecar config threads)."""

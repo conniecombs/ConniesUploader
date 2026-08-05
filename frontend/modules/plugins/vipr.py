@@ -40,7 +40,7 @@ class ViprPlugin(ImageHostPlugin):
     def metadata(self) -> Dict[str, Any]:
         """Plugin metadata for Vipr.im"""
         return {
-            "version": "3.0.1",
+            "version": "BleedingEdge",
             "author": "Connie's Uploader Team",
             "description": "Upload images to Vipr.im with dynamic gallery selection, cover support, and API-based uploads",
             "website": "https://vipr.im",
