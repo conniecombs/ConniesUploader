@@ -25,7 +25,7 @@ from modules.ui.safe_scrollable_frame import SafeScrollableFrame
 
 from modules import config
 from modules import api
-from modules.widgets import ScrollableFrame, LogWindow, CollapsibleGroupFrame, ServiceSettingsView
+from modules.widgets import ScrollableFrame, CollapsibleGroupFrame, ServiceSettingsView
 from modules.gallery_manager import GalleryManager
 from modules.gallery_service import GalleryRecord, gallery_url_for_service
 from modules.settings_manager import SettingsManager
@@ -54,7 +54,6 @@ __all__ = [
     "Image",
     "ImageTk",
     "List",
-    "LogWindow",
     "Optional",
     "PluginManager",
     "SafeScrollableFrame",

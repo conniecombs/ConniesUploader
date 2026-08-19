@@ -17,7 +17,6 @@ from .common import (  # noqa: F401
     Image,
     ImageTk,
     List,
-    LogWindow,
     Optional,
     PluginManager,
     SafeScrollableFrame,
@@ -80,10 +79,9 @@ class UploadChecksMixin:
 
             upload_cfg = cfg.copy()
 
-            # When worker count is 1, force the runtime thread limit to 1 for true sequential uploads.
-            if cfg.get("global_worker_count") == 1:
-                upload_cfg["global_thread_limit"] = 1
-                upload_cfg["threads"] = 1
+            # Thread Limit alone controls simultaneous file uploads inside each job.
+            # Worker Count only sizes the outer sidecar job pool and must not force
+            # sequential file uploads (legacy parity: one concurrency knob for files).
 
             preflight_issues, ready_message = self._run_upload_preflight(
                 pending_by_group, upload_cfg

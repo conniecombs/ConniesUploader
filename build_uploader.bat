@@ -9,7 +9,7 @@ cd /d "%SCRIPT_DIR%" || exit /b 1
 title Connie's Uploader - Build Tool
 
 set "APP_NAME=ConniesUploader"
-set "VERSION=3.0.1"
+set "VERSION=BleedingEdge"
 set "TOOLS_DIR=%SCRIPT_DIR%.build-tools"
 set "LOCAL_GO=%TOOLS_DIR%\go\bin\go.exe"
 

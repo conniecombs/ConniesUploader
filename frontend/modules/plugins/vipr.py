@@ -40,7 +40,7 @@ class ViprPlugin(ImageHostPlugin):
     def metadata(self) -> Dict[str, Any]:
         """Plugin metadata for Vipr.im"""
         return {
-            "version": "3.0.1",
+            "version": "BleedingEdge",
             "author": "Connie's Uploader Team",
             "description": "Upload images to Vipr.im with dynamic gallery selection, cover support, and API-based uploads",
             "website": "https://vipr.im",
@@ -305,16 +305,17 @@ class ViprPlugin(ImageHostPlugin):
         Uses Phase 3 multi-step pre-request hooks:
         1. POST to / (sets cookies)
         2. GET / (extracts sess_id using cookies from step 1)
+
+        Login runs once per multi-file job in the Go sidecar; each concurrent
+        file then reuses that session with a unique {{upload_id}}.
         """
-        import random
-        import string
-
-        # Generate random upload ID
-        upload_id = "".join(random.choices(string.ascii_letters + string.digits, k=12))
-
-        # Base endpoint (will be overridden if pre-request extracts custom endpoint)
+        # Per-file upload_id is substituted by the Go sidecar ({upload_id}) so
+        # concurrent workers each get a unique XFS upload slot while sharing
+        # the once-per-job login session.
         base_endpoint = "https://vipr.im/cgi-bin/upload.cgi"
-        upload_url = f"{base_endpoint}?upload_id={upload_id}&js_on=1&utype=reg&upload_type=file"
+        upload_url = (
+            f"{base_endpoint}?upload_id={{upload_id}}&js_on=1&utype=reg&upload_type=file"
+        )
         gallery_id = self._gallery_id_from_config(config)
 
         return {

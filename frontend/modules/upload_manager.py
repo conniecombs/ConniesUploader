@@ -39,12 +39,13 @@ COVER_THUMBNAIL_OVERRIDES = {
 }
 
 
-SERVICE_RATE_LIMITS = {
-    "imx.to": {"requests_per_second": 2.0, "burst_size": 5},
-    config.PIXHOST_SERVICE_ID: {"requests_per_second": 2.0, "burst_size": 5},
-    "turboimagehost": {"requests_per_second": 2.0, "burst_size": 5},
-    "vipr.im": {"requests_per_second": 2.0, "burst_size": 5},
-    "imagebam.com": {"requests_per_second": 2.0, "burst_size": 5},
+# Proactive sidecar rate limits for upload jobs.
+# Empty / omitted = legacy-like full concurrency (Go only throttles when RPS > 0).
+# Host 429 responses still use Go retry/backoff. Optional per-service overrides
+# can re-enable gentle pacing without capping bulk throughput.
+SERVICE_RATE_LIMITS: Dict[str, Dict[str, float | int]] = {
+    # Intentionally empty defaults: do not attach rate_limits to upload jobs.
+    # Callers that need throttling can pass explicit rate_limits on the job.
 }
 
 
@@ -338,9 +339,13 @@ class UploadManager:
                     }
                     if resolve_spec:
                         job_data["resolve_spec"] = resolve_spec
-                    if service_id in SERVICE_RATE_LIMITS:
-                        job_data["rate_limits"] = SERVICE_RATE_LIMITS[service_id]
-                    logger.info(f"Using generic HTTP runner for {service_id} ({len(file_list)} files)")
+                    rate_limits = self._rate_limits_for_job(service_id, job_cfg)
+                    if rate_limits:
+                        job_data["rate_limits"] = rate_limits
+                    logger.info(
+                        f"Using generic HTTP runner for {service_id} "
+                        f"({len(file_list)} files, threads={job_cfg.get('threads')})"
+                    )
 
                     self.active_files.update(file_list)
                     if not self.bridge.send_cmd(job_data):
@@ -373,6 +378,8 @@ class UploadManager:
         normalized = cfg.copy()
         service_id = config.normalize_service_id(normalized.get("service", ""))
         normalized["service"] = service_id
+        # Thread Limit (global_thread_limit) is the primary concurrent-file control.
+        # Fall back to per-service keys only when the global limit is unset.
         thread_value = normalized.get("global_thread_limit")
 
         if thread_value in (None, ""):
@@ -382,16 +389,62 @@ class UploadManager:
 
         try:
             threads = int(
-                thread_value if thread_value not in (None, "") else normalized.get("threads", 2)
+                thread_value
+                if thread_value not in (None, "")
+                else normalized.get("threads", config.DEFAULT_THREAD_COUNT)
             )
         except (TypeError, ValueError):
-            threads = 2
+            threads = config.DEFAULT_THREAD_COUNT
 
         normalized["threads"] = max(
             config.MIN_THREAD_COUNT,
             min(config.MAX_THREAD_COUNT, threads),
         )
         return normalized
+
+    @staticmethod
+    def _rate_limits_for_job(
+        service_id: str, job_cfg: Dict[str, Any]
+    ) -> Dict[str, float | int] | None:
+        """Return optional proactive rate limits for an upload job.
+
+        Default is no proactive limit (legacy parity). Explicit SERVICE_RATE_LIMITS
+        or job_cfg rate_limit_* keys can re-enable throttling per host.
+        """
+        override = SERVICE_RATE_LIMITS.get(service_id)
+        if not override:
+            rps = job_cfg.get("rate_limit_rps")
+            burst = job_cfg.get("rate_limit_burst")
+            if rps in (None, "", 0, 0.0, "0"):
+                return None
+            try:
+                return {
+                    "requests_per_second": float(rps),
+                    "burst_size": int(burst if burst not in (None, "") else max(int(float(rps)), 1)),
+                }
+            except (TypeError, ValueError):
+                return None
+
+        try:
+            rps = float(override.get("requests_per_second", 0))
+        except (TypeError, ValueError):
+            return None
+        if rps <= 0:
+            return None
+        try:
+            burst = int(override.get("burst_size", max(int(rps), 1)))
+        except (TypeError, ValueError):
+            burst = max(int(rps), 1)
+        payload: Dict[str, float | int] = {
+            "requests_per_second": rps,
+            "burst_size": max(burst, 1),
+        }
+        if "global_limit" in override:
+            try:
+                payload["global_limit"] = float(override["global_limit"])
+            except (TypeError, ValueError):
+                pass
+        return payload
 
     def _process_events(self) -> None:
         """Read events from the bridge and update UI-facing queues."""

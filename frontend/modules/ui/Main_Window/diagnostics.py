@@ -17,7 +17,6 @@ from .common import (  # noqa: F401
     Image,
     ImageTk,
     List,
-    LogWindow,
     Optional,
     PluginManager,
     SafeScrollableFrame,
@@ -52,68 +51,149 @@ from .common import (  # noqa: F401
     viper_api,
 )
 
+# Session-only activity panel colors (success green / failure red).
+_ACTIVITY_LEVEL_COLORS = {
+    "success": "#34C759",
+    "error": "#FF453A",
+    "warning": "#FFB340",
+    "info": "#A8B2C1",
+}
+
+_ACTIVITY_MAX_EVENTS = 200
+
 
 class DiagnosticsMixin:
     def add_activity(self, message: str, level: str = "info") -> None:
+        """Append a session-only activity line (no disk I/O)."""
+        level_key = str(level or "info").strip().lower() or "info"
+        if level_key not in _ACTIVITY_LEVEL_COLORS:
+            level_key = "info"
+
         timestamp = datetime.now().strftime("%H:%M:%S")
-        event = {"time": timestamp, "message": str(message), "level": level}
-        self.activity_events.append(event)
-        self.activity_events = self.activity_events[-80:]
-        self._append_activity_log(event)
+        event = {
+            "time": timestamp,
+            "message": str(message),
+            "level": level_key,
+        }
+        events = getattr(self, "activity_events", None)
+        if events is None:
+            self.activity_events = []
+            events = self.activity_events
+        events.append(event)
+        if len(events) > _ACTIVITY_MAX_EVENTS:
+            del events[: len(events) - _ACTIVITY_MAX_EVENTS]
 
-    def _append_activity_log(self, event: Dict[str, str]) -> None:
-        log_path = self.__dict__.get("activity_log_file")
-        if not log_path:
+        self._append_activity_ui(event)
+
+    def _append_activity_ui(self, event: Dict[str, str]) -> None:
+        textbox = self.__dict__.get("activity_text")
+        if textbox is None:
             return
 
+        level = event.get("level", "info")
+        line = f"{event['time']}  {event['message']}\n"
         try:
-            log_dir = os.path.dirname(log_path)
-            if log_dir:
-                os.makedirs(log_dir, exist_ok=True)
-            line = f"{event['time']} [{event.get('level', 'info').upper()}] {event['message']}\n"
-            with open(log_path, "a", encoding="utf-8") as log_file:
-                log_file.write(line)
-        except OSError as exc:
-            logger.debug(f"Could not write activity log: {exc}")
+            textbox.configure(state="normal")
+            # Drop the empty-state placeholder on first real event.
+            if getattr(self, "_activity_placeholder_active", False):
+                textbox.delete("1.0", "end")
+                self._activity_placeholder_active = False
 
-    def open_activity_terminal(self) -> None:
-        log_path = self.__dict__.get("activity_log_file") or config.ACTIVITY_LOG_FILE
-        self.activity_log_file = log_path
-        try:
-            log_dir = os.path.dirname(log_path)
-            if log_dir:
-                os.makedirs(log_dir, exist_ok=True)
-            open(log_path, "a", encoding="utf-8").close()
-        except OSError as exc:
-            messagebox.showerror("Activity Terminal", f"Could not create activity log:\n\n{exc}")
+            start = textbox.index("end-1c")
+            textbox.insert("end", line)
+            end = textbox.index("end-1c")
+            tag = f"level_{level}"
+            textbox.tag_add(tag, start, end)
+            # Keep the visible buffer aligned with in-memory cap.
+            line_count = int(float(textbox.index("end-1c").split(".")[0]))
+            if line_count > _ACTIVITY_MAX_EVENTS:
+                textbox.delete("1.0", f"{line_count - _ACTIVITY_MAX_EVENTS + 1}.0")
+            textbox.see("end")
+            textbox.configure(state="disabled")
+            self._show_activity_panel()
+        except Exception as exc:
+            logger.debug(f"Could not update activity panel: {exc}")
+
+    def _show_activity_panel(self) -> None:
+        panel = self.__dict__.get("activity_panel")
+        if panel is None:
             return
+        if not panel.winfo_ismapped():
+            footer = self.__dict__.get("queue_footer")
+            pack_kwargs = {"fill": "x", "padx": 5, "pady": (0, 4)}
+            if footer is not None:
+                panel.pack(before=footer, **pack_kwargs)
+            else:
+                panel.pack(**pack_kwargs)
 
-        escaped_path = log_path.replace("'", "''")
-        command = (
-            f"Write-Host 'Connie''s Uploader activity log'; "
-            f"Write-Host '{escaped_path}'; "
-            f"Get-Content -LiteralPath '{escaped_path}' -Wait"
-        )
+    def _hide_activity_panel(self) -> None:
+        panel = self.__dict__.get("activity_panel")
+        if panel is not None and panel.winfo_ismapped():
+            panel.pack_forget()
+
+    def clear_activity(self) -> None:
+        """Clear the current-session activity view."""
+        self.activity_events = []
+        textbox = self.__dict__.get("activity_text")
+        if textbox is None:
+            return
         try:
-            subprocess.Popen(
-                ["powershell.exe", "-NoExit", "-Command", command],
-                creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0),
-            )
-        except OSError as exc:
-            messagebox.showerror("Activity Terminal", f"Could not open PowerShell:\n\n{exc}")
+            textbox.configure(state="normal")
+            textbox.delete("1.0", "end")
+            textbox.insert("end", "Session activity will appear here.\n")
+            textbox.tag_add("level_info", "1.0", "end-1c")
+            textbox.configure(state="disabled")
+            self._activity_placeholder_active = True
+        except Exception as exc:
+            logger.debug(f"Could not clear activity panel: {exc}")
 
-    def toggle_log(self):
-        if self.log_window_ref and self.log_window_ref.winfo_exists():
-            self.log_window_ref.lift()
-        else:
-            self.log_window_ref = LogWindow(self, self.log_cache)
+    def copy_activity(self) -> None:
+        """Copy selected activity text, or the full session log if nothing is selected."""
+        textbox = self.__dict__.get("activity_text")
+        if textbox is None:
+            return
+        try:
+            try:
+                selected = textbox.selection_get()
+            except tk.TclError:
+                selected = ""
+            if selected and selected.strip():
+                text = selected
+            else:
+                # Full session buffer (skip placeholder).
+                if getattr(self, "_activity_placeholder_active", False):
+                    text = ""
+                else:
+                    textbox.configure(state="normal")
+                    text = textbox.get("1.0", "end-1c")
+                    textbox.configure(state="disabled")
+            if not text.strip():
+                self.add_activity("Nothing to copy from activity.", "warning")
+                return
+            pyperclip.copy(text)
+            # Avoid recursion noise: use a direct UI-less path if copy was of activity.
+            # Still show a short confirmation as success (green).
+            events = getattr(self, "activity_events", None)
+            if events is None:
+                self.activity_events = []
+            # Use private append to avoid infinite loop if copy fails oddly.
+            timestamp = datetime.now().strftime("%H:%M:%S")
+            event = {
+                "time": timestamp,
+                "message": "Copied activity to clipboard.",
+                "level": "success",
+            }
+            self.activity_events.append(event)
+            if len(self.activity_events) > _ACTIVITY_MAX_EVENTS:
+                del self.activity_events[: len(self.activity_events) - _ACTIVITY_MAX_EVENTS]
+            self._append_activity_ui(event)
+        except Exception as exc:
+            logger.warning(f"Could not copy activity: {exc}")
+            messagebox.showerror("Copy Activity", f"Could not copy activity text:\n\n{exc}")
 
-    def log(self, msg):
+    def log(self, msg: str) -> None:
+        """Developer/debug path — logger only (not the session activity panel)."""
         logger.info(msg)
-        if self.log_window_ref and self.log_window_ref.winfo_exists():
-            self.log_window_ref.append_log(msg + "\n")
-        else:
-            self.log_cache.append(msg + "\n")
 
     def graceful_shutdown(self):
         """Perform graceful shutdown of all application components."""
@@ -195,13 +275,6 @@ class DiagnosticsMixin:
             sidecar.shutdown()
         except Exception as e:
             logger.warning(f"Error shutting down sidecar: {e}")
-
-        # Close log window if open
-        if self.log_window_ref and self.log_window_ref.winfo_exists():
-            try:
-                self.log_window_ref.destroy()
-            except Exception as e:
-                logger.warning(f"Error closing log window: {e}")
 
         logger.info("Graceful shutdown complete")
 

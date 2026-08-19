@@ -35,13 +35,13 @@ class SettingsManager:
                 "type": "integer",
                 "minimum": config.MIN_WORKER_COUNT,
                 "maximum": config.MAX_WORKER_COUNT,
-                "description": "Number of concurrent upload workers",
+                "description": "Sidecar job-pool size (how many batch jobs can run); not the per-file concurrency",
             },
             "global_thread_limit": {
                 "type": "integer",
                 "minimum": config.MIN_THREAD_COUNT,
                 "maximum": config.MAX_THREAD_COUNT,
-                "description": "Maximum concurrent file uploads inside each sidecar job",
+                "description": "Simultaneous file uploads per host job (primary speed control)",
             },
             # IMX settings
             "imx_thumb": {"type": "string", "pattern": "^[0-9]+$"},

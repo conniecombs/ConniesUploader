@@ -17,7 +17,6 @@ from .common import (  # noqa: F401
     Image,
     ImageTk,
     List,
-    LogWindow,
     Optional,
     PluginManager,
     SafeScrollableFrame,

@@ -17,7 +17,6 @@ from .common import (  # noqa: F401
     Image,
     ImageTk,
     List,
-    LogWindow,
     Optional,
     PluginManager,
     SafeScrollableFrame,
@@ -81,8 +80,7 @@ class MenuActionsMixin:
 
         view_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="View", menu=view_menu)
-        view_menu.add_command(label="Execution Log", command=self.toggle_log)
-        view_menu.add_command(label="Activity Terminal", command=self.open_activity_terminal)
+        view_menu.add_command(label="Show Activity", command=self._show_activity_panel)
         view_menu.add_separator()
         view_menu.add_checkbutton(
             label="Show Image Previews",

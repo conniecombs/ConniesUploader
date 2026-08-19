@@ -2,8 +2,8 @@
 
 ## Current Status
 
-- **Product Version:** v3.0.1
-- **Architecture Version:** v3.0.1
+- **Product Version:** vBleedingEdge
+- **Architecture Version:** vBleedingEdge
 - **Last Updated:** 2026-07-12
 
 Connie's Uploader is a hybrid desktop app:

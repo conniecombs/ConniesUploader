@@ -32,7 +32,7 @@ class TurboPlugin(ImageHostPlugin):
     def metadata(self) -> Dict[str, Any]:
         """Plugin metadata for TurboImageHost"""
         return {
-            "version": "3.0.1",
+            "version": "BleedingEdge",
             "author": "Connie's Uploader Team",
             "description": "Upload images to TurboImageHost with optional authentication, dynamic endpoint configuration, and cover image support",
             "website": "https://www.turboimagehost.com",

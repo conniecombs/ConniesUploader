@@ -2,6 +2,8 @@ import importlib.util
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 WINDOWS_HOOKS_ARG = (
     '--additional-hooks-dir "..\\packaging\\pyinstaller_hooks"'
@@ -11,7 +13,7 @@ POSIX_HOOKS_ARG = (
 )
 
 
-def test_root_main_py_launches_frontend_entrypoint(monkeypatch):
+def _load_root_launcher():
     launcher_path = ROOT / "main.py"
     spec = importlib.util.spec_from_file_location(
         "root_main_launcher",
@@ -19,6 +21,11 @@ def test_root_main_py_launches_frontend_entrypoint(monkeypatch):
     )
     launcher = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(launcher)
+    return launcher
+
+
+def test_root_main_py_launches_frontend_entrypoint(monkeypatch):
+    launcher = _load_root_launcher()
 
     calls = {}
 
@@ -32,6 +39,7 @@ def test_root_main_py_launches_frontend_entrypoint(monkeypatch):
     monkeypatch.setattr(launcher.os, "chdir", fake_chdir)
     monkeypatch.setattr(launcher.runpy, "run_path", fake_run_path)
     monkeypatch.setattr(launcher.sys, "argv", ["main.py"])
+    monkeypatch.setattr(launcher, "_frontend_runtime_problem", lambda: None)
 
     launcher.main()
 
@@ -39,6 +47,40 @@ def test_root_main_py_launches_frontend_entrypoint(monkeypatch):
     assert calls["path"] == ROOT / "frontend" / "main.py"
     assert calls["run_name"] == "__main__"
     assert launcher.sys.argv[0] == str(ROOT / "frontend" / "main.py")
+
+
+def test_root_main_py_relaunches_repo_venv_when_frontend_dependency_is_missing(
+    tmp_path,
+    monkeypatch,
+):
+    launcher = _load_root_launcher()
+    repo_root = tmp_path
+    launcher_path = repo_root / "main.py"
+    launcher_path.write_text("# launcher", encoding="utf-8")
+    venv_python = launcher._repo_venv_python(repo_root)
+    venv_python.parent.mkdir(parents=True)
+    venv_python.write_text("", encoding="utf-8")
+    calls = {}
+
+    def fake_execv(path, argv):
+        calls["path"] = path
+        calls["argv"] = argv
+        raise RuntimeError("execv called")
+
+    monkeypatch.setattr(
+        launcher,
+        "_frontend_runtime_problem",
+        lambda: "tkinter uses Tcl/Tk 9.0",
+    )
+    monkeypatch.setattr(launcher.os, "execv", fake_execv)
+    monkeypatch.setattr(launcher.sys, "argv", ["main.py", "--smoke"])
+    monkeypatch.setattr(launcher.sys, "executable", str(repo_root / "python.exe"))
+
+    with pytest.raises(RuntimeError, match="execv called"):
+        launcher._relaunch_with_repo_venv_if_needed(repo_root, launcher_path)
+
+    assert calls["path"] == str(venv_python)
+    assert calls["argv"] == [str(venv_python), str(launcher_path), "--smoke"]
 
 
 def test_system_tray_is_optional_when_pystray_is_missing(monkeypatch):

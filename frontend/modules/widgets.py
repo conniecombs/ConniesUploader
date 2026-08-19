@@ -655,16 +655,3 @@ class CollapsibleGroupFrame(ctk.CTkFrame):
         self.prog.configure(progress_color="#34C759")
 
 
-class LogWindow(ctk.CTkToplevel):
-    def __init__(self, parent, initial_logs=[]):
-        super().__init__(parent)
-        self.title("Event Log")
-        self.geometry("700x300")
-        self.log_text = ctk.CTkTextbox(self, wrap="word")
-        self.log_text.pack(fill="both", expand=True, padx=10, pady=10)
-        for line in initial_logs:
-            self.append_log(line)
-
-    def append_log(self, message):
-        self.log_text.insert("end", message)
-        self.log_text.see("end")

@@ -3,7 +3,10 @@
 
 package core
 
-import "time"
+import (
+	"net/http"
+	"time"
+)
 
 const DefaultUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
@@ -42,6 +45,12 @@ type JobRequest struct {
 	ResolveSpec *BatchResolveSpec       `json:"resolve_spec,omitempty"`
 	RateLimits  *RateLimitConfig        `json:"rate_limits,omitempty"`
 	RetryConfig *RetryConfig            `json:"retry_config,omitempty"`
+
+	// SessionClient / SessionValues hold a once-per-job pre_request result so
+	// concurrent file uploads reuse login cookies and extracted tokens instead
+	// of re-authenticating on every file. Not serialized over JSON.
+	SessionClient *http.Client      `json:"-"`
+	SessionValues map[string]string `json:"-"`
 }
 
 type RateLimitConfig struct {
@@ -70,6 +79,9 @@ type PreRequestSpec struct {
 	ExtractFields   map[string]string `json:"extract_fields"`
 	ResponseType    string            `json:"response_type"`
 	FollowUpRequest *PreRequestSpec   `json:"follow_up_request,omitempty"`
+	// OncePerFile forces pre_request to run for every file instead of once per
+	// upload job. Default (false) reuses a shared session across concurrent uploads.
+	OncePerFile bool `json:"once_per_file,omitempty"`
 }
 
 type MultipartField struct {
