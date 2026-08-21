@@ -653,5 +653,3 @@ class CollapsibleGroupFrame(ctk.CTkFrame):
         self.lbl_title.configure(text_color="#34C759")
         self.lbl_counts.configure(text="(Completed)", text_color="#34C759")
         self.prog.configure(progress_color="#34C759")
-
-
