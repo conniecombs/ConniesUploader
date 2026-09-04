@@ -4,24 +4,24 @@ This directory contains release notes and publishing guidance for Connie's Uploa
 
 ## Latest Release
 
-**vBleedingEdge - "Pixhost.cc & Import Performance Patch"**
-Release date: July 28, 2026
-Tag: `vBleedingEdge`
+**v3.1.0 - "Folder Size Template Placeholder"**
+Release date: September 4, 2026
+Tag: `v3.1.0`
 
-Read the full notes: [RELEASE_NOTES_vBleedingEdge.md](RELEASE_NOTES_vBleedingEdge.md)
-Previous architecture release notes: [RELEASE_NOTES_v3.0.0.md](RELEASE_NOTES_v3.0.0.md)
+Read the full notes: [RELEASE_NOTES_v3.1.0.md](RELEASE_NOTES_v3.1.0.md)
+Previous release notes: [RELEASE_NOTES_vBleedingEdge.md](RELEASE_NOTES_vBleedingEdge.md)
 
 ### Summary
 
-- Bumped app, build scripts, and active plugin metadata to `BleedingEdge`.
-- Updated Pixhost from `pixhost.to` to `pixhost.cc` across active upload, gallery, output, docs, and test surfaces.
-- Preserved legacy `pixhost.to` saved settings and gallery cache records by normalizing them to `pixhost.cc`.
-- Improved large-folder import responsiveness with background scanning, larger bounded UI batches, and deferred thumbnails.
+- Added `#folder_size#` for saved batch output, Template Editor previews, and ViperGirls post previews.
+- Formatted folder size from the readable files accepted into the current batch, with up to two decimal places.
+- Bumped app, build scripts, active plugin metadata, and current-facing release docs to `3.1.0`.
 
 ## Release History
 
 | Version | Date | Focus | Notes |
 |---------|------|-------|-------|
+| v3.1.0 | 2026-09-04 | Folder Size Template Placeholder | [Notes](RELEASE_NOTES_v3.1.0.md) |
 | vBleedingEdge | 2026-07-28 | Pixhost.cc & Import Performance Patch | [Notes](RELEASE_NOTES_vBleedingEdge.md) |
 | v3.0.0 | 2026-07-12 | Python-Owned Workflows & Generic Transport | [Notes](RELEASE_NOTES_v3.0.0.md), [Diff](BRANCH_DIFF_v3.0.0.md) |
 | v2.0.0 | 2026-06-22 | Posting, Templates & Gallery Workflows | [Notes](RELEASE_NOTES_v2.0.0.md) |

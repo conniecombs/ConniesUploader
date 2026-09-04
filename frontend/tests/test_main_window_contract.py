@@ -1735,13 +1735,14 @@ def test_vipergirls_queue_activity_includes_batch_target_and_thread_id():
 
 
 @pytest.mark.unit
-def test_vipergirls_post_preview_uses_batch_target_thread_and_template_text():
+def test_vipergirls_post_preview_uses_batch_target_thread_and_template_text(tmp_path):
     class FakeTemplateManager:
         def apply(self, template_name, context, group_results):
             assert template_name == "BBCode"
             assert context["gallery_name"] == "Batch Alpha"
             assert context["thumb_size"] == "200"
             assert context["batch_name"] == "Batch Alpha"
+            assert context["folder_size"] == "2 KB"
             assert context["image_count"] == 1
             assert context["service"] == "pixhost.cc"
             assert context["thread_name"] == "My Target"
@@ -1752,7 +1753,9 @@ def test_vipergirls_post_preview_uses_batch_target_thread_and_template_text():
                 f"{context['image_count']} -> {group_results[0][0]}"
             )
 
-    group = FakeGroup("Batch Alpha", ["R:\\Images\\first image.jpg"])
+    file_path = tmp_path / "first image.jpg"
+    file_path.write_bytes(b"a" * 2048)
+    group = FakeGroup("Batch Alpha", [str(file_path)])
     group.selected_thread = "My Target"
     group.selected_template = "BBCode"
 
@@ -1792,6 +1795,7 @@ def test_generate_group_output_populates_supported_template_context(tmp_path):
             )
 
     file_path = str(tmp_path / "first.jpg")
+    Path(file_path).write_bytes(b"a" * 1536)
     group = FakeGroup("Batch Alpha", [file_path])
     group.selected_template = "BBCode"
     group.selected_thread = "My Target"
@@ -1844,6 +1848,7 @@ def test_generate_group_output_populates_supported_template_context(tmp_path):
     assert context["cover_url"] == "https://img.test/thumb"
     assert context["thumb_size"] == "200"
     assert context["batch_name"] == "Batch Alpha"
+    assert context["folder_size"] == "1.5 KB"
     assert context["image_count"] == 1
     assert context["service"] == "pixhost.cc"
     assert context["thread_name"] == "My Target"

@@ -22,7 +22,7 @@ endif
 GO_FLAGS := -ldflags="-s -w"
 PYINSTALLER_FLAGS := --noconsole --onefile --clean
 APP_NAME := ConniesUploader
-VERSION := BleedingEdge
+VERSION := 3.1.0
 
 # Default target
 all: build

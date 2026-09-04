@@ -8,7 +8,7 @@ from loguru import logger
 import os
 
 # --- Version ---
-APP_VERSION = "BleedingEdge"
+APP_VERSION = "3.1.0"
 USER_AGENT = f"ConniesUploader/{APP_VERSION}"
 
 # --- Constants ---

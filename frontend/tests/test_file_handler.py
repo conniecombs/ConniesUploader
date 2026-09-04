@@ -14,6 +14,8 @@ import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from modules.file_handler import (
+    format_file_collection_size,
+    format_file_size,
     sanitize_filename,
     scan_inputs,
     get_files_from_directory,
@@ -89,6 +91,28 @@ class TestSanitizeFilename:
         """Test that leading/trailing underscores are removed"""
         assert sanitize_filename("__file__") == "file"
         assert sanitize_filename("  file  ") == "file"
+
+
+class TestFileSizeFormatting:
+    """Test suite for readable file size helpers."""
+
+    def test_format_file_size_uses_two_decimal_places_at_most(self):
+        assert format_file_size(714 * 1024) == "714 KB"
+        assert format_file_size(114 * 1024 * 1024) == "114 MB"
+        assert format_file_size(int(1.34 * 1024 * 1024 * 1024)) == "1.34 GB"
+        assert format_file_size(512) == "512 B"
+
+    def test_format_file_collection_size_sums_readable_files(self, tmp_path):
+        first = tmp_path / "first.jpg"
+        second = tmp_path / "second.jpg"
+        first.write_bytes(b"a" * 512)
+        second.write_bytes(b"b" * 512)
+
+        result = format_file_collection_size(
+            [str(first), str(tmp_path / "missing.jpg"), str(second)]
+        )
+
+        assert result == "1 KB"
 
 
 class TestScanInputs:

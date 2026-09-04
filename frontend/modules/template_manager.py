@@ -22,6 +22,7 @@ from loguru import logger
 from tkinter import colorchooser, filedialog, messagebox
 
 from .widgets import MouseWheelComboBox
+from . import file_handler
 
 
 _USER_DATA_DIR = os.path.join(os.path.expanduser("~"), ".conniesuploader")
@@ -69,6 +70,7 @@ class TemplateManager:
         "cover_images",
         "cover_url",
         "direct_url",
+        "folder_size",
         "gallery_id",
         "gallery_link",
         "gallery_name",
@@ -828,6 +830,7 @@ class TemplateManager:
         data.setdefault("thumb_url", first_thumb)
         data.setdefault("direct_url", first_direct)
         data.setdefault("image_count", len(images))
+        data.setdefault("folder_size", "")
 
         temp_data = data.copy()
         temp_data.setdefault("all_images", "dummy")
@@ -933,6 +936,7 @@ class TemplateEditor(ctk.CTkToplevel):
         ],
         "Batch": [
             ("Batch Name", "#batch_name#"),
+            ("Folder Size", "#folder_size#"),
             ("Upload Date", "#upload_date#"),
         ],
         "Service": [
@@ -1507,6 +1511,7 @@ class TemplateEditor(ctk.CTkToplevel):
             "gallery_id": "PREV_123",
             "cover_url": mock[0][1] if mock else "",
             "cover_count": self.mgr._safe_nonnegative_int(cover_count, 0),
+            "folder_size": file_handler.format_file_collection_size(files),
             "image_count": len(mock),
             "service": "preview",
             "thread_name": "Preview Thread",

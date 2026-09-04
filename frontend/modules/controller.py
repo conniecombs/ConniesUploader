@@ -13,7 +13,7 @@ from datetime import datetime
 from typing import Dict, List, Optional, Any
 from loguru import logger
 
-from . import api, config, viper_api
+from . import api, config, file_handler, viper_api
 from .upload_manager import UploadManager
 from .template_manager import TemplateManager
 
@@ -223,6 +223,7 @@ class UploadController:
             "cover_count": cover_count,
             "thumb_size": thumb_size,
             "batch_name": group_title,
+            "folder_size": file_handler.format_file_collection_size(ordered_files),
             "image_count": len(group_results),
             "service": svc,
             "thread_name": thread_name,
