@@ -34,6 +34,7 @@ Complete guide to the current documentation for Connie's Uploader.
 ## Release Docs
 
 - [Current Release Notes](releases/RELEASE_NOTES.md)
+- [v3.1.0 Release Notes](releases/RELEASE_NOTES_v3.1.0.md)
 - [vBleedingEdge Release Notes](releases/RELEASE_NOTES_vBleedingEdge.md)
 - [v3.0.0 Release Notes](releases/RELEASE_NOTES_v3.0.0.md)
 - [v3.0.0 Branch Difference Record](releases/BRANCH_DIFF_v3.0.0.md)
@@ -97,6 +98,7 @@ docs/
 │   └── USER_TUTORIAL.md
 ├── releases/
 │   ├── RELEASE_NOTES.md
+│   ├── RELEASE_NOTES_v3.1.0.md
 │   ├── RELEASE_NOTES_vBleedingEdge.md
 │   ├── RELEASE_NOTES_v3.0.0.md
 │   ├── BRANCH_DIFF_v3.0.0.md
@@ -120,6 +122,12 @@ docs/
 ```
 
 ## Recent Documentation Updates
+
+### 2026-09-04
+
+- Promoted current release documentation, build metadata, and app metadata to `v3.1.0`.
+- Added v3.1.0 release notes for the folder-size template placeholder.
+- Documented `#folder_size#` for batch output templates.
 
 ### 2026-07-28
 
@@ -165,6 +173,6 @@ docs/
 - Update plugin docs when plugin discovery, schema fields, request specs, or packaging hidden imports change.
 - Keep historical docs clearly separated from current guidance.
 
-- **Last Updated:** 2026-07-28
-- **Documentation Version:** BleedingEdge
-- **Project Version:** vBleedingEdge
+- **Last Updated:** 2026-09-04
+- **Documentation Version:** 3.1.0
+- **Project Version:** v3.1.0

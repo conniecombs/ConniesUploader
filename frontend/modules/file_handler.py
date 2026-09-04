@@ -10,7 +10,7 @@ import io
 import os
 import re
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import Iterable, List, Optional, Union
 
 from PIL import Image
 from loguru import logger
@@ -74,6 +74,45 @@ def validate_file_size(file_path: str, max_size: int = None) -> bool:
             f"({file_size_mb:.1f}MB). Maximum allowed size is {max_size_mb:.1f}MB."
         )
     return True
+
+
+def format_file_size(size_bytes: Union[int, float]) -> str:
+    """Format a byte count with up to two decimal places."""
+    try:
+        size = max(0, int(size_bytes))
+    except (TypeError, ValueError):
+        size = 0
+
+    units = ("B", "KB", "MB", "GB", "TB")
+    value = float(size)
+    unit_index = 0
+    while value >= 1024 and unit_index < len(units) - 1:
+        value /= 1024.0
+        unit_index += 1
+
+    if units[unit_index] == "B":
+        return f"{size} B"
+    amount = f"{value:.2f}".rstrip("0").rstrip(".")
+    return f"{amount} {units[unit_index]}"
+
+
+def total_file_size(file_paths: Iterable[str]) -> int:
+    """Return the readable regular-file bytes for a batch of paths."""
+    total = 0
+    for file_path in file_paths:
+        try:
+            path = Path(file_path)
+            if path.is_symlink() or not path.is_file():
+                continue
+            total += path.stat().st_size
+        except (OSError, TypeError, ValueError) as exc:
+            logger.warning(f"Skipping unreadable file size for {file_path}: {exc}")
+    return total
+
+
+def format_file_collection_size(file_paths: Iterable[str]) -> str:
+    """Format the combined size of readable files in a batch."""
+    return format_file_size(total_file_size(file_paths))
 
 
 def _append_valid_file(media_files: List[str], file_path: str, validate_size: bool) -> None:

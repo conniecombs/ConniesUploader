@@ -2,9 +2,9 @@
 
 ## Current Status
 
-- **Product Version:** vBleedingEdge
-- **Architecture Version:** vBleedingEdge
-- **Last Updated:** 2026-07-12
+- **Product Version:** v3.1.0
+- **Architecture Version:** v3.1.0
+- **Last Updated:** 2026-09-04
 
 Connie's Uploader is a hybrid desktop app:
 
@@ -89,7 +89,7 @@ Legacy `initialize_session()` and `upload_file()` hooks remain for compatibility
 The template engine supports:
 
 - Basic placeholders such as `#url#`, `#thumb_url#`, `#all_images#`
-- Batch/service/thread placeholders such as `#batch_name#`, `#service#`, `#thread_name#`, `#thread_id#`
+- Batch/service/thread placeholders such as `#batch_name#`, `#folder_size#`, `#service#`, `#thread_name#`, `#thread_id#`
 - Nested `[if placeholder]...[/if]` conditionals
 - `[for image]...[/for]` loops
 - `[for cover]...[/for]` loops

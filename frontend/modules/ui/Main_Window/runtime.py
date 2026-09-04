@@ -878,6 +878,7 @@ class RuntimeMixin:
             "cover_count": len(self._cover_files_for_group(group)),
             "thumb_size": thumb_size,
             "batch_name": batch_name,
+            "folder_size": file_handler.format_file_collection_size(group_files),
             "image_count": len(group_results),
             "service": svc,
             "thread_name": target_name if target_name != "Do Not Post" else "",

@@ -29,7 +29,7 @@ class ImageBamPlugin(ImageHostPlugin):
     def metadata(self) -> Dict[str, Any]:
         """Plugin metadata for ImageBam.com"""
         return {
-            "version": "BleedingEdge",
+            "version": "3.1.0",
             "author": "Connie's Uploader Team",
             "description": "Upload images to ImageBam.com with optional authentication and CSRF-protected uploads",
             "website": "https://imagebam.com",

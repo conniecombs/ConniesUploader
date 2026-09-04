@@ -125,6 +125,7 @@ class PostingMixin:
         thread_id = self._thread_id_from_vipergirls_record(record)
         target_url = str(record.get("url") or "") if isinstance(record, dict) else ""
         group_results = self._preview_group_results(group)
+        group_files = self._ordered_group_files_for_output(group)
         cover_url = group_results[0][1] if group_results else ""
         service_id = settings.get("service", "")
         gallery = self._gallery_for_group(group, service_id, settings) or {}
@@ -140,6 +141,7 @@ class PostingMixin:
             "cover_count": len(self._cover_files_for_group(group)),
             "thumb_size": self._thumbnail_size_for_service(service_id, settings),
             "batch_name": self._batch_display_name(group),
+            "folder_size": file_handler.format_file_collection_size(group_files),
             "image_count": len(group_results),
             "service": service_id,
             "thread_name": target_name if target_name != "Do Not Post" else "",

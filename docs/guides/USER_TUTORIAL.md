@@ -634,6 +634,7 @@ Custom templates are saved in `~/.conniesuploader/templates.json`. Existing `use
 | `#thumb_size#` | Thumbnail size used for the selected service. |
 | `#image_count#` | Number of images in the generated batch output. |
 | `#batch_name#` | Batch title. |
+| `#folder_size#` | Total size of the readable files accepted into the current batch, formatted with up to two decimal places. |
 | `#upload_date#` | Current preview/upload date. |
 | `#service#` | Selected service label or preview service. |
 | `#thread_name#` | Selected ViperGirls target name in preview/posting contexts. |

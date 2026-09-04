@@ -960,7 +960,7 @@ class TestTemplateManagerAdvanced:
                 "Metadata",
                 (
                     "#batch_name#|#service#|#upload_date#|#image_count#|"
-                    "#thread_name#|#thread_id#|#all_images#"
+                    "#folder_size#|#thread_name#|#thread_id#|#all_images#"
                 ),
             )
 
@@ -971,6 +971,7 @@ class TestTemplateManagerAdvanced:
                     "service": "pixhost.cc",
                     "upload_date": "2026-06-21",
                     "image_count": 2,
+                    "folder_size": "1.34 GB",
                     "thread_name": "Thread Alpha",
                     "thread_id": "98765",
                 },
@@ -978,9 +979,24 @@ class TestTemplateManagerAdvanced:
             )
 
             assert result.startswith(
-                "Batch Alpha|pixhost.cc|2026-06-21|2|Thread Alpha|98765|"
+                "Batch Alpha|pixhost.cc|2026-06-21|2|1.34 GB|Thread Alpha|98765|"
             )
             assert "[url=viewer1][img]thumb1[/img][/url]" in result
+
+    def test_folder_size_placeholder_is_allowed_and_renders_blank_by_default(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            templates_file = Path(temp_dir) / "templates.json"
+            mgr = TemplateManager(str(templates_file))
+            mgr.set_template("Folder Size", "Size: #folder_size#\n#all_images#")
+
+            result = mgr.apply(
+                "Folder Size",
+                {},
+                [("viewer1", "thumb1", "direct1")],
+            )
+
+            assert result.startswith("Size: \n")
+            assert "#folder_size#" not in result
 
     def test_unresolved_conditionals_do_not_reach_output(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1074,6 +1090,7 @@ class TestTemplateManagerAdvanced:
         assert "cover_image" in categorized
         assert "cover_images" in categorized
         assert "cover_count" in categorized
+        assert "folder_size" in categorized
         assert "cover_url" not in categorized
         assert "Cover{s}" in image_labels
         assert cover_labels == ["All Covers", "Cover{s}", "Cover Count", "Cover Loop"]
@@ -1133,7 +1150,7 @@ class TestTemplateManagerAdvanced:
         editor.mgr = mgr
         editor.txt = FakeText(
             (
-                "#batch_name#|#service#|#thread_name#|#thread_id#\n"
+                "#batch_name#|#service#|#thread_name#|#thread_id#|#folder_size#\n"
                 "[for image separator=space]#image_url#[/for]"
             )
         )
@@ -1152,7 +1169,7 @@ class TestTemplateManagerAdvanced:
         raw, fmt, size = preview
         assert fmt == "BBCode"
         assert size == "180"
-        assert raw.startswith("Preview Batch|preview|Preview Thread|PREV_THREAD")
+        assert raw.startswith("Preview Batch|preview|Preview Thread|PREV_THREAD|6 B")
         assert "first%20image.jpg" in raw
         assert "second.jpg" in raw
 

@@ -5,6 +5,18 @@ All notable changes to Connie's Uploader Ultimate will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.0] - 2026-09-04
+
+### Added
+
+- Added the `#folder_size#` template placeholder for saved batch output, Template Editor previews, and ViperGirls post previews.
+- Added readable folder-size formatting with up to two decimal places, such as `714 KB`, `114 MB`, or `1.34 GB`.
+
+### Changed
+
+- Bumped app, build-script, and active plugin metadata to `3.1.0`.
+- Updated current release documentation for the v3.1.0 release.
+
 ## [BleedingEdge] - 2026-07-28
 
 ### Changed

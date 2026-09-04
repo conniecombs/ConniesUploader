@@ -1,7 +1,7 @@
 # Connie's Uploader
 
-![Current app build badge showing vBleedingEdge](https://img.shields.io/badge/app-vBleedingEdge-orange.svg)
-![Latest tagged release badge showing vBleedingEdge](https://img.shields.io/badge/latest%20release-vBleedingEdge-blue.svg)
+![Current app build badge showing v3.1.0](https://img.shields.io/badge/app-v3.1.0-orange.svg)
+![Latest tagged release badge showing v3.1.0](https://img.shields.io/badge/latest%20release-v3.1.0-blue.svg)
 ![MIT License badge](https://img.shields.io/badge/license-MIT-green.svg)
 ![Supported platforms: Windows, Linux, and macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)
 ![Continuous integration workflow status: passing](https://github.com/conniecombs/ConniesUploader/actions/workflows/ci.yml/badge.svg?branch=main)
@@ -12,9 +12,9 @@
 
 Connie's Uploader is a desktop image-uploading tool with a CustomTkinter GUI and a Go sidecar for concurrent uploads. It supports batch uploads, gallery workflows, custom output templates, drag and drop, secure credential storage, ViperGirls posting workflows, and automated release builds for Windows, Linux, and macOS.
 
-**Latest tagged release:** vBleedingEdge "Pixhost.cc & Import Performance Patch" (July 28, 2026)
+**Latest tagged release:** v3.1.0 "Folder Size Template Placeholder" (September 4, 2026)
 
-**Current release branch:** `Bleeding-Edge`
+**Current release branch:** `main`
 
 ## Screenshots
 
@@ -22,7 +22,7 @@ Connie's Uploader is a desktop image-uploading tool with a CustomTkinter GUI and
 
 The main screen opens directly into the upload workflow. New users get a large drop zone, centered Add Files and Add Folder actions, and host readiness feedback before they start.
 
-![Connie's Uploader BleedingEdge empty upload queue with Pixhost selected, ready status, and centered Add Files and Add Folder actions](docs/assets/screenshots/empty-drop-zone.png)
+![Connie's Uploader empty upload queue with Pixhost selected, ready status, and centered Add Files and Add Folder actions](docs/assets/screenshots/empty-drop-zone.png)
 
 ### Organize Batches Automatically
 
@@ -92,6 +92,21 @@ The active upload plugins are:
 
 ## Latest Changelog
 
+### v3.1.0 - Folder Size Template Placeholder
+
+Released September 4, 2026.
+
+**Added**
+
+- Added `#folder_size#` for templates, previews, ViperGirls post previews, and saved batch output.
+- Rendered folder size as the total readable size of accepted files in the current batch, with up to two decimal places such as `714 KB`, `114 MB`, or `1.34 GB`.
+
+**Changed**
+
+- Bumped the app, build scripts, and active plugin metadata to `v3.1.0`.
+
+Full history is available in [CHANGELOG.md](docs/CHANGELOG.md), and the full v3.1.0 release notes are available in [RELEASE_NOTES_v3.1.0.md](docs/releases/RELEASE_NOTES_v3.1.0.md).
+
 ### vBleedingEdge - Pixhost.cc & Import Performance Patch
 
 Released July 28, 2026.
@@ -160,13 +175,13 @@ Full history is available in [CHANGELOG.md](docs/CHANGELOG.md).
 
 ### Download a Release
 
-Download the latest release from [GitHub Releases](https://github.com/conniecombs/ConniesUploader/releases/tag/vBleedingEdge).
+Download the latest release from [GitHub Releases](https://github.com/conniecombs/ConniesUploader/releases/tag/v3.1.0).
 
 Expected release artifacts:
 
-- `ConniesUploader-vBleedingEdge-windows-x64.zip`
-- `ConniesUploader-vBleedingEdge-linux-x64.tar.gz`
-- `ConniesUploader-vBleedingEdge-macos-x64.zip`
+- `ConniesUploader-v3.1.0-windows-x64.zip`
+- `ConniesUploader-v3.1.0-linux-x64.tar.gz`
+- `ConniesUploader-v3.1.0-macos-x64.zip`
 
 Each release artifact includes a SHA256 checksum.
 
