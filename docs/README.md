@@ -8,6 +8,7 @@ Complete guide to the current documentation for Connie's Uploader.
 | --- | --- |
 | Install, build, run, and understand the project at a glance | [README](../README.md) |
 | Learn the app as a user | [User Tutorial](guides/USER_TUTORIAL.md) |
+| Master the Template Editor, loops, and formats | [Template Editor Tutorial](guides/TEMPLATE_EDITOR_TUTORIAL.md) |
 | Fix source/build/package problems | [Build Troubleshooting](guides/BUILD_TROUBLESHOOTING.md) |
 | Understand the Python/Go architecture | [Architecture](ARCHITECTURE.md) |
 | Understand the Python/Go transport boundary | [Transport Contract](TRANSPORT_CONTRACT.md) |
@@ -20,6 +21,7 @@ Complete guide to the current documentation for Connie's Uploader.
 
 - [README](../README.md) covers features, installation, usage, data locations, architecture summary, CI/security/release workflows, and common troubleshooting.
 - [User Tutorial](guides/USER_TUTORIAL.md) is the detailed user walkthrough with examples for uploads, folders, galleries, templates, covers, ViperGirls posting, output files, settings, troubleshooting, and internal mechanics.
+- [Template Editor Tutorial](guides/TEMPLATE_EDITOR_TUTORIAL.md) is the complete guide to custom templates, format families (BBCode, Markdown, HTML), loops (`[for image]`, `[for cover]`), separators, conditionals, and copy-paste recipes.
 - [Build Troubleshooting](guides/BUILD_TROUBLESHOOTING.md) covers sidecar lookup, PyInstaller packaging, Tkinter bundling, plugin bundling, toolchain setup, cleanup, and bug-report details.
 
 ## Current Developer Docs

@@ -350,6 +350,7 @@ python scripts/diagnostics/check_sidecar_location.py
 - [Contributing](docs/CONTRIBUTING.md)
 - [Changelog](docs/CHANGELOG.md)
 - [User Tutorial](docs/guides/USER_TUTORIAL.md)
+- [Template Editor Tutorial](docs/guides/TEMPLATE_EDITOR_TUTORIAL.md)
 - [Build Troubleshooting](docs/guides/BUILD_TROUBLESHOOTING.md)
 - [Plugin Creation Guide](docs/guides/PLUGIN_CREATION_GUIDE.md)
 - [Repository Layout](docs/guides/REPOSITORY_LAYOUT.md)

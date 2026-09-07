@@ -1093,6 +1093,9 @@ class TestTemplateManagerAdvanced:
         assert "folder_size" in categorized
         assert "cover_url" not in categorized
         assert "Cover{s}" in image_labels
+        assert "Folder Size" in image_labels
+        assert ("Folder Size", "#folder_size#") in TemplateEditor.PLACEHOLDER_CATEGORIES["Images"]
+        assert ("Folder Size", "#folder_size#") in TemplateEditor.PLACEHOLDER_CATEGORIES["Batch"]
         assert cover_labels == ["All Covers", "Cover{s}", "Cover Count", "Cover Loop"]
         assert "#cover_image#" in TemplateEditor.supported_placeholder_values()
 

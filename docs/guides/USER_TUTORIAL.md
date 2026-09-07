@@ -531,6 +531,9 @@ Safe custom starter:
 
 ### Template Editor Controls
 
+> [!TIP]
+> For an in-depth walkthrough of loop mechanics, custom separators, BBCode/Markdown/HTML formats, conditional logic, and copy-paste recipes, see the dedicated [Template Editor & Formats Tutorial](TEMPLATE_EDITOR_TUTORIAL.md).
+
 | Control | Explanation |
 | --- | --- |
 | `Edit Format` | Selects the template currently being edited. |

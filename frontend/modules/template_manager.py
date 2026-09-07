@@ -924,6 +924,7 @@ class TemplateEditor(ctk.CTkToplevel):
             ("Direct URL", "#direct_url#"),
             ("Thumb Size", "#thumb_size#"),
             ("Image Count", "#image_count#"),
+            ("Folder Size", "#folder_size#"),
             ("Cover Loop", "[for cover separator=newline]\n[url=#image_url#][img]#thumb_url#[/img][/url]\n[/for]"),
             ("Loop: Newline", "[for image separator=newline]\n[url=#image_url#][img]#thumb_url#[/img][/url]\n[/for]"),
             ("Loop: Blank Line", "[for image separator=blankline]\n[url=#image_url#][img]#thumb_url#[/img][/url]\n[/for]"),
