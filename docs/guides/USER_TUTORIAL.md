@@ -430,7 +430,7 @@ Status meanings:
 | `Login failed` | Credentials were found, but the host rejected them or showed the login page again. | Re-save credentials. For IMX, use `Set IMX Cookie` if normal login is blocked. |
 | `No galleries found` | The host returned a valid empty list. | Create a gallery, choose another service, or confirm the account has galleries on the host site. |
 | `Cached` | The row came from local cache because live refresh was unavailable. | Use it if the ID/hash is still valid, or click `Refresh from host` when the host is reachable. |
-| `Could not read galleries` | The host page or sidecar response changed shape. | Try again later and check `View > Execution Log` for the raw failure. |
+| `Could not read galleries` | The host page or sidecar response changed shape. | Try again later and check the Activity panel plus terminal output or `crash_log.log` for the raw failure. |
 
 Use Gallery Manager when you want to attach a batch to an existing gallery or create a gallery before uploading.
 
@@ -1008,7 +1008,7 @@ Open the `_links.txt` file when you want one raw viewer link per line.
 1. Check whether the upload actually finished.
 2. Click `Open Output Folder`.
 3. Look for the newest file by timestamp.
-4. If no file exists, open `View > Execution Log`.
+4. If no file exists, review the Activity panel plus terminal output or `crash_log.log`.
 5. If the queue still has failed files, use `Retry Failed`.
 
 ## ViperGirls Posting
@@ -1134,8 +1134,7 @@ Saved thread data is stored under:
 
 | Menu item | Explanation |
 | --- | --- |
-| `Execution Log` | Opens a log window showing app and sidecar events. Use this first when diagnosing upload failures. |
-| `Activity Terminal` | Opens PowerShell and tails `~/.conniesuploader/activity.log` for long-running upload activity. |
+| `Show Activity` | Reopens the in-app Activity panel. `Hide` keeps it hidden for the current session until this menu item is selected. |
 | `Show Image Previews` | Enables thumbnails in the upload queue. Disable for very large batches if you want faster queue population and lower memory use. |
 | `Separate Batches for Files` | When enabled, loose files selected together become separate one-file batches instead of one `Miscellaneous` batch. |
 | `Appearance Mode > System` | Follows the operating system appearance. |
@@ -1149,7 +1148,7 @@ Saved thread data is stored under:
 | First test upload | `Worker Count: 1`, `Auto-copy: off`, `Links.txt: on`, 2 or 3 small files. |
 | Normal forum batch | `Worker Count: 4-8`, `Auto-copy: on`, service thumbnail around 180-250, `BBCode` template. |
 | One gallery per folder | Add folders instead of loose files, enable `One Gallery Per Folder`, use a gallery-capable service. |
-| Very large batch | Disable `Show Image Previews`, use moderate worker count, keep `Execution Log` available. |
+| Very large batch | Disable `Show Image Previews`, use moderate worker count, and keep the Activity panel available when you want live progress details. |
 | Strict or flaky host | Use `Worker Count: 1-2`, fewer files per batch, and `Retry Failed` for transient failures. |
 
 ## Configuration And Data Locations
@@ -1164,7 +1163,7 @@ Saved thread data is stored under:
 | Saved ViperGirls posting targets | `~/.conniesuploader/saved_threads.json` |
 | ViperGirls posting history | `~/.conniesuploader/posting_history.json` |
 | ViperGirls scheduled posts | `~/.conniesuploader/scheduled_posts.json` |
-| Upload activity log | `~/.conniesuploader/activity.log` |
+| Session activity | In memory only for the current app session |
 | Credentials | Operating system keyring |
 | Crash/debug log | `crash_log.log` |
 
@@ -1270,7 +1269,7 @@ Start with the symptom you see.
 
 | Symptom | Most likely cause | First thing to try |
 | --- | --- | --- |
-| Upload button starts but everything fails | Missing sidecar, credentials, host issue, or invalid settings. | Open `View > Execution Log` and read the first red/error line. |
+| Upload button starts but everything fails | Missing sidecar, credentials, host issue, or invalid settings. | Review the first failed row, the Activity panel, and terminal output or `crash_log.log`. |
 | Gallery login fails | Missing, stale, or rejected host credentials. | Open `Tools > Set Credentials`, re-save the selected host's credentials, then click `Refresh from host`. |
 | Gallery list is empty | The host returned no galleries, or the service cannot list galleries. | Confirm the service supports listing, then create a gallery or check the account on the host site. |
 | Gallery row says `Cached` | The live refresh failed and the app is showing remembered local data. | Click `Refresh from host` when the host is reachable, or use the cached row only if the ID/hash is still valid. |
@@ -1285,7 +1284,7 @@ Start with the symptom you see.
 
 ### Uploads fail immediately
 
-Open `View > Execution Log` and check the sidecar message. Also verify credentials, selected service, content type, gallery ID/hash, and file size.
+Review the first failed row, the Activity panel, and terminal output or `crash_log.log` for the sidecar message. Also verify credentials, selected service, content type, gallery ID/hash, and file size.
 
 ### The selected service requires credentials
 

@@ -110,11 +110,13 @@ class DiagnosticsMixin:
                 textbox.delete("1.0", f"{line_count - _ACTIVITY_MAX_EVENTS + 1}.0")
             textbox.see("end")
             textbox.configure(state="disabled")
-            self._show_activity_panel()
+            if not getattr(self, "activity_panel_user_hidden", False):
+                self._show_activity_panel()
         except Exception as exc:
             logger.debug(f"Could not update activity panel: {exc}")
 
     def _show_activity_panel(self) -> None:
+        self.activity_panel_user_hidden = False
         panel = self.__dict__.get("activity_panel")
         if panel is None:
             return
@@ -127,6 +129,7 @@ class DiagnosticsMixin:
                 panel.pack(**pack_kwargs)
 
     def _hide_activity_panel(self) -> None:
+        self.activity_panel_user_hidden = True
         panel = self.__dict__.get("activity_panel")
         if panel is not None and panel.winfo_ismapped():
             panel.pack_forget()

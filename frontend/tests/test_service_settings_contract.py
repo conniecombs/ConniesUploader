@@ -201,6 +201,65 @@ def test_cover_thumbnail_overrides_force_host_max_size(service_id, expected):
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    ("raw_url", "expected"),
+    [
+        (
+            "https://i.imx.to/t/2026/06/19/6ut8ec.jpg",
+            "https://image.imx.to/u/t/2026/06/19/6ut8ec.jpg",
+        ),
+        (
+            "http://i.imx.to/t/2026/06/19/6ut8ec.jpg?token=abc#view",
+            "https://image.imx.to/u/t/2026/06/19/6ut8ec.jpg?token=abc#view",
+        ),
+        (
+            "https://image.imx.to/u/t/2026/06/19/6ut8ec.jpg",
+            "https://image.imx.to/u/t/2026/06/19/6ut8ec.jpg",
+        ),
+        (
+            "https://example.com/t/2026/06/19/6ut8ec.jpg",
+            "https://example.com/t/2026/06/19/6ut8ec.jpg",
+        ),
+    ],
+)
+def test_upload_manager_canonicalizes_imx_thumbnail_urls(raw_url, expected):
+    assert UploadManager._canonicalize_imx_thumbnail_url(raw_url) == expected
+
+
+@pytest.mark.unit
+def test_upload_manager_result_event_preserves_durable_imx_thumbnail_url():
+    manager = UploadManager.__new__(UploadManager)
+    manager.cancel_event = threading.Event()
+    manager._stop_events = threading.Event()
+    manager.active_files = {"image.jpg"}
+    manager.event_queue = queue.Queue()
+    manager.progress_queue = queue.Queue()
+    manager.result_queue = queue.Queue()
+
+    worker = threading.Thread(target=manager._process_events, daemon=True)
+    manager.event_queue.put(
+        {
+            "type": "result",
+            "file": "image.jpg",
+            "url": "https://imx.to/i/6ut8ec",
+            "thumb": "https://i.imx.to/t/2026/06/19/6ut8ec.jpg",
+        }
+    )
+    worker.start()
+
+    result = manager.result_queue.get(timeout=2)
+    manager._stop_events.set()
+    worker.join(timeout=2)
+
+    assert result == (
+        "image.jpg",
+        "https://imx.to/i/6ut8ec",
+        "https://image.imx.to/u/t/2026/06/19/6ut8ec.jpg",
+    )
+    assert manager.active_files == set()
+
+
+@pytest.mark.unit
 def test_turbo_http_request_uses_schema_thumbnail_size():
     request = TurboPlugin().build_http_request(
         "image.jpg",

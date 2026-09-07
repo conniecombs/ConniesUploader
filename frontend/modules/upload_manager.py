@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 import queue
 import threading
+import urllib.parse
 from typing import Any, Dict, List, Tuple
 
 from loguru import logger
@@ -260,6 +261,20 @@ class UploadManager:
         return cfg
 
     @staticmethod
+    def _canonicalize_imx_thumbnail_url(thumb_url: str) -> str:
+        """Return IMX thumbnail URLs in the durable image.imx.to/u/t form."""
+        thumb_url = str(thumb_url or "").strip()
+        if not thumb_url:
+            return ""
+
+        parsed = urllib.parse.urlsplit(thumb_url)
+        if parsed.hostname == "i.imx.to" and parsed.path.startswith("/t/"):
+            return urllib.parse.urlunsplit(
+                ("https", "image.imx.to", "/u" + parsed.path, parsed.query, parsed.fragment)
+            )
+        return thumb_url
+
+    @staticmethod
     def _remember_imx_gallery_use(group_obj: Any, cfg: Dict[str, Any]) -> None:
         gallery_id = str(
             cfg.get("gallery_id") or cfg.get("selected_gallery_id") or cfg.get("imx_gallery_id") or ""
@@ -470,8 +485,7 @@ class UploadManager:
                     gallery_url = str(metadata.get("gallery_url") or "").strip()
                     if gallery_url and fp:
                         self.progress_queue.put(("gallery_url", fp, gallery_url))
-                    if thumb and "image.imx.to/u/t/" in thumb:
-                        thumb = thumb.replace("image.imx.to/u/t/", "i.imx.to/t/")
+                    thumb = self._canonicalize_imx_thumbnail_url(thumb)
                     self.result_queue.put((fp, url, thumb))
 
                 elif evt == "batch_complete":

@@ -2,9 +2,9 @@
 
 ## Current Status
 
-- **Product Version:** v3.1.0
-- **Architecture Version:** v3.1.0
-- **Last Updated:** 2026-09-04
+- **Product Version:** v3.1.1
+- **Architecture Version:** v3.1.1
+- **Last Updated:** 2026-09-07
 
 Connie's Uploader is a hybrid desktop app:
 
@@ -185,7 +185,7 @@ Regex selectors are supplied by plugin code. They should be compiled with gracef
 | ViperGirls targets | `~/.conniesuploader/saved_threads.json` |
 | ViperGirls posting history | `~/.conniesuploader/posting_history.json` |
 | ViperGirls scheduled posts | `~/.conniesuploader/scheduled_posts.json` |
-| Upload activity log | `~/.conniesuploader/activity.log` |
+| Session activity | In memory only for the current app session |
 | Runtime crash logs | `crash_log*.log` |
 
 Files under `~/.conniesuploader/` are user data and should not be committed. Generated build/test output such as `build/`, `dist/`, `htmlcov/`, `.coverage`, `uploader`, and `uploader.exe` should also stay out of source control.

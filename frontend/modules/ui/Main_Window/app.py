@@ -116,6 +116,7 @@ class UploaderApp(
         self.pending_thumbnails = {}
         self.results = []
         self.activity_events = []
+        self.activity_panel_user_hidden = False
         self.preflight_issues = []
         self.preflight_action_files = []
         self.preflight_action_file_issue_texts = []

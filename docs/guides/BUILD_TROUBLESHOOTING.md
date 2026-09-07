@@ -375,8 +375,8 @@ Before distributing a build:
 - [ ] Archive verification found the sidecar.
 - [ ] Archive verification found Tk/Tcl runtime files on Windows.
 - [ ] Plugins load and show six active services.
-- [ ] `View > Execution Log` does not show startup import errors.
-- [ ] `View > Activity Terminal` can open the persisted activity log when testing long uploads.
+- [ ] Source or packaged startup does not print import errors to the terminal or `crash_log.log`.
+- [ ] The in-app Activity panel records upload activity, and `Hide` keeps it hidden until `View > Show Activity` is selected.
 - [ ] A one-file upload works.
 - [ ] Drag and drop works.
 - [ ] Gallery Manager opens.
@@ -393,6 +393,6 @@ Include:
 - Go version.
 - Final executable size, if packaged.
 - `python scripts/diagnostics/check_sidecar_location.py` output for source-run sidecar issues.
-- Relevant `View > Execution Log` output.
-- Relevant `View > Activity Terminal` output from `~/.conniesuploader/activity.log`, if upload activity is involved.
+- Relevant terminal output or `crash_log.log` details.
+- Relevant Activity panel text or screenshots, if upload activity is involved.
 - Screenshot of the error dialog, if present.

@@ -4,23 +4,24 @@ This directory contains release notes and publishing guidance for Connie's Uploa
 
 ## Latest Release
 
-**v3.1.0 - "Folder Size Template Placeholder"**
-Release date: September 4, 2026
-Tag: `v3.1.0`
+**v3.1.1 - "Activity Hide & IMX Thumbnail Fix"**
+Release date: September 7, 2026
+Tag: `v3.1.1`
 
-Read the full notes: [RELEASE_NOTES_v3.1.0.md](RELEASE_NOTES_v3.1.0.md)
-Previous release notes: [RELEASE_NOTES_vBleedingEdge.md](RELEASE_NOTES_vBleedingEdge.md)
+Read the full notes: [RELEASE_NOTES_v3.1.1.md](RELEASE_NOTES_v3.1.1.md)
+Previous release notes: [RELEASE_NOTES_v3.1.0.md](RELEASE_NOTES_v3.1.0.md)
 
 ### Summary
 
-- Added `#folder_size#` for saved batch output, Template Editor previews, and ViperGirls post previews.
-- Formatted folder size from the readable files accepted into the current batch, with up to two decimal places.
-- Bumped app, build scripts, active plugin metadata, and current-facing release docs to `3.1.0`.
+- Fixed Activity panel hiding so new events remain recorded without reopening the panel until `View > Show Activity` is selected.
+- Normalized IMX thumbnails to the durable `https://image.imx.to/u/t/...` URL format.
+- Bumped app, build scripts, active plugin metadata, and current-facing release docs to `3.1.1`.
 
 ## Release History
 
 | Version | Date | Focus | Notes |
 |---------|------|-------|-------|
+| v3.1.1 | 2026-09-07 | Activity Hide & IMX Thumbnail Fix | [Notes](RELEASE_NOTES_v3.1.1.md) |
 | v3.1.0 | 2026-09-04 | Folder Size Template Placeholder | [Notes](RELEASE_NOTES_v3.1.0.md) |
 | vBleedingEdge | 2026-07-28 | Pixhost.cc & Import Performance Patch | [Notes](RELEASE_NOTES_vBleedingEdge.md) |
 | v3.0.0 | 2026-07-12 | Python-Owned Workflows & Generic Transport | [Notes](RELEASE_NOTES_v3.0.0.md), [Diff](BRANCH_DIFF_v3.0.0.md) |

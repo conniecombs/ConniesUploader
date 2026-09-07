@@ -167,6 +167,34 @@ class FakeProgress:
         self.options.update(kwargs)
 
 
+class FakeActivityText:
+    def __init__(self):
+        self.text = ""
+        self.state = None
+        self.tags = []
+        self.seen = []
+
+    def configure(self, **kwargs):
+        if "state" in kwargs:
+            self.state = kwargs["state"]
+
+    def delete(self, start, end):
+        if start == "1.0":
+            self.text = ""
+
+    def index(self, _index):
+        return "1.0"
+
+    def insert(self, _index, text):
+        self.text += text
+
+    def tag_add(self, *args):
+        self.tags.append(args)
+
+    def see(self, index):
+        self.seen.append(index)
+
+
 def main_window_source():
     paths = [Path("modules/ui/main_window.py")]
     paths.extend(sorted(Path("modules/ui/Main_Window").glob("*.py")))
@@ -2545,6 +2573,30 @@ def test_activity_events_are_capped_and_keep_latest():
     assert len(app.activity_events) == 200
     assert app.activity_events[0]["message"] == "event 50"
     assert app.activity_events[-1]["message"] == "event 249"
+
+
+@pytest.mark.unit
+def test_activity_hide_is_respected_until_user_shows_panel():
+    app = UploaderApp.__new__(UploaderApp)
+    app.activity_events = []
+    app.activity_panel = FakeFrame()
+    app.activity_panel.pack()
+    app.activity_text = FakeActivityText()
+    app._activity_placeholder_active = True
+
+    UploaderApp._hide_activity_panel(app)
+    UploaderApp.add_activity(app, "Queued image.jpg.")
+
+    assert app.activity_panel_user_hidden is True
+    assert app.activity_panel.mapped is False
+    assert app.activity_events[-1]["message"] == "Queued image.jpg."
+    assert "Queued image.jpg." in app.activity_text.text
+    assert app.activity_text.state == "disabled"
+
+    UploaderApp._show_activity_panel(app)
+
+    assert app.activity_panel_user_hidden is False
+    assert app.activity_panel.mapped is True
 
 
 @pytest.mark.unit

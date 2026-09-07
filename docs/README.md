@@ -36,6 +36,7 @@ Complete guide to the current documentation for Connie's Uploader.
 ## Release Docs
 
 - [Current Release Notes](releases/RELEASE_NOTES.md)
+- [v3.1.1 Release Notes](releases/RELEASE_NOTES_v3.1.1.md)
 - [v3.1.0 Release Notes](releases/RELEASE_NOTES_v3.1.0.md)
 - [vBleedingEdge Release Notes](releases/RELEASE_NOTES_vBleedingEdge.md)
 - [v3.0.0 Release Notes](releases/RELEASE_NOTES_v3.0.0.md)
@@ -100,6 +101,7 @@ docs/
 │   └── USER_TUTORIAL.md
 ├── releases/
 │   ├── RELEASE_NOTES.md
+│   ├── RELEASE_NOTES_v3.1.1.md
 │   ├── RELEASE_NOTES_v3.1.0.md
 │   ├── RELEASE_NOTES_vBleedingEdge.md
 │   ├── RELEASE_NOTES_v3.0.0.md
@@ -124,6 +126,12 @@ docs/
 ```
 
 ## Recent Documentation Updates
+
+### 2026-09-07
+
+- Promoted current release documentation, build metadata, and app metadata to `v3.1.1`.
+- Added v3.1.1 release notes for the Activity panel Hide behavior and IMX thumbnail URL normalization.
+- Updated current user, architecture, contributor, repository-layout, plugin, and build troubleshooting docs for session-only Activity panel behavior.
 
 ### 2026-09-04
 
@@ -175,6 +183,6 @@ docs/
 - Update plugin docs when plugin discovery, schema fields, request specs, or packaging hidden imports change.
 - Keep historical docs clearly separated from current guidance.
 
-- **Last Updated:** 2026-09-04
-- **Documentation Version:** 3.1.0
-- **Project Version:** v3.1.0
+- **Last Updated:** 2026-09-07
+- **Documentation Version:** 3.1.1
+- **Project Version:** v3.1.1

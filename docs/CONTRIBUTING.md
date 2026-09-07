@@ -106,8 +106,10 @@ Generated/user data should stay out of commits:
 - `build/`, `dist/`, `htmlcov/`, `.coverage*`, `.pytest_cache/`
 - `uploader`, `uploader.exe`, `packaging/ConniesUploader.spec`
 - `Output/`, legacy repo-local `user_settings.json`, legacy `user_templates.json`
-- `~/.conniesuploader/*.json`, `~/.conniesuploader/history/`, `~/.conniesuploader/activity.log`
+- `~/.conniesuploader/*.json`, `~/.conniesuploader/history/`
 - `crash_log*.log`
+
+The in-app Activity panel is session-only and does not write an `activity.log` file.
 
 Use the cleanup helper when local generated files get noisy:
 

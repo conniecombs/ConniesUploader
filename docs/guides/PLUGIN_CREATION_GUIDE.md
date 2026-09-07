@@ -551,11 +551,10 @@ cd frontend
 python main.py
 ```
 
-2. Open `View > Execution Log`.
-3. Upload one small file.
-4. Verify the plugin loaded in the startup log.
-5. Verify the sidecar emitted progress/result/error events.
-6. If using sessions, test invalid credentials before testing valid credentials.
+2. Upload one small file.
+3. Verify the plugin loaded without startup errors in the terminal or `crash_log.log`.
+4. Verify the Activity panel records the upload progress/result/error events.
+5. If using sessions, test invalid credentials before testing valid credentials.
 
 ## Packaging Notes
 

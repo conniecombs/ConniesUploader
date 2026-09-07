@@ -5,6 +5,18 @@ All notable changes to Connie's Uploader Ultimate will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.1] - 2026-09-07
+
+### Fixed
+
+- Fixed the Activity panel `Hide` button so new session events no longer reopen the panel after the user hides it. The panel stays hidden until `View > Show Activity` is selected.
+- Normalized IMX thumbnail URLs to the durable `https://image.imx.to/u/t/...` format so generated output no longer emits the temporary `https://i.imx.to/t/...` thumbnail form.
+
+### Changed
+
+- Bumped app, build-script, and active plugin metadata to `3.1.1`.
+- Updated current documentation and release notes for the v3.1.1 maintenance release.
+
 ## [3.1.0] - 2026-09-04
 
 ### Added

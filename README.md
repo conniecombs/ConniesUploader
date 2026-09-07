@@ -1,7 +1,7 @@
 # Connie's Uploader
 
-![Current app build badge showing v3.1.0](https://img.shields.io/badge/app-v3.1.0-orange.svg)
-![Latest tagged release badge showing v3.1.0](https://img.shields.io/badge/latest%20release-v3.1.0-blue.svg)
+![Current app build badge showing v3.1.1](https://img.shields.io/badge/app-v3.1.1-orange.svg)
+![Latest tagged release badge showing v3.1.1](https://img.shields.io/badge/latest%20release-v3.1.1-blue.svg)
 ![MIT License badge](https://img.shields.io/badge/license-MIT-green.svg)
 ![Supported platforms: Windows, Linux, and macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)
 ![Continuous integration workflow status: passing](https://github.com/conniecombs/ConniesUploader/actions/workflows/ci.yml/badge.svg?branch=main)
@@ -12,7 +12,7 @@
 
 Connie's Uploader is a desktop image-uploading tool with a CustomTkinter GUI and a Go sidecar for concurrent uploads. It supports batch uploads, gallery workflows, custom output templates, drag and drop, secure credential storage, ViperGirls posting workflows, and automated release builds for Windows, Linux, and macOS.
 
-**Latest tagged release:** v3.1.0 "Folder Size Template Placeholder" (September 4, 2026)
+**Latest tagged release:** v3.1.1 "Activity Hide & IMX Thumbnail Fix" (September 7, 2026)
 
 **Current release branch:** `main`
 
@@ -44,7 +44,7 @@ Import Checks and Upload Checks explain what needs attention inside the main win
 
 ### Track Upload Activity
 
-The activity panel records the work as it happens: host readiness, queueing, active uploads, completed files, and progress. `View > Activity Terminal` can also tail the persisted activity log in PowerShell during longer upload sessions.
+The activity panel records the work as it happens: host readiness, queueing, active uploads, completed files, and progress. The `Hide` button keeps the panel hidden for the current session until `View > Show Activity` is selected, while new activity continues to be recorded in memory.
 
 ![Connie's Uploader upload progress view with uploaded, uploading, and queued rows plus a visible activity timeline](docs/assets/screenshots/activity-progress.png)
 
@@ -92,6 +92,22 @@ The active upload plugins are:
 
 ## Latest Changelog
 
+### v3.1.1 - Activity Hide & IMX Thumbnail Fix
+
+Released September 7, 2026.
+
+**Fixed**
+
+- Activity panel `Hide` now respects the user's session choice; new upload events stay recorded but do not reopen the panel until `View > Show Activity` is selected.
+- IMX thumbnail URLs are normalized to the durable `https://image.imx.to/u/t/...` format instead of the temporary `https://i.imx.to/t/...` form.
+
+**Changed**
+
+- Bumped the app, build scripts, and active plugin metadata to `v3.1.1`.
+- Updated current documentation and release notes for the v3.1.1 maintenance release.
+
+Full history is available in [CHANGELOG.md](docs/CHANGELOG.md), and the full v3.1.1 release notes are available in [RELEASE_NOTES_v3.1.1.md](docs/releases/RELEASE_NOTES_v3.1.1.md).
+
 ### v3.1.0 - Folder Size Template Placeholder
 
 Released September 4, 2026.
@@ -131,7 +147,7 @@ Released July 12, 2026.
 **Added**
 
 - Added `Tools > Scheduled Posts` for persisted ViperGirls scheduled post records.
-- Added `View > Activity Terminal` to tail `~/.conniesuploader/activity.log`.
+- Added a live activity-viewing workflow for longer upload sessions.
 - Added a release branch-difference record for the `Bleeding-Edge` compare against `main`.
 
 **Changed**
@@ -175,13 +191,13 @@ Full history is available in [CHANGELOG.md](docs/CHANGELOG.md).
 
 ### Download a Release
 
-Download the latest release from [GitHub Releases](https://github.com/conniecombs/ConniesUploader/releases/tag/v3.1.0).
+Download the latest release from [GitHub Releases](https://github.com/conniecombs/ConniesUploader/releases/tag/v3.1.1).
 
 Expected release artifacts:
 
-- `ConniesUploader-v3.1.0-windows-x64.zip`
-- `ConniesUploader-v3.1.0-linux-x64.tar.gz`
-- `ConniesUploader-v3.1.0-macos-x64.zip`
+- `ConniesUploader-v3.1.1-windows-x64.zip`
+- `ConniesUploader-v3.1.1-linux-x64.tar.gz`
+- `ConniesUploader-v3.1.1-macos-x64.zip`
 
 Each release artifact includes a SHA256 checksum.
 
@@ -268,8 +284,7 @@ Additional tools are available from the application menus:
 - `Tools > ViperGirls Posting History`
 - `Tools > Scheduled Posts`
 - `Tools > Install Context Menu` on Windows
-- `View > Execution Log`
-- `View > Activity Terminal`
+- `View > Show Activity`
 
 ## Configuration and Data
 
@@ -282,7 +297,7 @@ Additional tools are available from the application menus:
 - Saved ViperGirls posting targets, including fetched thread titles, are written to `~/.conniesuploader/saved_threads.json`.
 - ViperGirls posting history is written to `~/.conniesuploader/posting_history.json`.
 - ViperGirls scheduled posts are written to `~/.conniesuploader/scheduled_posts.json`.
-- Upload activity events are written to `~/.conniesuploader/activity.log`.
+- Upload activity is kept in memory for the current app session.
 - Runtime crash logs are written to `crash_log.log` when applicable.
 
 ## Architecture
@@ -301,7 +316,7 @@ Generated folders and runtime data are intentionally kept out of source control:
 
 - Build output: `build/`, `dist/`, `uploader`, `uploader.exe`, `packaging/ConniesUploader.spec`
 - Test output: `.coverage`, `htmlcov/`, `.pytest_cache/`
-- Local app data: `Output/`, legacy repo-local `user_settings.json` and `user_templates.json`, `~/.conniesuploader/*.json`, `~/.conniesuploader/history/`, `~/.conniesuploader/activity.log`
+- Local app data: `Output/`, legacy repo-local `user_settings.json` and `user_templates.json`, `~/.conniesuploader/*.json`, `~/.conniesuploader/history/`
 - Runtime diagnostics: `crash_log*.log`
 
 ## CI, Security, and Releases
@@ -366,7 +381,7 @@ Build the Go sidecar with `cd backend && go build -ldflags="-s -w" -o ../uploade
 
 **Uploads fail immediately**
 
-Check credentials, confirm the selected service settings, and open `View > Execution Log` for the sidecar error message.
+Check credentials, confirm the selected service settings, review row errors and the Activity panel, and inspect terminal output or `crash_log.log` for sidecar details.
 
 **ViperGirls posting is blocked before upload**
 

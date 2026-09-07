@@ -62,7 +62,8 @@ The app stores current persistent data under `~/.conniesuploader/`, including:
 - `saved_threads.json`
 - `posting_history.json`
 - `scheduled_posts.json`
-- `activity.log`
 - `history/`
+
+The Activity panel keeps upload activity in memory for the current app session; it does not create a persistent `activity.log` file.
 
 The cleanup helper leaves local user data alone by default. To remove it intentionally, pass `--include-output` or `--include-user-data`.
