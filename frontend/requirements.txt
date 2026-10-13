@@ -33,7 +33,7 @@ jsonschema==4.26.0
 
 # Testing and Code Quality
 pytest==9.0.3
-pytest-cov==7.0.0
+pytest-cov==7.1.0
 flake8==7.1.1
 black==26.3.1
 pip-audit==2.10.0
