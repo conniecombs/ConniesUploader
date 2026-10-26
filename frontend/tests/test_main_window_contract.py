@@ -7,6 +7,7 @@ from pathlib import Path
 import queue
 from types import SimpleNamespace
 from threading import Lock
+from unittest.mock import Mock
 
 import pytest
 
@@ -443,29 +444,16 @@ def test_host_readiness_reports_imgur_api_requirement():
 
 
 @pytest.mark.unit
-def test_host_readiness_reports_imx_auto_gallery_login_requirement():
+def test_host_readiness_requires_imx_upload_username_and_password():
+    from modules.plugins.imx import ImxPlugin
+
     app = UploaderApp.__new__(UploaderApp)
     app.creds = {"imx_api": "api-key", "imx_user": "", "imx_pass": ""}
     app.var_auto_gallery = FakeVar(True)
-    app.service_plugins = {
-        "imx.to": FakePlugin(
-            "imx.to",
-            "IMX.to",
-            {
-                "features": {"authentication": "required"},
-                "credentials": [
-                    {"key": "imx_api", "label": "API Key", "required": True},
-                    {"key": "imx_user", "label": "Username", "required": False},
-                    {"key": "imx_pass", "label": "Password", "required": False},
-                ],
-            },
-        )
-    }
-
+    app.service_plugins = {"imx.to": ImxPlugin()}
     readiness = UploaderApp._host_readiness_for(app, "imx.to")
-
     assert readiness["level"] == "error"
-    assert readiness["message"] == "IMX.to needs username and password for One Gallery Per Folder."
+    assert readiness["message"] == "IMX.to needs Username, Password before upload."
     assert readiness["action_required"] is True
 
 
@@ -1422,6 +1410,32 @@ def test_upload_preflight_allows_vipr_one_gallery_per_folder(tmp_path):
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize("name, valid", [("API Gallery", True), ("Invalid:name", False)])
+def test_imx_upload_preflight_uses_api_key_and_validates_gallery_names(tmp_path, name, valid):
+    from modules.plugins.imx import ImxPlugin
+
+    image_path = tmp_path / "ready.png"
+    image_path.write_bytes(b"fake image")
+    app = UploaderApp.__new__(UploaderApp)
+    app.creds = {"imx_api": "key", "imx_user": "user", "imx_pass": "secret"}
+    app.output_dir = str(tmp_path / "Output")
+    app.central_history_path = str(tmp_path / "history")
+    app.upload_manager = SimpleNamespace(bridge=FakeBridge(alive=True))
+    app.selected_gallery_by_service = {}
+    app.service_plugins = {"imx.to": ImxPlugin()}
+    group = FakeGroup(name, [str(image_path)])
+    issues, summary = UploaderApp._run_upload_preflight(
+        app, {group: [str(image_path)]}, {"service": "imx.to", "auto_gallery": True}
+    )
+    if valid:
+        assert issues == []
+        assert "with the first image" in summary
+    else:
+        assert any("1–100" in issue for issue in issues)
+    assert not any("username and password" in issue for issue in issues)
+
+
+@pytest.mark.unit
 def test_upload_preflight_reports_specific_blockers(tmp_path):
     image_path = tmp_path / "unsupported.bmp"
     image_path.write_bytes(b"fake image")
@@ -1456,7 +1470,7 @@ def test_upload_preflight_reports_specific_blockers(tmp_path):
 
     assert summary == ""
     assert "IMX.to requires API Key. Set it in Tools > Set Credentials." in issues
-    assert "One Gallery Per Folder for IMX.to requires IMX username and password." in issues
+    assert not any("IMX username and password" in issue for issue in issues)
     assert "Some queued files are not ready:" in issues
     assert any("unsupported.bmp: not supported by IMX.to" in issue for issue in issues)
     assert (
@@ -1982,6 +1996,110 @@ def test_group_output_waits_for_result_urls_before_completion():
 
     assert group.is_completed is True
     assert generated == [group]
+
+
+@pytest.mark.parametrize("batch_sizes", [(1,), (50,), (3, 2)])
+def test_imx_gallery_seed_completes_batches_and_writes_output(monkeypatch, tmp_path, batch_sizes):
+    from threading import Event
+
+    from modules.imx_api import ImxGalleryUpload
+    from modules.plugins.imx import ImxPlugin
+    from modules.upload_manager import UploadManager
+
+    groups = [
+        FakeGroup(f"Batch {index}", [f"{index}-{n}.jpg" for n in range(size)])
+        for index, size in enumerate(batch_sizes)
+    ]
+    for group in groups:
+        group.selected_template = "BBCode"
+        group.selected_thread = "Do Not Post"
+
+    monkeypatch.setattr(
+        "modules.plugins.imx.create_gallery_with_image",
+        lambda key, name, path, **kwargs: ImxGalleryUpload(
+            name.replace(" ", ""),
+            name,
+            f"https://imx.to/i/{path}",
+            f"https://imx.to/t/{path}",
+        ),
+    )
+    # Run finalization deterministically, then deliver its UI callback outside the lock.
+    monkeypatch.setattr(
+        "modules.ui.Main_Window.runtime.threading.Thread",
+        lambda target, **kwargs: SimpleNamespace(start=target),
+    )
+    app = UploaderApp.__new__(UploaderApp)
+    app.lock = Lock()
+    app.progress_queue, app.result_queue = queue.Queue(), queue.Queue()
+    app.results = []
+    app.is_uploading = True
+    app.upload_count, app.upload_total = 0, sum(batch_sizes)
+    app.settings = {"service": "imx.to", "auto_gallery": True}
+    app.file_widgets = {
+        path: {"group": group, "state": "queued", "status": FakeLabel(), "prog": FakeProgress()}
+        for group in groups
+        for path in group.files
+    }
+    app.overall_progress = FakeProgress()
+    app.lbl_eta, app.btn_open = FakeLabel(), FakeFrame()
+    app.output_dir = str(tmp_path / "output")
+    app.central_history_path = str(tmp_path / "history")
+    Path(app.central_history_path).mkdir()
+    app.current_output_files, app.clipboard_buffer = [], []
+    app.pix_galleries_to_finalize = []
+    app.var_auto_copy = FakeVar(False)
+    app.var_imx_links = FakeVar(False)
+    app.template_mgr = SimpleNamespace(
+        apply=lambda name, context, results: "\n".join(url for url, _, _ in results)
+    )
+    app.log, app.add_activity = Mock(), Mock()
+    app._process_ui_queue = Mock()
+    app._refresh_start_button_state = Mock()
+    app._configure_stop_button = Mock()
+    app._set_completion_summary = Mock()
+    callbacks = []
+    app.after = lambda delay, callback: callbacks.append((delay, callback))
+
+    manager = UploadManager.__new__(UploadManager)
+    manager.cancel_event = Event()
+    manager.progress_queue, manager.result_queue = app.progress_queue, app.result_queue
+    manager.plugin_manager = SimpleNamespace(get_plugin=lambda service: ImxPlugin())
+    manager._remember_imx_gallery_use = Mock()
+
+    def complete_remaining_files(files, cfg, creds):
+        for path in files:
+            app.result_queue.put((path, f"https://imx.to/i/{path}", f"https://imx.to/t/{path}"))
+            app.progress_queue.put(("status", path, "Done"))
+
+    manager._send_job = Mock(side_effect=complete_remaining_files)
+    manager._dispatch_jobs(
+        {group: group.files for group in groups},
+        app.settings,
+        {"imx_api": "key", "imx_user": "user", "imx_pass": "secret"},
+    )
+    while not app.progress_queue.empty() or not app.result_queue.empty():
+        app.update_ui_loop()
+        for delay, callback in callbacks:
+            if delay == 0:
+                callback()
+        callbacks.clear()
+
+    assert app.upload_count == app.upload_total
+    assert app.is_uploading is False
+    assert app.overall_progress.value == 1.0
+    assert all(row["state"] == "success" for row in app.file_widgets.values())
+    assert all(group.is_completed and group.prog_value == 1.0 for group in groups)
+    assert len(app.current_output_files) == len(groups)
+    for group, output_file in zip(groups, app.current_output_files):
+        assert Path(output_file).read_text().splitlines() == [
+            f"https://imx.to/i/{path}" for path in group.files
+        ]
+    app._configure_stop_button.assert_called_once_with(False)
+    app._refresh_start_button_state.assert_called_once()
+    summary = app._set_completion_summary.call_args.args[0]
+    assert summary["uploaded_count"] == sum(batch_sizes)
+    assert summary["failed_count"] == 0
+    assert summary["generated_count"] == len(groups)
 
 
 @pytest.mark.unit

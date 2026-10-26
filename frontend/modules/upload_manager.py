@@ -108,6 +108,7 @@ class UploadManager:
         """Send job JSON payloads to the Go process via the sidecar bridge."""
         logger.info("--- Starting Phase 1: Gallery Creation ---")
         failed_groups: Dict[Any, str] = {}
+        completed_files: set[str] = set()
         cfg = cfg.copy()
         cfg["service"] = config.normalize_service_id(cfg.get("service", ""))
 
@@ -121,9 +122,37 @@ class UploadManager:
 
                 if plugin and hasattr(plugin, "prepare_group"):
                     try:
-                        context: Dict[str, Any] = {}
+                        cover_files = self._explicit_cover_files_for_group(group_obj, files)
+                        if cover_files is None:
+                            cover_files = group_obj.files[:self._cover_count_for_service(cfg)]
+                        context: Dict[str, Any] = {
+                            "pending_files": list(files),
+                            "cover_files": cover_files,
+                            "cancel_event": self.cancel_event,
+                        }
                         temp_cfg = cfg.copy()
+                        if service_id == "imx.to" and cfg.get("auto_gallery") and files:
+                            self.progress_queue.put(
+                                ("status", files[0], "Creating IMX gallery with first image...")
+                            )
                         plugin.prepare_group(group_obj, temp_cfg, context, creds)
+
+                        for file_path, image_url, thumb_url in context.get("completed_uploads", []):
+                            completed_files.add(file_path)
+                            gallery_url = getattr(group_obj, "gallery_url", "")
+                            if gallery_url:
+                                self.progress_queue.put(("gallery_url", file_path, gallery_url))
+                            self.result_queue.put(
+                                (file_path, image_url, self._canonicalize_imx_thumbnail_url(thumb_url))
+                            )
+                            # Preparation uploads bypass the sidecar's terminal status event.
+                            self.progress_queue.put(("status", file_path, "Done"))
+                        if service_id == "imx.to" and getattr(group_obj, "gallery_id", ""):
+                            self._remember_imx_gallery_use(group_obj, {
+                                "gallery_id": group_obj.gallery_id,
+                                "selected_gallery_name": group_obj.gallery_name,
+                                "selected_gallery_url": group_obj.gallery_url,
+                            })
 
                         for gal_data in context.get("created_galleries", []):
                             self.progress_queue.put(("register_pix_gal", None, gal_data))
@@ -139,6 +168,10 @@ class UploadManager:
             for group_obj, files in pending_by_group.items():
                 if self.cancel_event.is_set():
                     break
+
+                files = [file_path for file_path in files if file_path not in completed_files]
+                if not files:
+                    continue
 
                 if group_obj in failed_groups:
                     err_msg = f"error: preparation failed - {failed_groups[group_obj]}"

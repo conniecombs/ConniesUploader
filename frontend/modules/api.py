@@ -115,7 +115,7 @@ def finalize_pixhost_gallery(
 
 
 def create_imx_gallery(
-    user: str, pwd: str, name: str, client: Any = None
+    user: str, pwd: str, name: str, client: Any = None, *, api_key: str = ""
 ) -> Optional[str]:
     """Create a gallery on IMX service using the live account form contract.
 
@@ -124,6 +124,7 @@ def create_imx_gallery(
         pwd: IMX password
         name: Name for the new gallery
         client: Unused, kept for backward compatibility.
+        api_key: Required by the application's gallery-management policy.
 
     Returns:
         Gallery ID if successful, None otherwise.
@@ -135,6 +136,7 @@ def create_imx_gallery(
         creds={
             "imx_user": user,
             "imx_pass": pwd,
+            "imx_api": api_key,
         },
     )
     result = service.create_gallery("imx.to", name)
@@ -145,7 +147,9 @@ def create_imx_gallery(
     return None
 
 
-def delete_imx_gallery(user: str, pwd: str, gallery_id: str, client: Any = None) -> bool:
+def delete_imx_gallery(
+    user: str, pwd: str, gallery_id: str, client: Any = None, *, api_key: str = ""
+) -> bool:
     """Delete an IMX gallery through the live account edit form."""
     from modules.gallery_service import GalleryService
 
@@ -154,6 +158,7 @@ def delete_imx_gallery(user: str, pwd: str, gallery_id: str, client: Any = None)
         creds={
             "imx_user": user,
             "imx_pass": pwd,
+            "imx_api": api_key,
         },
     )
     result = service.delete_gallery("imx.to", gallery_id)

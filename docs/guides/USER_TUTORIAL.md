@@ -275,7 +275,7 @@ If you are not sure, start with `pixhost.cc`, upload 2 files, and check the outp
 
 ### `imx.to`
 
-`imx.to` requires an API key for uploads. Username/password are also used for gallery management and automatic gallery creation.
+`imx.to` requires a saved username and password before uploading. Gallery management requires an IMX API key. The existing upload transport also needs that key, so save all three credentials for uploads. Creating a gallery with a first image checks both requirements. Website listing/deletion still use a signed-in website session when IMX permits direct login.
 
 | Setting | Options | Explanation |
 | --- | --- | --- |
@@ -285,7 +285,9 @@ If you are not sure, start with `pixhost.cc`, upload 2 files, and check the outp
 | `Links.txt` | On/off | Also writes a raw link list file next to the formatted output file. |
 | `Gallery ID` | Text field | Existing IMX gallery ID. Leave blank unless you want the upload attached to a specific gallery. |
 
-If `One Gallery Per Folder` is enabled, the app tries to create a new IMX gallery for each batch using the batch title. This requires IMX username/password credentials, not just the API key.
+If `One Gallery Per Folder` is enabled, the first image creates a named IMX gallery through the API. Remaining images use the returned gallery ID; the first image is not uploaded twice. Retries reuse an already-created gallery. The username, password, and API key must all be saved before starting uploads. A gallery-creation failure stops the affected batch and shows the host error.
+
+IMX gallery names allow 1–100 characters: letters A–Z, digits, spaces, and `- _ . , ( ) [ ]`. Invalid names are rejected before uploading; rename the batch to correct them. If a connection fails after a creation request, inspect your IMX account before retrying because the host may already have accepted the first image.
 
 ### `pixhost.cc`
 
@@ -378,8 +380,9 @@ Use these examples to decide what to fill in:
 | Workflow | Credentials needed |
 | --- | --- |
 | Pixhost upload only | None. |
-| IMX upload only | IMX API key. |
-| IMX gallery listing or gallery creation | IMX username and password, plus API key for uploads. |
+| IMX upload only | IMX username and password, plus the API key used by the upload transport. |
+| IMX gallery creation | API key for gallery management; username/password are also required when uploading the first image. |
+| IMX website gallery listing or deletion | API key required by the app, plus a signed-in website session; browser verification may require using the website. |
 | Vipr upload or gallery refresh | Vipr username and password. |
 | ViperGirls automatic posting | ViperGirls username and password. |
 | TurboImageHost account upload | Turbo username and password. |
@@ -427,12 +430,13 @@ Status meanings:
 | Status | What it means | Best next step |
 | --- | --- | --- |
 | `Missing credentials` | The selected host needs a saved username/password before listing or creating galleries. | Click `Set Credentials`, save the correct service credentials, then click `Refresh from host`. |
-| `Login failed` | Credentials were found, but the host rejected them or showed the login page again. | Re-save credentials. For IMX, use `Set IMX Cookie` if normal login is blocked. |
+| `Login failed` | Credentials were found, but the host rejected them or showed the login page again. | Check the selected host username and password. |
+| `IMX website requires browser verification` | IMX returned its JavaScript bot check instead of an authenticated website session. | Open IMX in a browser for listing/deletion; use the API key for gallery creation and uploads. |
 | `No galleries found` | The host returned a valid empty list. | Create a gallery, choose another service, or confirm the account has galleries on the host site. |
 | `Cached` | The row came from local cache because live refresh was unavailable. | Use it if the ID/hash is still valid, or click `Refresh from host` when the host is reachable. |
 | `Could not read galleries` | The host page or sidecar response changed shape. | Try again later and check the Activity panel plus terminal output or `crash_log.log` for the raw failure. |
 
-Use Gallery Manager when you want to attach a batch to an existing gallery or create a gallery before uploading.
+Use Gallery Manager when you want to attach a batch to an existing gallery or create a gallery. For IMX, save your API key, username, and password, then enter a name and click `Upload First Image & Create`, then choose a JPG, PNG, or GIF. That image is uploaded immediately into the new gallery. You can then select the gallery for subsequent uploads.
 
 ### Example: Attach Uploads To An Existing Gallery
 
@@ -1298,7 +1302,7 @@ Gallery Manager uses the credentials for the selected image host only.
 - For `imx.to`, save the IMX username and password. The IMX API key is still needed for uploads, but gallery listing/login uses the username and password.
 - For `pixhost.cc`, credentials are not required, but live listing existing Pixhost galleries is not available yet.
 
-After saving credentials, click `Refresh from host`. If IMX still shows a login failure, use `Set IMX Cookie` and paste a current `PHPSESSID` cookie value from your browser session.
+After saving credentials, click `Refresh from host`. If IMX reports `browser verification`, use `Open IMX Website` for live browsing or deletion. Its Anubis check requires browser JavaScript and can return HTTP 200 without signing in; a password change or PHPSESSID alone does not resolve that check. API gallery creation and uploads still work, and saved galleries remain available in the local cache.
 
 ### Gallery list is empty
 

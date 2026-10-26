@@ -73,7 +73,10 @@ class FakeImxSession:
 
     def get(self, url, timeout=0):
         self.get_calls.append((url, timeout))
-        return FakeResponse("", url=url)
+        return FakeResponse('<a href="/logout.php">Log out</a>' if url.endswith("/dashboard") else "", url=url)
+
+    def close(self):
+        pass
 
     def post(self, url, data=None, timeout=0):
         self.post_calls.append((url, dict(data or {}), timeout))
@@ -89,6 +92,8 @@ class FakePagedImxSession(FakeImxSession):
 
     def get(self, url, timeout=0):
         self.get_calls.append((url, timeout))
+        if url == "https://imx.to/user/dashboard":
+            return FakeResponse('<a href="/logout.php">Log out</a>', url=url)
         if url == "https://imx.to/login.php":
             return FakeResponse("", url=url)
         page = "1"
@@ -494,7 +499,7 @@ def test_list_galleries_requires_imx_credentials_without_vipr_fallback():
     result = service.list_galleries("imx.to")
 
     assert result.status == GalleryStatus.MISSING_CREDENTIALS
-    assert "IMX username" in result.message
+    assert "IMX API key" in result.message
     assert bridge.calls == []
 
 
@@ -511,8 +516,10 @@ def test_gallery_credential_validation_is_service_specific():
     assert bridge.calls == []
 
     service = GalleryService(bridge, {})
-    assert "IMX username" in service._missing_credentials("imx.to")
+    assert "IMX API key" in service._missing_credentials("imx.to")
     service.set_imx_php_session("manual-session")
+    assert service._missing_credentials("imx.to") == "IMX API key"
+    service.creds["imx_api"] = "key"
     assert service._missing_credentials("imx.to") == ""
 
     service = GalleryService(bridge, {"imagebam_user": "user"})
@@ -551,7 +558,7 @@ def test_create_imx_gallery_uses_live_login_and_add_gallery_forms(monkeypatch):
         "modules.gallery_service.requests.Session", lambda: fake_session
     )
     service = GalleryService(
-        FakeBridge(), {"imx_user": "user", "imx_pass": "secret"}
+        FakeBridge(), {"imx_user": "user", "imx_pass": "secret", "imx_api": "key"}
     )
 
     result = service.create_gallery("imx.to", "Batch Gallery")
@@ -571,7 +578,6 @@ def test_create_imx_gallery_uses_live_login_and_add_gallery_forms(monkeypatch):
             "usr_email": "user",
             "pwd": "secret",
             "doLogin": "Login",
-            "remember": "1",
         },
         10,
     )
@@ -600,7 +606,7 @@ def test_sync_all_imx_galleries_uses_one_login_and_stops_at_empty_page(monkeypat
         "modules.gallery_service.requests.Session", lambda: fake_session
     )
     service = GalleryService(
-        FakeBridge(), {"imx_user": "user", "imx_pass": "secret"}
+        FakeBridge(), {"imx_user": "user", "imx_pass": "secret", "imx_api": "key"}
     )
 
     result = service.sync_all_galleries(
@@ -620,13 +626,13 @@ def test_sync_all_imx_galleries_uses_one_login_and_stops_at_empty_page(monkeypat
                 "usr_email": "user",
                 "pwd": "secret",
                 "doLogin": "Login",
-                "remember": "1",
-            },
+                },
             10,
         )
     ]
     assert [call[0] for call in fake_session.get_calls] == [
         "https://imx.to/login.php",
+        "https://imx.to/user/dashboard",
         "https://imx.to/user/galleries?page=1&limit=200",
         "https://imx.to/user/galleries?page=2&limit=200",
     ]
@@ -638,7 +644,7 @@ def test_delete_imx_gallery_posts_edit_form_and_confirms_gallery_removed(monkeyp
         "modules.gallery_service.requests.Session", lambda: fake_session
     )
     service = GalleryService(
-        FakeBridge(), {"imx_user": "user", "imx_pass": "secret"}
+        FakeBridge(), {"imx_user": "user", "imx_pass": "secret", "imx_api": "key"}
     )
     record = GalleryRecord(service="imx.to", id="abc123", name="Delete Me")
 
@@ -654,7 +660,6 @@ def test_delete_imx_gallery_posts_edit_form_and_confirms_gallery_removed(monkeyp
             "usr_email": "user",
             "pwd": "secret",
             "doLogin": "Login",
-            "remember": "1",
         },
         10,
     )
@@ -663,7 +668,7 @@ def test_delete_imx_gallery_posts_edit_form_and_confirms_gallery_removed(monkeyp
         {"delete_confirm": "on", "delete_gallery": "Remove Gallery"},
         15,
     )
-    assert fake_session.get_calls[1] == (
+    assert fake_session.get_calls[2] == (
         "https://imx.to/user/galleries?page=1&limit=200",
         10,
     )
@@ -678,14 +683,14 @@ def test_delete_imx_gallery_reports_error_when_gallery_still_listed(monkeypatch)
                     '<a href="/g/abc123">Delete Me</a>',
                     url=url,
                 )
-            return FakeResponse("", url=url)
+            return FakeResponse('<a href="/logout.php">Log out</a>' if url.endswith("/dashboard") else "", url=url)
 
     fake_session = FakeStillListedSession()
     monkeypatch.setattr(
         "modules.gallery_service.requests.Session", lambda: fake_session
     )
     service = GalleryService(
-        FakeBridge(), {"imx_user": "user", "imx_pass": "secret"}
+        FakeBridge(), {"imx_user": "user", "imx_pass": "secret", "imx_api": "key"}
     )
 
     result = service.delete_gallery("imx.to", "abc123")

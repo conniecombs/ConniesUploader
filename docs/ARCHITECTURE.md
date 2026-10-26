@@ -98,6 +98,10 @@ The template engine supports:
 
 ### Gallery Manager
 
+IMX upload entry points require saved username/password in addition to the API transport key. Gallery service operations require an API key, including listing, sync, creation, and deletion; manual website cookies do not bypass that application requirement. First-image creation also enforces the upload policy.
+
+IMX automatic galleries use `modules/imx_api.py` to upload the first batch image once with `create_gallery=1`. `prepare_group()` returns that completed upload in its context; UploadManager emits its result and sends only the remaining images through the Go sidecar with the returned gallery ID. This synchronous first request uses a bounded timeout and is never automatically retried, because a repeated request creates another gallery. Gallery Manager uses the same API helper with a user-selected first image. Website listing/deletion remain separate, verify login explicitly, and report Anubis challenges as `browser_required`.
+
 The Gallery Manager UI is backed by service/plugin code and normalized gallery records:
 
 ```python

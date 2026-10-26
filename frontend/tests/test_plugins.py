@@ -623,21 +623,27 @@ class TestImxPlugin(unittest.TestCase):
 
     def test_prepare_group_creates_imx_gallery_for_auto_gallery(self):
         from modules.plugins import imx
+        from modules.imx_api import ImxGalleryUpload
 
         plugin = imx.ImxPlugin()
         group = Mock()
         group.title = "Batch Gallery"
+        group.gallery_id = ""
+        group.gallery_service = ""
         config = {"auto_gallery": True}
+        context = {"pending_files": ["image.jpg"]}
+        upload = ImxGalleryUpload("abc123", "Batch Gallery", "https://imx.to/i/one", "https://imx.to/t/one.jpg")
 
-        with patch.object(imx.api, "create_imx_gallery", return_value="abc123") as create:
+        with patch.object(imx, "create_gallery_with_image", return_value=upload) as create:
             plugin.prepare_group(
                 group,
                 config,
-                {},
-                {"imx_user": "user", "imx_pass": "secret"},
+                context,
+                {"imx_api": "api-key", "imx_user": "user", "imx_pass": "secret"},
             )
 
-        create.assert_called_once_with("user", "secret", "Batch Gallery")
+        self.assertEqual(create.call_args.args, ("api-key", "Batch Gallery", "image.jpg"))
+        self.assertEqual(context["completed_uploads"], [("image.jpg", upload.image_url, upload.thumbnail_url)])
         self.assertEqual(group.gallery_id, "abc123")
         self.assertEqual(group.gallery_name, "Batch Gallery")
         self.assertEqual(group.gallery_url, "https://imx.to/g/abc123")
@@ -656,7 +662,7 @@ class TestImxPlugin(unittest.TestCase):
                 "thumbnail_size": "600",
                 "thumbnail_format": "Square",
             },
-            {"imx_api": "api-key"},
+            {"imx_api": "api-key", "imx_user": "user", "imx_pass": "secret"},
         )
 
         fields = request["multipart_fields"]
@@ -677,7 +683,7 @@ class TestImxPlugin(unittest.TestCase):
         request = plugin.build_http_request(
             "/tmp/image.jpg",
             {"gallery_id": "group123", "selected_gallery_id": "selected123"},
-            {"imx_api": "api-key"},
+            {"imx_api": "api-key", "imx_user": "user", "imx_pass": "secret"},
         )
 
         self.assertEqual(request["multipart_fields"]["gallery_id"]["value"], "group123")

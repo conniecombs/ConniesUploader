@@ -12,7 +12,7 @@ Python side only manages UI and gallery creation.
 from typing import Dict, Any, List
 from .base import ImageHostPlugin
 from . import helpers
-from .. import api
+from ..imx_api import ImxApiError, create_gallery_with_image, require_upload_credentials
 from loguru import logger
 
 
@@ -49,20 +49,20 @@ class ImxPlugin(ImageHostPlugin):
                     "key": "imx_api",
                     "label": "API Key",
                     "required": True,
-                    "description": "IMX.to API key for uploads",
+                    "description": "Required for gallery management and the IMX API transport",
                 },
                 {
                     "key": "imx_user",
                     "label": "Username",
-                    "required": False,
-                    "description": "Username for gallery creation (optional)",
+                    "required": True,
+                    "description": "Required before uploading to IMX.to",
                 },
                 {
                     "key": "imx_pass",
                     "label": "Password",
-                    "required": False,
+                    "required": True,
                     "secret": True,
-                    "description": "Password for gallery creation (optional)",
+                    "description": "Required before uploading to IMX.to",
                 },
             ],
             "limits": {
@@ -141,30 +141,37 @@ class ImxPlugin(ImageHostPlugin):
         Prepare group for upload.
         Handles both Auto-Gallery creation and Manual Gallery configuration.
         """
-        # 1. Handle Auto-Gallery (One Gallery Per Folder)
+        require_upload_credentials(creds)
+        # One API request creates the gallery and uploads its first real image.
+        # Remaining uploads receive the returned gallery_id from UploadManager.
         if config.get("auto_gallery"):
-            user = creds.get("imx_user")
-            pwd = creds.get("imx_pass")
-
-            if user and pwd:
-                # Use the API wrapper which calls Sidecar action="create_gallery"
-                gid = api.create_imx_gallery(user, pwd, group.title)
-
-                if gid:
-                    # Store the new Gallery ID in the group object
-                    group.gallery_id = gid
-                    group.gallery_name = group.title
-                    group.gallery_url = f"https://imx.to/g/{gid}"
-                    group.gallery_service = "imx.to"
-                    # Update the config for this specific batch so the uploader sees it
-                    config["gallery_id"] = gid
-                    logger.info(f"Created IMX gallery for batch: {group.title} (ID: {gid})")
-                else:
-                    logger.warning(f"Failed to create gallery for: {group.title}")
-            else:
-                logger.warning(
-                    "IMX credentials (username/password) not set - cannot create auto-gallery"
-                )
+            if getattr(group, "gallery_service", "") == self.id and getattr(group, "gallery_id", ""):
+                config["gallery_id"] = group.gallery_id
+                return  # Retry/selected batch: keep the already-created gallery.
+            files = context.get("pending_files", [])
+            if not files:
+                raise ImxApiError("No pending image is available to create the IMX gallery.")
+            cancel_event = context.get("cancel_event")
+            if cancel_event is not None and cancel_event.is_set():
+                raise ImxApiError("IMX gallery creation cancelled before upload.")
+            first_file = files[0]
+            first_config = config.copy()
+            if first_file in context.get("cover_files", []):
+                first_config["thumbnail_size"] = "600"
+            spec = self.build_http_request(first_file, first_config, creds)
+            fields = {k: v["value"] for k, v in spec["multipart_fields"].items() if v["type"] == "text"}
+            result = create_gallery_with_image(
+                creds.get("imx_api", ""), group.title, first_file, fields=fields
+            )
+            group.gallery_id = result.gallery_id
+            group.gallery_name = result.gallery_name
+            group.gallery_url = f"https://imx.to/g/{result.gallery_id}"
+            group.gallery_service = self.id
+            config["gallery_id"] = result.gallery_id
+            context.setdefault("completed_uploads", []).append(
+                (first_file, result.image_url, result.thumbnail_url)
+            )
+            logger.info(f"Created IMX gallery for batch: {group.title} (ID: {result.gallery_id})")
 
         # 2. Handle Manual Gallery (if not using auto-gallery)
         # Ensure config has 'gallery_id' set if it was manually provided
@@ -178,6 +185,7 @@ class ImxPlugin(ImageHostPlugin):
         """
         Build HTTP request specification for IMX.to upload.
         """
+        require_upload_credentials(creds)
         # Map thumbnail size to IMX API ID
         size_map = {"100": "1", "150": "6", "180": "2", "250": "3", "300": "4", "600": "5"}
         thumb_size_raw = config.get("thumbnail_size") or config.get("imx_thumb")

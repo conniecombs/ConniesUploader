@@ -4,7 +4,8 @@
 import customtkinter as ctk
 import threading
 import webbrowser
-from tkinter import messagebox
+from tkinter import filedialog, messagebox
+from modules.imx_api import ImxApiError, validate_gallery_name, require_upload_credentials
 from modules.credentials_manager import CredentialsManager
 from modules.gallery_cache import GalleryCache
 from modules.sidecar import SidecarBridge
@@ -24,6 +25,7 @@ PIXHOST_SERVICE = config.PIXHOST_SERVICE_ID
 IMX_SERVICE = "imx.to"
 
 GALLERY_CACHE_FALLBACK_STATUSES = {
+    GalleryStatus.BROWSER_REQUIRED,
     GalleryStatus.LOGIN_FAILED,
     GalleryStatus.PARSE_FAILED,
     GalleryStatus.ERROR,
@@ -56,6 +58,7 @@ class GalleryManager(ctk.CTkToplevel):
         self._delete_request_id = 0
         self._sync_request_id = 0
         self._imx_all_synced = False
+        self._creating_gallery = False
 
         self._init_ui()
         self.after(config.UI_GALLERY_REFRESH_DELAY_MS, self._load_cached_or_refresh)
@@ -124,9 +127,15 @@ class GalleryManager(ctk.CTkToplevel):
         self.ent_name = ctk.CTkEntry(bottom)
         self.ent_name.pack(fill="x", padx=5, pady=(0, 5))
 
-        ctk.CTkButton(
+        self.btn_create = ctk.CTkButton(
             bottom, text="Create Gallery", command=self._create_gallery, fg_color="green"
-        ).pack(fill="x", padx=5, pady=5)
+        )
+        self.btn_create.pack(fill="x", padx=5, pady=5)
+        self.imx_create_hint = ctk.CTkLabel(
+            bottom,
+            text="IMX: gallery management requires an API key. Uploading the first JPG, PNG or GIF also requires your username and password.",
+            wraplength=720,
+        )
 
         self.pixhost_import_frame = ctk.CTkFrame(bottom, fg_color="transparent")
         ctk.CTkLabel(
@@ -155,6 +164,14 @@ class GalleryManager(ctk.CTkToplevel):
 
     def _update_service_mode(self):
         service = self._selected_service()
+        if "imx_create_hint" in self.__dict__:
+            self.btn_create.configure(
+                text="Upload First Image & Create" if service == IMX_SERVICE else "Create Gallery"
+            )
+            if service == IMX_SERVICE:
+                self.imx_create_hint.pack(fill="x", padx=5, pady=(0, 5))
+            else:
+                self.imx_create_hint.pack_forget()
         try:
             self.btn_refresh.configure(text=self._list_action_label(service))
         except Exception:
@@ -195,6 +212,14 @@ class GalleryManager(ctk.CTkToplevel):
         service = self._selected_service()
         if service == PIXHOST_SERVICE:
             self._render_pixhost_local_result(self._refresh_request_id)
+            return
+
+        if service == IMX_SERVICE and not str(self.creds.get("imx_api") or "").strip():
+            self._render_result_message(GalleryResult(
+                GalleryStatus.MISSING_CREDENTIALS,
+                "Set your IMX API key in Credentials before using Gallery Manager.",
+                service,
+            ))
             return
 
         records = self.gallery_cache.records_for_service(service)
@@ -650,23 +675,57 @@ class GalleryManager(ctk.CTkToplevel):
         self._render_current_records()
 
     def _create_gallery(self):
+        if self.__dict__.get("_creating_gallery", False):
+            return
         name = self.ent_name.get().strip()
         if not name:
             self._set_status("Enter a gallery name.", is_error=True)
             return
 
         service = self._selected_service()
+        initial_image = ""
+        if service == IMX_SERVICE:
+            if not str(self.creds.get("imx_api") or "").strip():
+                self._set_status("Set your IMX API key in Credentials before creating a gallery.", is_error=True)
+                return
+            try:
+                require_upload_credentials(self.creds)
+                validate_gallery_name(name)
+            except ImxApiError as exc:
+                self._set_status(str(exc), is_error=True)
+                return
+            initial_image = filedialog.askopenfilename(
+                parent=self, title="Choose the first image to upload into the new IMX gallery",
+                filetypes=[("IMX images", "*.jpg *.jpeg *.png *.gif")],
+            )
+            if not initial_image:
+                return
+        self._creating_gallery = True
+        self.btn_create.configure(state="disabled")
         self._create_request_id += 1
         request_id = self._create_request_id
         self._set_status(f"Creating gallery '{name}'...")
 
         def _task():
-            result = self.gallery_service.create_gallery(service, name)
+            try:
+                if initial_image:
+                    result = self.gallery_service.create_gallery(service, name, initial_image=initial_image)
+                else:
+                    result = self.gallery_service.create_gallery(service, name)
+            except Exception:
+                result = GalleryResult(
+                    GalleryStatus.ERROR,
+                    "Gallery creation could not be confirmed. Check the host before retrying.",
+                    service,
+                )
             self.after(0, lambda: self._handle_create_result(request_id, service, result))
 
         threading.Thread(target=_task, daemon=True).start()
 
     def _handle_create_result(self, request_id: int, service: str, result: GalleryResult):
+        self._creating_gallery = False
+        if "btn_create" in self.__dict__:
+            self.btn_create.configure(state="normal")
         if self._is_stale_create(request_id, service):
             return
 
@@ -801,6 +860,7 @@ class GalleryManager(ctk.CTkToplevel):
             GalleryStatus.EMPTY: "No galleries found",
             GalleryStatus.MISSING_CREDENTIALS: "Missing credentials",
             GalleryStatus.LOGIN_FAILED: "Login failed",
+            GalleryStatus.BROWSER_REQUIRED: "IMX website requires browser verification",
             GalleryStatus.UNSUPPORTED: "Unsupported gallery operation",
             GalleryStatus.PARSE_FAILED: "Could not read galleries",
             GalleryStatus.ERROR: "Gallery operation failed",
@@ -827,6 +887,12 @@ class GalleryManager(ctk.CTkToplevel):
 
         if result.status == GalleryStatus.LOGIN_FAILED and result.service == "imx.to":
             actions.append(("Set IMX Cookie", self._ask_cookies_dialog))
+        if result.status == GalleryStatus.BROWSER_REQUIRED and result.service == IMX_SERVICE:
+            actions = [
+                ("Open IMX Website", lambda: webbrowser.open("https://imx.to/user/galleries")),
+                ("Set API Key", self._open_credentials),
+                ("Create Gallery", self._focus_create_gallery),
+            ]
 
         self._render_empty_actions(actions)
 

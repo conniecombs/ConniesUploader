@@ -25,12 +25,12 @@ def test_create_imx_gallery_uses_gallery_service_live_form_flow():
     with patch("modules.gallery_service.GalleryService") as service_cls:
         service_cls.return_value.create_gallery.return_value = result
 
-        gallery_id = api.create_imx_gallery("user", "secret", "Batch Gallery")
+        gallery_id = api.create_imx_gallery("user", "secret", "Batch Gallery", api_key="key")
 
     assert gallery_id == "abc123"
     service_cls.assert_called_once_with(
         bridge=None,
-        creds={"imx_user": "user", "imx_pass": "secret"},
+        creds={"imx_user": "user", "imx_pass": "secret", "imx_api": "key"},
     )
     service_cls.return_value.create_gallery.assert_called_once_with(
         "imx.to", "Batch Gallery"
@@ -43,12 +43,12 @@ def test_delete_imx_gallery_uses_gallery_service_live_edit_form_flow():
     with patch("modules.gallery_service.GalleryService") as service_cls:
         service_cls.return_value.delete_gallery.return_value = result
 
-        deleted = api.delete_imx_gallery("user", "secret", "abc123")
+        deleted = api.delete_imx_gallery("user", "secret", "abc123", api_key="key")
 
     assert deleted is True
     service_cls.assert_called_once_with(
         bridge=None,
-        creds={"imx_user": "user", "imx_pass": "secret"},
+        creds={"imx_user": "user", "imx_pass": "secret", "imx_api": "key"},
     )
     service_cls.return_value.delete_gallery.assert_called_once_with(
         "imx.to", "abc123"

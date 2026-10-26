@@ -16,6 +16,7 @@ from bs4 import BeautifulSoup
 from loguru import logger
 
 from modules import config
+from modules.imx_api import ImxApiError, create_gallery_with_image, require_upload_credentials
 from modules.transport import build_transport_spec, execute_transport_request
 
 
@@ -24,6 +25,7 @@ class GalleryStatus:
     EMPTY = "empty"
     MISSING_CREDENTIALS = "missing_credentials"
     LOGIN_FAILED = "login_failed"
+    BROWSER_REQUIRED = "browser_required"
     UNSUPPORTED = "unsupported"
     PARSE_FAILED = "parse_failed"
     ERROR = "error"
@@ -352,9 +354,15 @@ class GalleryService:
                 f"{SERVICE_LABELS.get(service, service or 'Selected service')} full sync is not supported.",
                 service,
             )
+        missing = self._missing_credentials(service)
+        if missing:
+            return self._result(
+                GalleryStatus.MISSING_CREDENTIALS,
+                f"IMX.to needs {missing} before galleries can be synced.", service,
+            )
         return self._sync_all_imx_galleries(max_pages, progress_callback)
 
-    def create_gallery(self, service: str, name: str) -> GalleryResult:
+    def create_gallery(self, service: str, name: str, *, initial_image: str = "") -> GalleryResult:
         service = config.normalize_service_id(service)
         name = name.strip()
         if not name:
@@ -372,6 +380,27 @@ class GalleryService:
                 GalleryStatus.MISSING_CREDENTIALS,
                 f"{SERVICE_LABELS[service]} needs {missing} before a gallery can be created.",
                 service,
+            )
+
+        if service == "imx.to" and initial_image:
+            try:
+                require_upload_credentials(self.creds)
+            except ImxApiError as exc:
+                return self._result(GalleryStatus.MISSING_CREDENTIALS, str(exc), service)
+            try:
+                upload = create_gallery_with_image(self.creds.get("imx_api", ""), name, initial_image)
+            except ImxApiError as exc:
+                return self._result(GalleryStatus.ERROR, str(exc), service)
+            record = GalleryRecord(
+                service=service, id=upload.gallery_id, name=upload.gallery_name,
+                url=gallery_url_for_service(service, upload.gallery_id),
+                raw={"source": "api", "first_image_url": upload.image_url,
+                     "first_thumbnail_url": upload.thumbnail_url},
+            )
+            return self._result(
+                GalleryStatus.SUCCESS,
+                f"Created gallery '{record.name}' ({record.id}) with the selected image.",
+                service, record=record, records=[record],
             )
 
         if service == "imx.to":
@@ -428,13 +457,8 @@ class GalleryService:
         return fallback
 
     def _missing_credentials(self, service: str) -> str:
-        if service == "imx.to" and not self._imx_manual_cookies:
-            missing = []
-            if not str(self.creds.get("imx_user", "") or "").strip():
-                missing.append("IMX username")
-            if not str(self.creds.get("imx_pass", "") or "").strip():
-                missing.append("IMX password")
-            return " and ".join(missing)
+        if service == "imx.to":
+            return "IMX API key" if not str(self.creds.get("imx_api") or "").strip() else ""
 
         if service == "vipr.im":
             missing = []
@@ -924,16 +948,12 @@ class GalleryService:
 
     def _create_imx_session(self) -> Tuple[Optional[requests.Session], Optional[GalleryResult]]:
         session = requests.Session()
-        session.headers.update({"User-Agent": "Mozilla/5.0"})
-
-        if self._imx_manual_cookies:
-            for key, value in self._imx_manual_cookies.items():
-                session.cookies.set(key, value, domain="imx.to")
-            return session, None
+        session.headers.update({"User-Agent": config.USER_AGENT})
 
         user = str(self.creds.get("imx_user", "") or "").strip()
-        password = str(self.creds.get("imx_pass", "") or "").strip()
-        if not user or not password:
+        password = str(self.creds.get("imx_pass", "") or "")
+        if not self._imx_manual_cookies and (not user or not password):
+            session.close()
             return session, self._result(
                 GalleryStatus.MISSING_CREDENTIALS,
                 "IMX.to needs IMX username and IMX password.",
@@ -942,24 +962,70 @@ class GalleryService:
 
         try:
             login_url = "https://imx.to/login.php"
-            session.get(login_url, timeout=10)
-            response = session.post(
-                login_url,
-                data={"usr_email": user, "pwd": password, "doLogin": "Login", "remember": "1"},
-                timeout=10,
-            )
-            if response.status_code in {401, 403}:
-                return session, self._result(
-                    GalleryStatus.LOGIN_FAILED,
-                    "IMX.to login failed. Check the saved IMX username and password.",
-                    "imx.to",
-                    raw=response.text,
+            if self._imx_manual_cookies:
+                for key, value in self._imx_manual_cookies.items():
+                    session.cookies.set(key, value, domain="imx.to")
+            else:
+                response = session.get(login_url, timeout=10)
+                problem = self._imx_response_problem(response, "opening login", allow_login=True)
+                if problem:
+                    session.close()
+                    return session, problem
+                response = session.post(
+                    login_url,
+                    data={"usr_email": user, "pwd": password, "doLogin": "Login"},
+                    timeout=10,
                 )
-        except requests.RequestException as exc:
-            logger.error(f"IMX login request failed: {exc}")
-            return session, self._result(GalleryStatus.ERROR, str(exc), "imx.to")
+                problem = self._imx_response_problem(response, "logging in")
+                if problem:
+                    session.close()
+                    return session, problem
+            # HTTP 200 alone never establishes authentication (Anubis also uses 200).
+            response = session.get(config.IMX_DASHBOARD_URL, timeout=10)
+            problem = self._imx_response_problem(response, "checking login")
+            if not problem and not BeautifulSoup(response.text, "html.parser").select_one("a[href*='logout.php']"):
+                problem = self._result(
+                    GalleryStatus.LOGIN_FAILED,
+                    "IMX did not confirm a signed-in session. Check your IMX username/password or sign in on the website.",
+                    "imx.to",
+                )
+            if problem:
+                session.close()
+                return session, problem
+        except requests.RequestException:
+            session.close()
+            return session, self._result(
+                GalleryStatus.ERROR, "Could not connect to IMX to verify login. Check your connection and try again.", "imx.to"
+            )
 
         return session, None
+
+    def _imx_response_problem(self, response, operation: str, *, allow_login: bool = False):
+        html = (response.text or "").lower()
+        if "anubis_challenge" in html or "making sure you&#39;re not a bot" in html or "making sure you're not a bot" in html:
+            return self._result(
+                GalleryStatus.BROWSER_REQUIRED,
+                "IMX requires browser verification for website login. Use your IMX API key "
+                "to create galleries with a first image or Auto Gallery. Open the IMX website "
+                "to browse or delete galleries; changing your password will not resolve this check.",
+                "imx.to",
+            )
+        if response.status_code in {401, 403} or (
+            not allow_login and (
+                _looks_like_imx_login_page(response.text)
+                or urlparse(response.url).path.rstrip("/") == "/login.php"
+            )
+        ):
+            return self._result(
+                GalleryStatus.LOGIN_FAILED,
+                "IMX login failed or the session expired. Check the saved IMX username and password.",
+                "imx.to",
+            )
+        if response.status_code >= 400:
+            return self._result(
+                GalleryStatus.ERROR, f"IMX returned HTTP {response.status_code} while {operation}.", "imx.to"
+            )
+        return None
 
     def _list_imx_galleries(self, page: int) -> GalleryResult:
         session, problem = self._create_imx_session()
@@ -979,23 +1045,10 @@ class GalleryService:
             logger.error(f"Failed to fetch IMX galleries: {exc}")
             return self._result(GalleryStatus.ERROR, str(exc), "imx.to", page=page)
 
-        if response.status_code in {401, 403} or _looks_like_imx_login_page(response.text):
-            return self._result(
-                GalleryStatus.LOGIN_FAILED,
-                "IMX.to login failed. Check credentials or set a manual PHPSESSID cookie.",
-                "imx.to",
-                page=page,
-                raw=response.text,
-            )
-        if response.status_code >= 400:
-            return self._result(
-                GalleryStatus.ERROR,
-                f"IMX.to returned HTTP {response.status_code} while listing galleries.",
-                "imx.to",
-                page=page,
-                raw=response.text,
-            )
-
+        problem = self._imx_response_problem(response, "listing galleries")
+        if problem:
+            problem.page = page
+            return problem
         raw_records, candidates = parse_imx_gallery_html(response.text)
         if not raw_records and candidates:
             return self._result(
@@ -1077,21 +1130,9 @@ class GalleryService:
             logger.error(f"Failed to create IMX gallery: {exc}")
             return self._result(GalleryStatus.ERROR, str(exc), "imx.to")
 
-        if response.status_code in {401, 403} or _looks_like_imx_login_page(response.text):
-            return self._result(
-                GalleryStatus.LOGIN_FAILED,
-                "IMX.to login failed while creating the gallery.",
-                "imx.to",
-                raw=response.text,
-            )
-        if response.status_code >= 400:
-            return self._result(
-                GalleryStatus.ERROR,
-                f"IMX.to returned HTTP {response.status_code} while creating the gallery.",
-                "imx.to",
-                raw=response.text,
-            )
-
+        problem = self._imx_response_problem(response, "creating the gallery")
+        if problem:
+            return problem
         gallery_id = _gallery_id_from_query(response.url)
         if gallery_id:
             record = normalize_gallery_record("imx.to", {"id": gallery_id, "name": name})
@@ -1131,6 +1172,8 @@ class GalleryService:
             logger.debug(f"Could not refetch IMX galleries after create: {exc}")
             return None
 
+        if self._imx_response_problem(response, "confirming gallery creation"):
+            return None
         raw_records, _ = parse_imx_gallery_html(response.text)
         for raw_record in raw_records:
             record = normalize_gallery_record("imx.to", raw_record)
@@ -1153,21 +1196,9 @@ class GalleryService:
             logger.error(f"Failed to delete IMX gallery {gallery_id}: {exc}")
             return self._result(GalleryStatus.ERROR, str(exc), "imx.to")
 
-        if response.status_code in {401, 403} or _looks_like_imx_login_page(response.text):
-            return self._result(
-                GalleryStatus.LOGIN_FAILED,
-                "IMX.to login failed while deleting the gallery.",
-                "imx.to",
-                raw=response.text,
-            )
-        if response.status_code >= 400:
-            return self._result(
-                GalleryStatus.ERROR,
-                f"IMX.to returned HTTP {response.status_code} while deleting the gallery.",
-                "imx.to",
-                raw=response.text,
-            )
-
+        problem = self._imx_response_problem(response, "deleting the gallery")
+        if problem:
+            return problem
         try:
             list_response = session.get(
                 "https://imx.to/user/galleries?page=1&limit=200",
@@ -1177,23 +1208,9 @@ class GalleryService:
             logger.error(f"Failed to verify IMX gallery deletion {gallery_id}: {exc}")
             return self._result(GalleryStatus.ERROR, str(exc), "imx.to")
 
-        if list_response.status_code in {401, 403} or _looks_like_imx_login_page(
-            list_response.text
-        ):
-            return self._result(
-                GalleryStatus.LOGIN_FAILED,
-                "IMX.to login failed while confirming gallery deletion.",
-                "imx.to",
-                raw=list_response.text,
-            )
-        if list_response.status_code >= 400:
-            return self._result(
-                GalleryStatus.ERROR,
-                f"IMX.to returned HTTP {list_response.status_code} while confirming deletion.",
-                "imx.to",
-                raw=list_response.text,
-            )
-
+        problem = self._imx_response_problem(list_response, "confirming gallery deletion")
+        if problem:
+            return problem
         remaining, _ = parse_imx_gallery_html(list_response.text)
         if any(str(record.get("id") or "") == gallery_id for record in remaining):
             return self._result(
@@ -1269,7 +1286,7 @@ def _gallery_id_from_query(url: str) -> str:
 
 def _looks_like_imx_login_page(html: str) -> bool:
     lowered = (html or "").lower()
-    login_markers = ("usr_email", "dologin", "login_form", "incorrect username")
+    login_markers = ("usr_email", "dologin", "login_form", "incorrect username", "invalid login credentials")
     return any(marker in lowered for marker in login_markers)
 
 

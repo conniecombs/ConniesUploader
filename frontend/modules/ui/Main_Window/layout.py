@@ -1132,15 +1132,11 @@ class LayoutMixin:
         if auto_gallery is None and hasattr(self, "var_auto_gallery"):
             auto_gallery = self.var_auto_gallery.get()
         if plugin.id == "imx.to" and auto_gallery:
-            has_gallery_login = all(
-                str(creds.get(key, "") or "").strip() for key in ("imx_user", "imx_pass")
-            )
-            if not has_gallery_login:
-                return {
-                    "level": "error",
-                    "message": "IMX.to needs username and password for One Gallery Per Folder.",
-                    "action_required": True,
-                }
+            return {
+                "level": "ready",
+                "message": "IMX.to ready - upload credentials and gallery API key are set.",
+                "action_required": False,
+            }
         if plugin.id == "imagebam.com" and auto_gallery:
             has_gallery_login = all(
                 str(creds.get(key, "") or "").strip() for key in ("imagebam_user", "imagebam_pass")

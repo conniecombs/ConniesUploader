@@ -3,6 +3,8 @@
 
 """UploadChecks behavior for the main window."""
 
+from modules.imx_api import ImxApiError, validate_gallery_name
+
 from .common import (  # noqa: F401
     Any,
     AutoPoster,
@@ -266,15 +268,6 @@ class UploadChecksMixin:
                     "Imgur requires a Client ID or Access Token. Set it in Tools > Set Credentials."
                 )
 
-        if plugin.id == "imx.to" and cfg.get("auto_gallery"):
-            has_gallery_login = all(
-                str(self.creds.get(key, "") or "").strip() for key in ("imx_user", "imx_pass")
-            )
-            if not has_gallery_login:
-                issues.append(
-                    "One Gallery Per Folder for IMX.to requires IMX username and password."
-                )
-
         if plugin.id == "imagebam.com" and cfg.get("auto_gallery"):
             has_gallery_login = all(
                 str(self.creds.get(key, "") or "").strip()
@@ -428,13 +421,22 @@ class UploadChecksMixin:
         if not batch_names:
             return ""
 
+        if plugin.id == "imx.to":
+            for group, name in zip(pending_by_group, batch_names):
+                if getattr(group, "gallery_service", "") == "imx.to" and getattr(group, "gallery_id", ""):
+                    continue
+                try:
+                    validate_gallery_name(name)
+                except ImxApiError as exc:
+                    issues.append(f"{name}: {exc}")
+
         preview_names = ", ".join(batch_names[:5])
         if len(batch_names) > 5:
             preview_names = f"{preview_names}, ...and {len(batch_names) - 5} more"
         gallery_label = "gallery" if len(batch_names) == 1 else "galleries"
         detail = (
             f"One Gallery Per Folder will create {len(batch_names)} {plugin.name} {gallery_label} "
-            f"before upload: {preview_names}."
+            f"{'with the first image (existing batch galleries are reused)' if plugin.id == 'imx.to' else 'before upload'}: {preview_names}."
         )
         self.preflight_detail_lines.append(detail)
         return detail
