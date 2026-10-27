@@ -32,7 +32,7 @@ pyinstaller==6.11.1
 jsonschema==4.26.0
 
 # Testing and Code Quality
-pytest==9.0.3
+pytest==9.1.1
 pytest-cov==7.0.0
 flake8==7.4.1
 black==26.10.1
