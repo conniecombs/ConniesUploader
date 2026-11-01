@@ -1,0 +1,118 @@
+name: Automated CI Repair
+
+on:
+  schedule:
+    - cron: '23 6 * * *'
+  workflow_dispatch:
+  workflow_run:
+    workflows: ['CI - Build and Test', 'Security Scanning', 'Release - Build and Publish']
+    types: [completed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: automated-ci-repair
+  cancel-in-progress: false
+
+jobs:
+  retry:
+    if: >-
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'failure' &&
+      github.event.workflow_run.run_attempt == 1 &&
+      github.event.workflow_run.event != 'pull_request' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.event.workflow_run.head_branch == github.event.repository.default_branch
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: Retry failed jobs once for transient runner or network failures
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          FAILED_RUN: ${{ github.event.workflow_run.id }}
+        run: gh run rerun "$FAILED_RUN" --failed
+  repair:
+    # Never run privileged repairs from a fork, PR, or the repair branch itself.
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'failure' &&
+       github.event.workflow_run.run_attempt > 1 &&
+       github.event.workflow_run.head_repository.full_name == github.repository &&
+       github.event.workflow_run.event != 'pull_request' &&
+       github.event.workflow_run.head_branch == github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 80
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          check-latest: true
+          cache-dependency-path: backend/go.sum
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Install repair tools
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+          python -m pip install pip-audit==2.10.1
+      - name: Repair and validate Go dependencies
+        run: python scripts/maintenance/repair_dependencies.py
+      - name: Repair Python dependency advisories
+        run: pip-audit -r frontend/requirements.txt --fix
+      - name: Validate Python repairs
+        run: |
+          python -m pip install -r frontend/requirements.txt
+          python -m pip check
+          cd frontend
+          python -m pytest tests -q -o addopts=''
+      - name: Create short-lived repair token
+        id: app
+        if: vars.CI_REPAIR_APP_ID != ''
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.CI_REPAIR_APP_ID }}
+          private-key: ${{ secrets.CI_REPAIR_APP_PRIVATE_KEY }}
+      - name: Create or update repair PR
+        id: pr
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ steps.app.outputs.token || secrets.CI_REPAIR_TOKEN || github.token }}
+          branch: connie/automated-ci-repair
+          title: 'fix: repair dependency advisories and Go module drift'
+          commit-message: 'fix: repair dependency advisories and Go module drift'
+          body: >-
+            Automated dependency repair. Go tests, vet, vulnerability scanning,
+            and Python tests passed before this PR was opened. Full CI, packaging,
+            and security scans must also pass before automatic merge.
+          add-paths: |
+            backend/go.mod
+            backend/go.sum
+            frontend/requirements.txt
+      - name: Verify complete CI and merge repaired head
+        if: steps.pr.outputs.pull-request-number != ''
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token || secrets.CI_REPAIR_TOKEN || github.token }}
+          GH_REPO: ${{ github.repository }}
+          REPAIR_PR: ${{ steps.pr.outputs.pull-request-number }}
+        run: python scripts/maintenance/verify_repair.py
+      - name: Preserve unresolved original failure
+        if: steps.pr.outputs.pull-request-number == '' && github.event_name == 'workflow_run'
+        run: |
+          echo 'The failed run has no automatic dependency repair available.' >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+      - name: Record unresolved failure
+        if: failure()
+        run: |
+          echo 'Automatic repair did not complete. Inspect this run: no failed candidate is automatically merged. Source regressions, unavailable fixes, credentials, and repository policy require maintainer action.' >> "$GITHUB_STEP_SUMMARY"

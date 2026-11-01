@@ -1,8 +1,9 @@
 name: CI - Build and Test
 
 on:
+  workflow_dispatch:
   push:
-    branches: [ main, master, develop, claude/**, codex/** ]
+    branches: [ main, master, develop, claude/**, codex/**, connie/** ]
   pull_request:
     branches: [ main, master, develop ]
 
@@ -78,9 +79,10 @@ jobs:
         go-version: '1.26.x'
         check-latest: true
         cache-dependency-path: backend/go.sum
-    - run: |
-        go install golang.org/x/vuln/cmd/govulncheck@latest
-        govulncheck ./...
+    - name: Install Go vulnerability scanner
+      run: go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+    - name: Scan Go dependencies
+      run: govulncheck ./...
       working-directory: backend
 
     - uses: actions/setup-python@v6
@@ -89,13 +91,15 @@ jobs:
         cache: 'pip'
         cache-dependency-path: frontend/requirements.txt
 
-    - run: python -m pip install pip-audit==2.10.0
+    - run: python -m pip install pip-audit==2.10.1
     - run: pip-audit -r frontend/requirements.txt
 
   code-quality:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v5
+    - name: Test automated repair policy
+      run: python -m unittest discover -s scripts/maintenance/tests -v
     - uses: actions/setup-go@v5
       with:
         go-version: '1.26.x'
@@ -115,27 +119,63 @@ jobs:
         cache: 'pip'
         cache-dependency-path: frontend/requirements.txt
 
-    - run: python -m pip install flake8==7.1.1
+    - run: python -m pip install flake8==7.4.1
     - run: flake8 main.py modules/ --max-line-length=120 --ignore=E501,W503 --exclude=__pycache__
       working-directory: frontend
 
-  dummy-release-linux:
+  package-linux:
     name: Build Linux Release
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    timeout-minutes: 25
     steps:
-    - run: echo "Dummy job to satisfy branch protection"
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          check-latest: true
+          cache-dependency-path: backend/go.sum
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: frontend/requirements.txt
+      - run: python -m pip install -r frontend/requirements.txt
+      - run: python scripts/maintenance/package_app.py
 
-  dummy-release-macos:
+  package-macos:
     name: Build macOS Release
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    runs-on: macos-latest
+    timeout-minutes: 25
     steps:
-    - run: echo "Dummy job to satisfy branch protection"
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          check-latest: true
+          cache-dependency-path: backend/go.sum
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: frontend/requirements.txt
+      - run: python -m pip install -r frontend/requirements.txt
+      - run: python scripts/maintenance/package_app.py
 
-  dummy-release-windows:
+  package-windows:
     name: Build Windows Release
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    runs-on: windows-latest
+    timeout-minutes: 25
     steps:
-    - run: echo "Dummy job to satisfy branch protection"
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          check-latest: true
+          cache-dependency-path: backend/go.sum
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: frontend/requirements.txt
+      - run: python -m pip install -r frontend/requirements.txt
+      - run: python scripts/maintenance/package_app.py

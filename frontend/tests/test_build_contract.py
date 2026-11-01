@@ -140,8 +140,12 @@ def test_release_workflow_uses_local_pyinstaller_hooks():
     workflow_path = ROOT / ".github" / "workflows" / "release.yml"
     workflow = workflow_path.read_text(encoding="utf-8")
 
-    assert '--specpath "../packaging"' in workflow
-    assert workflow.count(POSIX_HOOKS_ARG) >= 3
+    assert workflow.count('python scripts/maintenance/package_app.py') == 3
+    package_script = (ROOT / 'scripts/maintenance/package_app.py').read_text(encoding='utf-8')
+    assert '"--specpath"' in package_script
+    assert '"--additional-hooks-dir"' in package_script
+    assert 'packaging/pyinstaller_hooks' in package_script
+    assert 'CArchiveReader' in package_script
     assert (
         workflow.count("cache-dependency-path: backend/go.sum") >= 3
     )

@@ -1,32 +1,25 @@
 name: Dependabot auto-merge
-
 on:
-  pull_request_target:
-    types: [opened, reopened, synchronize, ready_for_review]
-
+  workflow_run:
+    workflows: ['CI - Build and Test', 'Security Scanning']
+    types: [completed]
 permissions:
   contents: write
   pull-requests: write
-
+  actions: read
 jobs:
   dependabot:
+    if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
-    if: >-
-      github.event.pull_request.user.login == 'dependabot[bot]' &&
-      github.repository == 'conniecombs/ConniesUploader' &&
-      github.event.pull_request.draft == false
+    timeout-minutes: 5
     steps:
-      - name: Dependabot metadata
-        id: metadata
-        uses: dependabot/fetch-metadata@v3
+      - uses: actions/checkout@v5
         with:
-          github-token: "${{ secrets.GITHUB_TOKEN }}"
-
-      - name: Enable auto-merge for patch and minor updates
-        if: >-
-          steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
-          steps.metadata.outputs.update-type == 'version-update:semver-minor'
-        run: gh pr merge --auto --squash "$PR_URL"
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - name: Merge eligible updates only after complete validation
         env:
-          PR_URL: ${{ github.event.pull_request.html_url }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          CHECKED_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: python scripts/maintenance/merge_dependabot.py

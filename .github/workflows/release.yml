@@ -101,30 +101,8 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r frontend/requirements.txt
 
-    - name: Create PyInstaller Spec
-      run: |
-        cd frontend
-        pyi-makespec --noconsole --onefile --name "ConniesUploader" `
-          --specpath "../packaging" `
-          --icon "../packaging/logo.ico" `
-          --add-binary "../uploader.exe;." `
-          --add-data "../packaging/logo.ico;." `
-          --additional-hooks-dir "../packaging/pyinstaller_hooks" `
-          --collect-all tkinterdnd2 `
-          --collect-submodules modules.plugins `
-          --hidden-import modules.plugins.imx `
-          --hidden-import modules.plugins.pixhost `
-          --hidden-import modules.plugins.vipr `
-          --hidden-import modules.plugins.turbo `
-          --hidden-import modules.plugins.imagebam `
-          --hidden-import modules.plugins.imgur `
-          main.py
-      shell: pwsh
-
-    - name: Build from Spec
-      run: |
-        cd frontend
-        pyinstaller --distpath ../dist --workpath ../build --clean ../packaging/ConniesUploader.spec
+    - name: Build verified desktop package
+      run: python scripts/maintenance/package_app.py
 
     - name: Verify build and bundling
       run: |
@@ -196,23 +174,8 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r frontend/requirements.txt
 
-    - name: Build with PyInstaller
-      run: |
-        cd frontend
-        pyinstaller --noconsole --onefile --clean --name "ConniesUploader" \
-          --distpath ../dist --workpath ../build \
-          --add-binary "../uploader:." \
-          --add-data "../packaging/logo.ico:." \
-          --additional-hooks-dir "../packaging/pyinstaller_hooks" \
-          --collect-all tkinterdnd2 \
-          --collect-submodules modules.plugins \
-          --hidden-import modules.plugins.imx \
-          --hidden-import modules.plugins.pixhost \
-          --hidden-import modules.plugins.vipr \
-          --hidden-import modules.plugins.turbo \
-          --hidden-import modules.plugins.imagebam \
-          --hidden-import modules.plugins.imgur \
-          main.py
+    - name: Build verified desktop package
+      run: python scripts/maintenance/package_app.py
 
     - name: Verify build and bundling
       run: |
@@ -285,23 +248,8 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r frontend/requirements.txt
 
-    - name: Build with PyInstaller
-      run: |
-        cd frontend
-        pyinstaller --noconsole --onefile --clean --name "ConniesUploader" \
-          --distpath ../dist --workpath ../build \
-          --add-binary "../uploader:." \
-          --add-data "../packaging/logo.ico:." \
-          --additional-hooks-dir "../packaging/pyinstaller_hooks" \
-          --collect-all tkinterdnd2 \
-          --collect-submodules modules.plugins \
-          --hidden-import modules.plugins.imx \
-          --hidden-import modules.plugins.pixhost \
-          --hidden-import modules.plugins.vipr \
-          --hidden-import modules.plugins.turbo \
-          --hidden-import modules.plugins.imagebam \
-          --hidden-import modules.plugins.imgur \
-          main.py
+    - name: Build verified desktop package
+      run: python scripts/maintenance/package_app.py
 
     - name: Verify build and bundling
       run: |
@@ -328,7 +276,7 @@ jobs:
     - name: Create ZIP package
       run: |
         cd dist
-        zip -r ConniesUploader-${{ needs.prepare-release.outputs.version }}-macos-x64.zip ConniesUploader ConniesUploader.sha256
+        zip -r ConniesUploader-${{ needs.prepare-release.outputs.version }}-macos-arm64.zip ConniesUploader ConniesUploader.sha256
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v6
@@ -337,7 +285,7 @@ jobs:
         path: |
           dist/ConniesUploader
           dist/ConniesUploader.sha256
-          dist/ConniesUploader-${{ needs.prepare-release.outputs.version }}-macos-x64.zip
+          dist/ConniesUploader-${{ needs.prepare-release.outputs.version }}-macos-arm64.zip
 
   publish-release:
     name: Publish GitHub Release
@@ -372,7 +320,7 @@ jobs:
         cp artifacts/linux-build/ConniesUploader-*-linux-x64.tar.gz release-assets/
         cp artifacts/macos-build/ConniesUploader release-assets/ConniesUploader-macos
         cp artifacts/macos-build/ConniesUploader.sha256 release-assets/ConniesUploader-macos.sha256
-        cp artifacts/macos-build/ConniesUploader-*-macos-x64.zip release-assets/
+        cp artifacts/macos-build/ConniesUploader-*-macos-arm64.zip release-assets/
 
     - name: Create Release
       uses: softprops/action-gh-release@v2
