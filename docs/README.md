@@ -12,6 +12,7 @@ Complete guide to the current documentation for Connie's Uploader.
 | Fix source/build/package problems | [Build Troubleshooting](guides/BUILD_TROUBLESHOOTING.md) |
 | Understand the Python/Go architecture | [Architecture](ARCHITECTURE.md) |
 | Understand the Python/Go transport boundary | [Transport Contract](TRANSPORT_CONTRACT.md) |
+| Review the proposed RAM-first ZIP and file-host workflow | [RAM-First File-Host Implementation Plan](plans/RAM_FIRST_FILE_HOST_IMPLEMENTATION_PLAN.md) |
 | Contribute code/docs | [Contributing](CONTRIBUTING.md) |
 | Add or maintain upload plugins | [Plugin Creation Guide](guides/PLUGIN_CREATION_GUIDE.md) |
 | Define plugin settings UI | [Schema Plugin Guide](guides/SCHEMA_PLUGIN_GUIDE.md) |
@@ -32,6 +33,10 @@ Complete guide to the current documentation for Connie's Uploader.
 - [Plugin Creation Guide](guides/PLUGIN_CREATION_GUIDE.md) explains plugin discovery, metadata, request specs, pre-requests, dynamic extraction, galleries, covers, tests, and packaging updates.
 - [Schema Plugin Guide](guides/SCHEMA_PLUGIN_GUIDE.md) explains declarative plugin settings fields, validation, tooltips, advanced settings, and migration from manual UI.
 - [Transport Contract](TRANSPORT_CONTRACT.md) defines the Python-owned website workflow and Go-owned transport boundary.
+
+## Implementation Plans
+
+- [RAM-First Archives and File-Host Uploads](plans/RAM_FIRST_FILE_HOST_IMPLEMENTATION_PLAN.md) is the detailed proposal for RAM-backed ZIP creation, explicit disk opt-in, a reusable provider engine, Rapidgator integration, recovery, forum posting, implementation milestones, and acceptance tests. It describes planned work, not shipped functionality.
 
 ## Release Docs
 
@@ -127,6 +132,11 @@ docs/
 
 ## Recent Documentation Updates
 
+### 2026-11-03
+
+- Added the detailed RAM-first archive and file-host implementation plan, with Rapidgator as the first provider and disk archive creation requiring explicit user selection.
+- Linked the proposal separately from current behavior documentation.
+
 ### 2026-09-07
 
 - Promoted current release documentation, build metadata, and app metadata to `v3.1.1`.
@@ -186,3 +196,4 @@ docs/
 - **Last Updated:** 2026-09-07
 - **Documentation Version:** 3.1.1
 - **Project Version:** v3.1.1
+
