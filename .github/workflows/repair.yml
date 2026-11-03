@@ -80,7 +80,7 @@ jobs:
       - name: Create short-lived repair token
         id: app
         if: vars.CI_REPAIR_APP_ID != ''
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ vars.CI_REPAIR_APP_ID }}
           private-key: ${{ secrets.CI_REPAIR_APP_PRIVATE_KEY }}
