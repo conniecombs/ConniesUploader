@@ -129,6 +129,7 @@ class UploaderApp(
         self.upload_total = 0
         self.upload_count = 0
         self.is_uploading = False
+        self._finalizing = False
         self.current_output_files = []
         self.copyable_output_files = []
         self.current_completion_summary = None

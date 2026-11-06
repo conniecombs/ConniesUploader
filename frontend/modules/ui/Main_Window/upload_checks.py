@@ -56,6 +56,12 @@ from .common import (  # noqa: F401
 
 class UploadChecksMixin:
     def start_upload(self) -> None:
+        if getattr(self, "is_uploading", False) or getattr(self, "_finalizing", False):
+            self.add_activity(
+                "Wait for the current upload to finish before starting another.", "warning"
+            )
+            return
+
         pending_by_group = {}
         for grp in self.groups:
             for fp in grp.files:

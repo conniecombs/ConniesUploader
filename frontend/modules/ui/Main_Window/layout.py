@@ -491,10 +491,12 @@ class LayoutMixin:
 
     def _refresh_queue_action_buttons(self, queue_is_empty: bool) -> None:
         clear_state = "disabled" if queue_is_empty else "normal"
+        busy = bool(getattr(self, "is_uploading", False) or getattr(self, "_finalizing", False))
+        retry_state = "disabled" if queue_is_empty or busy else "normal"
         if "btn_clear_list" in self.__dict__:
             self.btn_clear_list.configure(state=clear_state)
         if "btn_retry_failed" in self.__dict__:
-            self.btn_retry_failed.configure(state=clear_state)
+            self.btn_retry_failed.configure(state=retry_state)
 
     def _set_selection_actions_visible(self, visible: bool) -> None:
         if "selection_actions" not in self.__dict__:
