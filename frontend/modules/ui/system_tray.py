@@ -13,7 +13,13 @@ class SystemTrayManager:
     def __init__(self, main_window):
         self.main_window = main_window
         self.icon = None
+        self._thread = None
         self._setup_icon()
+
+    def is_available(self) -> bool:
+        """True only while the tray icon exists and its event loop is running."""
+        thread = self._thread
+        return self.icon is not None and thread is not None and thread.is_alive()
 
     def _create_image(self):
         image = Image.new("RGB", (64, 64), color=(30, 30, 30))
@@ -62,7 +68,8 @@ class SystemTrayManager:
 
     def start(self):
         if self.icon:
-            threading.Thread(target=self.icon.run, daemon=True).start()
+            self._thread = threading.Thread(target=self.icon.run, daemon=True)
+            self._thread.start()
 
     def stop(self):
         if self.icon:

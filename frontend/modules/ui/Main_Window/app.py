@@ -71,9 +71,9 @@ class UploaderApp(
         self.geometry("1250x850")
         self.minsize(1050, 720)
 
-        # Set up graceful shutdown on window close
-        # System Tray: Close button hides the window instead of quitting
-        self.protocol("WM_DELETE_WINDOW", self.withdraw)
+        # Close hides to the tray when the tray icon is running; otherwise it
+        # must shut down, or the process would linger invisibly.
+        self.protocol("WM_DELETE_WINDOW", self._on_close_request)
 
         try:
             ico_path = config.resource_path("logo.ico")
@@ -309,6 +309,14 @@ class UploaderApp(
 
         # Start periodic image cleanup to prevent memory leaks
         self.after(config.UI_CLEANUP_INTERVAL_MS, self._cleanup_orphaned_images)
+
+    def _on_close_request(self) -> None:
+        """Hide to the system tray when it is available, else shut down."""
+        tray = getattr(self, "system_tray", None)
+        if tray is not None and tray.is_available():
+            self.withdraw()
+            return
+        self.graceful_shutdown()
 
     def _load_credentials(self):
         """Load credentials from system keyring using CredentialsManager."""

@@ -196,3 +196,47 @@ def test_cleanup_helper_covers_generated_artifacts_and_user_data():
     assert "Output/" in gitignore
     assert "user_settings.json" in gitignore
     assert "user_templates.json" in gitignore
+
+
+def test_system_tray_is_available_only_after_start(monkeypatch):
+    import threading
+    import types
+
+    started = threading.Event()
+    stop = threading.Event()
+
+    class FakeIcon:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def run(self):
+            started.set()
+            stop.wait(5)
+
+        def stop(self):
+            stop.set()
+
+    fake_pystray = types.SimpleNamespace(
+        Icon=FakeIcon,
+        Menu=lambda *items: items,
+        MenuItem=lambda *args, **kwargs: (args, kwargs),
+    )
+    module_name = "system_tray_with_fake_pystray"
+    module_path = ROOT / "frontend" / "modules" / "ui" / "system_tray.py"
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    module = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, "pystray", fake_pystray)
+    sys.modules.pop(module_name, None)
+    spec.loader.exec_module(module)
+
+    manager = module.SystemTrayManager(main_window=object())
+    assert manager.icon is not None
+    assert manager.is_available() is False
+
+    manager.start()
+    assert started.wait(2)
+    assert manager.is_available() is True
+
+    manager.stop()
+    manager._thread.join(2)
+    assert manager.is_available() is False

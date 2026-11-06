@@ -3126,3 +3126,41 @@ def test_retry_button_disabled_while_uploading():
 
     assert app.btn_retry_failed.options["state"] == "disabled"
     assert app.btn_clear_list.options["state"] == "normal"
+
+
+@pytest.mark.unit
+def test_close_hides_when_tray_available():
+    app = UploaderApp.__new__(UploaderApp)
+    calls = []
+    app.system_tray = SimpleNamespace(is_available=lambda: True)
+    app.withdraw = lambda: calls.append("withdraw")
+    app.graceful_shutdown = lambda: calls.append("shutdown")
+
+    UploaderApp._on_close_request(app)
+
+    assert calls == ["withdraw"]
+
+
+@pytest.mark.unit
+def test_close_shuts_down_without_tray():
+    app = UploaderApp.__new__(UploaderApp)
+    calls = []
+    app.system_tray = SimpleNamespace(is_available=lambda: False)
+    app.withdraw = lambda: calls.append("withdraw")
+    app.graceful_shutdown = lambda: calls.append("shutdown")
+
+    UploaderApp._on_close_request(app)
+
+    assert calls == ["shutdown"]
+
+
+@pytest.mark.unit
+def test_close_shuts_down_before_tray_exists():
+    app = UploaderApp.__new__(UploaderApp)
+    calls = []
+    app.withdraw = lambda: calls.append("withdraw")
+    app.graceful_shutdown = lambda: calls.append("shutdown")
+
+    UploaderApp._on_close_request(app)
+
+    assert calls == ["shutdown"]
