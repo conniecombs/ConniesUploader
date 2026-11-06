@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/http/cookiejar"
 	"os"
 	"os/signal"
 	"sync"
@@ -68,13 +67,9 @@ func clampSidecarWorkers(workers int) int {
 }
 
 func initHTTPClient() {
-	jar, err := cookiejar.New(nil)
-	if err != nil {
-		log.WithError(err).Warn("failed to initialize cookie jar; continuing without persistent cookies")
-	}
 	client = &http.Client{
 		Timeout: core.ClientTimeout,
-		Jar:     jar,
+		Jar:     core.NewSwappableJar(),
 		Transport: &http.Transport{
 			MaxIdleConns:          200,
 			MaxIdleConnsPerHost:   50,

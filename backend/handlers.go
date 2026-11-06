@@ -12,6 +12,7 @@ import (
 	_ "image/gif"
 	"image/jpeg"
 	_ "image/png"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -27,6 +28,9 @@ const (
 	defaultThumbWidth = 100
 	minThumbWidth     = 1
 	maxThumbWidth     = 512
+	// maxThumbnailPixels bounds decoded previews so a decompression bomb
+	// cannot exhaust the sidecar's memory.
+	maxThumbnailPixels = 50_000_000
 )
 
 type serviceUploadLimiter struct {
@@ -311,7 +315,10 @@ func handleHttpRequest(job JobRequest) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), core.ClientTimeout)
+	if spec.ResetCookies {
+		core.ResetCookieJar(client)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), core.RequestTimeout(spec.TimeoutSeconds))
 	defer cancel()
 
 	extracted, err := core.ExecuteGenericRequest(ctx, client, spec, &job)
@@ -419,6 +426,20 @@ func handleGenerateThumb(job JobRequest) {
 		return
 	}
 	defer f.Close()
+
+	header, _, err := image.DecodeConfig(f)
+	if err != nil {
+		sendJobEvent(&job, OutputEvent{Type: "error", Msg: "Decode failed"})
+		return
+	}
+	if header.Width <= 0 || header.Height <= 0 || int64(header.Width)*int64(header.Height) > maxThumbnailPixels {
+		sendJobEvent(&job, OutputEvent{Type: "error", Msg: "Image too large to preview"})
+		return
+	}
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		sendJobEvent(&job, OutputEvent{Type: "error", Msg: "Decode failed"})
+		return
+	}
 
 	img, _, err := image.Decode(f)
 	if err != nil {
