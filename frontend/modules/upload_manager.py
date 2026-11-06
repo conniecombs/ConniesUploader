@@ -19,7 +19,6 @@ from .gallery_service import GalleryRecord, gallery_url_for_service
 from .plugin_manager import PluginManager
 from .sidecar import SidecarBridge
 
-
 SERVICE_THREAD_KEYS = {
     "imx.to": "imx_threads",
     config.PIXHOST_SERVICE_ID: "pix_threads",
@@ -124,7 +123,7 @@ class UploadManager:
                     try:
                         cover_files = self._explicit_cover_files_for_group(group_obj, files)
                         if cover_files is None:
-                            cover_files = group_obj.files[:self._cover_count_for_service(cfg)]
+                            cover_files = group_obj.files[: self._cover_count_for_service(cfg)]
                         context: Dict[str, Any] = {
                             "pending_files": list(files),
                             "cover_files": cover_files,
@@ -143,16 +142,23 @@ class UploadManager:
                             if gallery_url:
                                 self.progress_queue.put(("gallery_url", file_path, gallery_url))
                             self.result_queue.put(
-                                (file_path, image_url, self._canonicalize_imx_thumbnail_url(thumb_url))
+                                (
+                                    file_path,
+                                    image_url,
+                                    self._canonicalize_imx_thumbnail_url(thumb_url),
+                                )
                             )
                             # Preparation uploads bypass the sidecar's terminal status event.
                             self.progress_queue.put(("status", file_path, "Done"))
                         if service_id == "imx.to" and getattr(group_obj, "gallery_id", ""):
-                            self._remember_imx_gallery_use(group_obj, {
-                                "gallery_id": group_obj.gallery_id,
-                                "selected_gallery_name": group_obj.gallery_name,
-                                "selected_gallery_url": group_obj.gallery_url,
-                            })
+                            self._remember_imx_gallery_use(
+                                group_obj,
+                                {
+                                    "gallery_id": group_obj.gallery_id,
+                                    "selected_gallery_name": group_obj.gallery_name,
+                                    "selected_gallery_url": group_obj.gallery_url,
+                                },
+                            )
 
                         for gal_data in context.get("created_galleries", []):
                             self.progress_queue.put(("register_pix_gal", None, gal_data))
@@ -206,7 +212,9 @@ class UploadManager:
                     ).strip()
                     if manual_hash:
                         group_cfg["gallery_hash"] = manual_hash
-                        logger.info(f"Group '{group_obj.title}' using manual gallery hash: {manual_hash}")
+                        logger.info(
+                            f"Group '{group_obj.title}' using manual gallery hash: {manual_hash}"
+                        )
 
                 if service_id == "turboimagehost":
                     for attr_name, config_key in (
@@ -310,15 +318,16 @@ class UploadManager:
     @staticmethod
     def _remember_imx_gallery_use(group_obj: Any, cfg: Dict[str, Any]) -> None:
         gallery_id = str(
-            cfg.get("gallery_id") or cfg.get("selected_gallery_id") or cfg.get("imx_gallery_id") or ""
+            cfg.get("gallery_id")
+            or cfg.get("selected_gallery_id")
+            or cfg.get("imx_gallery_id")
+            or ""
         ).strip()
         if not gallery_id:
             return
 
         gallery_name = str(
-            cfg.get("selected_gallery_name")
-            or getattr(group_obj, "gallery_name", "")
-            or gallery_id
+            cfg.get("selected_gallery_name") or getattr(group_obj, "gallery_name", "") or gallery_id
         ).strip()
         gallery_url = str(
             cfg.get("selected_gallery_url")
@@ -400,14 +409,18 @@ class UploadManager:
                         for file_path in file_list:
                             self.active_files.discard(file_path)
                             self.result_queue.put((file_path, "", ""))
-                            self.progress_queue.put(("status", file_path, "error: sidecar unavailable"))
+                            self.progress_queue.put(
+                                ("status", file_path, "error: sidecar unavailable")
+                            )
                     return
 
             except Exception as exc:
                 logger.error(f"Failed to build HTTP request spec for {service_id}: {exc}")
                 for file_path in file_list:
                     self.result_queue.put((file_path, "", ""))
-                    self.progress_queue.put(("status", file_path, "error: plugin configuration failed"))
+                    self.progress_queue.put(
+                        ("status", file_path, "error: plugin configuration failed")
+                    )
                 return
 
         logger.error(
@@ -416,9 +429,7 @@ class UploadManager:
         )
         for file_path in file_list:
             self.result_queue.put((file_path, "", ""))
-            self.progress_queue.put(
-                ("status", file_path, "error: plugin missing http_spec")
-            )
+            self.progress_queue.put(("status", file_path, "error: plugin missing http_spec"))
 
     @staticmethod
     def _normalize_job_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
@@ -468,7 +479,9 @@ class UploadManager:
             try:
                 return {
                     "requests_per_second": float(rps),
-                    "burst_size": int(burst if burst not in (None, "") else max(int(float(rps)), 1)),
+                    "burst_size": int(
+                        burst if burst not in (None, "") else max(int(float(rps)), 1)
+                    ),
                 }
             except (TypeError, ValueError):
                 return None

@@ -14,7 +14,6 @@ from modules.imx_api import ImxApiError
 from modules.plugins.imx import ImxPlugin
 from modules.ui.main_window import UploaderApp
 
-
 CREDS = {"imx_user": "test-user", "imx_pass": "test-password", "imx_api": "test-key"}
 
 
@@ -48,7 +47,9 @@ def test_complete_upload_credentials_build_request_without_transmitting_password
 
 @pytest.mark.parametrize("operation", ["list", "sync", "create", "create_image", "delete"])
 @pytest.mark.parametrize("manual_cookie", [False, True])
-def test_every_live_gallery_operation_requires_api_key_before_network(monkeypatch, operation, manual_cookie):
+def test_every_live_gallery_operation_requires_api_key_before_network(
+    monkeypatch, operation, manual_cookie
+):
     session_factory = Mock(side_effect=AssertionError("Must not contact IMX without API key"))
     monkeypatch.setattr("modules.gallery_service.requests.Session", session_factory)
     service = GalleryService(None, {**CREDS, "imx_api": ""})

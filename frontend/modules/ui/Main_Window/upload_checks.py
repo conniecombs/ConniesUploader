@@ -423,7 +423,9 @@ class UploadChecksMixin:
 
         if plugin.id == "imx.to":
             for group, name in zip(pending_by_group, batch_names):
-                if getattr(group, "gallery_service", "") == "imx.to" and getattr(group, "gallery_id", ""):
+                if getattr(group, "gallery_service", "") == "imx.to" and getattr(
+                    group, "gallery_id", ""
+                ):
                     continue
                 try:
                     validate_gallery_name(name)

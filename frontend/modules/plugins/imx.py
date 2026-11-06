@@ -145,7 +145,9 @@ class ImxPlugin(ImageHostPlugin):
         # One API request creates the gallery and uploads its first real image.
         # Remaining uploads receive the returned gallery_id from UploadManager.
         if config.get("auto_gallery"):
-            if getattr(group, "gallery_service", "") == self.id and getattr(group, "gallery_id", ""):
+            if getattr(group, "gallery_service", "") == self.id and getattr(
+                group, "gallery_id", ""
+            ):
                 config["gallery_id"] = group.gallery_id
                 return  # Retry/selected batch: keep the already-created gallery.
             files = context.get("pending_files", [])
@@ -159,7 +161,9 @@ class ImxPlugin(ImageHostPlugin):
             if first_file in context.get("cover_files", []):
                 first_config["thumbnail_size"] = "600"
             spec = self.build_http_request(first_file, first_config, creds)
-            fields = {k: v["value"] for k, v in spec["multipart_fields"].items() if v["type"] == "text"}
+            fields = {
+                k: v["value"] for k, v in spec["multipart_fields"].items() if v["type"] == "text"
+            }
             result = create_gallery_with_image(
                 creds.get("imx_api", ""), group.title, first_file, fields=fields
             )
@@ -242,5 +246,12 @@ class ImxPlugin(ImageHostPlugin):
     def initialize_session(self, config: Dict[str, Any], creds: Dict[str, Any]) -> Dict[str, Any]:
         return {}
 
-    def upload_file(self, file_path: str, group, config: Dict[str, Any], context: Dict[str, Any], progress_callback):
+    def upload_file(
+        self,
+        file_path: str,
+        group,
+        config: Dict[str, Any],
+        context: Dict[str, Any],
+        progress_callback,
+    ):
         pass

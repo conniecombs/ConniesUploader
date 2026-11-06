@@ -14,7 +14,6 @@ from modules.sidecar import SidecarBridge
 from modules.transport import build_transport_spec, execute_transport_request
 from loguru import logger
 
-
 # ---------------------------------------------------------------------------
 # Login / credential verification
 # ---------------------------------------------------------------------------
@@ -57,9 +56,7 @@ def create_pixhost_gallery(name: str) -> Optional[Dict[str, str]]:
         use_cookies=True,
     )
 
-    resp = execute_transport_request(
-        spec, timeout=30, service=config.PIXHOST_SERVICE_ID
-    )
+    resp = execute_transport_request(spec, timeout=30, service=config.PIXHOST_SERVICE_ID)
 
     if resp.ok:
         try:
@@ -79,9 +76,7 @@ def create_pixhost_gallery(name: str) -> Optional[Dict[str, str]]:
     return None
 
 
-def finalize_pixhost_gallery(
-    gallery_upload_hash: str, gallery_hash: str
-) -> bool:
+def finalize_pixhost_gallery(gallery_upload_hash: str, gallery_hash: str) -> bool:
     """Finalize a Pixhost gallery.
 
     Args:
@@ -103,9 +98,7 @@ def finalize_pixhost_gallery(
         include_response_body=False,
     )
 
-    resp = execute_transport_request(
-        spec, timeout=15, service=config.PIXHOST_SERVICE_ID
-    )
+    resp = execute_transport_request(spec, timeout=15, service=config.PIXHOST_SERVICE_ID)
     return resp.ok
 
 
@@ -239,9 +232,7 @@ def create_vipr_gallery(creds: Dict[str, str], name: str) -> Optional[Dict[str, 
         },
     )
 
-    resp = execute_transport_request(
-        spec, timeout=30, service="vipr.im", bridge=bridge
-    )
+    resp = execute_transport_request(spec, timeout=30, service="vipr.im", bridge=bridge)
     if not resp.ok:
         logger.warning(f"Failed to create Vipr gallery: {resp.message or 'unknown error'}")
         return None
@@ -281,9 +272,7 @@ def delete_vipr_gallery(creds: Dict[str, str], gallery_id: str) -> bool:
         use_cookies=True,
     )
 
-    resp = execute_transport_request(
-        spec, timeout=30, service="vipr.im", bridge=bridge
-    )
+    resp = execute_transport_request(spec, timeout=30, service="vipr.im", bridge=bridge)
     if not resp.ok:
         logger.warning(f"Failed to delete Vipr gallery: {resp.message or 'unknown error'}")
         return False
@@ -310,9 +299,7 @@ def _login_vipr(
         },
         use_cookies=True,
     )
-    resp = execute_transport_request(
-        spec, timeout=timeout, service="vipr.im", bridge=bridge
-    )
+    resp = execute_transport_request(spec, timeout=timeout, service="vipr.im", bridge=bridge)
     if not resp.ok:
         logger.warning(f"Vipr login failed: {resp.message or 'unknown error'}")
     return resp.ok
@@ -324,6 +311,4 @@ def _fetch_vipr_file_manager(*, bridge: Any, timeout: float):
         method="GET",
         use_cookies=True,
     )
-    return execute_transport_request(
-        spec, timeout=timeout, service="vipr.im", bridge=bridge
-    )
+    return execute_transport_request(spec, timeout=timeout, service="vipr.im", bridge=bridge)

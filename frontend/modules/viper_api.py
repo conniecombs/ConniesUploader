@@ -512,11 +512,7 @@ def export_saved_threads_file(
 ) -> int:
     """Export saved targets to a portable JSON file."""
     selected_names = names if names is not None else sorted(saved_threads)
-    targets = {
-        name: saved_threads[name]
-        for name in selected_names
-        if name in saved_threads
-    }
+    targets = {name: saved_threads[name] for name in selected_names if name in saved_threads}
     export_data = {
         "version": TARGETS_EXPORT_VERSION,
         "exported_at": _now_iso(),
@@ -528,7 +524,9 @@ def export_saved_threads_file(
     return len(targets)
 
 
-def mark_thread_target_used(name: str, timestamp: Optional[str] = None) -> Optional[Dict[str, object]]:
+def mark_thread_target_used(
+    name: str, timestamp: Optional[str] = None
+) -> Optional[Dict[str, object]]:
     """Update a saved target's last-used timestamp."""
     target_name = str(name or "").strip()
     if not target_name:
@@ -596,21 +594,17 @@ def load_posting_history() -> List[Dict[str, str]]:
         )
         return []
 
-    return [
-        _canonical_history_entry(item)
-        for item in raw_data
-        if isinstance(item, dict)
-    ][-POSTING_HISTORY_LIMIT:]
+    return [_canonical_history_entry(item) for item in raw_data if isinstance(item, dict)][
+        -POSTING_HISTORY_LIMIT:
+    ]
 
 
 def save_posting_history(history: List[Dict[str, Any]]) -> None:
     """Atomically save ViperGirls posting history."""
     os.makedirs(_USER_DATA_DIR, exist_ok=True)
-    normalized = [
-        _canonical_history_entry(item)
-        for item in history
-        if isinstance(item, dict)
-    ][-POSTING_HISTORY_LIMIT:]
+    normalized = [_canonical_history_entry(item) for item in history if isinstance(item, dict)][
+        -POSTING_HISTORY_LIMIT:
+    ]
     tmp_path = f"{POSTING_HISTORY_FILE}.tmp"
     with open(tmp_path, "w", encoding="utf-8") as f:
         json.dump(normalized, f, indent=4, ensure_ascii=False)
@@ -682,21 +676,13 @@ def load_scheduled_posts() -> List[Dict[str, str]]:
             SCHEDULED_POSTS_FILE, ValueError("scheduled posts data is not a JSON list")
         )
         return []
-    return [
-        _canonical_scheduled_post(item)
-        for item in raw_data
-        if isinstance(item, dict)
-    ]
+    return [_canonical_scheduled_post(item) for item in raw_data if isinstance(item, dict)]
 
 
 def save_scheduled_posts(posts: List[Dict[str, Any]]) -> None:
     """Atomically save ViperGirls scheduled posts."""
     os.makedirs(_USER_DATA_DIR, exist_ok=True)
-    normalized = [
-        _canonical_scheduled_post(item)
-        for item in posts
-        if isinstance(item, dict)
-    ]
+    normalized = [_canonical_scheduled_post(item) for item in posts if isinstance(item, dict)]
     tmp_path = f"{SCHEDULED_POSTS_FILE}.tmp"
     with open(tmp_path, "w", encoding="utf-8") as f:
         json.dump(normalized, f, indent=4, ensure_ascii=False)
@@ -727,7 +713,8 @@ def cancel_scheduled_post(post_id: str) -> bool:
     clean_id = str(post_id or "").strip()
     posts = load_scheduled_posts()
     kept = [
-        post for post in posts
+        post
+        for post in posts
         if not (post.get("id") == clean_id and post.get("status") == "pending")
     ]
     if len(kept) == len(posts):
@@ -831,10 +818,11 @@ def build_vipergirls_reply_spec(thread_id: str, message: str, html_text: str) ->
             str(element.get("name") or "")
             for element in candidate.select("input, textarea, select")
         }
-        if (
-            "newreply.php" in action
-            and "do=postreply" in action
-        ) or {"message", "securitytoken", "do"}.issubset(input_names):
+        if ("newreply.php" in action and "do=postreply" in action) or {
+            "message",
+            "securitytoken",
+            "do",
+        }.issubset(input_names):
             form = candidate
             break
 
@@ -846,8 +834,7 @@ def build_vipergirls_reply_spec(thread_id: str, message: str, html_text: str) ->
     missing = sorted(name for name in required_fields if name not in form_fields)
     if missing:
         raise ViperPostError(
-            "ViperGirls reply form is missing required field(s): "
-            + ", ".join(missing)
+            "ViperGirls reply form is missing required field(s): " + ", ".join(missing)
         )
 
     form_fields["message"] = str(message)
@@ -907,13 +894,15 @@ class ViperGirlsPostScheduler:
         if self.event_queue is None:
             return
         try:
-            self.event_queue.put_nowait({
-                "type": "scheduled_post_completed",
-                "id": post.get("id"),
-                "status": status,
-                "msg": msg,
-                "data": post,
-            })
+            self.event_queue.put_nowait(
+                {
+                    "type": "scheduled_post_completed",
+                    "id": post.get("id"),
+                    "status": status,
+                    "msg": msg,
+                    "data": post,
+                }
+            )
         except Exception:
             logger.debug("Could not emit scheduled post event.", exc_info=True)
 
@@ -929,7 +918,8 @@ class ViperGirlsPostScheduler:
         now_utc = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
         posts = load_scheduled_posts()
         due_posts = [
-            post for post in posts
+            post
+            for post in posts
             if post.get("status") == "pending"
             and (scheduled_at := _parse_scheduled_time(post.get("scheduled_time", "")))
             and scheduled_at <= now_utc
@@ -1080,7 +1070,9 @@ class ViperGirlsAPI:
         logger.error(f"ViperAPI: Post Failed: {resp.message or 'unexpected page'}")
         return False
 
-    def schedule_post(self, post_id, thread_id, thread_name, message, scheduled_time, cover_thumbnail=""):
+    def schedule_post(
+        self, post_id, thread_id, thread_name, message, scheduled_time, cover_thumbnail=""
+    ):
         logger.info(f"ViperAPI: Scheduling post to thread {thread_id} for {scheduled_time}...")
         try:
             add_scheduled_post(
@@ -1265,7 +1257,9 @@ class ViperToolsWindow(ctk.CTkToplevel):
         )
         self.ent_name.grid(row=2, column=0, sticky="ew", padx=14, pady=(2, 10))
 
-        ctk.CTkLabel(self.controls, text="Thread URL or ID").grid(row=3, column=0, sticky="w", padx=14)
+        ctk.CTkLabel(self.controls, text="Thread URL or ID").grid(
+            row=3, column=0, sticky="w", padx=14
+        )
         self.ent_url = ctk.CTkEntry(
             self.controls,
             placeholder_text="URL, threads/12345, or 12345",
@@ -1489,12 +1483,12 @@ class ViperToolsWindow(ctk.CTkToplevel):
 
         actions = ctk.CTkFrame(row, fg_color="transparent")
         actions.grid(row=0, column=5, rowspan=2, sticky="e", padx=6, pady=4)
-        ctk.CTkButton(actions, text="Edit", width=52, command=lambda n=name: self.edit_thread(n)).pack(
-            side="left", padx=2
-        )
-        ctk.CTkButton(actions, text="Open", width=55, command=lambda n=name: self.open_thread(n)).pack(
-            side="left", padx=2
-        )
+        ctk.CTkButton(
+            actions, text="Edit", width=52, command=lambda n=name: self.edit_thread(n)
+        ).pack(side="left", padx=2)
+        ctk.CTkButton(
+            actions, text="Open", width=55, command=lambda n=name: self.open_thread(n)
+        ).pack(side="left", padx=2)
         ctk.CTkButton(
             actions,
             text="Validate",
@@ -1592,7 +1586,9 @@ class ViperToolsWindow(ctk.CTkToplevel):
                 f"Saved ViperGirls target '{name}' without a live site title; using fallback name."
             )
 
-        duplicate_thread = self._find_duplicate_thread_id(str(record["thread_id"]), exclude=old_name)
+        duplicate_thread = self._find_duplicate_thread_id(
+            str(record["thread_id"]), exclude=old_name
+        )
         if duplicate_thread and not messagebox.askyesno(
             "Duplicate Thread ID",
             (
@@ -1669,7 +1665,9 @@ class ViperToolsWindow(ctk.CTkToplevel):
             try:
                 save_saved_threads(updated)
             except OSError as exc:
-                messagebox.showerror("Refresh Names Failed", f"Failed to save refreshed targets:\n{exc}")
+                messagebox.showerror(
+                    "Refresh Names Failed", f"Failed to save refreshed targets:\n{exc}"
+                )
                 return
             self.saved_threads = updated
             self.editing_name = editing_name
@@ -1682,7 +1680,9 @@ class ViperToolsWindow(ctk.CTkToplevel):
             f"Updated {renamed} target name(s). Failed to fetch {failed} title(s).",
         )
 
-    def _find_duplicate_thread_id(self, thread_id: str, exclude: Optional[str] = None) -> Optional[str]:
+    def _find_duplicate_thread_id(
+        self, thread_id: str, exclude: Optional[str] = None
+    ) -> Optional[str]:
         for name, data in self.saved_threads.items():
             if name == exclude:
                 continue
@@ -1732,7 +1732,9 @@ class ViperToolsWindow(ctk.CTkToplevel):
         if errors:
             messagebox.showerror("Invalid Target", f"'{name}' is invalid:\n\n" + "\n".join(errors))
             return
-        thread_id = str(data.get("thread_id") or extract_thread_id(str(data.get("url") or "")) or "")
+        thread_id = str(
+            data.get("thread_id") or extract_thread_id(str(data.get("url") or "")) or ""
+        )
         messagebox.showinfo("Target Valid", f"'{name}' resolves to thread ID {thread_id}.")
 
     def delete_thread(self, name: str) -> None:
@@ -1823,7 +1825,9 @@ class ViperToolsWindow(ctk.CTkToplevel):
             raw_targets = _targets_from_import_payload(raw_data)
         except Exception:
             return []
-        return [str(name).strip() for name in raw_targets if str(name).strip() in self.saved_threads]
+        return [
+            str(name).strip() for name in raw_targets if str(name).strip() in self.saved_threads
+        ]
 
     def export_all_targets(self) -> None:
         self._export_targets(sorted(self.saved_threads))
@@ -1866,7 +1870,9 @@ class ViperToolsWindow(ctk.CTkToplevel):
         user = creds.get("vg_user", "")
         pwd = creds.get("vg_pass", "")
         if not user or not pwd:
-            messagebox.showerror("Missing Credentials", "Set ViperGirls credentials before testing login.")
+            messagebox.showerror(
+                "Missing Credentials", "Set ViperGirls credentials before testing login."
+            )
             self._update_health()
             return
 
@@ -1897,7 +1903,9 @@ class ViperToolsWindow(ctk.CTkToplevel):
             else:
                 webbrowser.open(_USER_DATA_DIR)
         except Exception as exc:
-            messagebox.showerror("Open Folder Failed", f"Could not open:\n{_USER_DATA_DIR}\n\n{exc}")
+            messagebox.showerror(
+                "Open Folder Failed", f"Could not open:\n{_USER_DATA_DIR}\n\n{exc}"
+            )
 
     def open_history(self) -> None:
         PostingHistoryWindow(self)

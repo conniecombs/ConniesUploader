@@ -172,9 +172,7 @@ class GalleryCache:
                 if item:
                     normalized_records[item["id"]] = item
             if normalized_records:
-                normalized["services"][service_id] = self._trim_service_records(
-                    normalized_records
-                )
+                normalized["services"][service_id] = self._trim_service_records(normalized_records)
 
         return normalized
 

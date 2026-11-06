@@ -366,9 +366,7 @@ class LayoutMixin:
         thread_frame = ctk.CTkFrame(parent, fg_color="transparent")
         thread_frame.pack(fill="x", padx=5, pady=(0, 6))
         ctk.CTkLabel(thread_frame, text="Simultaneous Uploads:", width=140).pack(side="left")
-        thread_limit_entry = ctk.CTkEntry(
-            thread_frame, textvariable=self.menu_thread_var, width=60
-        )
+        thread_limit_entry = ctk.CTkEntry(thread_frame, textvariable=self.menu_thread_var, width=60)
         thread_limit_entry.pack(side="left", padx=5)
         thread_limit_entry.bind(
             "<FocusOut>", lambda _event: self.set_global_threads(self.menu_thread_var.get())

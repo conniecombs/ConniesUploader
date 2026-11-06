@@ -155,9 +155,7 @@ class RuntimeMixin:
     def _mark_group_touched(
         self, touched_groups: Dict[int, Any], group_widget: Any, filepath: str
     ) -> None:
-        touched = touched_groups.setdefault(
-            id(group_widget), {"group": group_widget, "files": []}
-        )
+        touched = touched_groups.setdefault(id(group_widget), {"group": group_widget, "files": []})
         touched["files"].append(filepath)
 
     def _finish_ui_row_batch(self, touched_groups: Dict[int, Dict[str, Any]]) -> None:
@@ -170,9 +168,7 @@ class RuntimeMixin:
         remaining = len(self.__dict__.get("pending_ui_rows", []) or [])
         self.lbl_eta.configure(
             text=(
-                f"Loading files... {remaining} remaining"
-                if remaining
-                else f"Files: {file_count}"
+                f"Loading files... {remaining} remaining" if remaining else f"Files: {file_count}"
             )
         )
         self._refresh_queue_state()

@@ -310,7 +310,9 @@ class SettingsMixin:
                     "selected_gallery_upload_hash": selected_gallery.get("upload_hash", ""),
                 }
             )
-            if selected_service == config.PIXHOST_SERVICE_ID and selected_gallery.get("upload_hash"):
+            if selected_service == config.PIXHOST_SERVICE_ID and selected_gallery.get(
+                "upload_hash"
+            ):
                 cfg["gallery_upload_hash"] = selected_gallery["upload_hash"]
 
         return cfg

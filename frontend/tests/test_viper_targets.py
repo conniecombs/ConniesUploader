@@ -65,12 +65,8 @@ class FakeBridge:
 def point_viper_storage(monkeypatch, tmp_path):
     monkeypatch.setattr(viper_api, "_USER_DATA_DIR", str(tmp_path))
     monkeypatch.setattr(viper_api, "THREADS_FILE", str(tmp_path / "saved_threads.json"))
-    monkeypatch.setattr(
-        viper_api, "POSTING_HISTORY_FILE", str(tmp_path / "posting_history.json")
-    )
-    monkeypatch.setattr(
-        viper_api, "SCHEDULED_POSTS_FILE", str(tmp_path / "scheduled_posts.json")
-    )
+    monkeypatch.setattr(viper_api, "POSTING_HISTORY_FILE", str(tmp_path / "posting_history.json"))
+    monkeypatch.setattr(viper_api, "SCHEDULED_POSTS_FILE", str(tmp_path / "scheduled_posts.json"))
 
 
 @pytest.mark.unit
@@ -363,13 +359,9 @@ def test_import_export_saved_threads_round_trip(tmp_path, monkeypatch):
 @pytest.mark.unit
 def test_mark_thread_target_used_updates_saved_target(tmp_path, monkeypatch):
     point_viper_storage(monkeypatch, tmp_path)
-    viper_api.save_saved_threads(
-        {"Target": viper_api.normalize_thread_record("Target", "12345")}
-    )
+    viper_api.save_saved_threads({"Target": viper_api.normalize_thread_record("Target", "12345")})
 
-    updated = viper_api.mark_thread_target_used(
-        "Target", timestamp="2026-06-21T10:00:00+00:00"
-    )
+    updated = viper_api.mark_thread_target_used("Target", timestamp="2026-06-21T10:00:00+00:00")
     saved = viper_api.load_saved_threads()
 
     assert updated["last_used_at"] == "2026-06-21T10:00:00+00:00"
@@ -467,9 +459,7 @@ def test_auto_poster_records_pending_failure_states(tmp_path, monkeypatch):
 @pytest.mark.unit
 def test_auto_poster_marks_target_used(tmp_path, monkeypatch):
     point_viper_storage(monkeypatch, tmp_path)
-    viper_api.save_saved_threads(
-        {"Target": viper_api.normalize_thread_record("Target", "54321")}
-    )
+    viper_api.save_saved_threads({"Target": viper_api.normalize_thread_record("Target", "54321")})
     poster = AutoPoster(
         {"vg_user": "user", "vg_pass": "password"},
         viper_api.load_saved_threads(),
@@ -542,9 +532,7 @@ def test_python_scheduler_processes_due_posts(tmp_path, monkeypatch):
         {"vg_user": "user", "vg_pass": "password"},
         ListQueue(),
     )
-    scheduler.process_due_posts(
-        datetime.datetime(2026, 6, 30, 20, 1, tzinfo=datetime.timezone.utc)
-    )
+    scheduler.process_due_posts(datetime.datetime(2026, 6, 30, 20, 1, tzinfo=datetime.timezone.utc))
 
     posts = viper_api.load_scheduled_posts()
     assert calls == [

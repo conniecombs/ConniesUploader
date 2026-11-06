@@ -235,10 +235,7 @@ class SidecarBridge:
                 logger.critical(
                     f"Sidecar failed to restart after {self.max_restarts} attempts; giving up"
                 )
-                self._dispatch_event({
-                    "type": "sidecar_stopped",
-                    "msg": "Sidecar crash exhaustion"
-                })
+                self._dispatch_event({"type": "sidecar_stopped", "msg": "Sidecar crash exhaustion"})
                 self.proc = None
                 return
 

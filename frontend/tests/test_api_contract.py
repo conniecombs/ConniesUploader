@@ -11,9 +11,7 @@ def test_vipr_metadata_normalizes_null_sidecar_data():
     bridge.request_sync.return_value = {"status": "success", "data": None}
 
     with patch.object(api.SidecarBridge, "get", return_value=bridge):
-        metadata = api.get_vipr_metadata(
-            {"vipr_user": "johngrimm", "vipr_pass": "secret"}
-        )
+        metadata = api.get_vipr_metadata({"vipr_user": "johngrimm", "vipr_pass": "secret"})
 
     assert metadata == {"galleries": []}
 
@@ -32,9 +30,7 @@ def test_create_imx_gallery_uses_gallery_service_live_form_flow():
         bridge=None,
         creds={"imx_user": "user", "imx_pass": "secret", "imx_api": "key"},
     )
-    service_cls.return_value.create_gallery.assert_called_once_with(
-        "imx.to", "Batch Gallery"
-    )
+    service_cls.return_value.create_gallery.assert_called_once_with("imx.to", "Batch Gallery")
 
 
 def test_delete_imx_gallery_uses_gallery_service_live_edit_form_flow():
@@ -50,9 +46,7 @@ def test_delete_imx_gallery_uses_gallery_service_live_edit_form_flow():
         bridge=None,
         creds={"imx_user": "user", "imx_pass": "secret", "imx_api": "key"},
     )
-    service_cls.return_value.delete_gallery.assert_called_once_with(
-        "imx.to", "abc123"
-    )
+    service_cls.return_value.delete_gallery.assert_called_once_with("imx.to", "abc123")
 
 
 def test_vipr_metadata_parses_file_manager_public_gallery_urls():
@@ -139,9 +133,7 @@ def test_delete_vipr_gallery_uses_file_manager_delete_contract():
     }
 
     with patch.object(api.SidecarBridge, "get", return_value=bridge):
-        deleted = api.delete_vipr_gallery(
-            {"vipr_user": "user", "vipr_pass": "secret"}, "105000"
-        )
+        deleted = api.delete_vipr_gallery({"vipr_user": "user", "vipr_pass": "secret"}, "105000")
 
     assert deleted is True
     payload = bridge.request_sync.call_args.args[0]

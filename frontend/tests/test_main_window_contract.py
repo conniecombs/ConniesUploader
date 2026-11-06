@@ -2261,12 +2261,10 @@ def test_failed_batch_report_is_written_but_not_copyable(tmp_path):
     assert "URL: https://imagebam.test/ok" in report_text
     assert "- bad.jpg: FAILED" in report_text
     assert "Reason: server rejected image" in report_text
-    assert Path(app.central_history_path, report_path.name).read_text(
-        encoding="utf-8"
-    ) == report_text
-    assert activity == [
-        (f"Saved failed batch report: {report_path.name}.", "warning")
-    ]
+    assert (
+        Path(app.central_history_path, report_path.name).read_text(encoding="utf-8") == report_text
+    )
+    assert activity == [(f"Saved failed batch report: {report_path.name}.", "warning")]
     assert logs == [f"Saved failed batch report: {report_path}"]
 
     summary = UploaderApp._build_completion_summary(app)

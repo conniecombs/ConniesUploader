@@ -15,7 +15,9 @@ from modules.gallery_manager import GalleryManager
 from modules.plugins.imx import ImxPlugin
 from modules.upload_manager import UploadManager
 
-CHALLENGE = '<title>Making sure you&#39;re not a bot!</title><script id="anubis_challenge">{}</script>'
+CHALLENGE = (
+    '<title>Making sure you&#39;re not a bot!</title><script id="anubis_challenge">{}</script>'
+)
 
 
 @pytest.fixture
@@ -44,12 +46,10 @@ def first_image(tmp_path):
     return str(path)
 
 
-def test_api_creation_enforces_upload_policy_and_posts_once(
-    api_session, first_image
-):
-    result = GalleryService(None, {"imx_api": "private-key", "imx_user": "user", "imx_pass": "secret"}).create_gallery(
-        "imx.to", "Test Gallery", initial_image=first_image
-    )
+def test_api_creation_enforces_upload_policy_and_posts_once(api_session, first_image):
+    result = GalleryService(
+        None, {"imx_api": "private-key", "imx_user": "user", "imx_pass": "secret"}
+    ).create_gallery("imx.to", "Test Gallery", initial_image=first_image)
     assert result.ok and result.record.id == "abc123"
     assert result.record.raw["first_image_url"] == "https://imx.to/i/first"
     api_session.post.assert_called_once()
@@ -105,9 +105,7 @@ def test_http_errors_are_clear_and_not_retried(api_session, first_image, status)
 
 def test_timeout_warns_about_uncertain_outcome_without_retry(api_session, first_image):
     api_session.post.side_effect = requests.Timeout("secret request details")
-    with pytest.raises(
-        imx_api.ImxApiError, match="may already have uploaded"
-    ) as problem:
+    with pytest.raises(imx_api.ImxApiError, match="may already have uploaded") as problem:
         imx_api.create_gallery_with_image("key", "Test Gallery", first_image)
     assert "secret request details" not in str(problem.value)
     api_session.post.assert_called_once()
@@ -120,9 +118,7 @@ def test_html_api_response_does_not_report_missing_gallery(api_session, first_im
 
 
 @pytest.mark.parametrize("operation", ["list", "create", "delete", "sync"])
-def test_anubis_200_blocks_website_operations_before_sending_password(
-    monkeypatch, operation
-):
+def test_anubis_200_blocks_website_operations_before_sending_password(monkeypatch, operation):
     session = Mock()
     session.get.return_value = SimpleNamespace(
         status_code=200, text=CHALLENGE, url="https://imx.to/login.php"
@@ -185,7 +181,11 @@ def test_seed_is_uploaded_once_then_remaining_files_use_gallery(monkeypatch):
     manager = make_manager(monkeypatch)
     group = Group()
     cfg = {"service": "imx.to", "auto_gallery": True, "imx_cover_count": 1}
-    manager._dispatch_jobs({group: list(group.files)}, cfg, {"imx_api": "key", "imx_user": "user", "imx_pass": "secret"})
+    manager._dispatch_jobs(
+        {group: list(group.files)},
+        cfg,
+        {"imx_api": "key", "imx_user": "user", "imx_pass": "secret"},
+    )
     assert create.call_args.kwargs["fields"]["thumbnail_size"] == "5"
     assert manager.result_queue.get_nowait() == (
         "first.jpg",
@@ -195,7 +195,9 @@ def test_seed_is_uploaded_once_then_remaining_files_use_gallery(monkeypatch):
     assert manager.result_queue.empty()
     assert manager._send_job.call_args.args[0] == ["second.jpg"]
     assert manager._send_job.call_args.args[1]["gallery_id"] == "abc123"
-    manager._dispatch_jobs({group: ["second.jpg"]}, cfg, {"imx_api": "key", "imx_user": "user", "imx_pass": "secret"})
+    manager._dispatch_jobs(
+        {group: ["second.jpg"]}, cfg, {"imx_api": "key", "imx_user": "user", "imx_pass": "secret"}
+    )
     create.assert_called_once()  # Retry keeps the existing gallery.
 
 
@@ -213,11 +215,7 @@ def test_gallery_failure_stops_all_files_and_preserves_reason(monkeypatch):
     )
     manager._send_job.assert_not_called()
     assert manager.result_queue.qsize() == 2
-    errors = [
-        event
-        for event in list(manager.progress_queue.queue)
-        if "error:" in str(event[2])
-    ]
+    errors = [event for event in list(manager.progress_queue.queue) if "error:" in str(event[2])]
     assert len(errors) == 2 and all("Invalid API key" in event[2] for event in errors)
 
 
@@ -282,9 +280,7 @@ def test_gallery_manager_cancelled_image_picker_does_not_create(monkeypatch):
     manager.ent_name.get.return_value = "Test Gallery"
     manager._selected_service = lambda: "imx.to"
     manager.gallery_service = Mock()
-    monkeypatch.setattr(
-        "modules.gallery_manager.filedialog.askopenfilename", lambda **kwargs: ""
-    )
+    monkeypatch.setattr("modules.gallery_manager.filedialog.askopenfilename", lambda **kwargs: "")
     manager._create_gallery()
     manager.gallery_service.create_gallery.assert_not_called()
     assert not manager.__dict__.get("_creating_gallery")

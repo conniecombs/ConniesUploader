@@ -15,7 +15,6 @@ from typing import Any, Dict, Mapping, Optional
 
 from modules.sidecar import SidecarBridge
 
-
 JsonDict = Dict[str, Any]
 
 
@@ -64,9 +63,7 @@ def build_transport_spec(
     if headers:
         spec["headers"] = {str(key): str(value) for key, value in headers.items()}
     if form_fields:
-        spec["form_fields"] = {
-            str(key): str(value) for key, value in form_fields.items()
-        }
+        spec["form_fields"] = {str(key): str(value) for key, value in form_fields.items()}
     return spec
 
 
@@ -86,9 +83,7 @@ def execute_transport_request(
     if service:
         payload["service"] = service
     if rate_limits:
-        payload["rate_limits"] = {
-            str(key): value for key, value in rate_limits.items()
-        }
+        payload["rate_limits"] = {str(key): value for key, value in rate_limits.items()}
 
     active_bridge = bridge if bridge is not None else SidecarBridge.get()
     raw = active_bridge.request_sync(payload, timeout=timeout)

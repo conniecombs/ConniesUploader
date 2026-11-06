@@ -147,9 +147,7 @@ class ImgurPlugin(ImageHostPlugin):
         selected_size = str(config.get("thumbnail_size", ""))
         if selected_size in self.THUMBNAIL_SIZE_LABELS.values():
             selected_size = next(
-                code
-                for code, label in self.THUMBNAIL_SIZE_LABELS.items()
-                if label == selected_size
+                code for code, label in self.THUMBNAIL_SIZE_LABELS.items() if label == selected_size
             )
             config["thumbnail_size"] = selected_size
 

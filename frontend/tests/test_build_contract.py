@@ -5,12 +5,8 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-WINDOWS_HOOKS_ARG = (
-    '--additional-hooks-dir "..\\packaging\\pyinstaller_hooks"'
-)
-POSIX_HOOKS_ARG = (
-    '--additional-hooks-dir "../packaging/pyinstaller_hooks"'
-)
+WINDOWS_HOOKS_ARG = '--additional-hooks-dir "..\\packaging\\pyinstaller_hooks"'
+POSIX_HOOKS_ARG = '--additional-hooks-dir "../packaging/pyinstaller_hooks"'
 
 
 def _load_root_launcher():
@@ -123,10 +119,28 @@ def test_windows_build_uses_local_pyinstaller_hooks_and_verifies_tkinter():
 
 def test_other_build_entrypoints_use_local_pyinstaller_hooks():
     build_script = (ROOT / "build.sh").read_text(encoding="utf-8")
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
 
     assert POSIX_HOOKS_ARG in build_script
-    assert POSIX_HOOKS_ARG in makefile
+
+
+def test_ci_code_quality_runs_black_and_pins_tools():
+    ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    security = (ROOT / ".github" / "workflows" / "security.yml").read_text(encoding="utf-8")
+
+    assert "black==26.10.1" in ci
+    assert "black --check ." in ci
+    assert "golangci-lint@v2.15.0" in ci
+    assert "gosec@v2.30.0" in security
+    assert "bandit[sarif]==1.9.4" in security
+    assert "@latest" not in ci
+    assert "@latest" not in security
+
+
+def test_makefile_delegates_packaging_to_shared_script():
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+
+    assert "scripts/maintenance/package_app.py" in makefile
+    assert '--add-data "../$(GO_OUTPUT)' not in makefile
 
 
 def test_build_entrypoints_use_short_app_name_in_titles():
@@ -140,24 +154,18 @@ def test_release_workflow_uses_local_pyinstaller_hooks():
     workflow_path = ROOT / ".github" / "workflows" / "release.yml"
     workflow = workflow_path.read_text(encoding="utf-8")
 
-    assert workflow.count('python scripts/maintenance/package_app.py') == 3
-    package_script = (ROOT / 'scripts/maintenance/package_app.py').read_text(encoding='utf-8')
+    assert workflow.count("python scripts/maintenance/package_app.py") == 3
+    package_script = (ROOT / "scripts/maintenance/package_app.py").read_text(encoding="utf-8")
     assert '"--specpath"' in package_script
     assert '"--additional-hooks-dir"' in package_script
-    assert 'packaging/pyinstaller_hooks' in package_script
-    assert 'CArchiveReader' in package_script
-    assert (
-        workflow.count("cache-dependency-path: backend/go.sum") >= 3
-    )
-    assert (
-        workflow.count("cache-dependency-path: frontend/requirements.txt") >= 3
-    )
+    assert "packaging/pyinstaller_hooks" in package_script
+    assert "CArchiveReader" in package_script
+    assert workflow.count("cache-dependency-path: backend/go.sum") >= 3
+    assert workflow.count("cache-dependency-path: frontend/requirements.txt") >= 3
 
 
 def test_customtkinter_hook_preserves_assets_and_adds_tcl_tk_binaries():
-    hook_path = (
-        ROOT / "packaging" / "pyinstaller_hooks" / "hook-customtkinter.py"
-    )
+    hook_path = ROOT / "packaging" / "pyinstaller_hooks" / "hook-customtkinter.py"
     hook = hook_path.read_text(encoding="utf-8")
 
     assert 'collect_data_files("customtkinter")' in hook

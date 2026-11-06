@@ -242,7 +242,9 @@ class ImageBamPlugin(ImageHostPlugin):
             "response_type": "json",
         }
 
-    def _build_pre_request(self, session_fields: Dict[str, str], creds: Dict[str, Any]) -> Dict[str, Any]:
+    def _build_pre_request(
+        self, session_fields: Dict[str, str], creds: Dict[str, Any]
+    ) -> Dict[str, Any]:
         upload_session = self._upload_session_request(session_fields)
         get_api_csrf = {
             "action": "get_api_csrf",

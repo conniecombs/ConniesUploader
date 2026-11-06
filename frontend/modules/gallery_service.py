@@ -89,11 +89,7 @@ def gallery_url_for_service(service: str, gallery_id: str) -> str:
 def normalize_gallery_record(service: str, raw: Mapping[str, Any]) -> Optional[GalleryRecord]:
     service = config.normalize_service_id(service)
     gallery_id = str(
-        raw.get("id")
-        or raw.get("gallery_id")
-        or raw.get("gallery_hash")
-        or raw.get("hash")
-        or ""
+        raw.get("id") or raw.get("gallery_id") or raw.get("gallery_hash") or raw.get("hash") or ""
     ).strip()
     if not gallery_id:
         return None
@@ -304,9 +300,7 @@ class GalleryService:
 
     def set_imx_php_session(self, session_id: str) -> None:
         session_id = session_id.strip()
-        self._imx_manual_cookies = (
-            {"PHPSESSID": session_id, "continue": "1"} if session_id else {}
-        )
+        self._imx_manual_cookies = {"PHPSESSID": session_id, "continue": "1"} if session_id else {}
 
     def list_galleries(self, service: str, page: int = 1) -> GalleryResult:
         service = config.normalize_service_id(service)
@@ -358,7 +352,8 @@ class GalleryService:
         if missing:
             return self._result(
                 GalleryStatus.MISSING_CREDENTIALS,
-                f"IMX.to needs {missing} before galleries can be synced.", service,
+                f"IMX.to needs {missing} before galleries can be synced.",
+                service,
             )
         return self._sync_all_imx_galleries(max_pages, progress_callback)
 
@@ -388,19 +383,28 @@ class GalleryService:
             except ImxApiError as exc:
                 return self._result(GalleryStatus.MISSING_CREDENTIALS, str(exc), service)
             try:
-                upload = create_gallery_with_image(self.creds.get("imx_api", ""), name, initial_image)
+                upload = create_gallery_with_image(
+                    self.creds.get("imx_api", ""), name, initial_image
+                )
             except ImxApiError as exc:
                 return self._result(GalleryStatus.ERROR, str(exc), service)
             record = GalleryRecord(
-                service=service, id=upload.gallery_id, name=upload.gallery_name,
+                service=service,
+                id=upload.gallery_id,
+                name=upload.gallery_name,
                 url=gallery_url_for_service(service, upload.gallery_id),
-                raw={"source": "api", "first_image_url": upload.image_url,
-                     "first_thumbnail_url": upload.thumbnail_url},
+                raw={
+                    "source": "api",
+                    "first_image_url": upload.image_url,
+                    "first_thumbnail_url": upload.thumbnail_url,
+                },
             )
             return self._result(
                 GalleryStatus.SUCCESS,
                 f"Created gallery '{record.name}' ({record.id}) with the selected image.",
-                service, record=record, records=[record],
+                service,
+                record=record,
+                records=[record],
             )
 
         if service == "imx.to":
@@ -453,7 +457,9 @@ class GalleryService:
         if isinstance(record_or_id, GalleryRecord):
             return str(record_or_id.name or fallback).strip()
         if isinstance(record_or_id, Mapping):
-            return str(record_or_id.get("name") or record_or_id.get("gallery_name") or fallback).strip()
+            return str(
+                record_or_id.get("name") or record_or_id.get("gallery_name") or fallback
+            ).strip()
         return fallback
 
     def _missing_credentials(self, service: str) -> str:
@@ -983,7 +989,9 @@ class GalleryService:
             # HTTP 200 alone never establishes authentication (Anubis also uses 200).
             response = session.get(config.IMX_DASHBOARD_URL, timeout=10)
             problem = self._imx_response_problem(response, "checking login")
-            if not problem and not BeautifulSoup(response.text, "html.parser").select_one("a[href*='logout.php']"):
+            if not problem and not BeautifulSoup(response.text, "html.parser").select_one(
+                "a[href*='logout.php']"
+            ):
                 problem = self._result(
                     GalleryStatus.LOGIN_FAILED,
                     "IMX did not confirm a signed-in session. Check your IMX username/password or sign in on the website.",
@@ -995,14 +1003,20 @@ class GalleryService:
         except requests.RequestException:
             session.close()
             return session, self._result(
-                GalleryStatus.ERROR, "Could not connect to IMX to verify login. Check your connection and try again.", "imx.to"
+                GalleryStatus.ERROR,
+                "Could not connect to IMX to verify login. Check your connection and try again.",
+                "imx.to",
             )
 
         return session, None
 
     def _imx_response_problem(self, response, operation: str, *, allow_login: bool = False):
         html = (response.text or "").lower()
-        if "anubis_challenge" in html or "making sure you&#39;re not a bot" in html or "making sure you're not a bot" in html:
+        if (
+            "anubis_challenge" in html
+            or "making sure you&#39;re not a bot" in html
+            or "making sure you're not a bot" in html
+        ):
             return self._result(
                 GalleryStatus.BROWSER_REQUIRED,
                 "IMX requires browser verification for website login. Use your IMX API key "
@@ -1011,7 +1025,8 @@ class GalleryService:
                 "imx.to",
             )
         if response.status_code in {401, 403} or (
-            not allow_login and (
+            not allow_login
+            and (
                 _looks_like_imx_login_page(response.text)
                 or urlparse(response.url).path.rstrip("/") == "/login.php"
             )
@@ -1023,7 +1038,9 @@ class GalleryService:
             )
         if response.status_code >= 400:
             return self._result(
-                GalleryStatus.ERROR, f"IMX returned HTTP {response.status_code} while {operation}.", "imx.to"
+                GalleryStatus.ERROR,
+                f"IMX returned HTTP {response.status_code} while {operation}.",
+                "imx.to",
             )
         return None
 
@@ -1286,7 +1303,13 @@ def _gallery_id_from_query(url: str) -> str:
 
 def _looks_like_imx_login_page(html: str) -> bool:
     lowered = (html or "").lower()
-    login_markers = ("usr_email", "dologin", "login_form", "incorrect username", "invalid login credentials")
+    login_markers = (
+        "usr_email",
+        "dologin",
+        "login_form",
+        "incorrect username",
+        "invalid login credentials",
+    )
     return any(marker in lowered for marker in login_markers)
 
 

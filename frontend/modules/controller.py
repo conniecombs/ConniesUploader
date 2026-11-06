@@ -211,9 +211,7 @@ class UploadController:
                 else:
                     thread_id = viper_api.extract_thread_id(str(record or "")) or ""
             except Exception as exc:
-                logger.debug(
-                    f"Could not resolve ViperGirls thread ID for template context: {exc}"
-                )
+                logger.debug(f"Could not resolve ViperGirls thread ID for template context: {exc}")
 
         ctx = {
             "gallery_link": gal_link,

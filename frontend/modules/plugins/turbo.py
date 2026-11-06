@@ -208,9 +208,7 @@ class TurboPlugin(ImageHostPlugin):
                     "value": gallery_name,
                 }
         else:
-            gallery_id = (
-                config.get("turbo_gallery_id") or config.get("gallery_id") or ""
-            ).strip()
+            gallery_id = (config.get("turbo_gallery_id") or config.get("gallery_id") or "").strip()
             if gallery_id:
                 multipart_fields["album"] = {"type": "text", "value": gallery_id}
 

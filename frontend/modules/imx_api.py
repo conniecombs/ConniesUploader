@@ -20,9 +20,13 @@ class ImxApiError(RuntimeError):
 def require_upload_credentials(creds: Mapping[str, str]) -> None:
     """Enforce the application's upload policy before constructing any request."""
     missing = [
-        label for key, label in (
-            ("imx_user", "username"), ("imx_pass", "password"), ("imx_api", "API key")
-        ) if not str(creds.get(key) or "").strip()
+        label
+        for key, label in (
+            ("imx_user", "username"),
+            ("imx_pass", "password"),
+            ("imx_api", "API key"),
+        )
+        if not str(creds.get(key) or "").strip()
     ]
     if missing:
         raise ImxApiError(
@@ -40,11 +44,7 @@ class ImxGalleryUpload:
 
 def validate_gallery_name(name: str) -> str:
     name = str(name or "").strip()
-    if (
-        not name
-        or len(name) > 100
-        or not re.fullmatch(r"[A-Za-z0-9 .,_()\[\]-]+", name)
-    ):
+    if not name or len(name) > 100 or not re.fullmatch(r"[A-Za-z0-9 .,_()\[\]-]+", name):
         raise ImxApiError(
             "IMX gallery names must be 1–100 characters: letters A–Z, numbers, "
             "spaces, or - _ . , ( ) [ ]. Rename the batch or enter a valid gallery name."
@@ -62,9 +62,7 @@ def create_gallery_with_image(
     """
     api_key = str(api_key or "").strip()
     if not api_key:
-        raise ImxApiError(
-            "Set the IMX API key in Credentials before creating a gallery."
-        )
+        raise ImxApiError("Set the IMX API key in Credentials before creating a gallery.")
     name = validate_gallery_name(name)
     path = Path(image_path)
     if not path.is_file() or path.suffix.lower() not in {
@@ -73,13 +71,9 @@ def create_gallery_with_image(
         ".png",
         ".gif",
     }:
-        raise ImxApiError(
-            "Choose an existing JPG, PNG, or GIF as the first gallery image."
-        )
+        raise ImxApiError("Choose an existing JPG, PNG, or GIF as the first gallery image.")
     if not 0 < path.stat().st_size <= 100 * 1024 * 1024:
-        raise ImxApiError(
-            "The first IMX gallery image must be nonempty and at most 100 MB."
-        )
+        raise ImxApiError("The first IMX gallery image must be nonempty and at most 100 MB.")
 
     # Only documented options are forwarded. A selected gallery must never
     # compete with create_gallery, and the response must always be JSON.
@@ -110,21 +104,15 @@ def create_gallery_with_image(
         ) from None
 
     if response.status_code in {401, 403}:
-        raise ImxApiError(
-            "IMX rejected API authentication. Check the IMX API key in Credentials."
-        )
+        raise ImxApiError("IMX rejected API authentication. Check the IMX API key in Credentials.")
     if response.status_code == 429:
         raise ImxApiError("IMX is rate limiting uploads. Wait before trying again.")
     if response.status_code >= 300:
-        raise ImxApiError(
-            f"IMX gallery upload returned HTTP {response.status_code}. {uncertain}"
-        )
+        raise ImxApiError(f"IMX gallery upload returned HTTP {response.status_code}. {uncertain}")
     try:
         payload = response.json()
     except ValueError:
-        raise ImxApiError(
-            f"IMX returned an unreadable gallery response. {uncertain}"
-        ) from None
+        raise ImxApiError(f"IMX returned an unreadable gallery response. {uncertain}") from None
     if not isinstance(payload, dict):
         raise ImxApiError(f"IMX returned an invalid gallery response. {uncertain}")
     if payload.get("status") != "success":
@@ -138,14 +126,8 @@ def create_gallery_with_image(
     gallery_id = str(result.get("gallery_id") or "")
     image_url = str(result.get("image_url") or "")
     thumbnail_url = str(result.get("thumbnail_url") or "")
-    if (
-        not re.fullmatch(r"[A-Za-z0-9]+", gallery_id)
-        or not image_url
-        or not thumbnail_url
-    ):
-        raise ImxApiError(
-            f"IMX did not confirm both the new gallery and first image. {uncertain}"
-        )
+    if not re.fullmatch(r"[A-Za-z0-9]+", gallery_id) or not image_url or not thumbnail_url:
+        raise ImxApiError(f"IMX did not confirm both the new gallery and first image. {uncertain}")
     return ImxGalleryUpload(
         gallery_id, str(result.get("gallery_name") or name), image_url, thumbnail_url
     )

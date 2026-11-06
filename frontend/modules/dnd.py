@@ -162,7 +162,7 @@ class DragDropMixin:
         selection = self._selected_file_set()
         if not append:
             selection.clear()
-        selection.update(ordered[start_index: end_index + 1])
+        selection.update(ordered[start_index : end_index + 1])
         self._apply_file_selection_styles()
 
     def _toggle_file_selection(self, filepath):
@@ -210,9 +210,7 @@ class DragDropMixin:
 
             if filepath in selection:
                 selected_in_group = [
-                    fp
-                    for fp in active_group.files
-                    if fp in selection and fp in self.file_widgets
+                    fp for fp in active_group.files if fp in selection and fp in self.file_widgets
                 ]
                 if selected_in_group:
                     return selected_in_group
@@ -351,9 +349,7 @@ class DragDropMixin:
 
             insert_index = max(0, min(insert_index, len(remaining_files)))
             group.files[:] = (
-                remaining_files[:insert_index]
-                + moving_files
-                + remaining_files[insert_index:]
+                remaining_files[:insert_index] + moving_files + remaining_files[insert_index:]
             )
 
             if group.files == original_files:
