@@ -65,6 +65,10 @@ type JobRequest struct {
 	// of re-authenticating on every file. Not serialized over JSON.
 	SessionClient *http.Client      `json:"-"`
 	SessionValues map[string]string `json:"-"`
+
+	// EnqueuedAt is stamped when the job is read from stdin so a request's
+	// deadline counts the time it waited for a worker. Not serialized.
+	EnqueuedAt time.Time `json:"-"`
 }
 
 type RateLimitConfig struct {

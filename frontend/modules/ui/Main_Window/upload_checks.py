@@ -56,7 +56,7 @@ from .common import (  # noqa: F401
 
 class UploadChecksMixin:
     def start_upload(self) -> None:
-        if getattr(self, "is_uploading", False) or getattr(self, "_finalizing", False):
+        if self.__dict__.get("is_uploading", False) or self.__dict__.get("_finalizing", False):
             self.add_activity(
                 "Wait for the current upload to finish before starting another.", "warning"
             )
@@ -176,7 +176,7 @@ class UploadChecksMixin:
 
     @staticmethod
     def _group_posts(group: Any) -> bool:
-        target = getattr(group, "selected_thread", "")
+        target = group.__dict__.get("selected_thread", "")
         return bool(target) and target != "Do Not Post"
 
     def _prepare_poster_session(

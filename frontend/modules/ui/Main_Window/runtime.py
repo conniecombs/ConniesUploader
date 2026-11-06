@@ -532,7 +532,9 @@ class RuntimeMixin:
         self._set_row_retry_visible(row_data, False)
 
     def _upload_in_progress(self) -> bool:
-        return bool(getattr(self, "is_uploading", False) or getattr(self, "_finalizing", False))
+        return bool(
+            self.__dict__.get("is_uploading", False) or self.__dict__.get("_finalizing", False)
+        )
 
     def _retry_file(self, filepath: str) -> None:
         if self._upload_in_progress():
@@ -667,7 +669,7 @@ class RuntimeMixin:
             logger.error(f"Group Update Error: {e}", exc_info=True)
 
     def finish_upload(self) -> None:
-        if not self.is_uploading or getattr(self, "_finalizing", False):
+        if not self.is_uploading or self.__dict__.get("_finalizing", False):
             return
         # Stay "uploading" until _on_upload_complete so Start/Retry cannot
         # re-enter while galleries are finalized on the worker thread.
@@ -851,7 +853,7 @@ class RuntimeMixin:
 
     def stop_upload(self):
         self.cancel_event.set()
-        upload_manager = getattr(self, "upload_manager", None)
+        upload_manager = self.__dict__.get("upload_manager")
         if upload_manager is not None and hasattr(upload_manager, "cancel_batch"):
             upload_manager.cancel_batch()
         self.lbl_eta.configure(text="Stopping...")
@@ -1010,11 +1012,11 @@ class RuntimeMixin:
 
     def _skip_poster_for_group(self, group) -> None:
         """Tell the AutoPoster this group will never post so later batches proceed."""
-        target = getattr(group, "selected_thread", "")
+        target = group.__dict__.get("selected_thread", "")
         if not target or target == "Do Not Post":
             return
-        poster = getattr(self, "auto_poster", None)
-        batch_index = getattr(group, "batch_index", None)
+        poster = self.__dict__.get("auto_poster")
+        batch_index = group.__dict__.get("batch_index")
         if poster is None or not hasattr(poster, "skip") or not isinstance(batch_index, int):
             return
         with self.lock:

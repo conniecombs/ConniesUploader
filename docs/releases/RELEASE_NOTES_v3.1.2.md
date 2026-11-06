@@ -24,6 +24,7 @@ v3.1.2 is a maintenance release that fixes the upload, stop, retry, and auto-pos
 - Window close shuts down when the tray icon is unavailable.
 - Gallery Manager ignores late results after it closes; IMX sessions are closed.
 - Sidecar restart backoff no longer blocks commands; thumbnails above 50 MP are refused.
+- Request deadlines count from the moment a request is queued, so a reply never lands after the app reported it failed; posts superseded by a new upload are recorded, not dropped.
 
 ## Changed
 

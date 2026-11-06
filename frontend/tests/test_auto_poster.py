@@ -153,3 +153,53 @@ def test_begin_session_replaces_a_live_worker():
 
     assert wait_until(lambda: not poster.is_running)
     assert FakeViperGirlsAPI.posted == [("123", "fresh")]
+
+
+class SlowViperGirlsAPI(FakeViperGirlsAPI):
+    started = threading.Event()
+    delay = 0.6
+
+    def post_reply(self, thread_id, message):
+        SlowViperGirlsAPI.started.set()
+        time.sleep(SlowViperGirlsAPI.delay)
+        return super().post_reply(thread_id, message)
+
+
+def test_begin_session_supersedes_mid_post_worker_without_zombie(monkeypatch):
+    monkeypatch.setattr(viper_api, "ViperGirlsAPI", SlowViperGirlsAPI)
+    SlowViperGirlsAPI.started.clear()
+    poster = make_poster()
+    poster.begin_session([0, 1])
+    poster.start_processing(lambda: True, threading.Event())
+    poster.queue_post(0, "old-0", "Thread")
+    poster.queue_post(1, "old-1", "Thread")
+    assert SlowViperGirlsAPI.started.wait(2)
+
+    started = time.monotonic()
+    poster.begin_session([0])
+    assert time.monotonic() - started < 0.3, "begin_session must not block the Tk thread"
+    poster.start_processing(lambda: False, threading.Event())
+    poster.queue_post(0, "fresh", "Thread")
+
+    assert wait_until(lambda: not poster.is_running, timeout=5.0)
+    assert FakeViperGirlsAPI.posted == [("123", "old-0"), ("123", "fresh")]
+    assert ("Batch 2", "failure", "superseded by a new upload") in poster.history
+    assert all(entry[2] != "no output generated" for entry in poster.history)
+    assert wait_until(
+        lambda: not any(t.is_alive() for t in threading.enumerate() if t.name == "AutoPoster")
+    )
+
+
+def test_begin_session_records_queued_posts_as_superseded():
+    poster = make_poster()
+    poster.begin_session([0, 1, 2])
+    poster.queue_post(1, "one", "Thread")
+    poster.queue_post(2, "two", "Thread")
+
+    poster.begin_session([7])
+
+    assert sorted(poster.history) == [
+        ("Batch 2", "failure", "superseded by a new upload"),
+        ("Batch 3", "failure", "superseded by a new upload"),
+    ]
+    assert poster.post_queue == {}

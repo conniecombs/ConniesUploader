@@ -217,6 +217,7 @@ func main() {
 				core.SendJSON(OutputEvent{Type: "error", Msg: fmt.Sprintf("JSON decode error: %v", err)})
 				continue
 			}
+			job.EnqueuedAt = time.Now()
 			if job.Action == "cancel" {
 				// Handled inline so a cancel is never stuck behind busy workers.
 				handleJob(job)
