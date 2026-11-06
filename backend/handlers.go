@@ -123,6 +123,8 @@ func handleJob(job JobRequest) {
 		handleHttpBatchResolve(job)
 	case "generate_thumb":
 		handleGenerateThumb(job)
+	case "cancel":
+		handleCancel(job)
 	default:
 		sendJobEvent(&job, OutputEvent{Type: "error", Msg: fmt.Sprintf("Unsupported action: %s", job.Action)})
 	}
@@ -137,10 +139,33 @@ func handleHttpUpload(job JobRequest) {
 		sendJobEvent(&job, OutputEvent{Type: "error", Msg: "http_upload requires http_spec field"})
 		return
 	}
-	processUploadFiles(job, processFileGeneric)
+	processUploadFiles(job, processFileGenericCtx)
 }
 
-func processUploadFiles(job JobRequest, processor func(string, *JobRequest)) {
+func handleCancel(job JobRequest) {
+	live := core.CancelBatch(job.BatchID)
+	sendJobEvent(&job, OutputEvent{
+		Type: "log",
+		Msg:  fmt.Sprintf("Batch cancelled: %s (live jobs: %t)", job.BatchID, live),
+	})
+}
+
+func emitCancelledFiles(job *JobRequest, files []string) {
+	for _, fp := range files {
+		sendJobEvent(job, OutputEvent{Type: "status", FilePath: fp, Status: "Cancelled"})
+		sendJobEvent(job, OutputEvent{Type: "error", FilePath: fp, Msg: "Upload cancelled"})
+	}
+}
+
+func processUploadFiles(job JobRequest, processor func(context.Context, string, *JobRequest)) {
+	batchCtx, releaseBatch := core.RegisterBatch(job.BatchID)
+	defer releaseBatch()
+	if batchCtx.Err() != nil {
+		emitCancelledFiles(&job, job.Files)
+		sendJobEvent(&job, OutputEvent{Type: "batch_complete", Status: "done"})
+		return
+	}
+
 	maxWorkers := workerLimit(job.Config)
 	if maxWorkers < 1 {
 		maxWorkers = 1
@@ -183,6 +208,10 @@ func processUploadFiles(job JobRequest, processor func(string, *JobRequest)) {
 		go func() {
 			defer wg.Done()
 			for fp := range filesChan {
+				if batchCtx.Err() != nil {
+					emitCancelledFiles(&job, []string{fp})
+					continue
+				}
 				if err := core.ValidateFilePath(fp); err != nil {
 					sendJobEvent(&job, OutputEvent{Type: "status", FilePath: fp, Status: "Failed"})
 					sendJobEvent(&job, OutputEvent{Type: "error", FilePath: fp, Msg: "Invalid file: " + err.Error()})
@@ -204,7 +233,7 @@ func processUploadFiles(job JobRequest, processor func(string, *JobRequest)) {
 						),
 					})
 					sendJobEvent(&job, OutputEvent{Type: "status", FilePath: fp, Status: "Preparing"})
-					processor(fp, &job)
+					processor(batchCtx, fp, &job)
 				}()
 			}
 		}()
@@ -218,7 +247,11 @@ func processUploadFiles(job JobRequest, processor func(string, *JobRequest)) {
 }
 
 func processFileGeneric(fp string, job *JobRequest) {
-	ctx, cancel := context.WithTimeout(context.Background(), core.ClientTimeout)
+	processFileGenericCtx(context.Background(), fp, job)
+}
+
+func processFileGenericCtx(parent context.Context, fp string, job *JobRequest) {
+	ctx, cancel := context.WithTimeout(parent, core.ClientTimeout)
 	defer cancel()
 
 	type result struct {
@@ -241,6 +274,10 @@ func processFileGeneric(fp string, job *JobRequest) {
 	select {
 	case res := <-resultChan:
 		if res.err != nil {
+			if parent.Err() == context.Canceled {
+				emitCancelledFiles(job, []string{fp})
+				return
+			}
 			sendJobEvent(job, OutputEvent{Type: "status", FilePath: fp, Status: "Failed"})
 			sendJobEvent(job, OutputEvent{Type: "error", FilePath: fp, Msg: res.err.Error()})
 		} else {
@@ -252,6 +289,10 @@ func processFileGeneric(fp string, job *JobRequest) {
 			sendJobEvent(job, OutputEvent{Type: "status", FilePath: fp, Status: "Done"})
 		}
 	case <-ctx.Done():
+		if parent.Err() == context.Canceled {
+			emitCancelledFiles(job, []string{fp})
+			return
+		}
 		sendJobEvent(job, OutputEvent{Type: "status", FilePath: fp, Status: "Timeout"})
 		sendJobEvent(job, OutputEvent{Type: "error", FilePath: fp, Msg: "Upload timed out"})
 	}

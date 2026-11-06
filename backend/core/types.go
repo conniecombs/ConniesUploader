@@ -34,6 +34,7 @@ const (
 
 type JobRequest struct {
 	ID          string                  `json:"id,omitempty"`
+	BatchID     string                  `json:"batch_id,omitempty"`
 	Action      string                  `json:"action"`
 	Service     string                  `json:"service"`
 	Files       []string                `json:"files"`
