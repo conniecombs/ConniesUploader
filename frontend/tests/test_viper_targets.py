@@ -114,16 +114,38 @@ def test_parse_thread_title_cleans_title_suffixes():
 
 @pytest.mark.unit
 def test_fetch_thread_title_uses_vipergirls_headers():
-    session = FakeSession('<span class="threadtitle">Fetched Thread</span>')
+    bridge = FakeBridge(
+        response={
+            "status": "success",
+            "data": {"response_body": '<span class="threadtitle">Fetched Thread</span>'},
+        }
+    )
 
     title = viper_api.fetch_thread_title(
         "https://vipergirls.to/threads/12345-fetched",
-        session=session,
+        bridge=bridge,
     )
 
     assert title == "Fetched Thread"
-    assert session.requests[0][0] == "https://vipergirls.to/threads/12345-fetched"
-    assert "User-Agent" in session.requests[0][1]["headers"]
+    payload, timeout = bridge.requests[0]
+    spec = payload["generic_spec"]
+    assert payload["action"] == "http_request"
+    assert payload["service"] == "vipergirls.to"
+    assert spec["url"] == "https://vipergirls.to/threads/12345-fetched"
+    assert spec["method"] == "GET"
+    assert "User-Agent" in spec["headers"]
+    assert spec["timeout_seconds"] == viper_api.THREAD_TITLE_TIMEOUT_SECONDS
+    assert timeout == viper_api.THREAD_TITLE_TIMEOUT_SECONDS + 5
+
+
+def test_fetch_thread_title_returns_empty_on_transport_failure():
+    bridge = FakeBridge(
+        response={"status": "failed", "msg": "Timeout waiting for sidecar response"}
+    )
+
+    assert viper_api.fetch_thread_title("https://vipergirls.to/threads/1", bridge=bridge) == ""
+    assert viper_api.fetch_thread_title("https://attacker.example/t", bridge=bridge) == ""
+    assert len(bridge.requests) == 1
 
 
 @pytest.mark.unit
@@ -925,3 +947,70 @@ def test_blanked_url_record_still_resolves_thread_id():
 
     assert poster._resolve_thread_id("T") == ("123", None)
     assert poster._target_url("T", "123") == "https://vipergirls.to/threads/123"
+
+
+class _FakeEntry:
+    def __init__(self, value):
+        self.value = value
+
+    def get(self):
+        return self.value
+
+
+class _FakeButton:
+    def __init__(self):
+        self.states = []
+
+    def configure(self, **kwargs):
+        if "state" in kwargs:
+            self.states.append(kwargs["state"])
+
+
+class _InlineThread:
+    def __init__(self, target=None, args=(), kwargs=None, daemon=None, name=None):
+        self._target = target
+        self._args = args
+        self._kwargs = kwargs or {}
+
+    def start(self):
+        self._target(*self._args, **self._kwargs)
+
+
+@pytest.mark.unit
+def test_save_target_builds_record_off_thread(tmp_path, monkeypatch):
+    point_viper_storage(monkeypatch, tmp_path)
+    monkeypatch.setattr(viper_api.threading, "Thread", _InlineThread)
+    built = []
+
+    def fake_build(fallback_name, target, **kwargs):
+        built.append(threading_name())
+        return "Fetched Name", viper_api.normalize_thread_record("Fetched Name", "12345"), "Fetched"
+
+    import threading as _threading
+
+    def threading_name():
+        return _threading.current_thread().name
+
+    monkeypatch.setattr(viper_api, "build_site_named_thread_record", fake_build)
+
+    window = viper_api.ViperToolsWindow.__new__(viper_api.ViperToolsWindow)
+    window.ent_name = _FakeEntry("Fallback")
+    window.ent_url = _FakeEntry("12345")
+    window.ent_tags = _FakeEntry("")
+    window.ent_notes = _FakeEntry("")
+    window.editing_name = None
+    window.saved_threads = {}
+    window.save_button = _FakeButton()
+    window.refresh_names_button = _FakeButton()
+    window.after = lambda _delay, callback: callback()
+    window.cancel_edit = lambda clear_fields=True: None
+    window.refresh_list = lambda: None
+    window._notify_changed = lambda: None
+    window._find_duplicate_thread_id = lambda thread_id, exclude=None: None
+
+    window.save_target()
+
+    assert "Fetched Name" in window.saved_threads
+    assert viper_api.load_saved_threads()["Fetched Name"]["thread_id"] == "12345"
+    assert window.save_button.states == ["disabled", "normal"]
+    assert built == ["MainThread"]  # inline fake thread; real runs use a worker thread

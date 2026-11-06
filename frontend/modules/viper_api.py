@@ -17,7 +17,6 @@ from urllib.parse import urljoin, urlparse
 
 import customtkinter as ctk
 import pyperclip
-import requests
 from bs4 import BeautifulSoup
 from tkinter import filedialog, messagebox
 from loguru import logger
@@ -266,28 +265,38 @@ def parse_thread_title_from_html(html_text: str) -> str:
 def fetch_thread_title(
     url: str,
     timeout: int = THREAD_TITLE_TIMEOUT_SECONDS,
-    session: Optional[Any] = None,
+    bridge: Optional[Any] = None,
 ) -> str:
-    """Fetch the current ViperGirls thread title from the live thread page."""
+    """Fetch the current ViperGirls thread title through the sidecar transport."""
     if not url or not _is_supported_vipergirls_url(url):
         return ""
 
-    client = session or requests
+    spec = build_transport_spec(
+        url,
+        method="GET",
+        headers={
+            "User-Agent": THREAD_TITLE_USER_AGENT,
+            "Referer": f"{VIPERGIRLS_BASE_URL}/forum.php",
+        },
+        use_cookies=True,
+    )
     try:
-        response = client.get(
-            url,
+        response = execute_transport_request(
+            spec,
+            service="vipergirls.to",
             timeout=timeout,
-            headers={
-                "User-Agent": THREAD_TITLE_USER_AGENT,
-                "Referer": f"{VIPERGIRLS_BASE_URL}/forum.php",
-            },
+            bridge=bridge,
+            rate_limits=VIPERGIRLS_RATE_LIMIT,
         )
-        if hasattr(response, "raise_for_status"):
-            response.raise_for_status()
-        return parse_thread_title_from_html(getattr(response, "text", "") or "")
-    except (requests.RequestException, AttributeError, ValueError) as exc:
+    except Exception as exc:
         logger.warning(f"Could not fetch ViperGirls thread title for {url}: {exc}")
         return ""
+    if not response.ok:
+        logger.warning(
+            f"Could not fetch ViperGirls thread title for {url}: {response.message or 'failed'}"
+        )
+        return ""
+    return parse_thread_title_from_html(response.body or "")
 
 
 def unique_target_name(
@@ -1341,12 +1350,13 @@ class ViperToolsWindow(ctk.CTkToplevel):
         ctk.CTkButton(toolbar, text="Export All", width=92, command=self.export_all_targets).grid(
             row=0, column=5, padx=3, pady=8
         )
-        ctk.CTkButton(
+        self.refresh_names_button = ctk.CTkButton(
             toolbar,
             text="Refresh Names",
             width=115,
             command=self.refresh_target_names,
-        ).grid(row=0, column=6, padx=3, pady=8)
+        )
+        self.refresh_names_button.grid(row=0, column=6, padx=3, pady=8)
         ctk.CTkButton(
             toolbar,
             text="Export Selected",
@@ -1689,6 +1699,45 @@ class ViperToolsWindow(ctk.CTkToplevel):
                 continue
         return selected
 
+    def _busy_buttons(self) -> List[Any]:
+        return [
+            button
+            for button in (
+                getattr(self, "save_button", None),
+                getattr(self, "refresh_names_button", None),
+            )
+            if button is not None
+        ]
+
+    def _run_in_background(self, work: Callable[[], Any], done: Callable[[Any], None]) -> None:
+        """Run network work on a worker thread; apply its result on the Tk thread.
+
+        Title fetches go through the sidecar and can take several seconds per
+        target, so they must never block the UI thread.
+        """
+        buttons = self._busy_buttons()
+        for button in buttons:
+            button.configure(state="disabled")
+
+        def _finish(result: Any, error: Optional[BaseException]) -> None:
+            for button in buttons:
+                button.configure(state="normal")
+            if error is not None:
+                logger.error(f"ViperGirls target task failed: {error}")
+                messagebox.showerror("Posting Targets", f"Operation failed:\n{error}")
+                return
+            done(result)
+
+        def _task() -> None:
+            try:
+                result = work()
+            except BaseException as exc:  # surfaced on the Tk thread
+                self.after(0, lambda exc=exc: _finish(None, exc))
+                return
+            self.after(0, lambda: _finish(result, None))
+
+        threading.Thread(target=_task, name="ViperTargetsWorker", daemon=True).start()
+
     def save_target(self) -> None:
         fallback_name = self.ent_name.get().strip()
         target = self.ent_url.get().strip()
@@ -1696,21 +1745,34 @@ class ViperToolsWindow(ctk.CTkToplevel):
         notes = self.ent_notes.get().strip()
         old_name = self.editing_name
         existing = self.saved_threads.get(old_name or fallback_name, {})
+        existing_names = list(self.saved_threads.keys())
 
-        try:
-            name, record, fetched_title = build_site_named_thread_record(
-                fallback_name,
-                target,
-                existing=existing,
-                notes=notes,
-                tags=tags,
-                existing_names=self.saved_threads.keys(),
-                exclude=old_name,
-            )
-        except ThreadTargetError as exc:
-            messagebox.showerror("Invalid Target", str(exc))
-            return
+        def _work():
+            try:
+                return build_site_named_thread_record(
+                    fallback_name,
+                    target,
+                    existing=existing,
+                    notes=notes,
+                    tags=tags,
+                    existing_names=existing_names,
+                    exclude=old_name,
+                )
+            except ThreadTargetError as exc:
+                return exc
 
+        def _done(result):
+            if isinstance(result, ThreadTargetError):
+                messagebox.showerror("Invalid Target", str(result))
+                return
+            name, record, fetched_title = result
+            self._apply_saved_target(name, record, fetched_title, old_name)
+
+        self._run_in_background(_work, _done)
+
+    def _apply_saved_target(
+        self, name: str, record: Dict[str, object], fetched_title: str, old_name: Optional[str]
+    ) -> None:
         if not fetched_title:
             logger.warning(
                 f"Saved ViperGirls target '{name}' without a live site title; using fallback name."
@@ -1750,65 +1812,74 @@ class ViperToolsWindow(ctk.CTkToplevel):
             messagebox.showwarning("Refresh Names", "No saved targets are available to refresh.")
             return
 
-        updated = dict(self.saved_threads)
-        renamed = 0
-        failed = 0
+        snapshot = dict(self.saved_threads)
         editing_name = self.editing_name
         expanded_targets = dict(getattr(self, "expanded_targets", {}))
 
-        for current_name in names:
-            record = updated.get(current_name)
-            if not isinstance(record, dict):
-                failed += 1
-                continue
+        def _work():
+            updated = dict(snapshot)
+            renamed = 0
+            failed = 0
+            current_editing = editing_name
+            expanded = dict(expanded_targets)
+            for current_name in names:
+                record = updated.get(current_name)
+                if not isinstance(record, dict):
+                    failed += 1
+                    continue
 
-            target = _import_record_target(record)
-            try:
-                new_name, new_record, fetched_title = build_site_named_thread_record(
-                    current_name,
-                    target,
-                    existing=record,
-                    notes=record.get("notes"),
-                    tags=record.get("tags"),
-                    existing_names=updated.keys(),
-                    exclude=current_name,
-                    fetch_title=True,
-                )
-            except ThreadTargetError:
-                failed += 1
-                continue
+                target = _import_record_target(record)
+                try:
+                    new_name, new_record, fetched_title = build_site_named_thread_record(
+                        current_name,
+                        target,
+                        existing=record,
+                        notes=record.get("notes"),
+                        tags=record.get("tags"),
+                        existing_names=updated.keys(),
+                        exclude=current_name,
+                        fetch_title=True,
+                    )
+                except ThreadTargetError:
+                    failed += 1
+                    continue
 
-            if not fetched_title:
-                failed += 1
-                continue
+                if not fetched_title:
+                    failed += 1
+                    continue
 
-            if new_name != current_name:
-                updated.pop(current_name, None)
-                if editing_name == current_name:
-                    editing_name = new_name
-                if current_name in expanded_targets:
-                    expanded_targets[new_name] = expanded_targets.pop(current_name)
-            updated[new_name] = new_record
-            renamed += 1
+                if new_name != current_name:
+                    updated.pop(current_name, None)
+                    if current_editing == current_name:
+                        current_editing = new_name
+                    if current_name in expanded:
+                        expanded[new_name] = expanded.pop(current_name)
+                updated[new_name] = new_record
+                renamed += 1
+            return updated, renamed, failed, current_editing, expanded
 
-        if renamed:
-            try:
-                save_saved_threads(updated)
-            except OSError as exc:
-                messagebox.showerror(
-                    "Refresh Names Failed", f"Failed to save refreshed targets:\n{exc}"
-                )
-                return
-            self.saved_threads = updated
-            self.editing_name = editing_name
-            self.expanded_targets = expanded_targets
-            self.refresh_list()
-            self._notify_changed()
+        def _done(result):
+            updated, renamed, failed, current_editing, expanded = result
+            if renamed:
+                try:
+                    save_saved_threads(updated)
+                except OSError as exc:
+                    messagebox.showerror(
+                        "Refresh Names Failed", f"Failed to save refreshed targets:\n{exc}"
+                    )
+                    return
+                self.saved_threads = updated
+                self.editing_name = current_editing
+                self.expanded_targets = expanded
+                self.refresh_list()
+                self._notify_changed()
 
-        messagebox.showinfo(
-            "Refresh Names",
-            f"Updated {renamed} target name(s). Failed to fetch {failed} title(s).",
-        )
+            messagebox.showinfo(
+                "Refresh Names",
+                f"Updated {renamed} target name(s). Failed to fetch {failed} title(s).",
+            )
+
+        self._run_in_background(_work, _done)
 
     def _find_duplicate_thread_id(
         self, thread_id: str, exclude: Optional[str] = None
