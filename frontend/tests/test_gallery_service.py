@@ -1553,3 +1553,66 @@ def test_gallery_cache_concurrent_upserts_keep_all_records(tmp_path):
 
     assert len(cache.records_for_service("imx.to")) == 50
     assert not list(tmp_path.glob("*.tmp"))
+
+
+class ClosingImxSession(FakeImxSession):
+    def __init__(self):
+        super().__init__()
+        self.closed = False
+
+    def close(self):
+        self.closed = True
+
+
+def test_imx_list_closes_session_on_success(monkeypatch):
+    fake_session = ClosingImxSession()
+    monkeypatch.setattr("modules.gallery_service.requests.Session", lambda: fake_session)
+    service = GalleryService(
+        FakeBridge(), {"imx_user": "user", "imx_pass": "secret", "imx_api": "key"}
+    )
+
+    service._list_imx_galleries(1)
+
+    assert fake_session.closed is True
+
+
+def test_imx_create_closes_session_on_success(monkeypatch):
+    fake_session = ClosingImxSession()
+    monkeypatch.setattr("modules.gallery_service.requests.Session", lambda: fake_session)
+    service = GalleryService(
+        FakeBridge(), {"imx_user": "user", "imx_pass": "secret", "imx_api": "key"}
+    )
+
+    result = service._create_imx_gallery("Batch Gallery")
+
+    assert result.status == GalleryStatus.SUCCESS
+    assert fake_session.closed is True
+
+
+def test_gallery_manager_callbacks_ignore_destroyed_window():
+    from modules.gallery_manager import GalleryManager
+
+    class FakeButton:
+        def __init__(self):
+            self.configured = []
+
+        def configure(self, **kwargs):
+            self.configured.append(kwargs)
+
+    window = GalleryManager.__new__(GalleryManager)
+    window.winfo_exists = lambda: False
+    window.btn_create = FakeButton()
+    window._creating_gallery = True
+    result = GalleryResult(status=GalleryStatus.SUCCESS, message="", service="imx.to")
+
+    GalleryManager._handle_create_result(window, 1, "imx.to", result)
+    GalleryManager._handle_sync_all_result(window, 1, "imx.to", result)
+    GalleryManager._handle_delete_result(
+        window,
+        1,
+        "imx.to",
+        GalleryRecord(service="imx.to", id="1", name="n", url="", raw={}),
+        result,
+    )
+
+    assert window.btn_create.configured == []

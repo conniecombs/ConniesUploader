@@ -1049,8 +1049,11 @@ class GalleryService:
         if problem:
             problem.page = page
             return problem
+        try:
 
-        return self._fetch_imx_gallery_page(session, page)
+            return self._fetch_imx_gallery_page(session, page)
+        finally:
+            session.close()
 
     def _fetch_imx_gallery_page(self, session: requests.Session, page: int) -> GalleryResult:
         try:
@@ -1083,102 +1086,108 @@ class GalleryService:
         session, problem = self._create_imx_session()
         if problem:
             return problem
+        try:
 
-        all_records: List[GalleryRecord] = []
-        seen = set()
-        last_page = 0
+            all_records: List[GalleryRecord] = []
+            seen = set()
+            last_page = 0
 
-        for page in range(1, max_pages + 1):
-            result = self._fetch_imx_gallery_page(session, page)
-            if result.status == GalleryStatus.EMPTY:
-                if all_records:
+            for page in range(1, max_pages + 1):
+                result = self._fetch_imx_gallery_page(session, page)
+                if result.status == GalleryStatus.EMPTY:
+                    if all_records:
+                        break
+                    return result
+                if not result.ok:
+                    return result
+
+                new_records = []
+                for record in result.records:
+                    if record.id in seen:
+                        continue
+                    seen.add(record.id)
+                    new_records.append(record)
+
+                if not new_records and all_records:
                     break
-                return result
-            if not result.ok:
-                return result
 
-            new_records = []
-            for record in result.records:
-                if record.id in seen:
-                    continue
-                seen.add(record.id)
-                new_records.append(record)
+                all_records.extend(new_records)
+                last_page = page
+                if callable(progress_callback):
+                    progress_callback(page, len(all_records))
 
-            if not new_records and all_records:
-                break
+                if len(result.records) < IMX_GALLERY_PAGE_SIZE:
+                    break
+            else:
+                return self._result(
+                    GalleryStatus.ERROR,
+                    f"Stopped IMX.to sync after {max_pages} pages before reaching the end.",
+                    "imx.to",
+                    records=all_records,
+                    page=max_pages,
+                )
 
-            all_records.extend(new_records)
-            last_page = page
-            if callable(progress_callback):
-                progress_callback(page, len(all_records))
-
-            if len(result.records) < IMX_GALLERY_PAGE_SIZE:
-                break
-        else:
             return self._result(
-                GalleryStatus.ERROR,
-                f"Stopped IMX.to sync after {max_pages} pages before reaching the end.",
+                GalleryStatus.SUCCESS,
+                f"Synced {len(all_records)} IMX.to gallery record(s) from {last_page} page(s).",
                 "imx.to",
                 records=all_records,
-                page=max_pages,
+                page=max(1, last_page),
+                raw={"pages": last_page, "sync_complete": True},
             )
-
-        return self._result(
-            GalleryStatus.SUCCESS,
-            f"Synced {len(all_records)} IMX.to gallery record(s) from {last_page} page(s).",
-            "imx.to",
-            records=all_records,
-            page=max(1, last_page),
-            raw={"pages": last_page, "sync_complete": True},
-        )
+        finally:
+            session.close()
 
     def _create_imx_gallery(self, name: str) -> GalleryResult:
         session, problem = self._create_imx_session()
         if problem:
             return problem
-
         try:
-            response = session.post(
-                "https://imx.to/user/gallery/add",
-                data={"gallery_name": name, "submit_new_gallery": "Add"},
-                timeout=15,
-            )
-        except requests.RequestException as exc:
-            logger.error(f"Failed to create IMX gallery: {exc}")
-            return self._result(GalleryStatus.ERROR, str(exc), "imx.to")
 
-        problem = self._imx_response_problem(response, "creating the gallery")
-        if problem:
-            return problem
-        gallery_id = _gallery_id_from_query(response.url)
-        if gallery_id:
-            record = normalize_gallery_record("imx.to", {"id": gallery_id, "name": name})
+            try:
+                response = session.post(
+                    "https://imx.to/user/gallery/add",
+                    data={"gallery_name": name, "submit_new_gallery": "Add"},
+                    timeout=15,
+                )
+            except requests.RequestException as exc:
+                logger.error(f"Failed to create IMX gallery: {exc}")
+                return self._result(GalleryStatus.ERROR, str(exc), "imx.to")
+
+            problem = self._imx_response_problem(response, "creating the gallery")
+            if problem:
+                return problem
+            gallery_id = _gallery_id_from_query(response.url)
+            if gallery_id:
+                record = normalize_gallery_record("imx.to", {"id": gallery_id, "name": name})
+                return self._result(
+                    GalleryStatus.SUCCESS,
+                    f"Created gallery '{record.name}' ({record.id}).",
+                    "imx.to",
+                    records=[record],
+                    record=record,
+                    raw=response.text,
+                )
+
+            found = self._find_imx_gallery_by_name(session, name)
+            if found:
+                return self._result(
+                    GalleryStatus.SUCCESS,
+                    f"Created gallery '{found.name}' ({found.id}).",
+                    "imx.to",
+                    records=[found],
+                    record=found,
+                    raw=response.text,
+                )
+
             return self._result(
-                GalleryStatus.SUCCESS,
-                f"Created gallery '{record.name}' ({record.id}).",
+                GalleryStatus.PARSE_FAILED,
+                "IMX.to did not return the new gallery ID.",
                 "imx.to",
-                records=[record],
-                record=record,
                 raw=response.text,
             )
-
-        found = self._find_imx_gallery_by_name(session, name)
-        if found:
-            return self._result(
-                GalleryStatus.SUCCESS,
-                f"Created gallery '{found.name}' ({found.id}).",
-                "imx.to",
-                records=[found],
-                record=found,
-                raw=response.text,
-            )
-
-        return self._result(
-            GalleryStatus.PARSE_FAILED,
-            "IMX.to did not return the new gallery ID.",
-            "imx.to",
-            raw=response.text,
-        )
+        finally:
+            session.close()
 
     def _find_imx_gallery_by_name(
         self, session: requests.Session, name: str
@@ -1202,49 +1211,52 @@ class GalleryService:
         session, problem = self._create_imx_session()
         if problem:
             return problem
-
         try:
-            response = session.post(
-                f"https://imx.to/user/gallery/edit?id={gallery_id}",
-                data={"delete_confirm": "on", "delete_gallery": "Remove Gallery"},
-                timeout=15,
-            )
-        except requests.RequestException as exc:
-            logger.error(f"Failed to delete IMX gallery {gallery_id}: {exc}")
-            return self._result(GalleryStatus.ERROR, str(exc), "imx.to")
 
-        problem = self._imx_response_problem(response, "deleting the gallery")
-        if problem:
-            return problem
-        try:
-            list_response = session.get(
-                "https://imx.to/user/galleries?page=1&limit=200",
-                timeout=10,
-            )
-        except requests.RequestException as exc:
-            logger.error(f"Failed to verify IMX gallery deletion {gallery_id}: {exc}")
-            return self._result(GalleryStatus.ERROR, str(exc), "imx.to")
+            try:
+                response = session.post(
+                    f"https://imx.to/user/gallery/edit?id={gallery_id}",
+                    data={"delete_confirm": "on", "delete_gallery": "Remove Gallery"},
+                    timeout=15,
+                )
+            except requests.RequestException as exc:
+                logger.error(f"Failed to delete IMX gallery {gallery_id}: {exc}")
+                return self._result(GalleryStatus.ERROR, str(exc), "imx.to")
 
-        problem = self._imx_response_problem(list_response, "confirming gallery deletion")
-        if problem:
-            return problem
-        remaining, _ = parse_imx_gallery_html(list_response.text)
-        if any(str(record.get("id") or "") == gallery_id for record in remaining):
+            problem = self._imx_response_problem(response, "deleting the gallery")
+            if problem:
+                return problem
+            try:
+                list_response = session.get(
+                    "https://imx.to/user/galleries?page=1&limit=200",
+                    timeout=10,
+                )
+            except requests.RequestException as exc:
+                logger.error(f"Failed to verify IMX gallery deletion {gallery_id}: {exc}")
+                return self._result(GalleryStatus.ERROR, str(exc), "imx.to")
+
+            problem = self._imx_response_problem(list_response, "confirming gallery deletion")
+            if problem:
+                return problem
+            remaining, _ = parse_imx_gallery_html(list_response.text)
+            if any(str(record.get("id") or "") == gallery_id for record in remaining):
+                return self._result(
+                    GalleryStatus.ERROR,
+                    f"IMX.to still lists gallery '{gallery_name}' ({gallery_id}) after deletion.",
+                    "imx.to",
+                    raw=list_response.text,
+                )
+
+            record = GalleryRecord(service="imx.to", id=gallery_id, name=gallery_name)
             return self._result(
-                GalleryStatus.ERROR,
-                f"IMX.to still lists gallery '{gallery_name}' ({gallery_id}) after deletion.",
+                GalleryStatus.SUCCESS,
+                f"Deleted gallery '{gallery_name}' ({gallery_id}).",
                 "imx.to",
-                raw=list_response.text,
+                record=record,
+                raw=response.text,
             )
-
-        record = GalleryRecord(service="imx.to", id=gallery_id, name=gallery_name)
-        return self._result(
-            GalleryStatus.SUCCESS,
-            f"Deleted gallery '{gallery_name}' ({gallery_id}).",
-            "imx.to",
-            record=record,
-            raw=response.text,
-        )
+        finally:
+            session.close()
 
     def _failure_from_response(
         self, service: str, resp: Mapping[str, Any], page: int = 1

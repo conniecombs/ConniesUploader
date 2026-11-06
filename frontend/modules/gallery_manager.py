@@ -279,12 +279,15 @@ class GalleryManager(ctk.CTkToplevel):
         ctk.CTkLabel(self.scroll, text="Syncing all IMX.to galleries...").pack(pady=20)
 
         def _progress(page: int, total: int):
-            self.after(
-                0,
-                lambda page=page, total=total: self._set_status(
-                    f"Syncing IMX.to galleries... page {page}, {total} found."
-                ),
-            )
+            def _update(page=page, total=total):
+                if not self._window_alive():
+                    return
+                self._set_status(f"Syncing IMX.to galleries... page {page}, {total} found.")
+
+            try:
+                self.after(0, _update)
+            except Exception:
+                pass  # window already destroyed
 
         def _task():
             result = self.gallery_service.sync_all_galleries(service, progress_callback=_progress)
@@ -396,8 +399,15 @@ class GalleryManager(ctk.CTkToplevel):
         self._set_status(status_message, is_warning=result.cached)
         self._render_current_records()
 
+    def _window_alive(self) -> bool:
+        """False once the window was closed; background callbacks must then do nothing."""
+        try:
+            return bool(self.winfo_exists())
+        except Exception:
+            return False
+
     def _handle_sync_all_result(self, request_id: int, service: str, result: GalleryResult):
-        if self._is_stale_sync(request_id, service):
+        if not self._window_alive() or self._is_stale_sync(request_id, service):
             return
 
         self._clear_scroll()
@@ -717,6 +727,8 @@ class GalleryManager(ctk.CTkToplevel):
 
     def _handle_create_result(self, request_id: int, service: str, result: GalleryResult):
         self._creating_gallery = False
+        if not self._window_alive():
+            return
         if "btn_create" in self.__dict__:
             self.btn_create.configure(state="normal")
         if self._is_stale_create(request_id, service):
@@ -805,7 +817,7 @@ class GalleryManager(ctk.CTkToplevel):
         record: GalleryRecord,
         result: GalleryResult,
     ):
-        if self._is_stale_delete(request_id, service):
+        if not self._window_alive() or self._is_stale_delete(request_id, service):
             return
 
         if not result.ok:
