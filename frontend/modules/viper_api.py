@@ -139,6 +139,38 @@ def _canonical_thread_url(thread_id: str) -> str:
     return f"{VIPERGIRLS_BASE_URL}/threads/{thread_id}"
 
 
+def safe_target_url(url: str, thread_id: str) -> str:
+    """Return ``url`` only when it points at ViperGirls; otherwise a canonical
+    thread link for ``thread_id`` or an empty string.
+
+    Saved and imported target files are user data; a foreign or non-http URL
+    must never reach ``webbrowser.open``.
+    """
+    clean_url = str(url or "").strip()
+    clean_id = extract_thread_id(str(thread_id or "")) or ""
+    parsed = urlparse(clean_url)
+    if (
+        clean_url
+        and parsed.scheme in ("http", "https")
+        and parsed.netloc
+        and _is_supported_vipergirls_url(clean_url)
+    ):
+        return clean_url
+    if clean_id:
+        return _canonical_thread_url(clean_id)
+    return ""
+
+
+def open_supported_url(url: str) -> bool:
+    """Open ``url`` in the browser only when it is a ViperGirls link."""
+    clean_url = str(url or "").strip()
+    if not clean_url or safe_target_url(clean_url, "") != clean_url:
+        logger.warning(f"Refusing to open a non-ViperGirls URL: {clean_url!r}")
+        return False
+    webbrowser.open(clean_url)
+    return True
+
+
 def normalize_tags(tags: object) -> List[str]:
     """Normalize comma-separated or list-like target tags."""
     if tags is None:
@@ -354,8 +386,7 @@ def _normalize_loaded_record(name: str, record: object) -> Tuple[Optional[Dict[s
     if isinstance(record, dict):
         url = str(record.get("url") or "")
         thread_id = str(record.get("thread_id") or extract_thread_id(url) or "")
-        if not url and thread_id:
-            url = _canonical_thread_url(thread_id)
+        url = safe_target_url(url, thread_id)
         normalized = {
             "url": url,
             "thread_id": thread_id,
@@ -385,9 +416,10 @@ def _normalize_loaded_record(name: str, record: object) -> Tuple[Optional[Dict[s
         try:
             return normalize_thread_record(name, record), True
         except ThreadTargetError:
+            legacy_id = extract_thread_id(record) or ""
             return {
-                "url": record,
-                "thread_id": extract_thread_id(record) or "",
+                "url": safe_target_url(record, legacy_id),
+                "thread_id": legacy_id,
                 "created_at": now,
                 "updated_at": now,
                 "last_used_at": None,
@@ -1638,7 +1670,8 @@ class ViperToolsWindow(ctk.CTkToplevel):
 
     @staticmethod
     def open_url(url: str) -> None:
-        webbrowser.open(url)
+        if not open_supported_url(url):
+            messagebox.showerror("Open Target", "Only ViperGirls links can be opened from here.")
 
     @staticmethod
     def _shorten(value: str, max_len: int) -> str:
@@ -2165,11 +2198,11 @@ class PostingHistoryWindow(ctk.CTkToplevel):
             messagebox.showerror("Copy Failed", f"Could not copy text:\n{exc}")
 
     def open_target(self, entry: Dict[str, str]) -> None:
-        url = str(entry.get("target_url") or "")
+        url = safe_target_url(str(entry.get("target_url") or ""), str(entry.get("thread_id") or ""))
         if not url:
-            messagebox.showerror("Open Target", "No target URL is available.")
+            messagebox.showerror("Open Target", "No ViperGirls target URL is available.")
             return
-        webbrowser.open(url)
+        open_supported_url(url)
 
     def clear_history(self) -> None:
         if not self.history:

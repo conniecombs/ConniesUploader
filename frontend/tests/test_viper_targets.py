@@ -858,3 +858,70 @@ def test_concurrent_saved_thread_updates_keep_both(tmp_path, monkeypatch):
     saved = viper_api.load_saved_threads()
     assert all(saved[name]["last_used_at"] for name in names)
     assert not list(tmp_path.glob("*.tmp"))
+
+
+@pytest.mark.unit
+def test_loaded_records_blank_foreign_urls(tmp_path, monkeypatch):
+    point_viper_storage(monkeypatch, tmp_path)
+    (tmp_path / "saved_threads.json").write_text(
+        json.dumps(
+            {
+                "Evil": {"url": "https://attacker.example/x", "thread_id": "123"},
+                "Legacy": "https://attacker.example/legacy?t=456",
+                "NoId": {"url": "file:///etc/passwd", "thread_id": ""},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    saved = viper_api.load_saved_threads()
+
+    assert saved["Evil"]["url"] == "https://vipergirls.to/threads/123"
+    assert saved["Legacy"]["url"] == "https://vipergirls.to/threads/456"
+    assert saved["NoId"]["url"] == ""
+
+
+@pytest.mark.unit
+def test_file_url_is_rejected_on_import(tmp_path, monkeypatch):
+    point_viper_storage(monkeypatch, tmp_path)
+    import_path = tmp_path / "import.json"
+    import_path.write_text(
+        json.dumps({"Bad": {"url": "file:///C:/secrets.txt", "thread_id": "789"}}),
+        encoding="utf-8",
+    )
+
+    imported, _count, _skipped = viper_api.import_saved_threads_file(str(import_path))
+
+    assert imported["Bad"]["url"] == "https://vipergirls.to/threads/789"
+
+
+@pytest.mark.unit
+def test_safe_target_url_keeps_forum_links_and_drops_others():
+    assert (
+        viper_api.safe_target_url("https://vipergirls.to/threads/1-a", "1")
+        == "https://vipergirls.to/threads/1-a"
+    )
+    assert viper_api.safe_target_url("https://attacker.example/", "55") == (
+        "https://vipergirls.to/threads/55"
+    )
+    assert viper_api.safe_target_url("javascript:alert(1)", "") == ""
+    assert viper_api.safe_target_url("threads/12", "12") == "https://vipergirls.to/threads/12"
+
+
+@pytest.mark.unit
+def test_open_supported_url_refuses_foreign_hosts(monkeypatch):
+    opened = []
+    monkeypatch.setattr(viper_api.webbrowser, "open", lambda url: opened.append(url))
+
+    assert viper_api.open_supported_url("https://attacker.example/x") is False
+    assert viper_api.open_supported_url("") is False
+    assert viper_api.open_supported_url("https://vipergirls.to/threads/1") is True
+    assert opened == ["https://vipergirls.to/threads/1"]
+
+
+@pytest.mark.unit
+def test_blanked_url_record_still_resolves_thread_id():
+    poster = AutoPoster({"vg_user": "u", "vg_pass": "p"}, {"T": {"url": "", "thread_id": "123"}})
+
+    assert poster._resolve_thread_id("T") == ("123", None)
+    assert poster._target_url("T", "123") == "https://vipergirls.to/threads/123"
