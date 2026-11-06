@@ -5,6 +5,38 @@ All notable changes to Connie's Uploader Ultimate will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.2] - 2026-11-06
+
+### Fixed
+
+- A single file whose name contains `..` (for example `photo..jpg`), or a file removed after it was queued, no longer makes the sidecar reject the whole batch and leaves the window stuck in "Uploading...". The sidecar now validates each file as it uploads it and reports that file alone.
+- Failed uploads are counted once. The sidecar reports a failure as a `Failed` status plus an `error` with the reason; the window no longer treated that pair as two completed files, so batches no longer finish early with rows still uploading.
+- `Stop Upload` now cancels queued and in-flight uploads in the sidecar through a new `cancel` action. Every stopped row ends in a grey `Cancelled` state, the batch reaches a real completion summary, and cancelled rows can be retried.
+- `Start` and `Retry Failed` refuse to run while an upload is in progress or being finalized, and the Retry button is disabled meanwhile, so a second batch can no longer corrupt the first.
+- Auto-posting no longer stalls when a "Do Not Post" batch, a failed batch, or a batch from an earlier upload sits ahead of a posting batch. The poster now registers the batches that will post for each session and skips the rest.
+- Auto-posting and scheduled posts pick up credentials saved in the Credentials dialog without restarting the app.
+- ViperGirls replies whose text or thread title contains `{...}` are posted verbatim instead of failing with "unresolved template tokens".
+- The ViperGirls login test can no longer report success for a wrong password because an older session cookie was still valid; the login starts from an empty cookie jar.
+- A forum reply is never retried by the transport layer (no duplicate posts), its deadline matches the time the app waits for it, and a lost session triggers exactly one re-login before the post is reported as failed.
+- Saved targets, posting history, scheduled posts, and the gallery cache are no longer overwritten when the posting worker, the scheduler, and the window write them at the same time.
+- Imported or legacy target records that point outside ViperGirls keep their thread id but no longer open an arbitrary URL in the browser.
+- Thread-title lookups run through the sidecar on a worker thread instead of blocking the window.
+- Closing the main window shuts the app down when the tray icon could not start, instead of hiding it with no way back.
+- Gallery Manager results arriving after the window was closed are ignored, and IMX gallery sessions are always closed.
+- A crashed sidecar's restart backoff no longer blocks commands for the whole delay.
+- Thumbnail previews refuse images above 50 megapixels so a decompression bomb cannot take the sidecar down.
+
+### Changed
+
+- Sidecar protocol: upload jobs carry `batch_id`; a `cancel` action aborts a batch; generic requests accept `literal_values`, `timeout_seconds`, and `reset_cookies`. See `docs/TRANSPORT_CONTRACT.md`.
+- CI enforces `black` formatting and pins golangci-lint, gosec, and Bandit; the Makefile packages through the same script CI and releases use.
+- Local builds require Go 1.26 or newer, matching `backend/go.mod`.
+- Bumped app, build-script, and active plugin metadata to `3.1.2`.
+
+### Removed
+
+- `frontend/modules/controller.py`, `frontend/modules/validation.py`, their tests, `archive/legacy_plugins/`, and `VGPost.txt`. Nothing in the app used them; git history keeps them.
+
 ## [3.1.1] - 2026-09-07
 
 ### Fixed

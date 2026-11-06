@@ -2,9 +2,9 @@
 
 ## Current Status
 
-- **Product Version:** v3.1.1
-- **Architecture Version:** v3.1.1
-- **Last Updated:** 2026-09-07
+- **Product Version:** v3.1.2
+- **Architecture Version:** v3.1.2
+- **Last Updated:** 2026-11-06
 
 Connie's Uploader is a hybrid desktop app:
 
@@ -50,7 +50,7 @@ For a typical upload:
 2. Upload Checks validate obvious problems before work starts, including files, credentials, gallery settings, and posting targets.
 3. The selected plugin validates configuration and builds a `HttpRequestSpec` when it supports the generic runner.
 4. `UploadManager` sends upload jobs to `SidecarBridge`.
-5. The Go sidecar applies Python-provided rate limits, executes the upload, retries transient transport failures, and emits correlated progress/result events. Existing upload plugins still use Go's generic parser compatibility shim to convert upload responses into result events.
+5. The Go sidecar validates each file as it reaches a worker, applies Python-provided rate limits, executes the upload, retries transient transport failures, and emits correlated progress/result events. Every job carries the batch id of this Start, and `Stop Upload` sends a `cancel` for that batch. Existing upload plugins still use Go's generic parser compatibility shim to convert upload responses into result events.
 6. Python stores results, generates template output, saves history, copies output when enabled, and queues optional ViperGirls posts.
 
 ## Python Responsibilities
@@ -66,6 +66,8 @@ For a typical upload:
 - Sidecar lifecycle/events: `frontend/modules/sidecar.py`
 
 The GUI keeps user-facing controls synchronized with the upload job model. Worker Count is clamped to `1-16`, Thread Limit is clamped to `1-10`, and upload checks prevent or warn on invalid preflight state before starting work.
+
+Row states are `pending`, `queued`, `uploading`, and the terminal states `success`, `failed`, and `cancelled`. A row counts toward batch completion the first time it enters a terminal state; the sidecar's `Failed` status followed by an `error` event only refines the failure reason. `Stop Upload` sets the cancel flag, sends the sidecar a `cancel` for the current batch id, and the window reaches a normal completion once every row is terminal. `Start` and `Retry Failed` refuse to run while an upload is in progress or being finalized.
 
 ### Plugins
 
@@ -129,7 +131,9 @@ ViperGirls automation is a post-upload workflow, not part of the image-host uplo
 - History rows can copy post text, copy errors, and open target threads.
 Python owns the ViperGirls page workflow: it logs in, fetches the live reply form through the sidecar, parses the current HTML form, copies its fields, overrides the message/title fields, and sends Go only a resolved generic HTTP request to execute.
 
-Scheduled posts are Python-owned too. The scheduler wakes periodically, loads pending records, performs the same form-aware ViperGirls login/post path, and updates each record to `posted` or `failed`.
+Scheduled posts are Python-owned too. The scheduler wakes periodically, loads pending records, performs the same form-aware ViperGirls login/post path, and updates each record to `posted` or `failed` one at a time under the shared storage lock.
+
+The AutoPoster is session-based. At upload start the window registers, in on-screen order, the batch indexes of groups that have a posting target. A group whose upload fails or is cancelled calls `skip`, so the worker never waits on a batch that will not post. Credentials come from a provider callable, so changes in the Credentials dialog apply to the next session. Replies are sent with `literal_values`, without transport retries, and with one re-login if the session was lost.
 
 ## Go Responsibilities
 
@@ -145,8 +149,9 @@ Go owns:
 - Transport retry behavior
 - Multipart upload construction
 - Generic HTTP request execution (uploads and standalone requests)
-- Cookie/session mechanics
-- Thumbnail generation
+- Batch cancellation (`cancel` action keyed by `batch_id`)
+- Cookie/session mechanics, including an on-demand cookie reset for logins
+- Thumbnail generation, capped at 50 megapixels
 - Legacy parser/pre-request/batch-resolve compatibility for existing upload specs
 
 Go does **not** contain any host-specific knowledge. All service-specific behavior is defined by Python modules and plugins.
@@ -206,7 +211,7 @@ Current strengths:
 
 Known hardening opportunities:
 
-- Add stronger Go-side file path validation instead of relying only on Python validation.
+- Continue tightening Go-side file validation (paths are now validated per file; the 100 MiB limit and regular-file checks remain).
 - Replace any `regexp.MustCompile()` path that can receive plugin-provided patterns with `regexp.Compile()` and graceful error returns.
 - Continue retiring legacy Go parser compatibility by moving upload response parsing into Python.
 - Consider stricter plugin trust/sandboxing if third-party plugin loading becomes a supported user feature.
@@ -226,7 +231,8 @@ Current coverage includes both Python and Go tests:
 - `cd frontend && pytest tests/ -v`
 - `cd backend && go test ./...`
 - `cd backend && go vet ./...`
-- `cd frontend && flake8 main.py modules/ --max-line-length=120 --ignore=E501,W503 --exclude=__pycache__`
+- `cd frontend && flake8 main.py modules/ --max-line-length=120 --ignore=E203,E501,W503 --exclude=__pycache__`
+- `cd frontend && black --check .`
 - CI also runs `govulncheck`, `pip-audit`, and Go/Python linting.
 
 Important tested areas include plugin discovery, schema rendering, settings validation, sidecar behavior, template parsing/migration, Gallery Manager normalization/cache behavior, ViperGirls target/history behavior, upload preflight checks, build contracts, and Go-side upload helpers.

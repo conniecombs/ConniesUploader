@@ -262,3 +262,39 @@ def test_dead_modules_are_gone():
         if "modules.validation" in text or "from .validation" in text:
             stale_imports.append(str(source))
     assert stale_imports == []
+
+
+def test_version_strings_agree():
+    import re
+
+    from modules import config
+    from modules.plugin_manager import PluginManager
+
+    expected = "3.1.2"
+    assert config.APP_VERSION == expected
+    assert f"VERSION := {expected}" in (ROOT / "Makefile").read_text(encoding="utf-8")
+    assert f'VERSION="{expected}"' in (ROOT / "build.sh").read_text(encoding="utf-8")
+    assert f'set "VERSION={expected}"' in (ROOT / "build_uploader.bat").read_text(encoding="utf-8")
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert f"badge/app-v{expected}-" in readme
+    assert f"### v{expected}" in readme
+    changelog = (ROOT / "docs" / "CHANGELOG.md").read_text(encoding="utf-8")
+    assert re.search(rf"^## \[{re.escape(expected)}\] - 2026-11-06$", changelog, re.MULTILINE)
+    assert (ROOT / "docs" / "releases" / f"RELEASE_NOTES_v{expected}.md").is_file()
+    for plugin in PluginManager().get_all_plugins():
+        assert plugin.metadata.get("version") == expected, plugin.id
+
+
+def test_transport_contract_documents_cancel_and_flags():
+    contract = (ROOT / "docs" / "TRANSPORT_CONTRACT.md").read_text(encoding="utf-8")
+    for term in (
+        "batch_id",
+        '"cancel"',
+        "per-file",
+        "Cancelled",
+        "literal_values",
+        "timeout_seconds",
+        "reset_cookies",
+        "batch_complete",
+    ):
+        assert term in contract, term

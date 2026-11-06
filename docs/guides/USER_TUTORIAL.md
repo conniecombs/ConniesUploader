@@ -191,7 +191,8 @@ Queue actions:
 - Press `C` to toggle cover status for selected files, or `Delete` to remove selected files from the queue.
 - Right-click a batch and choose `Remove Batch` to remove it.
 - Right-click a file and choose `Remove Image`, or right-click a selected group and choose `Remove Selected Images`.
-- `Retry Failed` resets failed files to pending and starts another upload pass.
+- `Retry Failed` resets failed and cancelled files to pending and starts another upload pass. It is disabled while an upload is running or finalizing.
+- `Stop Upload` cancels the files still queued or in flight in the sidecar. Each stopped file ends in a grey `Cancelled` state, the completion summary reports how many were cancelled, and `Retry Failed` can send them again.
 - `Clear List` removes all batches, queued files, generated progress, and current output references.
 
 ### Example: Reorder Images Before Upload

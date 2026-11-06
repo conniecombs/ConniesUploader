@@ -4,23 +4,24 @@ This directory contains release notes and publishing guidance for Connie's Uploa
 
 ## Latest Release
 
-**v3.1.1 - "Activity Hide & IMX Thumbnail Fix"**
-Release date: September 7, 2026
-Tag: `v3.1.1`
+**v3.1.2 - "Lifecycle Hardening"**
+Release date: November 6, 2026
+Tag: `v3.1.2`
 
-Read the full notes: [RELEASE_NOTES_v3.1.1.md](RELEASE_NOTES_v3.1.1.md)
-Previous release notes: [RELEASE_NOTES_v3.1.0.md](RELEASE_NOTES_v3.1.0.md)
+Read the full notes: [RELEASE_NOTES_v3.1.2.md](RELEASE_NOTES_v3.1.2.md)
+Previous release notes: [RELEASE_NOTES_v3.1.1.md](RELEASE_NOTES_v3.1.1.md)
 
 ### Summary
 
-- Fixed Activity panel hiding so new events remain recorded without reopening the panel until `View > Show Activity` is selected.
-- Normalized IMX thumbnails to the durable `https://image.imx.to/u/t/...` URL format.
-- Bumped app, build scripts, active plugin metadata, and current-facing release docs to `3.1.1`.
+- Fixed the batch wedge caused by filenames containing `..`, double-counted failures, and a Stop button that could not stop anything; Stop now cancels in the sidecar and rows end as `Cancelled`.
+- Fixed auto-posting stalls behind non-posting batches, forum posts containing `{...}`, stale credentials, duplicate-post retries, and shared-file races.
+- Enforced `black` in CI, pinned lint tools, removed dead code, and bumped app, build scripts, plugin metadata, and release docs to `3.1.2`.
 
 ## Release History
 
 | Version | Date | Focus | Notes |
 |---------|------|-------|-------|
+| v3.1.2 | 2026-11-06 | Lifecycle Hardening | [Notes](RELEASE_NOTES_v3.1.2.md) |
 | v3.1.1 | 2026-09-07 | Activity Hide & IMX Thumbnail Fix | [Notes](RELEASE_NOTES_v3.1.1.md) |
 | v3.1.0 | 2026-09-04 | Folder Size Template Placeholder | [Notes](RELEASE_NOTES_v3.1.0.md) |
 | vBleedingEdge | 2026-07-28 | Pixhost.cc & Import Performance Patch | [Notes](RELEASE_NOTES_vBleedingEdge.md) |

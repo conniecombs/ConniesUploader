@@ -62,7 +62,7 @@ python main.py
 Prerequisites:
 
 - Python 3.11 or newer. The Windows build script accepts Python 3.11 through 3.13 because the pinned PyInstaller version supports Python `<3.14`.
-- Go 1.25.9 or newer for local builds. CI currently installs Go 1.26.5.
+- Go 1.26 or newer for local builds (`backend/go.mod` declares `go 1.26.0`). CI installs the latest Go 1.26.x.
 
 ## Project Layout
 
@@ -139,7 +139,8 @@ git checkout -b feature/short-description
 (cd backend && go test ./...)
 (cd backend && go vet ./...)
 (cd frontend && pytest tests/ -v)
-(cd frontend && flake8 main.py modules/ --max-line-length=120 --ignore=E501,W503 --exclude=__pycache__)
+(cd frontend && flake8 main.py modules/ --max-line-length=120 --ignore=E203,E501,W503 --exclude=__pycache__)
+(cd frontend && black --check .)
 ```
 
 4. Test the affected workflow manually.
@@ -217,7 +218,8 @@ Run the automated checks that match the change:
 (cd frontend && pytest tests/ -v)
 (cd backend && go test ./...)
 (cd backend && go vet ./...)
-(cd frontend && flake8 main.py modules/ --max-line-length=120 --ignore=E501,W503 --exclude=__pycache__)
+(cd frontend && flake8 main.py modules/ --max-line-length=120 --ignore=E203,E501,W503 --exclude=__pycache__)
+(cd frontend && black --check .)
 ```
 
 Manual workflow checks:
