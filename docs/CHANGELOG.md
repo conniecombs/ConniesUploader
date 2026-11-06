@@ -25,6 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Gallery Manager results arriving after the window was closed are ignored, and IMX gallery sessions are always closed.
 - A crashed sidecar's restart backoff no longer blocks commands for the whole delay.
 - Thumbnail previews refuse images above 50 megapixels so a decompression bomb cannot take the sidecar down.
+- A forum reply that waited in the sidecar queue past its deadline is reported as failed instead of being sent after the app already gave up on it, so a retry cannot double-post.
+- Starting another upload while earlier batches are still queued for posting records those posts as "superseded by a new upload" instead of silently dropping them, and the previous posting worker finishes its in-flight post and exits.
 
 ### Changed
 

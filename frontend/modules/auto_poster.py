@@ -41,13 +41,21 @@ class AutoPoster:
         self.lock = threading.Lock()
         self._stop_event = threading.Event()
         self._worker_thread: Optional[threading.Thread] = None
+        # Each begin_session bumps the generation; a worker that notices a
+        # newer generation finishes its current post and exits without
+        # touching the new session's queue.
+        self._generation = 0
+        self._worker_generation = -1
 
     # ------------------------------------------------------------------ state
 
     @property
     def is_running(self) -> bool:
+        """True while a worker for the current session is alive."""
         thread = self._worker_thread
-        return bool(thread is not None and thread.is_alive())
+        return bool(
+            thread is not None and thread.is_alive() and self._worker_generation == self._generation
+        )
 
     def _resolve_credentials(self) -> Dict[str, str]:
         source = self._credentials_source
@@ -59,20 +67,27 @@ class AutoPoster:
         return {str(key): str(value or "") for key, value in dict(values or {}).items()}
 
     def begin_session(self, expected_indexes: Sequence[int]) -> None:
-        """Start a new posting session for the given ordered batch indexes."""
-        self._stop_worker()
+        """Start a new posting session for the given ordered batch indexes.
+
+        Never blocks: a worker still posting for the previous session is told
+        to finish that post and exit. Posts that were queued but not yet sent
+        are recorded as failures ("superseded by a new upload") rather than
+        silently dropped.
+        """
         ordered: List[int] = []
         for index in expected_indexes:
             value = int(index)
             if value not in ordered:
                 ordered.append(value)
+
+        self._generation += 1
+        self._stop_event.set()  # wake a waiting worker so it sees the new generation
+        self._record_all_pending_failures("superseded by a new upload")
         with self.lock:
-            self.post_queue.clear()
             self._skipped.clear()
             self._expected = ordered
             self.next_index = 0
         self.credentials = self._resolve_credentials()
-        self._stop_event.clear()
         if ordered:
             logger.info(f"Auto-Post Queue: session expects batches {ordered}")
 
@@ -153,35 +168,41 @@ class AutoPoster:
             logger.warning("Auto-Post Queue: Already running")
             return
 
+        generation = self._generation
         self._stop_event.clear()
+        self._worker_generation = generation
         self._worker_thread = threading.Thread(
             target=self._process_queue,
-            args=(is_uploading_callback, cancel_event),
+            args=(is_uploading_callback, cancel_event, generation),
             name="AutoPoster",
             daemon=True,
         )
         self._worker_thread.start()
         logger.info("Auto-Post Queue: Started.")
 
-    def _should_stop(self, cancel_event: threading.Event) -> bool:
-        return self._stop_event.is_set() or cancel_event.is_set()
+    def _superseded(self, generation: int) -> bool:
+        return self._generation != generation
+
+    def _should_stop(self, cancel_event: threading.Event, generation: int) -> bool:
+        return self._superseded(generation) or self._stop_event.is_set() or cancel_event.is_set()
 
     def _wait_for_index(
         self,
         batch_index: int,
         is_uploading_callback: Callable[[], bool],
         cancel_event: threading.Event,
+        generation: int,
     ) -> Any:
         """Block until the batch is queued, skipped, stopped, or given up on."""
         grace_deadline: Optional[float] = None
         while True:
+            if self._should_stop(cancel_event, generation):
+                return _STOPPED
             with self.lock:
                 if batch_index in self.post_queue:
                     return self.post_queue.pop(batch_index)
                 if batch_index in self._skipped:
                     return _SKIPPED
-            if self._should_stop(cancel_event):
-                return _STOPPED
             if not is_uploading_callback():
                 if grace_deadline is None:
                     grace_deadline = time.monotonic() + UNRESOLVED_GRACE_SECONDS
@@ -190,7 +211,10 @@ class AutoPoster:
             self._stop_event.wait(0.25)
 
     def _process_queue(
-        self, is_uploading_callback: Callable[[], bool], cancel_event: threading.Event
+        self,
+        is_uploading_callback: Callable[[], bool],
+        cancel_event: threading.Event,
+        generation: int = 0,
     ) -> None:
         """Process queued posts sequentially (worker thread method)."""
         user = self.credentials.get("vg_user", "")
@@ -213,9 +237,9 @@ class AutoPoster:
             expected = list(self._expected)
 
         if expected:
-            self._process_session(vg, expected, is_uploading_callback, cancel_event)
+            self._process_session(vg, expected, is_uploading_callback, cancel_event, generation)
         else:
-            self._process_unordered(vg, is_uploading_callback, cancel_event)
+            self._process_unordered(vg, is_uploading_callback, cancel_event, generation)
 
         logger.info("Auto-Post Queue: Finished.")
 
@@ -225,10 +249,16 @@ class AutoPoster:
         expected: List[int],
         is_uploading_callback: Callable[[], bool],
         cancel_event: threading.Event,
+        generation: int,
     ) -> None:
         for batch_index in expected:
-            item = self._wait_for_index(batch_index, is_uploading_callback, cancel_event)
+            item = self._wait_for_index(
+                batch_index, is_uploading_callback, cancel_event, generation
+            )
             if item is _STOPPED:
+                if self._superseded(generation):
+                    logger.info("Auto-Post Queue: superseded by a new session; worker exiting.")
+                    return
                 logger.info("Auto-Post Queue: Cancelled.")
                 self._record_all_pending_failures("cancelled")
                 return
@@ -246,7 +276,7 @@ class AutoPoster:
                 self.next_index = batch_index + 1
                 continue
             self._post_item(vg, batch_index, item)
-            if self._stop_event.wait(config.POST_COOLDOWN_SECONDS):
+            if self._stop_event.wait(config.POST_COOLDOWN_SECONDS) or self._superseded(generation):
                 return
 
     def _process_unordered(
@@ -254,10 +284,11 @@ class AutoPoster:
         vg: Any,
         is_uploading_callback: Callable[[], bool],
         cancel_event: threading.Event,
+        generation: int,
     ) -> None:
         """Compatibility mode: post whatever is queued, lowest index first."""
         while True:
-            if self._should_stop(cancel_event):
+            if self._should_stop(cancel_event, generation):
                 logger.info("Auto-Post Queue: Cancelled.")
                 return
             with self.lock:
@@ -270,7 +301,7 @@ class AutoPoster:
                 self._stop_event.wait(0.25)
                 continue
             self._post_item(vg, batch_index, item)
-            if self._stop_event.wait(config.POST_COOLDOWN_SECONDS):
+            if self._stop_event.wait(config.POST_COOLDOWN_SECONDS) or self._superseded(generation):
                 return
 
     def _post_item(self, vg: Any, batch_index: int, item: Dict[str, str]) -> None:

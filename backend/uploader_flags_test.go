@@ -14,7 +14,10 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/conniecombs/GolangVersion/core"
 )
@@ -77,5 +80,34 @@ func TestGenerateThumbRejectsOversizedImage(t *testing.T) {
 	errors := eventsOfType(events, "error")
 	if len(errors) != 1 || errors[0].Msg != "Image too large to preview" {
 		t.Fatalf("events = %+v, want one 'Image too large to preview' error", events)
+	}
+}
+
+func TestHandleHttpRequestSkipsJobWhoseDeadlinePassedInQueue(t *testing.T) {
+	var hits int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&hits, 1)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer server.Close()
+
+	oldClient := client
+	client = server.Client()
+	defer func() { client = oldClient }()
+
+	events := captureSidecarEvents(t, func() {
+		handleHttpRequest(JobRequest{
+			ID: "late", Action: "http_request", Service: "t.test",
+			EnqueuedAt:  time.Now().Add(-10 * time.Second),
+			GenericSpec: &core.GenericHttpRequestSpec{URL: server.URL, TimeoutSeconds: 5},
+		})
+	})
+
+	if atomic.LoadInt32(&hits) != 0 {
+		t.Fatalf("expired request was still sent to the server")
+	}
+	results := eventsOfType(events, "result")
+	if len(results) != 1 || results[0].Status != "failed" || !strings.Contains(results[0].Msg, "deadline") {
+		t.Fatalf("events = %+v, want one failed result mentioning the deadline", events)
 	}
 }

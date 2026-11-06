@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/disintegration/imaging"
 
@@ -315,10 +316,26 @@ func handleHttpRequest(job JobRequest) {
 		return
 	}
 
+	// The deadline Python asked for counts from when the request was queued,
+	// not from when a worker picked it up; otherwise a request that waited
+	// behind uploads could run after Python already gave up on it.
+	timeout := core.RequestTimeout(spec.TimeoutSeconds)
+	if !job.EnqueuedAt.IsZero() {
+		waited := time.Since(job.EnqueuedAt)
+		if waited >= timeout {
+			sendJobEvent(&job, OutputEvent{
+				Type:   "result",
+				Status: "failed",
+				Msg:    fmt.Sprintf("request deadline passed while queued (waited %.0fs)", waited.Seconds()),
+			})
+			return
+		}
+		timeout -= waited
+	}
 	if spec.ResetCookies {
 		core.ResetCookieJar(client)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), core.RequestTimeout(spec.TimeoutSeconds))
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	extracted, err := core.ExecuteGenericRequest(ctx, client, spec, &job)
