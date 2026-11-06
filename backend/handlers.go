@@ -183,6 +183,11 @@ func processUploadFiles(job JobRequest, processor func(string, *JobRequest)) {
 		go func() {
 			defer wg.Done()
 			for fp := range filesChan {
+				if err := core.ValidateFilePath(fp); err != nil {
+					sendJobEvent(&job, OutputEvent{Type: "status", FilePath: fp, Status: "Failed"})
+					sendJobEvent(&job, OutputEvent{Type: "error", FilePath: fp, Msg: "Invalid file: " + err.Error()})
+					continue
+				}
 				// Only surface "Waiting" when the service-wide slot is contested.
 				// Otherwise go straight to Preparing so UI matches concurrent progress.
 				limiter.acquire()
