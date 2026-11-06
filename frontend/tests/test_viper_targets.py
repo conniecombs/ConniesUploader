@@ -174,13 +174,15 @@ def test_vipergirls_post_reply_uses_live_reply_form_fields(monkeypatch):
     fetch_spec = fetch_payload["generic_spec"]
     spec = submit_payload["generic_spec"]
 
-    assert fetch_timeout == 30
+    assert fetch_timeout == 35
+    assert fetch_spec["timeout_seconds"] == 30
     assert fetch_spec["method"] == "GET"
     assert fetch_spec["url"] == "https://vipergirls.to/newreply.php?do=newreply&t=12345"
     assert fetch_spec["include_response_body"] is True
     assert fetch_spec["include_transport_metadata"] is True
     assert "extract_fields" not in fetch_spec
-    assert submit_timeout == 60
+    assert submit_timeout == 65
+    assert spec["timeout_seconds"] == 60
     assert "pre_request" not in spec
     assert "extract_fields" not in spec
     assert "success_check" not in spec
