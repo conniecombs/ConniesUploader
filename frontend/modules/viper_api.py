@@ -7,10 +7,12 @@ from datetime import datetime, timezone
 import json
 import os
 import re
+import functools
 import shutil
+import tempfile
 import threading
 import webbrowser
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Union
 from urllib.parse import urljoin, urlparse
 
 import customtkinter as ctk
@@ -38,6 +40,46 @@ THREAD_TITLE_USER_AGENT = (
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
 )
 VIPERGIRLS_RATE_LIMIT = {"requests_per_second": 1.0, "burst_size": 3}
+
+# One process-wide lock serializes every load-modify-save on the JSON files in
+# the user data directory. The UI thread, the AutoPoster, and the scheduler all
+# write them; without the lock a slow writer overwrote newer records.
+_STORAGE_LOCK = threading.RLock()
+
+
+def _locked(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        with _STORAGE_LOCK:
+            return func(*args, **kwargs)
+
+    return wrapper
+
+
+def _atomic_write_json(path: str, payload: Any) -> None:
+    """Write JSON through a uniquely named temp file, then rename over ``path``."""
+    directory = os.path.dirname(path) or "."
+    os.makedirs(directory, exist_ok=True)
+    handle = tempfile.NamedTemporaryFile(
+        "w",
+        encoding="utf-8",
+        dir=directory,
+        prefix=os.path.basename(path) + ".",
+        suffix=".tmp",
+        delete=False,
+    )
+    try:
+        with handle as f:
+            json.dump(payload, f, indent=4, ensure_ascii=False)
+            f.write("\n")
+        os.replace(handle.name, path)
+    except BaseException:
+        try:
+            os.unlink(handle.name)
+        except OSError:
+            pass
+        raise
+
 
 THREAD_ID_PATTERNS = (
     re.compile(r"^\d+$"),
@@ -370,6 +412,7 @@ def _backup_corrupt_threads_file(exc: Exception) -> None:
         logger.error(f"Failed to back up unreadable ViperGirls targets: {backup_exc}")
 
 
+@_locked
 def load_saved_threads() -> Dict[str, Dict[str, object]]:
     """Load and migrate saved ViperGirls posting targets."""
     if not os.path.exists(THREADS_FILE):
@@ -406,14 +449,11 @@ def load_saved_threads() -> Dict[str, Dict[str, object]]:
     return migrated
 
 
+@_locked
 def save_saved_threads(saved_threads: Dict[str, Dict[str, object]]) -> None:
     """Atomically save normalized ViperGirls posting targets."""
     os.makedirs(_USER_DATA_DIR, exist_ok=True)
-    tmp_path = f"{THREADS_FILE}.tmp"
-    with open(tmp_path, "w", encoding="utf-8") as f:
-        json.dump(saved_threads, f, indent=4, ensure_ascii=False)
-        f.write("\n")
-    os.replace(tmp_path, THREADS_FILE)
+    _atomic_write_json(THREADS_FILE, saved_threads)
 
 
 def validate_saved_thread_record(name: str, record: object) -> List[str]:
@@ -524,6 +564,7 @@ def export_saved_threads_file(
     return len(targets)
 
 
+@_locked
 def mark_thread_target_used(
     name: str, timestamp: Optional[str] = None
 ) -> Optional[Dict[str, object]]:
@@ -576,6 +617,7 @@ def _canonical_history_entry(entry: Dict[str, Any]) -> Dict[str, str]:
     }
 
 
+@_locked
 def load_posting_history() -> List[Dict[str, str]]:
     """Load persisted ViperGirls posting history."""
     if not os.path.exists(POSTING_HISTORY_FILE):
@@ -599,19 +641,17 @@ def load_posting_history() -> List[Dict[str, str]]:
     ]
 
 
+@_locked
 def save_posting_history(history: List[Dict[str, Any]]) -> None:
     """Atomically save ViperGirls posting history."""
     os.makedirs(_USER_DATA_DIR, exist_ok=True)
     normalized = [_canonical_history_entry(item) for item in history if isinstance(item, dict)][
         -POSTING_HISTORY_LIMIT:
     ]
-    tmp_path = f"{POSTING_HISTORY_FILE}.tmp"
-    with open(tmp_path, "w", encoding="utf-8") as f:
-        json.dump(normalized, f, indent=4, ensure_ascii=False)
-        f.write("\n")
-    os.replace(tmp_path, POSTING_HISTORY_FILE)
+    _atomic_write_json(POSTING_HISTORY_FILE, normalized)
 
 
+@_locked
 def append_posting_history(entry: Dict[str, Any]) -> Dict[str, str]:
     """Append one ViperGirls posting attempt to history."""
     normalized = _canonical_history_entry(entry)
@@ -668,6 +708,7 @@ def _canonical_scheduled_post(entry: Dict[str, Any]) -> Dict[str, str]:
     }
 
 
+@_locked
 def load_scheduled_posts() -> List[Dict[str, str]]:
     """Load persisted ViperGirls scheduled posts."""
     raw_data = _read_json_file(SCHEDULED_POSTS_FILE, [])
@@ -679,17 +720,15 @@ def load_scheduled_posts() -> List[Dict[str, str]]:
     return [_canonical_scheduled_post(item) for item in raw_data if isinstance(item, dict)]
 
 
+@_locked
 def save_scheduled_posts(posts: List[Dict[str, Any]]) -> None:
     """Atomically save ViperGirls scheduled posts."""
     os.makedirs(_USER_DATA_DIR, exist_ok=True)
     normalized = [_canonical_scheduled_post(item) for item in posts if isinstance(item, dict)]
-    tmp_path = f"{SCHEDULED_POSTS_FILE}.tmp"
-    with open(tmp_path, "w", encoding="utf-8") as f:
-        json.dump(normalized, f, indent=4, ensure_ascii=False)
-        f.write("\n")
-    os.replace(tmp_path, SCHEDULED_POSTS_FILE)
+    _atomic_write_json(SCHEDULED_POSTS_FILE, normalized)
 
 
+@_locked
 def add_scheduled_post(post: Dict[str, Any]) -> Dict[str, str]:
     """Persist one pending ViperGirls scheduled post."""
     normalized = _canonical_scheduled_post({**post, "status": "pending", "error": ""})
@@ -708,6 +747,7 @@ def add_scheduled_post(post: Dict[str, Any]) -> Dict[str, str]:
     return normalized
 
 
+@_locked
 def cancel_scheduled_post(post_id: str) -> bool:
     """Remove a pending scheduled post by ID."""
     clean_id = str(post_id or "").strip()
@@ -721,6 +761,21 @@ def cancel_scheduled_post(post_id: str) -> bool:
         return False
     save_scheduled_posts(kept)
     return True
+
+
+@_locked
+def set_scheduled_post_status(
+    post_id: str, status: str, error: str = ""
+) -> Optional[Dict[str, str]]:
+    """Update one scheduled post on disk and return it, or None if unknown."""
+    clean_id = str(post_id or "").strip()
+    posts = load_scheduled_posts()
+    updated = _update_scheduled_post_status(posts, clean_id, status, error)
+    match = next((item for item in updated if item.get("id") == clean_id), None)
+    if match is None:
+        return None
+    save_scheduled_posts(updated)
+    return match
 
 
 def _update_scheduled_post_status(
@@ -877,7 +932,11 @@ def _is_vipergirls_login_page(body: str) -> bool:
 class ViperGirlsPostScheduler:
     """Python-owned scheduled-post runner for ViperGirls."""
 
-    def __init__(self, creds: Dict[str, str], event_queue: Optional[Any] = None):
+    def __init__(
+        self,
+        creds: Union[Mapping[str, str], Callable[[], Mapping[str, str]]],
+        event_queue: Optional[Any] = None,
+    ):
         self.creds = creds
         self.event_queue = event_queue
         self._stop_event = threading.Event()
@@ -923,12 +982,26 @@ class ViperGirlsPostScheduler:
                 logger.warning(f"Scheduled ViperGirls post check failed: {exc}")
             self._stop_event.wait(60.0)
 
+    def _credentials(self) -> Dict[str, str]:
+        source = self.creds
+        try:
+            values = source() if callable(source) else source
+        except Exception as exc:
+            logger.error(f"Scheduled posts: could not read credentials: {exc}")
+            values = {}
+        return {str(key): str(value or "") for key, value in dict(values or {}).items()}
+
+    def _fail_due_posts(self, due_posts: List[Dict[str, str]], error: str) -> None:
+        for post in due_posts:
+            failed_post = set_scheduled_post_status(post["id"], "failed", error)
+            if failed_post is not None:
+                self._emit(failed_post, "failed", error)
+
     def process_due_posts(self, now: Optional[datetime] = None) -> List[Dict[str, str]]:
         now_utc = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
-        posts = load_scheduled_posts()
         due_posts = [
             post
-            for post in posts
+            for post in load_scheduled_posts()
             if post.get("status") == "pending"
             and (scheduled_at := _parse_scheduled_time(post.get("scheduled_time", "")))
             and scheduled_at <= now_utc
@@ -936,25 +1009,16 @@ class ViperGirlsPostScheduler:
         if not due_posts:
             return []
 
-        user = str(self.creds.get("vg_user") or "")
-        pwd = str(self.creds.get("vg_pass") or "")
+        credentials = self._credentials()
+        user = credentials.get("vg_user", "")
+        pwd = credentials.get("vg_pass", "")
         if not user or not pwd:
-            error = "Missing ViperGirls credentials."
-            for post in due_posts:
-                posts = _update_scheduled_post_status(posts, post["id"], "failed", error)
-                failed_post = next(item for item in posts if item.get("id") == post["id"])
-                self._emit(failed_post, "failed", error)
-            save_scheduled_posts(posts)
+            self._fail_due_posts(due_posts, "Missing ViperGirls credentials.")
             return due_posts
 
         api = ViperGirlsAPI()
         if not api.login(user, pwd):
-            error = "ViperGirls login failed."
-            for post in due_posts:
-                posts = _update_scheduled_post_status(posts, post["id"], "failed", error)
-                failed_post = next(item for item in posts if item.get("id") == post["id"])
-                self._emit(failed_post, "failed", error)
-            save_scheduled_posts(posts)
+            self._fail_due_posts(due_posts, "ViperGirls login failed.")
             return due_posts
 
         for post in due_posts:
@@ -965,10 +1029,10 @@ class ViperGirlsPostScheduler:
             except Exception as exc:
                 status = "failed"
                 error = str(exc)
-            posts = _update_scheduled_post_status(posts, post["id"], status, error)
-            updated_post = next(item for item in posts if item.get("id") == post["id"])
-            self._emit(updated_post, status, error or "Post successful")
-            save_scheduled_posts(posts)
+            # Update only this record so posts added or cancelled meanwhile survive.
+            updated_post = set_scheduled_post_status(post["id"], status, error)
+            if updated_post is not None:
+                self._emit(updated_post, status, error or "Post successful")
 
         return due_posts
 

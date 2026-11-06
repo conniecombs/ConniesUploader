@@ -738,3 +738,123 @@ def test_post_reply_without_stored_credentials_does_not_relogin(monkeypatch):
 
     assert api.post_reply("12345", "hello") is False
     assert len(bridge.requests) == 1
+
+
+@pytest.mark.unit
+def test_scheduler_does_not_clobber_posts_added_mid_run(tmp_path, monkeypatch):
+    point_viper_storage(monkeypatch, tmp_path)
+    viper_api.add_scheduled_post(
+        {
+            "id": "post-1",
+            "thread_id": "54321",
+            "thread_name": "Target",
+            "message": "first",
+            "scheduled_time": "2026-06-30T20:00:00+00:00",
+        }
+    )
+
+    class FakeViperGirlsAPI:
+        def login(self, username, password):
+            return True
+
+        def post_reply(self, thread_id, message):
+            # The UI schedules another post while this one is being sent.
+            viper_api.add_scheduled_post(
+                {
+                    "id": "post-2",
+                    "thread_id": "54321",
+                    "thread_name": "Target",
+                    "message": "second",
+                    "scheduled_time": "2026-12-30T20:00:00+00:00",
+                }
+            )
+            return True
+
+    monkeypatch.setattr(viper_api, "ViperGirlsAPI", FakeViperGirlsAPI)
+    scheduler = viper_api.ViperGirlsPostScheduler({"vg_user": "u", "vg_pass": "p"})
+    scheduler.process_due_posts(datetime.datetime(2026, 6, 30, 20, 1, tzinfo=datetime.timezone.utc))
+
+    posts = {post["id"]: post for post in viper_api.load_scheduled_posts()}
+    assert posts["post-1"]["status"] == "posted"
+    assert posts["post-2"]["status"] == "pending"
+
+
+@pytest.mark.unit
+def test_scheduler_reads_credentials_from_provider(tmp_path, monkeypatch):
+    point_viper_storage(monkeypatch, tmp_path)
+    viper_api.add_scheduled_post(
+        {
+            "id": "post-1",
+            "thread_id": "54321",
+            "thread_name": "Target",
+            "message": "body",
+            "scheduled_time": "2026-06-30T20:00:00+00:00",
+        }
+    )
+    logins = []
+
+    class FakeViperGirlsAPI:
+        def login(self, username, password):
+            logins.append((username, password))
+            return True
+
+        def post_reply(self, thread_id, message):
+            return True
+
+    monkeypatch.setattr(viper_api, "ViperGirlsAPI", FakeViperGirlsAPI)
+    creds = {"vg_user": "", "vg_pass": ""}
+    scheduler = viper_api.ViperGirlsPostScheduler(lambda: creds)
+    creds.update({"vg_user": "late-user", "vg_pass": "late-pass"})
+
+    scheduler.process_due_posts(datetime.datetime(2026, 6, 30, 20, 1, tzinfo=datetime.timezone.utc))
+
+    assert logins == [("late-user", "late-pass")]
+
+
+@pytest.mark.unit
+def test_set_scheduled_post_status_updates_one_record(tmp_path, monkeypatch):
+    point_viper_storage(monkeypatch, tmp_path)
+    for post_id in ("a", "b"):
+        viper_api.add_scheduled_post(
+            {
+                "id": post_id,
+                "thread_id": "54321",
+                "thread_name": "Target",
+                "message": "body",
+                "scheduled_time": "2026-06-30T20:00:00+00:00",
+            }
+        )
+
+    updated = viper_api.set_scheduled_post_status("a", "failed", "boom")
+
+    assert updated["status"] == "failed" and updated["error"] == "boom"
+    posts = {post["id"]: post for post in viper_api.load_scheduled_posts()}
+    assert posts["b"]["status"] == "pending"
+    assert viper_api.set_scheduled_post_status("missing", "failed") is None
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+@pytest.mark.unit
+def test_concurrent_saved_thread_updates_keep_both(tmp_path, monkeypatch):
+    import threading
+
+    point_viper_storage(monkeypatch, tmp_path)
+    names = [f"Target {index}" for index in range(20)]
+    viper_api.save_saved_threads(
+        {
+            name: viper_api.normalize_thread_record(name, str(10000 + i))
+            for i, name in enumerate(names)
+        }
+    )
+
+    threads = [
+        threading.Thread(target=viper_api.mark_thread_target_used, args=(name,)) for name in names
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(5)
+
+    saved = viper_api.load_saved_threads()
+    assert all(saved[name]["last_used_at"] for name in names)
+    assert not list(tmp_path.glob("*.tmp"))

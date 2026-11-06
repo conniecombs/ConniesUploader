@@ -192,7 +192,7 @@ class UploaderApp(
         # Start Python-owned ViperGirls scheduled posting.
         self.scheduler_queue = queue.Queue()
         self.viper_scheduler = viper_api.ViperGirlsPostScheduler(
-            self.creds,
+            lambda: self.creds,
             self.scheduler_queue,
         )
         self.viper_scheduler.start()

@@ -1534,3 +1534,22 @@ def test_gallery_manager_open_gallery_uses_url_when_available():
     )
 
     assert statuses[-1] == ("No gallery URL is available.", True)
+
+
+def test_gallery_cache_concurrent_upserts_keep_all_records(tmp_path):
+    import threading
+
+    cache = GalleryCache(str(tmp_path / "gallery_cache.json"))
+    records = [
+        GalleryRecord(service="imx.to", id=f"g{index}", name=f"Gallery {index}", url="", raw={})
+        for index in range(50)
+    ]
+
+    threads = [threading.Thread(target=cache.upsert_record, args=(record,)) for record in records]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(5)
+
+    assert len(cache.records_for_service("imx.to")) == 50
+    assert not list(tmp_path.glob("*.tmp"))
