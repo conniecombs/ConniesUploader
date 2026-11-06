@@ -401,6 +401,10 @@ class GalleryManager(ctk.CTkToplevel):
 
     def _window_alive(self) -> bool:
         """False once the window was closed; background callbacks must then do nothing."""
+        if "_w" not in self.__dict__:
+            # Never realized as a Tk window (unit tests build the object with
+            # __new__); treat it as alive rather than recursing into tkinter.
+            return True
         try:
             return bool(self.winfo_exists())
         except Exception:

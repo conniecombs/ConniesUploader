@@ -1600,6 +1600,7 @@ def test_gallery_manager_callbacks_ignore_destroyed_window():
             self.configured.append(kwargs)
 
     window = GalleryManager.__new__(GalleryManager)
+    window._w = ".gallery_manager"  # realized window whose Tk side is gone
     window.winfo_exists = lambda: False
     window.btn_create = FakeButton()
     window._creating_gallery = True

@@ -309,7 +309,7 @@ class UploaderApp(
 
     def _on_close_request(self) -> None:
         """Hide to the system tray when it is available, else shut down."""
-        tray = getattr(self, "system_tray", None)
+        tray = self.__dict__.get("system_tray")
         if tray is not None and tray.is_available():
             self.withdraw()
             return
