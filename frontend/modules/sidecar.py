@@ -241,13 +241,19 @@ class SidecarBridge:
 
             delay = self.restart_delay * (2**self.restart_count)
             self.restart_count += 1
+            self.proc = None
             logger.info(
                 f"Attempting sidecar restart in {delay:.1f}s "
                 f"(attempt {self.restart_count}/{self.max_restarts})"
             )
-            time.sleep(delay)
 
-            self.proc = None
+        # Back off without holding restart_lock: send_cmd callers would
+        # otherwise block for the whole delay instead of failing fast.
+        time.sleep(delay)
+
+        with self.restart_lock:
+            if self.is_process_alive():
+                return
             if self._start_process():
                 logger.info("Sidecar restarted successfully")
                 self.restart_count = 0
@@ -271,7 +277,7 @@ class SidecarBridge:
         for listener in listeners:
             try:
                 if event_type in {"result", "error", "batch_complete"}:
-                    listener.put(data, timeout=5.0)
+                    listener.put(data, timeout=1.0)
                 else:
                     listener.put_nowait(data)
             except queue.Full:

@@ -414,3 +414,59 @@ class TestSidecarMockProcess:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "-m", "unit"])
+
+
+@pytest.mark.unit
+def test_restart_backoff_sleeps_without_holding_restart_lock(monkeypatch):
+    from types import SimpleNamespace
+
+    from modules import sidecar
+
+    bridge = sidecar.SidecarBridge.__new__(sidecar.SidecarBridge)
+    bridge.proc = SimpleNamespace(poll=lambda: 1)
+    bridge.restart_lock = threading.RLock()
+    bridge.listeners = []
+    bridge.listeners_lock = threading.RLock()
+    bridge.restart_count = 0
+    bridge.max_restarts = 5
+    bridge.restart_delay = 0.01
+    bridge._shutdown_requested = threading.Event()
+    bridge._start_process = lambda: True
+    observed = []
+
+    def probe_lock_from_other_thread():
+        acquired = bridge.restart_lock.acquire(blocking=False)
+        if acquired:
+            bridge.restart_lock.release()
+        observed.append(acquired)
+
+    def fake_sleep(delay):
+        probe = threading.Thread(target=probe_lock_from_other_thread)
+        probe.start()
+        probe.join(2)
+
+    monkeypatch.setattr(sidecar.time, "sleep", fake_sleep)
+
+    bridge._handle_crash()
+
+    assert observed == [True], "send_cmd callers must not be blocked during the restart backoff"
+    assert bridge.restart_count == 0  # reset after a successful restart
+
+
+@pytest.mark.unit
+def test_dispatch_event_blocks_at_most_one_second_per_terminal_event():
+    import queue
+    import time
+
+    from modules import sidecar
+
+    bridge = sidecar.SidecarBridge.__new__(sidecar.SidecarBridge)
+    bridge.listeners_lock = threading.RLock()
+    full_queue = queue.Queue(maxsize=1)
+    full_queue.put_nowait({"type": "status"})
+    bridge.listeners = [full_queue]
+
+    started = time.monotonic()
+    bridge._dispatch_event({"type": "result", "file": "/a.jpg"})
+
+    assert time.monotonic() - started < 2.5
