@@ -240,3 +240,25 @@ def test_system_tray_is_available_only_after_start(monkeypatch):
     manager.stop()
     manager._thread.join(2)
     assert manager.is_available() is False
+
+
+def test_dead_modules_are_gone():
+    removed = [
+        ROOT / "frontend" / "modules" / "controller.py",
+        ROOT / "frontend" / "tests" / "test_controller.py",
+        ROOT / "frontend" / "modules" / "validation.py",
+        ROOT / "frontend" / "tests" / "test_validation.py",
+        ROOT / "archive",
+        ROOT / "VGPost.txt",
+    ]
+    assert [str(path) for path in removed if path.exists()] == []
+
+    modules_dir = ROOT / "frontend" / "modules"
+    stale_imports = []
+    for source in modules_dir.rglob("*.py"):
+        text = source.read_text(encoding="utf-8")
+        if "modules.controller" in text or "from .controller" in text:
+            stale_imports.append(str(source))
+        if "modules.validation" in text or "from .validation" in text:
+            stale_imports.append(str(source))
+    assert stale_imports == []

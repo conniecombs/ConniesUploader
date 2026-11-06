@@ -152,10 +152,7 @@ class ScheduledPostsWindow(ctk.CTkToplevel):
         self.title("Scheduled Posts")
         self.geometry("800x600")
 
-        from modules.sidecar import SidecarBridge
-
         self.api = None
-        self.bridge = SidecarBridge.get()
 
         self._build_ui()
         self.refresh()

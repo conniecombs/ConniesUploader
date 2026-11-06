@@ -95,7 +95,7 @@ docs/
 ├── assets/
 │   └── screenshots/
 ├── archive/
-│   └── README.md
+│   └── README.md            # history of removed legacy code
 ├── benchmarks/
 │   └── README.md
 ├── guides/

@@ -1236,7 +1236,7 @@ Example:
 | `frontend/modules/ui/main_window.py` | Compatibility wrapper that keeps older imports pointed at the main window app. |
 | `frontend/modules/ui/Main_Window/` | Contains the organized main-window implementation, including app setup, layout, settings, upload checks, queue runtime, galleries, covers, posting, and diagnostics. |
 | `frontend/modules/dnd.py` | Handles drag and drop, row selection, reordering, and context-menu queue actions. |
-| `frontend/modules/file_handler.py` and `frontend/modules/validation.py` | Check file extensions, sizes, paths, and import rules before files enter the queue. |
+| `frontend/modules/file_handler.py` | Checks file extensions, sizes, paths, and import rules before files enter the queue. |
 | `frontend/modules/settings_manager.py` | Loads, saves, normalizes, validates, and migrates app settings under `~/.conniesuploader/user_settings.json`. |
 | `frontend/modules/credentials_manager.py` | Reads and writes credentials through the operating system keyring. |
 | `frontend/modules/plugin_manager.py` | Discovers available image-host plugins and exposes their metadata to the app. |
