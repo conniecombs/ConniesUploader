@@ -3164,3 +3164,94 @@ def test_close_shuts_down_before_tray_exists():
     UploaderApp._on_close_request(app)
 
     assert calls == ["shutdown"]
+
+
+def _failed_output_app(tmp_path, group, states, selected_thread, batch_index):
+    app = UploaderApp.__new__(UploaderApp)
+    app.lock = Lock()
+    app.results = []
+    app.file_widgets = {
+        path: {"state": state, "group": group, "error": "x"} for path, state in states.items()
+    }
+    app.settings = {"service": "imagebam.com"}
+    app.output_dir = str(tmp_path / "Output")
+    app.central_history_path = str(tmp_path / "history")
+    app.current_output_files = []
+    app.copyable_output_files = []
+    app.clipboard_buffer = []
+    app.btn_open = FakeFrame()
+    app.var_auto_copy = FakeVar(False)
+    app.log = lambda message: None
+    app.add_activity = lambda message, level="info": None
+    group.selected_thread = selected_thread
+    group.batch_index = batch_index
+    app.skipped = []
+    app.auto_poster = SimpleNamespace(
+        skip=lambda index, reason: app.skipped.append((index, reason))
+    )
+    return app
+
+
+@pytest.mark.unit
+def test_failed_group_output_skips_poster_index(tmp_path):
+    bad_file = str(tmp_path / "bad.jpg")
+    group = FakeGroup("Batch Alpha", [bad_file])
+    app = _failed_output_app(tmp_path, group, {bad_file: "failed"}, "Thread", 3)
+
+    UploaderApp.generate_failed_group_output(app, group, 1)
+
+    assert app.skipped == [(3, "upload failed")]
+
+
+@pytest.mark.unit
+def test_cancelled_group_skips_poster_index(tmp_path):
+    gone = str(tmp_path / "gone.jpg")
+    group = FakeGroup("Batch Beta", [gone])
+    app = _failed_output_app(tmp_path, group, {gone: "cancelled"}, "Thread", 2)
+
+    UploaderApp.generate_failed_group_output(app, group, 1)
+
+    assert app.skipped == [(2, "upload cancelled")]
+    report_text = Path(app.current_output_files[0]).read_text(encoding="utf-8")
+    assert "- gone.jpg: CANCELLED" in report_text
+
+
+@pytest.mark.unit
+def test_failed_group_without_target_does_not_touch_poster(tmp_path):
+    bad_file = str(tmp_path / "bad.jpg")
+    group = FakeGroup("Batch Gamma", [bad_file])
+    app = _failed_output_app(tmp_path, group, {bad_file: "failed"}, "Do Not Post", 0)
+
+    UploaderApp.generate_failed_group_output(app, group, 1)
+
+    assert app.skipped == []
+
+
+@pytest.mark.unit
+def test_prepare_poster_session_registers_only_posting_groups_in_order():
+    do_not_post = FakeGroup("One", ["a.jpg"])
+    do_not_post.selected_thread = "Do Not Post"
+    posting = FakeGroup("Two", ["b.jpg"])
+    posting.selected_thread = "Thread"
+    finished_earlier = FakeGroup("Zero", ["z.jpg"])
+    finished_earlier.selected_thread = "Thread"
+
+    app = UploaderApp.__new__(UploaderApp)
+    app.groups = [posting, do_not_post, finished_earlier]
+    app.list_container = SimpleNamespace(
+        winfo_children=lambda: [finished_earlier, do_not_post, posting]
+    )
+    sessions = []
+    app.auto_poster = SimpleNamespace(
+        begin_session=lambda indexes: sessions.append(list(indexes)), saved_threads_data=None
+    )
+    app.saved_threads_data = {}
+
+    UploaderApp._prepare_poster_session(
+        app, {do_not_post: ["a.jpg"], posting: ["b.jpg"]}, saved_threads={}
+    )
+
+    assert finished_earlier.batch_index == 0
+    assert do_not_post.batch_index == 1
+    assert posting.batch_index == 2
+    assert sessions == [[2]]

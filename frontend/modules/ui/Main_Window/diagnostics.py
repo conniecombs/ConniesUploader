@@ -233,14 +233,6 @@ class DiagnosticsMixin:
                 logger.warning(f"Error stopping System Tray: {e}")
 
         # Stop RenameWorker
-        if hasattr(self, "rename_worker") and self.rename_worker:
-            logger.info("Stopping RenameWorker...")
-            try:
-                self.rename_worker.stop()
-                # Wait up to 2 seconds for rename worker to finish
-                self.rename_worker.join(timeout=2.0)
-            except Exception as e:
-                logger.warning(f"Error stopping RenameWorker: {e}")
 
         # Shutdown import executor
         if hasattr(self, "import_executor") and self.import_executor:

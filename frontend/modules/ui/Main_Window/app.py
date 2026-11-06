@@ -170,10 +170,6 @@ class UploaderApp(
         )
 
         self._load_credentials()
-        # RenameWorker disabled - not currently used (no enqueue calls in codebase)
-        # Kept in controller.py for future implementation if needed
-        self.rename_worker = None
-
         # Central history directory
         self.central_history_path = os.path.join(
             os.path.expanduser("~"), ".conniesuploader", "history"
@@ -184,7 +180,8 @@ class UploaderApp(
         self.saved_threads_data = viper_api.load_saved_threads()
 
         # Initialize AutoPoster
-        self.auto_poster = AutoPoster(self.creds, self.saved_threads_data)
+        # The provider keeps the poster current after credentials are changed.
+        self.auto_poster = AutoPoster(lambda: self.creds, self.saved_threads_data)
 
         # System Tray Integration
         from modules.ui.system_tray import SystemTrayManager

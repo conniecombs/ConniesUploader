@@ -1008,7 +1008,22 @@ class RuntimeMixin:
             self.log(f"Error writing output: {e}")
             self.add_activity(f"Error writing output: {e}", "error")
 
+    def _skip_poster_for_group(self, group) -> None:
+        """Tell the AutoPoster this group will never post so later batches proceed."""
+        target = getattr(group, "selected_thread", "")
+        if not target or target == "Do Not Post":
+            return
+        poster = getattr(self, "auto_poster", None)
+        batch_index = getattr(group, "batch_index", None)
+        if poster is None or not hasattr(poster, "skip") or not isinstance(batch_index, int):
+            return
+        with self.lock:
+            states = [self.file_widgets.get(fp, {}).get("state") for fp in group.files]
+        reason = "upload cancelled" if "cancelled" in states else "upload failed"
+        poster.skip(batch_index, reason)
+
     def generate_failed_group_output(self, group, failed_count: Optional[int] = None):
+        self._skip_poster_for_group(group)
         res_map = self._upload_result_map()
         group_files = self._ordered_group_files_for_output(group)
         svc = config.normalize_service_id(self.settings.get("service", ""))
@@ -1049,6 +1064,8 @@ class RuntimeMixin:
                 elif state == "failed":
                     lines.append(f"- {name}: FAILED")
                     lines.append(f"  Reason: {error or 'Upload failed without more detail.'}")
+                elif state == "cancelled":
+                    lines.append(f"- {name}: CANCELLED")
                 else:
                     lines.append(f"- {name}: {state.title() or 'Pending'}")
                 lines.append(f"  Path: {fp}")

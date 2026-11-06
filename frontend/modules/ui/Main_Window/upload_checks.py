@@ -152,31 +152,11 @@ class UploadChecksMixin:
                             row_data["remove"].configure(state="disabled")
             self.add_activity(f"Queued {self.upload_total} file(s) for upload.")
 
-            # Reset and prepare AutoPoster
-            self.auto_poster.reset()
-            self.saved_threads_data = viper_api.load_saved_threads()
-            self.auto_poster.saved_threads_data = self.saved_threads_data
-
-            sorted_groups = sorted(
-                self.groups,
-                key=lambda g: (
-                    self.list_container.winfo_children().index(g)
-                    if g in self.list_container.winfo_children()
-                    else 999
-                ),
-            )
-            for i, grp in enumerate(sorted_groups):
-                grp.batch_index = i
-
-            # Check if any groups have auto-posting enabled
-            active_post_jobs = False
-            for grp in pending_by_group.keys():
-                if grp.selected_thread and grp.selected_thread != "Do Not Post":
-                    active_post_jobs = True
-                    break
+            # Register this session's posting batches with the AutoPoster.
+            posting_indexes = self._prepare_poster_session(pending_by_group)
 
             # Start AutoPoster if needed
-            if active_post_jobs:
+            if posting_indexes:
                 self.add_activity("Auto-posting will start after output is generated.")
                 self.auto_poster.start_processing(
                     is_uploading_callback=lambda: self.is_uploading, cancel_event=self.cancel_event
@@ -193,6 +173,41 @@ class UploadChecksMixin:
             else:
                 messagebox.showerror("Error starting upload", str(e))
             self._refresh_start_button_state()
+
+    @staticmethod
+    def _group_posts(group: Any) -> bool:
+        target = getattr(group, "selected_thread", "")
+        return bool(target) and target != "Do Not Post"
+
+    def _prepare_poster_session(
+        self, pending_by_group: Dict[Any, List[str]], saved_threads: Optional[Dict] = None
+    ) -> List[int]:
+        """Number every group by its on-screen order and register the ones that post.
+
+        Returns the ordered batch indexes handed to ``AutoPoster.begin_session``.
+        Groups without a target, and groups outside this upload, get an index but
+        are never waited on by the poster.
+        """
+        if saved_threads is None:
+            saved_threads = viper_api.load_saved_threads()
+        self.saved_threads_data = saved_threads
+        self.auto_poster.saved_threads_data = saved_threads
+
+        children = list(self.list_container.winfo_children())
+        sorted_groups = sorted(
+            self.groups,
+            key=lambda g: children.index(g) if g in children else 999,
+        )
+        for index, group in enumerate(sorted_groups):
+            group.batch_index = index
+
+        posting_indexes = [
+            group.batch_index
+            for group in sorted_groups
+            if group in pending_by_group and self._group_posts(group)
+        ]
+        self.auto_poster.begin_session(posting_indexes)
+        return posting_indexes
 
     def _notify_no_pending_upload(self) -> None:
         message = "No pending files to upload. Add files or retry failed items."
