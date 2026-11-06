@@ -623,3 +623,118 @@ def test_group_thread_dropdown_refreshes_and_resets_missing_selection():
     assert group.thread_combo.values == ["Do Not Post", "Alpha", "Beta"]
     assert group.thread_var.get() == "Do Not Post"
     assert group.selected_thread == "Do Not Post"
+
+
+REPLY_FORM_HTML = """
+<html><head><title>Thread - Reply to Topic</title></head><body>
+<form action="newreply.php?do=postreply&amp;t=12345" method="post" name="vbform">
+  <input name="title" value="Re: Set {HD}">
+  <textarea name="message"></textarea>
+  <input type="hidden" name="securitytoken" value="tok">
+  <input type="hidden" name="do" value="postreply">
+  <input type="hidden" name="t" value="12345">
+  <input type="hidden" name="loggedinuser" value="412723">
+  <input type="submit" name="sbutton" value="Submit Reply">
+</form></body></html>
+"""
+LOGIN_PAGE_HTML = """
+<html><head><title>Log in</title></head><body>
+<form action="login.php?do=login" method="post">
+  <input name="vb_login_username"><input name="vb_login_password">
+</form></body></html>
+"""
+LOGGED_IN_HTML = (
+    "<html><body><a href='logout.php'>Log Out</a>Thank you for logging in</body></html>"
+)
+
+
+def _ok(body):
+    return {"status": "success", "data": {"response_body": body}}
+
+
+@pytest.mark.unit
+def test_login_seed_resets_cookies(monkeypatch):
+    bridge = FakeBridge(responses=[_ok(""), _ok(LOGGED_IN_HTML)])
+    monkeypatch.setattr(viper_api.SidecarBridge, "get", staticmethod(lambda: bridge))
+
+    api = viper_api.ViperGirlsAPI()
+
+    assert api.login("user", "password") is True
+    seed_payload, _ = bridge.requests[0]
+    assert seed_payload["generic_spec"]["reset_cookies"] is True
+    login_payload, _ = bridge.requests[1]
+    assert "reset_cookies" not in login_payload["generic_spec"]
+
+
+@pytest.mark.unit
+def test_reply_spec_is_literal_and_unretried(monkeypatch):
+    bridge = FakeBridge(responses=[_ok(REPLY_FORM_HTML), _ok("Thank you for posting")])
+    monkeypatch.setattr(viper_api.SidecarBridge, "get", staticmethod(lambda: bridge))
+
+    api = viper_api.ViperGirlsAPI()
+
+    assert api.post_reply("12345", "Set {HD} part 2") is True
+    submit_payload, _ = bridge.requests[1]
+    spec = submit_payload["generic_spec"]
+    assert spec["literal_values"] is True
+    assert spec["form_fields"]["message"] == "Set {HD} part 2"
+    assert spec["form_fields"]["title"] == "Re: Set {HD}"
+    assert submit_payload["retry_config"] == {"max_retries": 0}
+    fetch_payload, _ = bridge.requests[0]
+    assert "retry_config" not in fetch_payload
+
+
+@pytest.mark.unit
+def test_post_reply_relogs_in_once_on_login_page(monkeypatch):
+    bridge = FakeBridge(
+        responses=[
+            _ok(""),
+            _ok(LOGGED_IN_HTML),  # initial login
+            _ok(LOGIN_PAGE_HTML),  # reply form fetch finds the session gone
+            _ok(""),
+            _ok(LOGGED_IN_HTML),  # re-login
+            _ok(REPLY_FORM_HTML),  # fetch again
+            _ok("Thank you for posting"),
+        ]
+    )
+    monkeypatch.setattr(viper_api.SidecarBridge, "get", staticmethod(lambda: bridge))
+
+    api = viper_api.ViperGirlsAPI()
+    assert api.login("user", "password") is True
+
+    assert api.post_reply("12345", "hello") is True
+    assert len(bridge.requests) == 7
+    relogin_payload, _ = bridge.requests[4]
+    assert relogin_payload["generic_spec"]["form_fields"]["vb_login_username"] == "user"
+
+
+@pytest.mark.unit
+def test_post_reply_does_not_loop_on_repeated_login_page(monkeypatch):
+    bridge = FakeBridge(
+        responses=[
+            _ok(""),
+            _ok(LOGGED_IN_HTML),
+            _ok(LOGIN_PAGE_HTML),
+            _ok(""),
+            _ok(LOGGED_IN_HTML),
+            _ok(LOGIN_PAGE_HTML),
+        ]
+    )
+    monkeypatch.setattr(viper_api.SidecarBridge, "get", staticmethod(lambda: bridge))
+
+    api = viper_api.ViperGirlsAPI()
+    assert api.login("user", "password") is True
+
+    assert api.post_reply("12345", "hello") is False
+    assert len(bridge.requests) == 6
+
+
+@pytest.mark.unit
+def test_post_reply_without_stored_credentials_does_not_relogin(monkeypatch):
+    bridge = FakeBridge(responses=[_ok(LOGIN_PAGE_HTML)])
+    monkeypatch.setattr(viper_api.SidecarBridge, "get", staticmethod(lambda: bridge))
+
+    api = viper_api.ViperGirlsAPI()
+
+    assert api.post_reply("12345", "hello") is False
+    assert len(bridge.requests) == 1

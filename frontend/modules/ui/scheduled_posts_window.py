@@ -181,7 +181,6 @@ class ScheduledPostsWindow(ctk.CTkToplevel):
 
         if not self.api:
             self.api = ViperGirlsAPI()
-            self.api.bridge = self.bridge
 
         posts = self.api.list_scheduled_posts()
         if not posts:

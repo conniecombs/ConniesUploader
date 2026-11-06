@@ -862,7 +862,16 @@ def build_vipergirls_reply_spec(thread_id: str, message: str, html_text: str) ->
         },
         "include_response_body": True,
         "include_transport_metadata": True,
+        # The post body and copied form values are final text; Go must not
+        # treat "{...}" inside them as template tokens.
+        "literal_values": True,
     }
+
+
+def _is_vipergirls_login_page(body: str) -> bool:
+    """True when the forum answered with its login form instead of content."""
+    lowered = (body or "").lower()
+    return "vb_login_username" in lowered and "logout.php" not in lowered
 
 
 class ViperGirlsPostScheduler:
@@ -967,7 +976,7 @@ class ViperGirlsPostScheduler:
 class ViperGirlsAPI:
     def __init__(self):
         self.bridge = SidecarBridge.get()
-        self.is_logged_in = False
+        self._credentials: Optional[Tuple[str, str]] = None
 
     def login(self, username, login_value):
         logger.info("ViperAPI: Logging in...")
@@ -978,10 +987,13 @@ class ViperGirlsAPI:
         legacy_md5 = getattr(hashlib, "md5")
         md5_pass = legacy_md5(login_value.encode(), usedforsecurity=False).hexdigest()
 
+        # Start from an empty cookie jar so an older session cannot make a
+        # wrong password look like a successful login.
         seed_spec = build_transport_spec(
             f"{VIPERGIRLS_BASE_URL}/login.php?do=login",
             method="GET",
             use_cookies=True,
+            reset_cookies=True,
         )
         seed_resp = execute_transport_request(
             seed_spec,
@@ -1007,6 +1019,7 @@ class ViperGirlsAPI:
                 "securitytoken": "guest",
             },
             headers={"Referer": f"{VIPERGIRLS_BASE_URL}/forum.php"},
+            literal_values=True,
         )
         resp = execute_transport_request(
             spec,
@@ -1017,12 +1030,20 @@ class ViperGirlsAPI:
         )
 
         if resp.ok and _vipergirls_login_succeeded(resp.body, resp.final_url):
-            self.is_logged_in = True
+            self._credentials = (username, login_value)
             logger.info("ViperAPI: Login Successful")
             return True
 
         logger.error(f"ViperAPI: Login Failed: {resp.message or 'unexpected page'}")
         return False
+
+    def _relogin(self) -> bool:
+        """Re-establish the forum session once after it was lost mid-run."""
+        if not self._credentials:
+            return False
+        logger.warning("ViperAPI: session lost; logging in again.")
+        username, login_value = self._credentials
+        return self.login(username, login_value)
 
     def post_reply(self, thread_id, message):
         logger.info(f"ViperAPI: Posting to thread {thread_id}...")
@@ -1032,43 +1053,58 @@ class ViperGirlsAPI:
             return False
 
         reply_url = f"{VIPERGIRLS_BASE_URL}/newreply.php?do=newreply&t={clean_thread_id}"
-        fetch_spec = build_transport_spec(
-            reply_url,
-            method="GET",
-            headers={"Referer": f"{VIPERGIRLS_BASE_URL}/forum.php"},
-            use_cookies=True,
-        )
-        fetch_resp = execute_transport_request(
-            fetch_spec,
-            service="vipergirls.to",
-            timeout=30,
-            bridge=self.bridge,
-            rate_limits=VIPERGIRLS_RATE_LIMIT,
-        )
-        if not fetch_resp.ok:
-            logger.error(f"ViperAPI: Reply form fetch failed: {fetch_resp.message}")
+        relogin_allowed = True
+        while True:
+            fetch_spec = build_transport_spec(
+                reply_url,
+                method="GET",
+                headers={"Referer": f"{VIPERGIRLS_BASE_URL}/forum.php"},
+                use_cookies=True,
+            )
+            fetch_resp = execute_transport_request(
+                fetch_spec,
+                service="vipergirls.to",
+                timeout=30,
+                bridge=self.bridge,
+                rate_limits=VIPERGIRLS_RATE_LIMIT,
+            )
+            if not fetch_resp.ok:
+                logger.error(f"ViperAPI: Reply form fetch failed: {fetch_resp.message}")
+                return False
+            if _is_vipergirls_login_page(fetch_resp.body):
+                if relogin_allowed and self._relogin():
+                    relogin_allowed = False
+                    continue
+                logger.error("ViperAPI: Post Failed: ViperGirls returned a login page.")
+                return False
+
+            try:
+                post_spec = build_vipergirls_reply_spec(clean_thread_id, message, fetch_resp.body)
+            except ViperPostError as exc:
+                logger.error(f"ViperAPI: Post Failed: {exc}")
+                return False
+
+            # A reply must never be retried by the transport: a repeated POST
+            # whose first attempt actually landed would post twice.
+            resp = execute_transport_request(
+                post_spec,
+                service="vipergirls.to",
+                timeout=60,
+                bridge=self.bridge,
+                rate_limits=VIPERGIRLS_RATE_LIMIT,
+                retry=False,
+            )
+
+            if resp.ok and _vipergirls_post_succeeded(resp.body, resp.final_url):
+                logger.info("ViperAPI: Post Successful")
+                return True
+            if resp.ok and _is_vipergirls_login_page(resp.body) and relogin_allowed:
+                if self._relogin():
+                    relogin_allowed = False
+                    continue
+
+            logger.error(f"ViperAPI: Post Failed: {resp.message or 'unexpected page'}")
             return False
-
-        try:
-            post_spec = build_vipergirls_reply_spec(clean_thread_id, message, fetch_resp.body)
-        except ViperPostError as exc:
-            logger.error(f"ViperAPI: Post Failed: {exc}")
-            return False
-
-        resp = execute_transport_request(
-            post_spec,
-            service="vipergirls.to",
-            timeout=60,
-            bridge=self.bridge,
-            rate_limits=VIPERGIRLS_RATE_LIMIT,
-        )
-
-        if resp.ok and _vipergirls_post_succeeded(resp.body, resp.final_url):
-            logger.info("ViperAPI: Post Successful")
-            return True
-
-        logger.error(f"ViperAPI: Post Failed: {resp.message or 'unexpected page'}")
-        return False
 
     def schedule_post(
         self, post_id, thread_id, thread_name, message, scheduled_time, cover_thumbnail=""
@@ -1096,9 +1132,6 @@ class ViperGirlsAPI:
 
     def list_scheduled_posts(self):
         return load_scheduled_posts()
-
-    def close(self):
-        pass
 
 
 class ViperToolsWindow(ctk.CTkToplevel):
