@@ -378,9 +378,7 @@ class SettingsManager:
             # Merge with defaults. Older settings files did not have a global
             # thread limit, so seed it from the previous representative value.
             merged_input = {**self.defaults, **data}
-            merged_input["service"] = config.normalize_service_id(
-                merged_input.get("service", "")
-            )
+            merged_input["service"] = config.normalize_service_id(merged_input.get("service", ""))
             if "global_thread_limit" not in data:
                 merged_input["global_thread_limit"] = data.get(
                     "imx_threads", self.defaults["global_thread_limit"]

@@ -51,6 +51,12 @@ from .common import (  # noqa: F401
     viper_api,
 )
 
+# Row states that end a file's part in the current upload. A row only counts
+# toward completion the first time it enters one of these states.
+TERMINAL_ROW_STATES = frozenset({"success", "failed", "cancelled"})
+GENERIC_FAILURE_REASON = "Upload failed without more detail."
+CANCELLED_REASON = "Upload cancelled."
+
 
 class RuntimeMixin:
     def update_ui_loop(self):
@@ -155,9 +161,7 @@ class RuntimeMixin:
     def _mark_group_touched(
         self, touched_groups: Dict[int, Any], group_widget: Any, filepath: str
     ) -> None:
-        touched = touched_groups.setdefault(
-            id(group_widget), {"group": group_widget, "files": []}
-        )
+        touched = touched_groups.setdefault(id(group_widget), {"group": group_widget, "files": []})
         touched["files"].append(filepath)
 
     def _finish_ui_row_batch(self, touched_groups: Dict[int, Dict[str, Any]]) -> None:
@@ -170,9 +174,7 @@ class RuntimeMixin:
         remaining = len(self.__dict__.get("pending_ui_rows", []) or [])
         self.lbl_eta.configure(
             text=(
-                f"Loading files... {remaining} remaining"
-                if remaining
-                else f"Files: {file_count}"
+                f"Loading files... {remaining} remaining" if remaining else f"Files: {file_count}"
             )
         )
         self._refresh_queue_state()
@@ -238,44 +240,7 @@ class RuntimeMixin:
                             self._apply_result_gallery_url(f, v)
                         elif k == "status":
                             status_text = str(v or "")
-                            is_success = status_text == "Done"
-                            is_failure = status_text == "Failed" or status_text.lower().startswith(
-                                "error"
-                            )
-                            if is_success or is_failure:
-                                with self.lock:
-                                    self.upload_count += 1
-                                w["state"] = "success" if is_success else "failed"
-                                w["status"].configure(text="Uploaded" if is_success else "Failed")
-                                w["prog"].set(1.0)
-                                self._set_row_progress_color(
-                                    w, "#34C759" if is_success else "#FF3B30"
-                                )
-                                if w.get("remove"):
-                                    w["remove"].configure(state="normal")
-                                name = os.path.basename(f)
-                                if is_success:
-                                    self._set_row_error(w, "")
-                                    self._set_row_retry_visible(w, False)
-                                    self.add_activity(f"Uploaded {name}.", "success")
-                                else:
-                                    reason = status_text
-                                    if reason.lower().startswith("error:"):
-                                        reason = reason.split(":", 1)[1].strip()
-                                    reason = (
-                                        reason
-                                        if reason != "Failed"
-                                        else "Upload failed without more detail."
-                                    )
-                                    self._set_row_error(w, reason)
-                                    self._set_row_retry_visible(w, True)
-                                    self.add_activity(f"Failed {name}: {reason}.", "error")
-                                self._update_group_progress(f)
-                                # Update overall progress bar
-                                if self.upload_total > 0:
-                                    progress = self.upload_count / self.upload_total
-                                    self.overall_progress.set(progress)
-                            else:
+                            if not self._apply_terminal_status(f, w, status_text):
                                 w["status"].configure(text=self._friendly_row_status(status_text))
                         elif k == "prog":
                             progress_value = self._normalize_progress_value(v)
@@ -284,6 +249,77 @@ class RuntimeMixin:
                 prog_limit -= 1
         except queue.Empty:
             pass
+
+    @staticmethod
+    def _terminal_state_for_status(status_text: str) -> Optional[str]:
+        if status_text == "Done":
+            return "success"
+        if status_text == "Cancelled":
+            return "cancelled"
+        if status_text == "Failed" or status_text.lower().startswith("error"):
+            return "failed"
+        return None
+
+    @staticmethod
+    def _failure_reason(status_text: str) -> str:
+        reason = status_text
+        if reason.lower().startswith("error:"):
+            reason = reason.split(":", 1)[1].strip()
+        return reason if reason and reason != "Failed" else GENERIC_FAILURE_REASON
+
+    def _apply_terminal_status(self, fp: str, row: Dict[str, Any], status_text: str) -> bool:
+        """Move a row into a terminal state, counting it toward completion once.
+
+        The sidecar reports a failure as a ``Failed`` status followed by an
+        ``error`` event with the reason; the second event only refines the
+        reason text. Returns False when the status is not terminal.
+        """
+        new_state = self._terminal_state_for_status(status_text)
+        if new_state is None:
+            return False
+
+        name = os.path.basename(fp)
+        if row.get("state") in TERMINAL_ROW_STATES:
+            if row.get("state") == "failed" and new_state == "failed":
+                reason = self._failure_reason(status_text)
+                if reason != GENERIC_FAILURE_REASON and row.get("error") != reason:
+                    had_generic_reason = row.get("error") == GENERIC_FAILURE_REASON
+                    self._set_row_error(row, reason)
+                    if had_generic_reason:
+                        self.add_activity(f"Failed {name}: {reason}.", "error")
+            return True
+
+        with self.lock:
+            self.upload_count += 1
+        row["state"] = new_state
+        row["prog"].set(1.0)
+        if row.get("remove"):
+            row["remove"].configure(state="normal")
+
+        if new_state == "success":
+            row["status"].configure(text="Uploaded")
+            self._set_row_progress_color(row, "#34C759")
+            self._set_row_error(row, "")
+            self._set_row_retry_visible(row, False)
+            self.add_activity(f"Uploaded {name}.", "success")
+        elif new_state == "cancelled":
+            row["status"].configure(text="Cancelled")
+            self._set_row_progress_color(row, "#8E8E93")
+            self._set_row_error(row, CANCELLED_REASON)
+            self._set_row_retry_visible(row, True)
+            self.add_activity(f"Cancelled {name}.", "warning")
+        else:
+            reason = self._failure_reason(status_text)
+            row["status"].configure(text="Failed")
+            self._set_row_progress_color(row, "#FF3B30")
+            self._set_row_error(row, reason)
+            self._set_row_retry_visible(row, True)
+            self.add_activity(f"Failed {name}: {reason}.", "error")
+
+        self._update_group_progress(fp)
+        if self.upload_total > 0:
+            self.overall_progress.set(self.upload_count / self.upload_total)
+        return True
 
     def _create_row(
         self,
@@ -495,8 +531,11 @@ class RuntimeMixin:
         self._set_row_progress_color(row_data, ["#3B8ED0", "#1F6AA5"])
         self._set_row_retry_visible(row_data, False)
 
+    def _upload_in_progress(self) -> bool:
+        return bool(getattr(self, "is_uploading", False) or getattr(self, "_finalizing", False))
+
     def _retry_file(self, filepath: str) -> None:
-        if getattr(self, "is_uploading", False):
+        if self._upload_in_progress():
             self.add_activity(
                 "Wait for the current upload to finish before retrying one file.", "warning"
             )
@@ -509,7 +548,7 @@ class RuntimeMixin:
             self.add_activity("That file is no longer in the queue.", "warning")
             return
 
-        if row_data.get("state") != "failed":
+        if row_data.get("state") not in ("failed", "cancelled"):
             self.add_activity(f"{os.path.basename(filepath)} is not failed.", "warning")
             return
 
@@ -599,9 +638,9 @@ class RuntimeMixin:
                 with self.lock:
                     if f in self.file_widgets:
                         state = self.file_widgets[f]["state"]
-                        if state in ["success", "failed"]:
+                        if state in TERMINAL_ROW_STATES:
                             done += 1
-                            if state == "failed":
+                            if state != "success":
                                 failed += 1
             group.prog.set(done / total)
             group.lbl_counts.configure(text=f"({done}/{total})")
@@ -628,9 +667,11 @@ class RuntimeMixin:
             logger.error(f"Group Update Error: {e}", exc_info=True)
 
     def finish_upload(self) -> None:
-        if not self.is_uploading:
+        if not self.is_uploading or getattr(self, "_finalizing", False):
             return
-        self.is_uploading = False  # Block re-entry before background thread starts
+        # Stay "uploading" until _on_upload_complete so Start/Retry cannot
+        # re-enter while galleries are finalized on the worker thread.
+        self._finalizing = True
         self.lbl_eta.configure(text="Finalizing...")
 
         def _fin():
@@ -672,6 +713,7 @@ class RuntimeMixin:
 
     def _on_upload_complete(self):
         self.is_uploading = False
+        self._finalizing = False
         self._refresh_start_button_state()
         self._configure_stop_button(False)
         self.overall_progress.set(1.0)
@@ -679,7 +721,8 @@ class RuntimeMixin:
         summary = self._build_completion_summary()
         self.lbl_eta.configure(text=summary["status_text"])
         self.add_activity(
-            summary["status_text"], "warning" if summary["failed_count"] else "success"
+            summary["status_text"],
+            "warning" if summary["failed_count"] or summary["cancelled_count"] else "success",
         )
 
         if self.var_auto_copy.get() and self.clipboard_buffer:
@@ -698,6 +741,7 @@ class RuntimeMixin:
 
         uploaded_count = sum(1 for state in states if state == "success")
         failed_count = sum(1 for state in states if state == "failed")
+        cancelled_count = sum(1 for state in states if state == "cancelled")
         total_count = len(states)
         output_files = list(self.current_output_files)
         generated_count = len(output_files)
@@ -705,8 +749,13 @@ class RuntimeMixin:
         auto_copy_requested = bool(self.var_auto_copy.get())
         has_copy_text = bool(self.clipboard_buffer or copyable_output_files)
 
-        if failed_count:
-            status_text = f"Upload complete: {uploaded_count} uploaded, {failed_count} failed."
+        if failed_count or cancelled_count:
+            parts = [f"{uploaded_count} uploaded"]
+            if failed_count:
+                parts.append(f"{failed_count} failed")
+            if cancelled_count:
+                parts.append(f"{cancelled_count} cancelled")
+            status_text = "Upload complete: " + ", ".join(parts) + "."
         else:
             file_label = "file" if uploaded_count == 1 else "files"
             status_text = f"Upload complete: {uploaded_count} {file_label} uploaded."
@@ -714,6 +763,7 @@ class RuntimeMixin:
         return {
             "uploaded_count": uploaded_count,
             "failed_count": failed_count,
+            "cancelled_count": cancelled_count,
             "total_count": total_count,
             "generated_count": generated_count,
             "output_files": output_files,
@@ -801,8 +851,13 @@ class RuntimeMixin:
 
     def stop_upload(self):
         self.cancel_event.set()
+        upload_manager = getattr(self, "upload_manager", None)
+        if upload_manager is not None and hasattr(upload_manager, "cancel_batch"):
+            upload_manager.cancel_batch()
         self.lbl_eta.configure(text="Stopping...")
-        self.add_activity("Stopping upload after current work finishes.", "warning")
+        self.add_activity(
+            "Stopping upload; queued and in-flight files are being cancelled.", "warning"
+        )
 
     def generate_group_output(self, group):
         res_map = self._upload_result_map()
@@ -953,7 +1008,22 @@ class RuntimeMixin:
             self.log(f"Error writing output: {e}")
             self.add_activity(f"Error writing output: {e}", "error")
 
+    def _skip_poster_for_group(self, group) -> None:
+        """Tell the AutoPoster this group will never post so later batches proceed."""
+        target = getattr(group, "selected_thread", "")
+        if not target or target == "Do Not Post":
+            return
+        poster = getattr(self, "auto_poster", None)
+        batch_index = getattr(group, "batch_index", None)
+        if poster is None or not hasattr(poster, "skip") or not isinstance(batch_index, int):
+            return
+        with self.lock:
+            states = [self.file_widgets.get(fp, {}).get("state") for fp in group.files]
+        reason = "upload cancelled" if "cancelled" in states else "upload failed"
+        poster.skip(batch_index, reason)
+
     def generate_failed_group_output(self, group, failed_count: Optional[int] = None):
+        self._skip_poster_for_group(group)
         res_map = self._upload_result_map()
         group_files = self._ordered_group_files_for_output(group)
         svc = config.normalize_service_id(self.settings.get("service", ""))
@@ -994,6 +1064,8 @@ class RuntimeMixin:
                 elif state == "failed":
                     lines.append(f"- {name}: FAILED")
                     lines.append(f"  Reason: {error or 'Upload failed without more detail.'}")
+                elif state == "cancelled":
+                    lines.append(f"- {name}: CANCELLED")
                 else:
                     lines.append(f"- {name}: {state.title() or 'Pending'}")
                 lines.append(f"  Path: {fp}")
@@ -1042,10 +1114,15 @@ class RuntimeMixin:
             self.add_activity(message, "warning")
 
     def retry_failed(self) -> None:
+        if self._upload_in_progress():
+            self.add_activity(
+                "Wait for the current upload to finish before retrying failed files.", "warning"
+            )
+            return
         cnt = 0
         with self.lock:
             for w in self.file_widgets.values():
-                if w["state"] == "failed":
+                if w["state"] in ("failed", "cancelled"):
                     self._reset_row_for_retry(w)
                     cnt += 1
         if cnt:
@@ -1058,6 +1135,7 @@ class RuntimeMixin:
         self.cancel_event.set()
         self._clear_import_work()
         self.is_uploading = False
+        self._finalizing = False
         self.upload_count = 0
         self.upload_total = 0
         self.group_counter = 0

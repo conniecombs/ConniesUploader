@@ -19,8 +19,10 @@ func ValidateFilePath(filePath string) error {
 	if err != nil {
 		return fmt.Errorf("invalid file path: %w", err)
 	}
-	if strings.Contains(filePath, "..") {
-		return fmt.Errorf("path traversal detected")
+	for _, component := range strings.Split(filepath.ToSlash(filePath), "/") {
+		if component == ".." {
+			return fmt.Errorf("path traversal detected")
+		}
 	}
 	fileInfo, err := os.Stat(absPath)
 	if err != nil {
@@ -49,10 +51,16 @@ func ValidateServiceName(service string) error {
 func ValidateJobRequest(job *JobRequest) error {
 	validActions := map[string]bool{
 		"http_upload": true, "http_request": true, "http_batch_resolve": true,
-		"generate_thumb": true,
+		"generate_thumb": true, "cancel": true,
 	}
 	if !validActions[job.Action] {
 		return fmt.Errorf("invalid action: %s", job.Action)
+	}
+	if job.Action == "cancel" {
+		if strings.TrimSpace(job.BatchID) == "" {
+			return fmt.Errorf("cancel requires batch_id")
+		}
+		return nil
 	}
 	if job.Action != "generate_thumb" {
 		if err := ValidateServiceName(job.Service); err != nil {
@@ -63,6 +71,10 @@ func ValidateJobRequest(job *JobRequest) error {
 		if len(job.Files) == 0 {
 			return fmt.Errorf("no files provided")
 		}
+	}
+	// Upload files are validated one at a time while the job runs so a single
+	// bad path fails only itself. Thumbnail jobs carry exactly one path.
+	if job.Action == "generate_thumb" {
 		for _, fp := range job.Files {
 			if err := ValidateFilePath(fp); err != nil {
 				return err

@@ -40,7 +40,7 @@ class ViprPlugin(ImageHostPlugin):
     def metadata(self) -> Dict[str, Any]:
         """Plugin metadata for Vipr.im"""
         return {
-            "version": "3.1.1",
+            "version": "3.1.2",
             "author": "Connie's Uploader Team",
             "description": "Upload images to Vipr.im with dynamic gallery selection, cover support, and API-based uploads",
             "website": "https://vipr.im",
@@ -224,9 +224,7 @@ class ViprPlugin(ImageHostPlugin):
                     g["name"]: g["id"] for g in galleries if g.get("name") and g.get("id")
                 }
                 self.vipr_gallery_urls_map = {
-                    g["name"]: g.get("url", "")
-                    for g in galleries
-                    if g.get("name") and g.get("url")
+                    g["name"]: g.get("url", "") for g in galleries if g.get("name") and g.get("url")
                 }
                 names = ["None"] + list(self.vipr_galleries_map.keys())
                 self._set_gallery_options(parent_widget, names)
@@ -273,10 +271,7 @@ class ViprPlugin(ImageHostPlugin):
             return
 
         clean_title = (
-            str(getattr(group, "title", "") or "Gallery")
-            .replace("[", "")
-            .replace("]", "")
-            .strip()
+            str(getattr(group, "title", "") or "Gallery").replace("[", "").replace("]", "").strip()
         )
         new_data = api.create_vipr_gallery(creds, clean_title)
         if not new_data:
@@ -313,9 +308,7 @@ class ViprPlugin(ImageHostPlugin):
         # concurrent workers each get a unique XFS upload slot while sharing
         # the once-per-job login session.
         base_endpoint = "https://vipr.im/cgi-bin/upload.cgi"
-        upload_url = (
-            f"{base_endpoint}?upload_id={{upload_id}}&js_on=1&utype=reg&upload_type=file"
-        )
+        upload_url = f"{base_endpoint}?upload_id={{upload_id}}&js_on=1&utype=reg&upload_type=file"
         gallery_id = self._gallery_id_from_config(config)
 
         return {

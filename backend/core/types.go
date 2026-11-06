@@ -25,6 +25,19 @@ const (
 	ProgressReportInterval  = 2 * time.Second
 )
 
+// RequestTimeout converts a per-request timeout in seconds into a duration,
+// clamping to ClientTimeout and treating zero or negatives as the default.
+func RequestTimeout(seconds int) time.Duration {
+	if seconds <= 0 {
+		return ClientTimeout
+	}
+	timeout := time.Duration(seconds) * time.Second
+	if timeout > ClientTimeout {
+		return ClientTimeout
+	}
+	return timeout
+}
+
 const (
 	DefaultMaxRetries        = 3
 	DefaultInitialBackoff    = 1 * time.Second
@@ -34,6 +47,7 @@ const (
 
 type JobRequest struct {
 	ID          string                  `json:"id,omitempty"`
+	BatchID     string                  `json:"batch_id,omitempty"`
 	Action      string                  `json:"action"`
 	Service     string                  `json:"service"`
 	Files       []string                `json:"files"`
@@ -147,6 +161,14 @@ type GenericHttpRequestSpec struct {
 	UseCookies               bool              `json:"use_cookies"`
 	IncludeResponseBody      bool              `json:"include_response_body,omitempty"`
 	IncludeTransportMetadata bool              `json:"include_transport_metadata,omitempty"`
+	// LiteralValues disables template substitution for url, headers, and
+	// form_fields so Python can send resolved text that contains braces.
+	LiteralValues bool `json:"literal_values,omitempty"`
+	// TimeoutSeconds bounds this request; values above the client ceiling
+	// clamp to it and zero selects the default.
+	TimeoutSeconds int `json:"timeout_seconds,omitempty"`
+	// ResetCookies discards the shared cookie jar before the request runs.
+	ResetCookies bool `json:"reset_cookies,omitempty"`
 
 	// Deprecated compatibility fields. New Python code should call Go one
 	// resolved transport request at a time, then parse and validate responses in

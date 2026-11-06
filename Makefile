@@ -20,9 +20,8 @@ endif
 
 # Build configuration
 GO_FLAGS := -ldflags="-s -w"
-PYINSTALLER_FLAGS := --noconsole --onefile --clean
 APP_NAME := ConniesUploader
-VERSION := 3.1.1
+VERSION := 3.1.2
 
 # Default target
 all: build
@@ -65,27 +64,10 @@ build-go:
 	cd backend && go build $(GO_FLAGS) -o ../$(GO_OUTPUT) .
 	@echo "Go sidecar built: $(GO_OUTPUT)"
 
-# Build Python application with PyInstaller
+# Build Python application with the shared packaging script (same as CI/release)
 build-python: build-go
 	@echo "Building Python application..."
-	cd frontend && pyinstaller $(PYINSTALLER_FLAGS) \
-		--name "$(APP_NAME)" \
-		--icon "../packaging/logo.ico" \
-		--add-data "../$(GO_OUTPUT)$(if $(filter Windows,$(DETECTED_OS)),;.,:)" \
-		--add-data "../packaging/logo.ico$(if $(filter Windows,$(DETECTED_OS)),;.,:)" \
-		--additional-hooks-dir "../packaging/pyinstaller_hooks" \
-		--distpath "../dist" \
-		--workpath "../build" \
-		--specpath "../packaging" \
-		--collect-all tkinterdnd2 \
-		--collect-submodules modules.plugins \
-		--hidden-import modules.plugins.imx \
-		--hidden-import modules.plugins.pixhost \
-		--hidden-import modules.plugins.vipr \
-		--hidden-import modules.plugins.turbo \
-		--hidden-import modules.plugins.imagebam \
-		--hidden-import modules.plugins.imgur \
-		main.py
+	$(PYTHON) scripts/maintenance/package_app.py
 	@echo "Build complete: $(FINAL_EXE)"
 
 # Full build

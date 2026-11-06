@@ -371,3 +371,56 @@ func TestExecuteGenericRequestFieldExtractionErrorIncludesSanitizedDiagnostics(t
 		t.Fatalf("error leaked form value: %q", msg)
 	}
 }
+
+func TestExecuteGenericRequestLiteralValuesKeepsBraces(t *testing.T) {
+	var received string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		received = r.PostFormValue("message")
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer server.Close()
+
+	spec := &GenericHttpRequestSpec{
+		URL:           server.URL + "/post",
+		Method:        http.MethodPost,
+		FormFields:    map[string]string{"message": "Set {HD} part 2"},
+		Headers:       map[string]string{"X-Note": "{literal}"},
+		LiteralValues: true,
+	}
+	if _, err := ExecuteGenericRequest(context.Background(), server.Client(), spec, nil); err != nil {
+		t.Fatalf("ExecuteGenericRequest returned error: %v", err)
+	}
+	if received != "Set {HD} part 2" {
+		t.Fatalf("server received %q, want the literal braces", received)
+	}
+}
+
+func TestExecuteGenericRequestSubstitutesWhenNotLiteral(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer server.Close()
+
+	spec := &GenericHttpRequestSpec{
+		URL:        server.URL + "/post",
+		Method:     http.MethodPost,
+		FormFields: map[string]string{"message": "{missing}"},
+	}
+	_, err := ExecuteGenericRequest(context.Background(), server.Client(), spec, nil)
+	if err == nil || !strings.Contains(err.Error(), "unresolved template tokens") {
+		t.Fatalf("expected unresolved template error, got %v", err)
+	}
+}
+
+func TestGenericRequestTimeoutClampsToClientCeiling(t *testing.T) {
+	if got := RequestTimeout(999); got != ClientTimeout {
+		t.Fatalf("RequestTimeout(999) = %v, want %v", got, ClientTimeout)
+	}
+	if got := RequestTimeout(0); got != ClientTimeout {
+		t.Fatalf("RequestTimeout(0) = %v, want %v", got, ClientTimeout)
+	}
+	if got := RequestTimeout(7); got != 7*time.Second {
+		t.Fatalf("RequestTimeout(7) = %v, want 7s", got)
+	}
+}

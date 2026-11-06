@@ -251,12 +251,8 @@ class FileQueueMixin:
                         logger.warning(f"      ⚠ No valid images in folder: {folder_name}")
                         result["empty_folders"].append(folder_name)
                 except Exception as e:
-                    logger.error(
-                        f"      ✗ Error scanning folder {folder_name}: {e}", exc_info=True
-                    )
-                    result["rejected_details"].append(
-                        f"{folder_name}: could not scan folder ({e})"
-                    )
+                    logger.error(f"      ✗ Error scanning folder {folder_name}: {e}", exc_info=True)
+                    result["rejected_details"].append(f"{folder_name}: could not scan folder ({e})")
 
             elif os.path.isfile(path):
                 if path.lower().endswith(file_handler.VALID_EXTENSIONS):
@@ -342,11 +338,7 @@ class FileQueueMixin:
         queued_count = 0
 
         for folder_name, files_in_folder in result.get("folder_batches", []):
-            group = (
-                target_group
-                if target_group
-                else self._create_group(folder_name, refresh=False)
-            )
+            group = target_group if target_group else self._create_group(folder_name, refresh=False)
             queued_count += len(
                 self._enqueue_rows_for_group(files_in_folder, group, show_previews, epoch)
             )
@@ -405,9 +397,7 @@ class FileQueueMixin:
         except (tk.TclError, AttributeError):
             return True
 
-    def _notify_no_valid_files(
-        self, empty_folders: List[str], rejected_details: List[str]
-    ) -> None:
+    def _notify_no_valid_files(self, empty_folders: List[str], rejected_details: List[str]) -> None:
         supported = ", ".join(file_handler.VALID_EXTENSIONS)
         issues = [f"No valid image files found. Supported formats: {supported}."]
 

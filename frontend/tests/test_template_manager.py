@@ -14,7 +14,11 @@ from pathlib import Path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from modules import template_manager  # noqa: E402
-from modules.template_manager import TemplateEditor, TemplateManager, TemplateValidationError  # noqa: E402
+from modules.template_manager import (
+    TemplateEditor,
+    TemplateManager,
+    TemplateValidationError,
+)  # noqa: E402
 
 
 @pytest.mark.unit
@@ -99,7 +103,9 @@ class TestTemplateManagerInstantiation:
         assert not legacy_path.exists()
         assert list(tmp_path.glob("user_templates.json.migrated-*.bak"))
 
-    def test_default_template_path_does_not_migrate_when_new_file_exists(self, tmp_path, monkeypatch):
+    def test_default_template_path_does_not_migrate_when_new_file_exists(
+        self, tmp_path, monkeypatch
+    ):
         template_path = tmp_path / ".conniesuploader" / "templates.json"
         legacy_path = tmp_path / "user_templates.json"
         template_path.parent.mkdir()
@@ -426,7 +432,10 @@ class TestTemplatePersistence:
             assert issue is not None
             assert "Template file must contain a JSON object" in issue["error"]
             assert Path(issue["backup_path"]).exists()
-            assert json.loads(templates_file.read_text(encoding="utf-8"))["BBCode"] == tm.defaults["BBCode"]
+            assert (
+                json.loads(templates_file.read_text(encoding="utf-8"))["BBCode"]
+                == tm.defaults["BBCode"]
+            )
 
 
 @pytest.mark.unit
@@ -536,7 +545,9 @@ class TestTemplateValidation:
             tm = TemplateManager(str(templates_file))
 
             else_without_if = tm.validate_template("#all_images#[else]")
-            duplicate_else = tm.validate_template("[if gallery_link]A[else]B[else]C[/if]#all_images#")
+            duplicate_else = tm.validate_template(
+                "[if gallery_link]A[else]B[else]C[/if]#all_images#"
+            )
 
             assert "Template has an [else] without a matching [if]." in else_without_if
             assert "Template has more than one [else] in an [if] block." in duplicate_else
@@ -674,10 +685,7 @@ class TestTemplateManagerAdvanced:
                 ("viewer4", "thumb4", "direct4"),
             ]
 
-            data = {
-                "cover_url": "thumb1",
-                "gallery_name": "Test"
-            }
+            data = {"cover_url": "thumb1", "gallery_name": "Test"}
 
             result = mgr.apply("Custom Covers", data, images)
 
@@ -820,7 +828,9 @@ class TestTemplateManagerAdvanced:
             result_no_link = mgr.apply("Cond Test", {"gallery_link": ""}, images)
             assert "Gallery" not in result_no_link
 
-            result_with_link = mgr.apply("Cond Test", {"gallery_link": "http://example.com"}, images)
+            result_with_link = mgr.apply(
+                "Cond Test", {"gallery_link": "http://example.com"}, images
+            )
             assert "[url=http://example.com]Gallery[/url]" in result_with_link
 
     def test_conditionals_support_forum_safe_placeholder_variants(self):
@@ -950,7 +960,10 @@ class TestTemplateManagerAdvanced:
 
             errors = mgr.validate_template("#all_images#[/for]")
 
-            assert "Template has a closing [/for] without a matching [for image] or [for cover]." in errors
+            assert (
+                "Template has a closing [/for] without a matching [for image] or [for cover]."
+                in errors
+            )
 
     def test_metadata_placeholders_render_from_context(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1077,9 +1090,7 @@ class TestTemplateManagerAdvanced:
             for value in TemplateEditor.supported_placeholder_values()
             for match in TemplateManager.HASH_PLACEHOLDER_PATTERN.finditer(value)
         }
-        image_labels = {
-            label for label, _value in TemplateEditor.PLACEHOLDER_CATEGORIES["Images"]
-        }
+        image_labels = {label for label, _value in TemplateEditor.PLACEHOLDER_CATEGORIES["Images"]}
         cover_labels = [
             label
             for label, _value in TemplateEditor.PLACEHOLDER_CATEGORIES["Images"]
@@ -1116,7 +1127,9 @@ class TestTemplateManagerAdvanced:
 
             assert result == "viewer1|thumb1|direct1"
 
-    def test_preview_output_uses_current_editor_template_and_preview_context(self, tmp_path, monkeypatch):
+    def test_preview_output_uses_current_editor_template_and_preview_context(
+        self, tmp_path, monkeypatch
+    ):
         class FakeText:
             def __init__(self, content):
                 self.content = content

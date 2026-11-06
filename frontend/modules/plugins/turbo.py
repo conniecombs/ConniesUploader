@@ -32,7 +32,7 @@ class TurboPlugin(ImageHostPlugin):
     def metadata(self) -> Dict[str, Any]:
         """Plugin metadata for TurboImageHost"""
         return {
-            "version": "3.1.1",
+            "version": "3.1.2",
             "author": "Connie's Uploader Team",
             "description": "Upload images to TurboImageHost with optional authentication, dynamic endpoint configuration, and cover image support",
             "website": "https://www.turboimagehost.com",
@@ -208,9 +208,7 @@ class TurboPlugin(ImageHostPlugin):
                     "value": gallery_name,
                 }
         else:
-            gallery_id = (
-                config.get("turbo_gallery_id") or config.get("gallery_id") or ""
-            ).strip()
+            gallery_id = (config.get("turbo_gallery_id") or config.get("gallery_id") or "").strip()
             if gallery_id:
                 multipart_fields["album"] = {"type": "text", "value": gallery_id}
 

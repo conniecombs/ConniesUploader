@@ -11,10 +11,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import math
 from typing import Any, Dict, Mapping, Optional
 
 from modules.sidecar import SidecarBridge
-
 
 JsonDict = Dict[str, Any]
 
@@ -52,8 +52,15 @@ def build_transport_spec(
     use_cookies: bool = True,
     include_response_body: bool = True,
     include_transport_metadata: bool = True,
+    literal_values: bool = False,
+    reset_cookies: bool = False,
 ) -> JsonDict:
-    """Build a resolved sidecar transport request spec."""
+    """Build a resolved sidecar transport request spec.
+
+    ``literal_values`` tells Go to send url, headers, and form fields exactly as
+    given (no ``{token}`` substitution). ``reset_cookies`` discards the shared
+    cookie jar before the request runs, so a login cannot ride an old session.
+    """
     spec: JsonDict = {
         "url": str(url),
         "method": str(method or "GET").upper(),
@@ -64,10 +71,17 @@ def build_transport_spec(
     if headers:
         spec["headers"] = {str(key): str(value) for key, value in headers.items()}
     if form_fields:
-        spec["form_fields"] = {
-            str(key): str(value) for key, value in form_fields.items()
-        }
+        spec["form_fields"] = {str(key): str(value) for key, value in form_fields.items()}
+    if literal_values:
+        spec["literal_values"] = True
+    if reset_cookies:
+        spec["reset_cookies"] = True
     return spec
+
+
+# Extra seconds Python waits beyond the deadline it hands to Go, so Go always
+# gives up (and reports it) before Python does.
+TRANSPORT_WAIT_MARGIN_SECONDS = 5.0
 
 
 def execute_transport_request(
@@ -77,21 +91,33 @@ def execute_transport_request(
     timeout: float = 30.0,
     bridge: Optional[Any] = None,
     rate_limits: Optional[Mapping[str, Any]] = None,
+    retry: bool = True,
 ) -> TransportResponse:
-    """Execute a resolved transport request through the Go sidecar."""
+    """Execute a resolved transport request through the Go sidecar.
+
+    ``timeout`` becomes the request deadline Go enforces (``timeout_seconds``)
+    and Python waits that long plus a small margin. ``retry=False`` disables
+    Go's transport retries for requests that must not be repeated, such as a
+    forum post.
+    """
+    generic_spec = dict(spec)
+    if "timeout_seconds" not in generic_spec:
+        generic_spec["timeout_seconds"] = int(math.ceil(float(timeout)))
     payload: JsonDict = {
         "action": "http_request",
-        "generic_spec": dict(spec),
+        "generic_spec": generic_spec,
     }
     if service:
         payload["service"] = service
     if rate_limits:
-        payload["rate_limits"] = {
-            str(key): value for key, value in rate_limits.items()
-        }
+        payload["rate_limits"] = {str(key): value for key, value in rate_limits.items()}
+    if not retry:
+        payload["retry_config"] = {"max_retries": 0}
 
     active_bridge = bridge if bridge is not None else SidecarBridge.get()
-    raw = active_bridge.request_sync(payload, timeout=timeout)
+    raw = active_bridge.request_sync(
+        payload, timeout=float(timeout) + TRANSPORT_WAIT_MARGIN_SECONDS
+    )
     if not isinstance(raw, dict):
         return TransportResponse(
             ok=False,

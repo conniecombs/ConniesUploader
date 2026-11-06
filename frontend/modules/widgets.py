@@ -323,10 +323,7 @@ class ServiceSettingsView:
         return self._read_handle(self.service_handles.get(service_id, {}))
 
     def get_all_raw_configs(self):
-        return {
-            service_id: self.get_raw_config(service_id)
-            for service_id in self.service_handles
-        }
+        return {service_id: self.get_raw_config(service_id) for service_id in self.service_handles}
 
     def get_validated_config(self, service_id):
         service_id = config.normalize_service_id(service_id)

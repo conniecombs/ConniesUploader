@@ -14,7 +14,7 @@ This guide covers source-run and packaged-build problems for Connie's Uploader.
 Local builds:
 
 - Python 3.11 or newer. The Windows build script accepts Python 3.11 through 3.13.
-- Go 1.25.9 or newer.
+- Go 1.26 or newer (`backend/go.mod` declares `go 1.26.0`).
 
 CI/release workflows currently use:
 
@@ -303,7 +303,7 @@ pip install -r frontend/requirements.txt
 
 ### Windows
 
-`build_uploader.bat` can install a portable Go 1.25.9 toolchain under `.build-tools/` if no compatible Go is found.
+`build_uploader.bat` can install a portable Go toolchain under `.build-tools/` if no compatible Go is found; the required minimum is Go 1.26.
 
 ### Linux/macOS
 

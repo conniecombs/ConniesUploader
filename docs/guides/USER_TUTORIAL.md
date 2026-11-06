@@ -191,7 +191,8 @@ Queue actions:
 - Press `C` to toggle cover status for selected files, or `Delete` to remove selected files from the queue.
 - Right-click a batch and choose `Remove Batch` to remove it.
 - Right-click a file and choose `Remove Image`, or right-click a selected group and choose `Remove Selected Images`.
-- `Retry Failed` resets failed files to pending and starts another upload pass.
+- `Retry Failed` resets failed and cancelled files to pending and starts another upload pass. It is disabled while an upload is running or finalizing.
+- `Stop Upload` cancels the files still queued or in flight in the sidecar. Each stopped file ends in a grey `Cancelled` state, the completion summary reports how many were cancelled, and `Retry Failed` can send them again.
 - `Clear List` removes all batches, queued files, generated progress, and current output references.
 
 ### Example: Reorder Images Before Upload
@@ -1236,7 +1237,7 @@ Example:
 | `frontend/modules/ui/main_window.py` | Compatibility wrapper that keeps older imports pointed at the main window app. |
 | `frontend/modules/ui/Main_Window/` | Contains the organized main-window implementation, including app setup, layout, settings, upload checks, queue runtime, galleries, covers, posting, and diagnostics. |
 | `frontend/modules/dnd.py` | Handles drag and drop, row selection, reordering, and context-menu queue actions. |
-| `frontend/modules/file_handler.py` and `frontend/modules/validation.py` | Check file extensions, sizes, paths, and import rules before files enter the queue. |
+| `frontend/modules/file_handler.py` | Checks file extensions, sizes, paths, and import rules before files enter the queue. |
 | `frontend/modules/settings_manager.py` | Loads, saves, normalizes, validates, and migrates app settings under `~/.conniesuploader/user_settings.json`. |
 | `frontend/modules/credentials_manager.py` | Reads and writes credentials through the operating system keyring. |
 | `frontend/modules/plugin_manager.py` | Discovers available image-host plugins and exposes their metadata to the app. |

@@ -9,6 +9,7 @@ import os
 import queue
 import threading
 import urllib.parse
+import uuid
 from typing import Any, Dict, List, Tuple
 
 from loguru import logger
@@ -18,7 +19,6 @@ from .gallery_cache import GalleryCache
 from .gallery_service import GalleryRecord, gallery_url_for_service
 from .plugin_manager import PluginManager
 from .sidecar import SidecarBridge
-
 
 SERVICE_THREAD_KEYS = {
     "imx.to": "imx_threads",
@@ -70,13 +70,45 @@ class UploadManager:
         self._lifecycle_lock = threading.RLock()
         self._listener_registered = False
         self._stop_events = threading.Event()
+        # Batch identity: every sidecar job of one Start carries ``batch_id``
+        # and a per-job ``id``; events for unknown ids are ignored.
+        self.current_batch_id: str | None = None
+        self._job_files: Dict[str, List[str]] = {}
+        self._job_counter = 0
+
+    def _register_job(self, job_id: str, files: List[str]) -> None:
+        """Remember which files a sidecar job owns so its events can be scoped."""
+        self._job_files[job_id] = list(files)
+
+    def _next_job_id(self) -> str:
+        self._job_counter += 1
+        return f"{self.current_batch_id}:{self._job_counter}"
+
+    def _listener_should_run(self) -> bool:
+        """The listener stops only at shutdown, never when a batch is cancelled."""
+        return not self._stop_events.is_set()
+
+    def cancel_batch(self) -> None:
+        """Ask the sidecar to abort every queued and in-flight job of this batch."""
+        batch_id = self.current_batch_id
+        if not batch_id:
+            return
+        logger.info(f"Cancelling sidecar batch {batch_id}")
+        self.bridge.send_cmd({"action": "cancel", "batch_id": batch_id})
 
     def start_batch(
         self, pending_by_group: Dict[Any, List[str]], cfg: Dict[str, Any], creds: Dict[str, str]
-    ) -> None:
-        """Submit a batch of groups to the persistent Go sidecar."""
+    ) -> str:
+        """Submit a batch of groups to the persistent Go sidecar.
+
+        Returns the batch id attached to every job of this batch.
+        """
         with self._lifecycle_lock:
             self._stop_events.clear()
+            self.current_batch_id = uuid.uuid4().hex
+            self._job_files = {}
+            self._job_counter = 0
+            batch_id = self.current_batch_id
 
             if not self._listener_registered:
                 self.bridge.add_listener(self.event_queue)
@@ -92,7 +124,7 @@ class UploadManager:
 
             if self.dispatch_thread and self.dispatch_thread.is_alive():
                 logger.warning("Upload dispatch already running; ignoring duplicate start request")
-                return
+                return batch_id
 
             self.dispatch_thread = threading.Thread(
                 target=self._dispatch_jobs,
@@ -101,6 +133,13 @@ class UploadManager:
                 daemon=True,
             )
             self.dispatch_thread.start()
+            return batch_id
+
+    def _cancel_undispatched(self, files: List[str]) -> None:
+        """Give files that never reached the sidecar a terminal Cancelled state."""
+        for file_path in files:
+            self.result_queue.put((file_path, "", ""))
+            self.progress_queue.put(("status", file_path, "Cancelled"))
 
     def _dispatch_jobs(
         self, pending_by_group: Dict[Any, List[str]], cfg: Dict[str, Any], creds: Dict[str, str]
@@ -115,6 +154,10 @@ class UploadManager:
         try:
             for group_obj, files in pending_by_group.items():
                 if self.cancel_event.is_set():
+                    for remaining in pending_by_group.values():
+                        self._cancel_undispatched(
+                            [fp for fp in remaining if fp not in completed_files]
+                        )
                     return
 
                 service_id = cfg.get("service", "")
@@ -124,7 +167,7 @@ class UploadManager:
                     try:
                         cover_files = self._explicit_cover_files_for_group(group_obj, files)
                         if cover_files is None:
-                            cover_files = group_obj.files[:self._cover_count_for_service(cfg)]
+                            cover_files = group_obj.files[: self._cover_count_for_service(cfg)]
                         context: Dict[str, Any] = {
                             "pending_files": list(files),
                             "cover_files": cover_files,
@@ -143,16 +186,23 @@ class UploadManager:
                             if gallery_url:
                                 self.progress_queue.put(("gallery_url", file_path, gallery_url))
                             self.result_queue.put(
-                                (file_path, image_url, self._canonicalize_imx_thumbnail_url(thumb_url))
+                                (
+                                    file_path,
+                                    image_url,
+                                    self._canonicalize_imx_thumbnail_url(thumb_url),
+                                )
                             )
                             # Preparation uploads bypass the sidecar's terminal status event.
                             self.progress_queue.put(("status", file_path, "Done"))
                         if service_id == "imx.to" and getattr(group_obj, "gallery_id", ""):
-                            self._remember_imx_gallery_use(group_obj, {
-                                "gallery_id": group_obj.gallery_id,
-                                "selected_gallery_name": group_obj.gallery_name,
-                                "selected_gallery_url": group_obj.gallery_url,
-                            })
+                            self._remember_imx_gallery_use(
+                                group_obj,
+                                {
+                                    "gallery_id": group_obj.gallery_id,
+                                    "selected_gallery_name": group_obj.gallery_name,
+                                    "selected_gallery_url": group_obj.gallery_url,
+                                },
+                            )
 
                         for gal_data in context.get("created_galleries", []):
                             self.progress_queue.put(("register_pix_gal", None, gal_data))
@@ -166,11 +216,12 @@ class UploadManager:
             logger.info("--- Starting Phase 2: Upload Dispatch ---")
 
             for group_obj, files in pending_by_group.items():
-                if self.cancel_event.is_set():
-                    break
-
                 files = [file_path for file_path in files if file_path not in completed_files]
                 if not files:
+                    continue
+
+                if self.cancel_event.is_set():
+                    self._cancel_undispatched(files)
                     continue
 
                 if group_obj in failed_groups:
@@ -206,7 +257,9 @@ class UploadManager:
                     ).strip()
                     if manual_hash:
                         group_cfg["gallery_hash"] = manual_hash
-                        logger.info(f"Group '{group_obj.title}' using manual gallery hash: {manual_hash}")
+                        logger.info(
+                            f"Group '{group_obj.title}' using manual gallery hash: {manual_hash}"
+                        )
 
                 if service_id == "turboimagehost":
                     for attr_name, config_key in (
@@ -310,15 +363,16 @@ class UploadManager:
     @staticmethod
     def _remember_imx_gallery_use(group_obj: Any, cfg: Dict[str, Any]) -> None:
         gallery_id = str(
-            cfg.get("gallery_id") or cfg.get("selected_gallery_id") or cfg.get("imx_gallery_id") or ""
+            cfg.get("gallery_id")
+            or cfg.get("selected_gallery_id")
+            or cfg.get("imx_gallery_id")
+            or ""
         ).strip()
         if not gallery_id:
             return
 
         gallery_name = str(
-            cfg.get("selected_gallery_name")
-            or getattr(group_obj, "gallery_name", "")
-            or gallery_id
+            cfg.get("selected_gallery_name") or getattr(group_obj, "gallery_name", "") or gallery_id
         ).strip()
         gallery_url = str(
             cfg.get("selected_gallery_url")
@@ -376,7 +430,10 @@ class UploadManager:
                     if isinstance(http_spec, dict):
                         resolve_spec = http_spec.pop("resolve_spec", None)
 
+                    job_id = self._next_job_id()
                     job_data = {
+                        "id": job_id,
+                        "batch_id": self.current_batch_id or "",
                         "action": "http_upload",
                         "service": service_id,
                         "files": [os.path.normpath(f) for f in file_list],
@@ -396,18 +453,24 @@ class UploadManager:
                     )
 
                     self.active_files.update(file_list)
+                    self._register_job(job_id, file_list)
                     if not self.bridge.send_cmd(job_data):
+                        self._job_files.pop(job_id, None)
                         for file_path in file_list:
                             self.active_files.discard(file_path)
                             self.result_queue.put((file_path, "", ""))
-                            self.progress_queue.put(("status", file_path, "error: sidecar unavailable"))
+                            self.progress_queue.put(
+                                ("status", file_path, "error: sidecar unavailable")
+                            )
                     return
 
             except Exception as exc:
                 logger.error(f"Failed to build HTTP request spec for {service_id}: {exc}")
                 for file_path in file_list:
                     self.result_queue.put((file_path, "", ""))
-                    self.progress_queue.put(("status", file_path, "error: plugin configuration failed"))
+                    self.progress_queue.put(
+                        ("status", file_path, "error: plugin configuration failed")
+                    )
                 return
 
         logger.error(
@@ -416,9 +479,7 @@ class UploadManager:
         )
         for file_path in file_list:
             self.result_queue.put((file_path, "", ""))
-            self.progress_queue.put(
-                ("status", file_path, "error: plugin missing http_spec")
-            )
+            self.progress_queue.put(("status", file_path, "error: plugin missing http_spec"))
 
     @staticmethod
     def _normalize_job_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
@@ -468,7 +529,9 @@ class UploadManager:
             try:
                 return {
                     "requests_per_second": float(rps),
-                    "burst_size": int(burst if burst not in (None, "") else max(int(float(rps)), 1)),
+                    "burst_size": int(
+                        burst if burst not in (None, "") else max(int(float(rps)), 1)
+                    ),
                 }
             except (TypeError, ValueError):
                 return None
@@ -496,53 +559,79 @@ class UploadManager:
 
     def _process_events(self) -> None:
         """Read events from the bridge and update UI-facing queues."""
-        while not self.cancel_event.is_set() and not self._stop_events.is_set():
+        while self._listener_should_run():
             try:
                 data = self.event_queue.get(timeout=1)
-                evt = data.get("type")
-                fp = data.get("file") or data.get("file_path")
-
-                if evt in ("result", "error") and fp:
-                    self.active_files.discard(fp)
-
-                if evt == "status":
-                    self.progress_queue.put(("status", fp, data.get("status")))
-
-                elif evt == "progress":
-                    self.progress_queue.put(("prog", fp, data.get("data", data)))
-
-                elif evt == "result":
-                    url = data.get("url") or ""
-                    thumb = data.get("thumb") or ""
-                    metadata = data.get("data") if isinstance(data.get("data"), dict) else {}
-                    gallery_url = str(metadata.get("gallery_url") or "").strip()
-                    if gallery_url and fp:
-                        self.progress_queue.put(("gallery_url", fp, gallery_url))
-                    thumb = self._canonicalize_imx_thumbnail_url(thumb)
-                    self.result_queue.put((fp, url, thumb))
-
-                elif evt == "batch_complete":
-                    logger.debug("SIDECAR: batch complete")
-
-                elif evt == "log":
-                    logger.debug(f"SIDECAR: {data.get('msg')}")
-
-                elif evt == "error":
-                    logger.error(f"SIDECAR ERROR: {data.get('msg')}")
-                    if fp:
-                        self.progress_queue.put(("status", fp, f"error: {data.get('msg')}"))
-
-                elif evt == "sidecar_stopped":
-                    logger.error(f"SIDECAR STOPPED: {data.get('msg')}")
-                    for active_fp in list(self.active_files):
-                        self.result_queue.put((active_fp, "", ""))
-                        self.progress_queue.put(("status", active_fp, f"error: {data.get('msg')}"))
-                    self.active_files.clear()
-
             except queue.Empty:
                 continue
+            try:
+                self._handle_event(data)
             except Exception as exc:
                 logger.error(f"Event processing error: {exc}")
+
+    def _fail_active_files(self, files: List[str], reason: str) -> None:
+        for file_path in files:
+            if file_path not in self.active_files:
+                continue
+            self.active_files.discard(file_path)
+            self.result_queue.put((file_path, "", ""))
+            self.progress_queue.put(("status", file_path, f"error: {reason}"))
+
+    def _handle_event(self, data: Dict[str, Any]) -> None:
+        """Translate one sidecar event into progress/result queue items."""
+        evt = data.get("type")
+        fp = data.get("file") or data.get("file_path")
+        job_id = data.get("id")
+
+        if evt == "sidecar_stopped":
+            logger.error(f"SIDECAR STOPPED: {data.get('msg')}")
+            self._fail_active_files(
+                list(self.active_files), str(data.get("msg") or "sidecar stopped")
+            )
+            self._job_files.clear()
+            return
+
+        if job_id and job_id not in self._job_files:
+            # Replies to request_sync callers or a previous batch: not ours.
+            logger.debug(f"Ignoring sidecar event for unknown job {job_id}")
+            return
+
+        if evt in ("result", "error") and fp:
+            self.active_files.discard(fp)
+
+        if evt == "status":
+            self.progress_queue.put(("status", fp, data.get("status")))
+
+        elif evt == "progress":
+            self.progress_queue.put(("prog", fp, data.get("data", data)))
+
+        elif evt == "result":
+            url = data.get("url") or ""
+            thumb = data.get("thumb") or ""
+            metadata = data.get("data") if isinstance(data.get("data"), dict) else {}
+            gallery_url = str(metadata.get("gallery_url") or "").strip()
+            if gallery_url and fp:
+                self.progress_queue.put(("gallery_url", fp, gallery_url))
+            thumb = self._canonicalize_imx_thumbnail_url(thumb)
+            self.result_queue.put((fp, url, thumb))
+
+        elif evt == "batch_complete":
+            logger.debug("SIDECAR: batch complete")
+            if job_id:
+                stragglers = self._job_files.pop(job_id, [])
+                self._fail_active_files(stragglers, "no result received from sidecar")
+
+        elif evt == "log":
+            logger.debug(f"SIDECAR: {data.get('msg')}")
+
+        elif evt == "error":
+            logger.error(f"SIDECAR ERROR: {data.get('msg')}")
+            if fp:
+                self.progress_queue.put(("status", fp, f"error: {data.get('msg')}"))
+            elif job_id:
+                self._fail_active_files(
+                    self._job_files.get(job_id, []), str(data.get("msg") or "sidecar error")
+                )
 
     def shutdown(self) -> None:
         """Shutdown the upload manager gracefully."""

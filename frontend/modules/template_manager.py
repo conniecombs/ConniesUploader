@@ -24,7 +24,6 @@ from tkinter import colorchooser, filedialog, messagebox
 from .widgets import MouseWheelComboBox
 from . import file_handler
 
-
 _USER_DATA_DIR = os.path.join(os.path.expanduser("~"), ".conniesuploader")
 DEFAULT_TEMPLATE_FILE = os.path.join(_USER_DATA_DIR, "templates.json")
 LEGACY_TEMPLATE_FILE = os.path.abspath("user_templates.json")
@@ -48,9 +47,7 @@ class TemplateManager:
         r"^if(?:\s+(.+))?$",
         re.IGNORECASE,
     )
-    CONDITIONAL_EXPRESSION_PATTERN = re.compile(
-        r"^#?([A-Za-z_][A-Za-z0-9_]*)#?(?:\s*=\s*(.+))?$"
-    )
+    CONDITIONAL_EXPRESSION_PATTERN = re.compile(r"^#?([A-Za-z_][A-Za-z0-9_]*)#?(?:\s*=\s*(.+))?$")
     LOOP_START_PATTERN = re.compile(r"^for\s+(image|cover)(?:\s+(.+))?$", re.IGNORECASE)
     LOOP_SEPARATOR_PATTERN = re.compile(
         r"(?:separator|sep)\s*=\s*(\"[^\"]*\"|'[^']*'|\S+)",
@@ -175,7 +172,9 @@ class TemplateManager:
             stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             backup_path = f"{LEGACY_TEMPLATE_FILE}.migrated-{stamp}.bak"
             os.replace(LEGACY_TEMPLATE_FILE, backup_path)
-            logger.info(f"Migrated templates to {self.filepath}; legacy file preserved at {backup_path}")
+            logger.info(
+                f"Migrated templates to {self.filepath}; legacy file preserved at {backup_path}"
+            )
         except OSError as exc:
             logger.error(f"Could not migrate legacy templates: {exc}")
 
@@ -293,7 +292,11 @@ class TemplateManager:
     def template_warnings(self, name: str, content: str) -> List[str]:
         warnings: List[str] = []
         category = self.get_template_category(name)
-        if self.resolve_output_format(name) == "BBCode" and category in {"BBCode", "Forum", "ViperGirls"}:
+        if self.resolve_output_format(name) == "BBCode" and category in {
+            "BBCode",
+            "Forum",
+            "ViperGirls",
+        }:
             if self.HTML_TAG_PATTERN.search(str(content or "")):
                 warnings.append(
                     "This template is treated as BBCode, but it contains HTML tags. "
@@ -302,14 +305,9 @@ class TemplateManager:
         return warnings
 
     def get_category_names(self, include_all: bool = True) -> List[str]:
-        present = {
-            self.get_template_category(name)
-            for name in self.templates
-        }
+        present = {self.get_template_category(name) for name in self.templates}
         ordered = [
-            category
-            for category in self.BUILTIN_TEMPLATE_CATEGORY_ORDER
-            if category in present
+            category for category in self.BUILTIN_TEMPLATE_CATEGORY_ORDER if category in present
         ]
         remaining = sorted(present.difference(ordered))
         categories = ordered + remaining
@@ -320,19 +318,11 @@ class TemplateManager:
         standards = ["BBCode", "Markdown", "HTML"]
         builtins = [name for name in self.defaults if name in keys and name not in standards]
         custom = sorted(
-            [
-                name
-                for name in keys
-                if name not in standards and name not in self.defaults
-            ]
+            [name for name in keys if name not in standards and name not in self.defaults]
         )
         ordered = [s for s in standards if s in keys] + builtins + custom
         if category and category != self.CATEGORY_ALL:
-            ordered = [
-                name
-                for name in ordered
-                if self.get_template_category(name) == category
-            ]
+            ordered = [name for name in ordered if self.get_template_category(name) == category]
         return ordered
 
     def filter_template_names(
@@ -355,9 +345,7 @@ class TemplateManager:
     def export_templates_file(self, filepath: str, names: Optional[List[str]] = None) -> int:
         selected_names = names if names is not None else self.get_all_keys()
         templates = {
-            name: self.templates[name]
-            for name in selected_names
-            if name in self.templates
+            name: self.templates[name] for name in selected_names if name in self.templates
         }
         export_data = {
             "version": TEMPLATE_EXPORT_VERSION,
@@ -509,7 +497,9 @@ class TemplateManager:
 
             if kind == "for_end":
                 if not stack or stack[-1]["kind"] != "for":
-                    errors.append("Template has a closing [/for] without a matching [for image] or [for cover].")
+                    errors.append(
+                        "Template has a closing [/for] without a matching [for image] or [for cover]."
+                    )
                 else:
                     stack.pop()
 
@@ -531,21 +521,12 @@ class TemplateManager:
 
     @staticmethod
     def _decode_separator(value: str) -> str:
-        return (
-            str(value)
-            .replace("\\r", "\r")
-            .replace("\\n", "\n")
-            .replace("\\t", "\t")
-        )
+        return str(value).replace("\\r", "\r").replace("\\n", "\n").replace("\\t", "\t")
 
     @staticmethod
     def _clean_separator_value(value: str) -> str:
         raw_value = str(value or "").strip()
-        if (
-            len(raw_value) >= 2
-            and raw_value[0] == raw_value[-1]
-            and raw_value[0] in {"'", '"'}
-        ):
+        if len(raw_value) >= 2 and raw_value[0] == raw_value[-1] and raw_value[0] in {"'", '"'}:
             return raw_value[1:-1]
         return raw_value
 
@@ -653,11 +634,11 @@ class TemplateManager:
             kind = self._template_tag_kind(raw_tag)
             if kind in stop_tags:
                 if match.start() > position:
-                    nodes.append(("text", template_content[position:match.start()]))
+                    nodes.append(("text", template_content[position : match.start()]))
                 return nodes, match.end(), kind
 
             if match.start() > position:
-                nodes.append(("text", template_content[position:match.start()]))
+                nodes.append(("text", template_content[position : match.start()]))
 
             if kind == "if_start":
                 name, expected, valid = self._parse_condition_tag(raw_tag)
@@ -741,9 +722,7 @@ class TemplateManager:
             elif kind == "if":
                 _kind, name, expected, true_nodes, false_nodes = node
                 selected_nodes = (
-                    true_nodes
-                    if self._condition_matches(name, expected, data)
-                    else false_nodes
+                    true_nodes if self._condition_matches(name, expected, data) else false_nodes
                 )
                 child_slots, child_auto = self._cover_requirements_from_nodes(selected_nodes, data)
                 cover_slots += child_slots
@@ -768,9 +747,7 @@ class TemplateManager:
             elif kind == "if":
                 _kind, name, expected, true_nodes, false_nodes = node
                 selected_nodes = (
-                    true_nodes
-                    if self._condition_matches(name, expected, data)
-                    else false_nodes
+                    true_nodes if self._condition_matches(name, expected, data) else false_nodes
                 )
                 rendered.append(self._render_nodes(selected_nodes, data, images, cover_images))
             elif kind == "for_image":
@@ -812,7 +789,9 @@ class TemplateManager:
         """Remove app-only conditional syntax before output reaches forums."""
         return self.TEMPLATE_TAG_PATTERN.sub("", template_content)
 
-    def apply(self, format_mode: str, data: Dict[str, Any], images: List[Tuple[str, str, str]]) -> str:
+    def apply(
+        self, format_mode: str, data: Dict[str, Any], images: List[Tuple[str, str, str]]
+    ) -> str:
         template = self.get_template(format_mode)
         output_format = self.resolve_output_format(format_mode)
         nodes = self._parse_template_nodes(template)
@@ -925,10 +904,22 @@ class TemplateEditor(ctk.CTkToplevel):
             ("Thumb Size", "#thumb_size#"),
             ("Image Count", "#image_count#"),
             ("Folder Size", "#folder_size#"),
-            ("Cover Loop", "[for cover separator=newline]\n[url=#image_url#][img]#thumb_url#[/img][/url]\n[/for]"),
-            ("Loop: Newline", "[for image separator=newline]\n[url=#image_url#][img]#thumb_url#[/img][/url]\n[/for]"),
-            ("Loop: Blank Line", "[for image separator=blankline]\n[url=#image_url#][img]#thumb_url#[/img][/url]\n[/for]"),
-            ("Loop: Space", "[for image separator=space][url=#image_url#][img]#thumb_url#[/img][/url][/for]"),
+            (
+                "Cover Loop",
+                "[for cover separator=newline]\n[url=#image_url#][img]#thumb_url#[/img][/url]\n[/for]",
+            ),
+            (
+                "Loop: Newline",
+                "[for image separator=newline]\n[url=#image_url#][img]#thumb_url#[/img][/url]\n[/for]",
+            ),
+            (
+                "Loop: Blank Line",
+                "[for image separator=blankline]\n[url=#image_url#][img]#thumb_url#[/img][/url]\n[/for]",
+            ),
+            (
+                "Loop: Space",
+                "[for image separator=space][url=#image_url#][img]#thumb_url#[/img][/url][/for]",
+            ),
         ],
         "Gallery": [
             ("Gallery Link", "#gallery_link#"),
@@ -949,7 +940,9 @@ class TemplateEditor(ctk.CTkToplevel):
         ],
     }
 
-    def __init__(self, parent, template_mgr, current_mode="BBCode", data_callback=None, update_callback=None):
+    def __init__(
+        self, parent, template_mgr, current_mode="BBCode", data_callback=None, update_callback=None
+    ):
         super().__init__(parent)
         self.mgr = template_mgr
         self.data_callback = data_callback
@@ -995,19 +988,31 @@ class TemplateEditor(ctk.CTkToplevel):
         ctk.CTkLabel(top, text="Search").pack(side="left", padx=(12, 4))
         search_entry = ctk.CTkEntry(top, textvariable=self.template_search_var, width=190)
         search_entry.pack(side="left", padx=(0, 6))
-        self.template_search_var.trace_add("write", lambda *_: self._refresh_template_lists(self.current_template_name))
+        self.template_search_var.trace_add(
+            "write", lambda *_: self._refresh_template_lists(self.current_template_name)
+        )
         self.template_empty_label = ctk.CTkLabel(top, text="", text_color="gray")
         self.template_empty_label.pack(side="left", padx=(4, 0))
 
         preset_frame = ctk.CTkFrame(main)
         preset_frame.pack(fill="x", pady=(0, 5))
-        ctk.CTkLabel(preset_frame, text="Saved Templates:", font=("Segoe UI", 11, "bold")).pack(side="left", padx=5)
+        ctk.CTkLabel(preset_frame, text="Saved Templates:", font=("Segoe UI", 11, "bold")).pack(
+            side="left", padx=5
+        )
         self.saved_tmpl_var = ctk.StringVar(value=self.initial_mode)
-        self.cb_saved = MouseWheelComboBox(preset_frame, variable=self.saved_tmpl_var, values=all_keys, state="readonly")
+        self.cb_saved = MouseWheelComboBox(
+            preset_frame, variable=self.saved_tmpl_var, values=all_keys, state="readonly"
+        )
         self.cb_saved.pack(side="left", fill="x", expand=True, padx=5, pady=5)
-        ctk.CTkButton(preset_frame, text="Load", width=60, command=self.load_saved_template).pack(side="left", padx=5)
-        ctk.CTkButton(preset_frame, text="Duplicate", width=82, command=self.duplicate_current).pack(side="left", padx=3)
-        ctk.CTkButton(preset_frame, text="Rename", width=74, command=self.rename_current).pack(side="left", padx=3)
+        ctk.CTkButton(preset_frame, text="Load", width=60, command=self.load_saved_template).pack(
+            side="left", padx=5
+        )
+        ctk.CTkButton(
+            preset_frame, text="Duplicate", width=82, command=self.duplicate_current
+        ).pack(side="left", padx=3)
+        ctk.CTkButton(preset_frame, text="Rename", width=74, command=self.rename_current).pack(
+            side="left", padx=3
+        )
         ctk.CTkButton(
             preset_frame,
             text="Delete",
@@ -1016,20 +1021,38 @@ class TemplateEditor(ctk.CTkToplevel):
             hover_color="#8F2D2D",
             command=self.delete_current,
         ).pack(side="left", padx=(3, 5))
-        ctk.CTkButton(preset_frame, text="Import", width=68, command=self.import_templates).pack(side="left", padx=3)
-        ctk.CTkButton(preset_frame, text="Export", width=68, command=self.export_templates).pack(side="left", padx=3)
+        ctk.CTkButton(preset_frame, text="Import", width=68, command=self.import_templates).pack(
+            side="left", padx=3
+        )
+        ctk.CTkButton(preset_frame, text="Export", width=68, command=self.export_templates).pack(
+            side="left", padx=3
+        )
         toolbar = ctk.CTkFrame(main, height=35)
         toolbar.pack(fill="x", pady=(5, 0))
         for text, mode in [("B", "Bold"), ("I", "Italic"), ("U", "Underline")]:
-            ctk.CTkButton(toolbar, text=text, width=30, command=lambda m=mode: self.format_text(m)).pack(side="left", padx=2, pady=2)
-        ctk.CTkButton(toolbar, text="Color", width=50, command=lambda: self.format_complex("Color")).pack(side="left", padx=2, pady=2)
+            ctk.CTkButton(
+                toolbar, text=text, width=30, command=lambda m=mode: self.format_text(m)
+            ).pack(side="left", padx=2, pady=2)
+        ctk.CTkButton(
+            toolbar, text="Color", width=50, command=lambda: self.format_complex("Color")
+        ).pack(side="left", padx=2, pady=2)
         ctk.CTkFrame(toolbar, width=2, height=20, fg_color="gray").pack(side="left", padx=5)
         ctk.CTkLabel(toolbar, text="Size:", width=30).pack(side="left", padx=(5, 2))
-        self.cb_size = MouseWheelComboBox(toolbar, width=60, values=["1", "2", "3", "4", "5", "6", "7"], command=lambda v: self.apply_from_combo("Size", v))
+        self.cb_size = MouseWheelComboBox(
+            toolbar,
+            width=60,
+            values=["1", "2", "3", "4", "5", "6", "7"],
+            command=lambda v: self.apply_from_combo("Size", v),
+        )
         self.cb_size.pack(side="left", padx=2)
         self.cb_size.set("")
         ctk.CTkLabel(toolbar, text="Font:", width=30).pack(side="left", padx=(5, 2))
-        self.cb_font = MouseWheelComboBox(toolbar, width=120, values=["Arial", "Courier New", "Times New Roman", "Verdana", "Segoe UI", "Helvetica"], command=lambda v: self.apply_from_combo("Font", v))
+        self.cb_font = MouseWheelComboBox(
+            toolbar,
+            width=120,
+            values=["Arial", "Courier New", "Times New Roman", "Verdana", "Segoe UI", "Helvetica"],
+            command=lambda v: self.apply_from_combo("Font", v),
+        )
         self.cb_font.pack(side="left", padx=2)
         self.cb_font.set("")
         placeholder_panel = ctk.CTkFrame(main)
@@ -1048,14 +1071,18 @@ class TemplateEditor(ctk.CTkToplevel):
         )
         self.placeholder_category_menu.grid(row=0, column=1, sticky="w", padx=(0, 8), pady=6)
         self.placeholder_buttons_frame = ctk.CTkFrame(placeholder_panel, fg_color="transparent")
-        self.placeholder_buttons_frame.grid(row=1, column=0, columnspan=2, sticky="ew", padx=6, pady=(0, 6))
+        self.placeholder_buttons_frame.grid(
+            row=1, column=0, columnspan=2, sticky="ew", padx=6, pady=(0, 6)
+        )
         self._render_placeholder_buttons()
 
         self.txt = ctk.CTkTextbox(main, wrap="word", font=("Consolas", 12))
         self.txt.pack(fill="both", expand=True, pady=(0, 15))
         btn = ctk.CTkFrame(main, fg_color="transparent")
         btn.pack(fill="x")
-        ctk.CTkButton(btn, text="Preview in Browser", command=self.generate_preview).pack(side="left")
+        ctk.CTkButton(btn, text="Preview in Browser", command=self.generate_preview).pack(
+            side="left"
+        )
         ctk.CTkButton(btn, text="Copy Preview Output", command=self.copy_preview_output).pack(
             side="left", padx=(8, 0)
         )
@@ -1066,24 +1093,46 @@ class TemplateEditor(ctk.CTkToplevel):
             fg_color="gray",
             hover_color="#666666",
         ).pack(side="left", padx=(8, 0))
-        ctk.CTkButton(btn, text="Save As New...", command=self.save_as_new, fg_color="green").pack(side="right", padx=(5, 0))
+        ctk.CTkButton(btn, text="Save As New...", command=self.save_as_new, fg_color="green").pack(
+            side="right", padx=(5, 0)
+        )
         ctk.CTkButton(btn, text="Save Current", command=self.save).pack(side="right")
         self.load_curr()
 
     def get_tags(self, mode, value=None):
         fmt = self.mgr.resolve_output_format(self.fmt.get())
         if mode == "Bold":
-            return ("[b]", "[/b]") if fmt == "BBCode" else (("**", "**") if fmt == "Markdown" else ("<b>", "</b>"))
+            return (
+                ("[b]", "[/b]")
+                if fmt == "BBCode"
+                else (("**", "**") if fmt == "Markdown" else ("<b>", "</b>"))
+            )
         if mode == "Italic":
-            return ("[i]", "[/i]") if fmt == "BBCode" else (("*", "*") if fmt == "Markdown" else ("<i>", "</i>"))
+            return (
+                ("[i]", "[/i]")
+                if fmt == "BBCode"
+                else (("*", "*") if fmt == "Markdown" else ("<i>", "</i>"))
+            )
         if mode == "Underline":
             return ("[u]", "[/u]") if fmt == "BBCode" else ("<u>", "</u>")
         if mode == "Color":
-            return (f"[color={value}]", "[/color]") if fmt == "BBCode" else (f'<span style="color:{value}">', "</span>")
+            return (
+                (f"[color={value}]", "[/color]")
+                if fmt == "BBCode"
+                else (f'<span style="color:{value}">', "</span>")
+            )
         if mode == "Size":
-            return (f"[size={value}]", "[/size]") if fmt == "BBCode" else (f'<span style="font-size:{value}px">', "</span>")
+            return (
+                (f"[size={value}]", "[/size]")
+                if fmt == "BBCode"
+                else (f'<span style="font-size:{value}px">', "</span>")
+            )
         if mode == "Font":
-            return (f"[font={value}]", "[/font]") if fmt == "BBCode" else (f'<span style="font-family:{value}">', "</span>")
+            return (
+                (f"[font={value}]", "[/font]")
+                if fmt == "BBCode"
+                else (f'<span style="font-family:{value}">', "</span>")
+            )
         return ("", "")
 
     def format_text(self, mode):
@@ -1187,9 +1236,7 @@ class TemplateEditor(ctk.CTkToplevel):
         self.cb_saved.configure(values=keys)
         self.cb_fmt.configure(values=keys)
         self.cb_category.configure(values=self.mgr.get_category_names())
-        self.template_empty_label.configure(
-            text="No matching templates." if not keys else ""
-        )
+        self.template_empty_label.configure(text="No matching templates." if not keys else "")
         if selected in keys:
             self.cb_fmt.set(selected)
             self.cb_saved.set(selected)
@@ -1208,9 +1255,7 @@ class TemplateEditor(ctk.CTkToplevel):
             return True
         return messagebox.askyesno(
             "Template Warning",
-            "Review this template before saving:\n\n"
-            + "\n".join(warnings)
-            + "\n\nSave anyway?",
+            "Review this template before saving:\n\n" + "\n".join(warnings) + "\n\nSave anyway?",
         )
 
     def _load_template_content(self, name: str) -> None:
@@ -1282,7 +1327,9 @@ class TemplateEditor(ctk.CTkToplevel):
 
     def duplicate_current(self):
         source_name = self.current_template_name
-        dialog = ctk.CTkInputDialog(text=f"Duplicate '{source_name}' as:", title="Duplicate Template")
+        dialog = ctk.CTkInputDialog(
+            text=f"Duplicate '{source_name}' as:", title="Duplicate Template"
+        )
         new_name = dialog.get_input()
         if not new_name:
             return
@@ -1312,9 +1359,13 @@ class TemplateEditor(ctk.CTkToplevel):
         if not new_name:
             return
         clean_name = new_name.strip()
-        if clean_name != old_name and clean_name in self.mgr.templates and not messagebox.askyesno(
-            "Replace Template",
-            f"Replace existing template '{clean_name}'?",
+        if (
+            clean_name != old_name
+            and clean_name in self.mgr.templates
+            and not messagebox.askyesno(
+                "Replace Template",
+                f"Replace existing template '{clean_name}'?",
+            )
         ):
             return
         content = self._editor_content()
@@ -1362,7 +1413,9 @@ class TemplateEditor(ctk.CTkToplevel):
         try:
             with open(filepath, "r", encoding="utf-8") as f:
                 raw_data = json.load(f)
-            raw_templates = raw_data.get("templates", raw_data) if isinstance(raw_data, dict) else {}
+            raw_templates = (
+                raw_data.get("templates", raw_data) if isinstance(raw_data, dict) else {}
+            )
             duplicates = [
                 str(name).strip()
                 for name in raw_templates
@@ -1378,7 +1431,9 @@ class TemplateEditor(ctk.CTkToplevel):
             )
 
         try:
-            imported, skipped, errors = self.mgr.import_templates_file(filepath, overwrite=overwrite)
+            imported, skipped, errors = self.mgr.import_templates_file(
+                filepath, overwrite=overwrite
+            )
         except (OSError, json.JSONDecodeError, TemplateValidationError) as exc:
             self._show_validation_errors("Import Failed", exc)
             return
@@ -1438,7 +1493,9 @@ class TemplateEditor(ctk.CTkToplevel):
 
         final_html = self.build_preview_html(raw, curr_fmt, str(size))
         try:
-            with tempfile.NamedTemporaryFile("w", delete=False, suffix=".html", encoding="utf-8") as f:
+            with tempfile.NamedTemporaryFile(
+                "w", delete=False, suffix=".html", encoding="utf-8"
+            ) as f:
                 f.write(final_html)
                 path = f.name
             webbrowser.open("file://" + path)
@@ -1468,7 +1525,9 @@ class TemplateEditor(ctk.CTkToplevel):
         content = self._editor_content()
         errors = self.mgr.validate_template(content)
         if errors:
-            messagebox.showerror("Preview", "Fix these template issues before previewing:\n\n" + "\n".join(errors))
+            messagebox.showerror(
+                "Preview", "Fix these template issues before previewing:\n\n" + "\n".join(errors)
+            )
             return None
 
         try:
@@ -1534,7 +1593,9 @@ class TemplateEditor(ctk.CTkToplevel):
         if curr_fmt != "HTML":
             rendered = re.sub(r"\[url=(.*?)\]", r'<a href="\1">', rendered)
             rendered = rendered.replace("[/url]", "</a>")
-            rendered = re.sub(r"\[img\](.*?)\[/img\]", f'<img src="\\1" style="max-width:{size}px">', rendered)
+            rendered = re.sub(
+                r"\[img\](.*?)\[/img\]", f'<img src="\\1" style="max-width:{size}px">', rendered
+            )
 
         raw_output = html.escape(raw)
         return f"""<!doctype html>

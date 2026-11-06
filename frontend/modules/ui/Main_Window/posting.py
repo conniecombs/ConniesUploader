@@ -93,9 +93,6 @@ class PostingMixin:
 
             post_id = str(uuid.uuid4())
             viper_client = ViperGirlsAPI()
-            from modules.sidecar import SidecarBridge
-
-            viper_client.bridge = SidecarBridge.get()
             success = viper_client.schedule_post(
                 post_id,
                 result["thread_id"],

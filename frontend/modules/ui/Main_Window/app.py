@@ -71,9 +71,9 @@ class UploaderApp(
         self.geometry("1250x850")
         self.minsize(1050, 720)
 
-        # Set up graceful shutdown on window close
-        # System Tray: Close button hides the window instead of quitting
-        self.protocol("WM_DELETE_WINDOW", self.withdraw)
+        # Close hides to the tray when the tray icon is running; otherwise it
+        # must shut down, or the process would linger invisibly.
+        self.protocol("WM_DELETE_WINDOW", self._on_close_request)
 
         try:
             ico_path = config.resource_path("logo.ico")
@@ -129,6 +129,7 @@ class UploaderApp(
         self.upload_total = 0
         self.upload_count = 0
         self.is_uploading = False
+        self._finalizing = False
         self.current_output_files = []
         self.copyable_output_files = []
         self.current_completion_summary = None
@@ -169,10 +170,6 @@ class UploaderApp(
         )
 
         self._load_credentials()
-        # RenameWorker disabled - not currently used (no enqueue calls in codebase)
-        # Kept in controller.py for future implementation if needed
-        self.rename_worker = None
-
         # Central history directory
         self.central_history_path = os.path.join(
             os.path.expanduser("~"), ".conniesuploader", "history"
@@ -183,7 +180,8 @@ class UploaderApp(
         self.saved_threads_data = viper_api.load_saved_threads()
 
         # Initialize AutoPoster
-        self.auto_poster = AutoPoster(self.creds, self.saved_threads_data)
+        # The provider keeps the poster current after credentials are changed.
+        self.auto_poster = AutoPoster(lambda: self.creds, self.saved_threads_data)
 
         # System Tray Integration
         from modules.ui.system_tray import SystemTrayManager
@@ -194,7 +192,7 @@ class UploaderApp(
         # Start Python-owned ViperGirls scheduled posting.
         self.scheduler_queue = queue.Queue()
         self.viper_scheduler = viper_api.ViperGirlsPostScheduler(
-            self.creds,
+            lambda: self.creds,
             self.scheduler_queue,
         )
         self.viper_scheduler.start()
@@ -308,6 +306,14 @@ class UploaderApp(
 
         # Start periodic image cleanup to prevent memory leaks
         self.after(config.UI_CLEANUP_INTERVAL_MS, self._cleanup_orphaned_images)
+
+    def _on_close_request(self) -> None:
+        """Hide to the system tray when it is available, else shut down."""
+        tray = getattr(self, "system_tray", None)
+        if tray is not None and tray.is_available():
+            self.withdraw()
+            return
+        self.graceful_shutdown()
 
     def _load_credentials(self):
         """Load credentials from system keyring using CredentialsManager."""

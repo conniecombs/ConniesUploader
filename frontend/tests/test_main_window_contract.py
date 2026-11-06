@@ -6,7 +6,7 @@ from collections import deque
 from pathlib import Path
 import queue
 from types import SimpleNamespace
-from threading import Lock
+from threading import Event, Lock
 from unittest.mock import Mock
 
 import pytest
@@ -2261,12 +2261,10 @@ def test_failed_batch_report_is_written_but_not_copyable(tmp_path):
     assert "URL: https://imagebam.test/ok" in report_text
     assert "- bad.jpg: FAILED" in report_text
     assert "Reason: server rejected image" in report_text
-    assert Path(app.central_history_path, report_path.name).read_text(
-        encoding="utf-8"
-    ) == report_text
-    assert activity == [
-        (f"Saved failed batch report: {report_path.name}.", "warning")
-    ]
+    assert (
+        Path(app.central_history_path, report_path.name).read_text(encoding="utf-8") == report_text
+    )
+    assert activity == [(f"Saved failed batch report: {report_path.name}.", "warning")]
     assert logs == [f"Saved failed batch report: {report_path}"]
 
     summary = UploaderApp._build_completion_summary(app)
@@ -2949,3 +2947,311 @@ def test_queue_selection_bar_exposes_bulk_cover_remove_and_shortcuts():
     assert 'self.bind_all("<Delete>", self._delete_selected_from_key)' in source
     assert 'self.bind_all("<c>", self._toggle_selected_cover_from_key)' in source
     assert "def _event_targets_text_input" in source
+
+
+def _status_app(states):
+    app = UploaderApp.__new__(UploaderApp)
+    app.lock = Lock()
+    app.progress_queue = queue.Queue()
+    app.upload_count = 0
+    app.upload_total = len(states)
+    app.activity_events = []
+    app.activity_text = None
+    app.activity_panel = None
+    app.overall_progress = FakeProgress()
+    app.file_widgets = {}
+    for name, state in states.items():
+        app.file_widgets[name] = {
+            "state": state,
+            "status": FakeLabel(),
+            "prog": FakeProgress(),
+            "remove": FakeFrame(),
+            "retry": FakeFrame(),
+            "error_label": FakeFrame(),
+        }
+    app._update_group_progress = lambda _filepath: None
+    return app
+
+
+@pytest.mark.unit
+def test_failed_then_error_status_counts_once():
+    app = _status_app({"a.jpg": "queued"})
+    app.progress_queue.put(("status", "a.jpg", "Failed"))
+    app.progress_queue.put(("status", "a.jpg", "error: HTTP 500"))
+
+    UploaderApp._process_progress_queue(app)
+
+    assert app.upload_count == 1
+    assert app.file_widgets["a.jpg"]["state"] == "failed"
+    assert app.file_widgets["a.jpg"]["error"] == "HTTP 500"
+
+
+@pytest.mark.unit
+def test_cancelled_status_is_terminal_and_retryable():
+    app = _status_app({"a.jpg": "uploading"})
+    app.progress_queue.put(("status", "a.jpg", "Cancelled"))
+
+    UploaderApp._process_progress_queue(app)
+
+    row = app.file_widgets["a.jpg"]
+    assert app.upload_count == 1
+    assert row["state"] == "cancelled"
+    assert row["status"].text == "Cancelled"
+    assert row["error"] == "Upload cancelled."
+    assert row["retry"].mapped is True
+
+    app.is_uploading = False
+    app._finalizing = False
+    started = []
+    app.start_upload = lambda: started.append(True)
+    UploaderApp._retry_file(app, "a.jpg")
+    assert started == [True]
+    assert row["state"] == "pending"
+
+
+@pytest.mark.unit
+def test_stop_before_dispatch_marks_rows_cancelled():
+    app = _status_app({"a.jpg": "queued", "b.jpg": "queued"})
+    app.is_uploading = True
+    app.cancel_event = Event()
+    app.lbl_eta = FakeLabel()
+    cancelled = []
+    app.upload_manager = SimpleNamespace(cancel_batch=lambda: cancelled.append(True))
+
+    UploaderApp.stop_upload(app)
+
+    assert cancelled == [True]
+    assert app.cancel_event.is_set()
+    assert app.lbl_eta.text == "Stopping..."
+
+    app.progress_queue.put(("status", "a.jpg", "Cancelled"))
+    app.progress_queue.put(("status", "b.jpg", "Cancelled"))
+    UploaderApp._process_progress_queue(app)
+
+    assert app.upload_count == app.upload_total == 2
+
+
+@pytest.mark.unit
+def test_completion_summary_counts_cancelled():
+    app = _status_app({"a.jpg": "success", "b.jpg": "failed", "c.jpg": "cancelled"})
+    app.current_output_files = []
+    app.clipboard_buffer = []
+    app.var_auto_copy = FakeVar(False)
+
+    summary = UploaderApp._build_completion_summary(app)
+
+    assert summary["cancelled_count"] == 1
+    assert summary["failed_count"] == 1
+    assert summary["status_text"] == "Upload complete: 1 uploaded, 1 failed, 1 cancelled."
+
+
+@pytest.mark.unit
+def test_start_upload_refuses_while_uploading_or_finalizing():
+    for flag in ("is_uploading", "_finalizing"):
+        app = _status_app({"a.jpg": "pending"})
+        app.groups = []
+        app.is_uploading = False
+        app._finalizing = False
+        setattr(app, flag, True)
+        started = []
+        app.upload_manager = SimpleNamespace(start_batch=lambda *a, **k: started.append(True))
+
+        UploaderApp.start_upload(app)
+
+        assert started == []
+        assert "finish" in app.activity_events[-1]["message"].lower()
+
+
+@pytest.mark.unit
+def test_retry_failed_refuses_while_uploading():
+    app = _status_app({"a.jpg": "failed"})
+    app.is_uploading = True
+    app._finalizing = False
+    started = []
+    app.start_upload = lambda: started.append(True)
+
+    UploaderApp.retry_failed(app)
+
+    assert started == []
+    assert app.file_widgets["a.jpg"]["state"] == "failed"
+
+
+@pytest.mark.unit
+def test_finish_upload_keeps_is_uploading_until_complete(monkeypatch):
+    app = _status_app({})
+    app.is_uploading = True
+    app._finalizing = False
+    app.lbl_eta = FakeLabel()
+    app.pix_galleries_to_finalize = []
+    scheduled = []
+    app.after = lambda _delay, callback: scheduled.append(callback)
+
+    class InlineThread:
+        def __init__(self, target=None, daemon=None):
+            self.target = target
+
+        def start(self):
+            self.target()
+
+    monkeypatch.setattr("modules.ui.Main_Window.runtime.threading.Thread", InlineThread)
+
+    UploaderApp.finish_upload(app)
+
+    assert app.is_uploading is True
+    assert app._finalizing is True
+    assert len(scheduled) == 1
+
+    app._refresh_start_button_state = lambda *a, **k: None
+    app._configure_stop_button = lambda *a, **k: None
+    app.current_output_files = []
+    app.clipboard_buffer = []
+    app.var_auto_copy = FakeVar(False)
+    app.btn_open = FakeFrame()
+    app._set_completion_summary = lambda summary: None
+
+    UploaderApp._on_upload_complete(app)
+
+    assert app.is_uploading is False
+    assert app._finalizing is False
+
+
+@pytest.mark.unit
+def test_retry_button_disabled_while_uploading():
+    app = UploaderApp.__new__(UploaderApp)
+    app.btn_clear_list = FakeFrame()
+    app.btn_retry_failed = FakeFrame()
+    app.is_uploading = True
+
+    UploaderApp._refresh_queue_action_buttons(app, False)
+
+    assert app.btn_retry_failed.options["state"] == "disabled"
+    assert app.btn_clear_list.options["state"] == "normal"
+
+
+@pytest.mark.unit
+def test_close_hides_when_tray_available():
+    app = UploaderApp.__new__(UploaderApp)
+    calls = []
+    app.system_tray = SimpleNamespace(is_available=lambda: True)
+    app.withdraw = lambda: calls.append("withdraw")
+    app.graceful_shutdown = lambda: calls.append("shutdown")
+
+    UploaderApp._on_close_request(app)
+
+    assert calls == ["withdraw"]
+
+
+@pytest.mark.unit
+def test_close_shuts_down_without_tray():
+    app = UploaderApp.__new__(UploaderApp)
+    calls = []
+    app.system_tray = SimpleNamespace(is_available=lambda: False)
+    app.withdraw = lambda: calls.append("withdraw")
+    app.graceful_shutdown = lambda: calls.append("shutdown")
+
+    UploaderApp._on_close_request(app)
+
+    assert calls == ["shutdown"]
+
+
+@pytest.mark.unit
+def test_close_shuts_down_before_tray_exists():
+    app = UploaderApp.__new__(UploaderApp)
+    calls = []
+    app.withdraw = lambda: calls.append("withdraw")
+    app.graceful_shutdown = lambda: calls.append("shutdown")
+
+    UploaderApp._on_close_request(app)
+
+    assert calls == ["shutdown"]
+
+
+def _failed_output_app(tmp_path, group, states, selected_thread, batch_index):
+    app = UploaderApp.__new__(UploaderApp)
+    app.lock = Lock()
+    app.results = []
+    app.file_widgets = {
+        path: {"state": state, "group": group, "error": "x"} for path, state in states.items()
+    }
+    app.settings = {"service": "imagebam.com"}
+    app.output_dir = str(tmp_path / "Output")
+    app.central_history_path = str(tmp_path / "history")
+    app.current_output_files = []
+    app.copyable_output_files = []
+    app.clipboard_buffer = []
+    app.btn_open = FakeFrame()
+    app.var_auto_copy = FakeVar(False)
+    app.log = lambda message: None
+    app.add_activity = lambda message, level="info": None
+    group.selected_thread = selected_thread
+    group.batch_index = batch_index
+    app.skipped = []
+    app.auto_poster = SimpleNamespace(
+        skip=lambda index, reason: app.skipped.append((index, reason))
+    )
+    return app
+
+
+@pytest.mark.unit
+def test_failed_group_output_skips_poster_index(tmp_path):
+    bad_file = str(tmp_path / "bad.jpg")
+    group = FakeGroup("Batch Alpha", [bad_file])
+    app = _failed_output_app(tmp_path, group, {bad_file: "failed"}, "Thread", 3)
+
+    UploaderApp.generate_failed_group_output(app, group, 1)
+
+    assert app.skipped == [(3, "upload failed")]
+
+
+@pytest.mark.unit
+def test_cancelled_group_skips_poster_index(tmp_path):
+    gone = str(tmp_path / "gone.jpg")
+    group = FakeGroup("Batch Beta", [gone])
+    app = _failed_output_app(tmp_path, group, {gone: "cancelled"}, "Thread", 2)
+
+    UploaderApp.generate_failed_group_output(app, group, 1)
+
+    assert app.skipped == [(2, "upload cancelled")]
+    report_text = Path(app.current_output_files[0]).read_text(encoding="utf-8")
+    assert "- gone.jpg: CANCELLED" in report_text
+
+
+@pytest.mark.unit
+def test_failed_group_without_target_does_not_touch_poster(tmp_path):
+    bad_file = str(tmp_path / "bad.jpg")
+    group = FakeGroup("Batch Gamma", [bad_file])
+    app = _failed_output_app(tmp_path, group, {bad_file: "failed"}, "Do Not Post", 0)
+
+    UploaderApp.generate_failed_group_output(app, group, 1)
+
+    assert app.skipped == []
+
+
+@pytest.mark.unit
+def test_prepare_poster_session_registers_only_posting_groups_in_order():
+    do_not_post = FakeGroup("One", ["a.jpg"])
+    do_not_post.selected_thread = "Do Not Post"
+    posting = FakeGroup("Two", ["b.jpg"])
+    posting.selected_thread = "Thread"
+    finished_earlier = FakeGroup("Zero", ["z.jpg"])
+    finished_earlier.selected_thread = "Thread"
+
+    app = UploaderApp.__new__(UploaderApp)
+    app.groups = [posting, do_not_post, finished_earlier]
+    app.list_container = SimpleNamespace(
+        winfo_children=lambda: [finished_earlier, do_not_post, posting]
+    )
+    sessions = []
+    app.auto_poster = SimpleNamespace(
+        begin_session=lambda indexes: sessions.append(list(indexes)), saved_threads_data=None
+    )
+    app.saved_threads_data = {}
+
+    UploaderApp._prepare_poster_session(
+        app, {do_not_post: ["a.jpg"], posting: ["b.jpg"]}, saved_threads={}
+    )
+
+    assert finished_earlier.batch_index == 0
+    assert do_not_post.batch_index == 1
+    assert posting.batch_index == 2
+    assert sessions == [[2]]

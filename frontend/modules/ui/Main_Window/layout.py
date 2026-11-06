@@ -366,9 +366,7 @@ class LayoutMixin:
         thread_frame = ctk.CTkFrame(parent, fg_color="transparent")
         thread_frame.pack(fill="x", padx=5, pady=(0, 6))
         ctk.CTkLabel(thread_frame, text="Simultaneous Uploads:", width=140).pack(side="left")
-        thread_limit_entry = ctk.CTkEntry(
-            thread_frame, textvariable=self.menu_thread_var, width=60
-        )
+        thread_limit_entry = ctk.CTkEntry(thread_frame, textvariable=self.menu_thread_var, width=60)
         thread_limit_entry.pack(side="left", padx=5)
         thread_limit_entry.bind(
             "<FocusOut>", lambda _event: self.set_global_threads(self.menu_thread_var.get())
@@ -493,10 +491,12 @@ class LayoutMixin:
 
     def _refresh_queue_action_buttons(self, queue_is_empty: bool) -> None:
         clear_state = "disabled" if queue_is_empty else "normal"
+        busy = bool(getattr(self, "is_uploading", False) or getattr(self, "_finalizing", False))
+        retry_state = "disabled" if queue_is_empty or busy else "normal"
         if "btn_clear_list" in self.__dict__:
             self.btn_clear_list.configure(state=clear_state)
         if "btn_retry_failed" in self.__dict__:
-            self.btn_retry_failed.configure(state=clear_state)
+            self.btn_retry_failed.configure(state=retry_state)
 
     def _set_selection_actions_visible(self, visible: bool) -> None:
         if "selection_actions" not in self.__dict__:

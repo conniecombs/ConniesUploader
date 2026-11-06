@@ -152,10 +152,7 @@ class ScheduledPostsWindow(ctk.CTkToplevel):
         self.title("Scheduled Posts")
         self.geometry("800x600")
 
-        from modules.sidecar import SidecarBridge
-
         self.api = None
-        self.bridge = SidecarBridge.get()
 
         self._build_ui()
         self.refresh()
@@ -170,9 +167,7 @@ class ScheduledPostsWindow(ctk.CTkToplevel):
         ctk.CTkLabel(toolbar, text="Scheduled Posts", font=("Segoe UI", 20, "bold")).pack(
             side="left"
         )
-        ctk.CTkButton(toolbar, text="Refresh", command=self.refresh, width=100).pack(
-            side="right"
-        )
+        ctk.CTkButton(toolbar, text="Refresh", command=self.refresh, width=100).pack(side="right")
 
         self.scroll_frame = SafeScrollableFrame(main_frame)
         self.scroll_frame.pack(fill="both", expand=True)
@@ -183,7 +178,6 @@ class ScheduledPostsWindow(ctk.CTkToplevel):
 
         if not self.api:
             self.api = ViperGirlsAPI()
-            self.api.bridge = self.bridge
 
         posts = self.api.list_scheduled_posts()
         if not posts:
@@ -208,9 +202,7 @@ class ScheduledPostsWindow(ctk.CTkToplevel):
         status = post.get("status", "unknown")
         time_str = self._format_scheduled_time(post.get("scheduled_time"))
 
-        ctk.CTkLabel(info_frame, text=thread_name, font=("Segoe UI", 14, "bold")).pack(
-            anchor="w"
-        )
+        ctk.CTkLabel(info_frame, text=thread_name, font=("Segoe UI", 14, "bold")).pack(anchor="w")
 
         details = f"Scheduled: {time_str} | Status: {status.upper()}"
         if post.get("error"):

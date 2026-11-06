@@ -1,18 +1,18 @@
 # Connie's Uploader
 
-![Current app build badge showing v3.1.1](https://img.shields.io/badge/app-v3.1.1-orange.svg)
-![Latest tagged release badge showing v3.1.1](https://img.shields.io/badge/latest%20release-v3.1.1-blue.svg)
+![Current app build badge showing v3.1.2](https://img.shields.io/badge/app-v3.1.2-orange.svg)
+![Latest tagged release badge showing v3.1.2](https://img.shields.io/badge/latest%20release-v3.1.2-blue.svg)
 ![MIT License badge](https://img.shields.io/badge/license-MIT-green.svg)
 ![Supported platforms: Windows, Linux, and macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)
 ![Continuous integration workflow status: passing](https://github.com/conniecombs/ConniesUploader/actions/workflows/ci.yml/badge.svg?branch=main)
 ![Continuous delivery release workflow status: passing](https://github.com/conniecombs/ConniesUploader/actions/workflows/release.yml/badge.svg)
 ![Security scanning workflow status: passing](https://github.com/conniecombs/ConniesUploader/actions/workflows/security.yml/badge.svg?branch=main)
-![Go programming language version 1.25.9 or higher](https://img.shields.io/badge/Go-1.25.9+-00ADD8.svg)
+![Go programming language version 1.26 or higher](https://img.shields.io/badge/Go-1.26+-00ADD8.svg)
 ![Python version 3.11 or higher required](https://img.shields.io/badge/Python-3.11+-3776AB.svg)
 
 Connie's Uploader is a desktop image-uploading tool with a CustomTkinter GUI and a Go sidecar for concurrent uploads. It supports batch uploads, gallery workflows, custom output templates, drag and drop, secure credential storage, ViperGirls posting workflows, and automated release builds for Windows, Linux, and macOS.
 
-**Latest tagged release:** v3.1.1 "Activity Hide & IMX Thumbnail Fix" (September 7, 2026)
+**Latest tagged release:** v3.1.2 "Lifecycle Hardening" (November 6, 2026)
 
 **Current release branch:** `main`
 
@@ -91,6 +91,28 @@ The active upload plugins are:
 - `vipr.im`
 
 ## Latest Changelog
+
+### v3.1.2 - Lifecycle Hardening
+
+Released November 6, 2026.
+
+**Fixed**
+
+- One filename containing `..`, or a file removed after queueing, no longer wedges the whole batch; the sidecar validates files one at a time.
+- Failed uploads are counted once, so batches no longer complete early.
+- `Stop Upload` cancels queued and in-flight uploads; stopped rows end as `Cancelled` and can be retried. `Start` and `Retry Failed` are blocked while an upload runs.
+- Auto-posting no longer stalls behind "Do Not Post", failed, or earlier batches, and reads current credentials.
+- ViperGirls replies containing `{...}` post verbatim, are never retried by the transport, and recover from a lost session with one re-login. Login tests start from an empty cookie jar.
+- Shared JSON files are locked against concurrent writers; imported targets outside ViperGirls never open in the browser; thread titles load off the UI thread.
+- Closing the window shuts down when the tray icon is unavailable; Gallery Manager ignores late results; IMX sessions are closed; oversized thumbnails are refused.
+
+**Changed**
+
+- Sidecar protocol gains `batch_id`, a `cancel` action, and the `literal_values`, `timeout_seconds`, and `reset_cookies` request flags.
+- CI enforces `black` and pins lint tools; the Makefile packages through the shared packaging script; Go 1.26+ is required.
+- Bumped the app, build scripts, and active plugin metadata to `v3.1.2`; removed unused modules and the legacy plugin archive.
+
+Full history is available in [CHANGELOG.md](docs/CHANGELOG.md), and the full v3.1.2 release notes are available in [RELEASE_NOTES_v3.1.2.md](docs/releases/RELEASE_NOTES_v3.1.2.md).
 
 ### v3.1.1 - Activity Hide & IMX Thumbnail Fix
 
@@ -191,13 +213,13 @@ Full history is available in [CHANGELOG.md](docs/CHANGELOG.md).
 
 ### Download a Release
 
-Download the latest release from [GitHub Releases](https://github.com/conniecombs/ConniesUploader/releases/tag/v3.1.1).
+Download the latest release from [GitHub Releases](https://github.com/conniecombs/ConniesUploader/releases/tag/v3.1.2).
 
 Expected release artifacts:
 
-- `ConniesUploader-v3.1.1-windows-x64.zip`
-- `ConniesUploader-v3.1.1-linux-x64.tar.gz`
-- `ConniesUploader-v3.1.1-macos-x64.zip`
+- `ConniesUploader-v3.1.2-windows-x64.zip`
+- `ConniesUploader-v3.1.2-linux-x64.tar.gz`
+- `ConniesUploader-v3.1.2-macos-arm64.zip`
 
 Each release artifact includes a SHA256 checksum.
 
@@ -206,7 +228,7 @@ Each release artifact includes a SHA256 checksum.
 Prerequisites:
 
 - Python 3.11+
-- Go 1.25.9+ for local builds. CI currently builds with Go 1.26.5.
+- Go 1.26+ for local builds (`backend/go.mod` declares `go 1.26.0`). CI builds with the latest Go 1.26.x.
 
 Windows:
 
@@ -327,7 +349,7 @@ GitHub Actions workflows:
 - [Release - Build and Publish](.github/workflows/release.yml)
 - [Security Scanning](.github/workflows/security.yml)
 
-The CI workflow builds the Go sidecar on Windows, Linux, and macOS with Go 1.26.5; runs Go vet and Go tests; installs Python dependencies; runs the Python test suite; checks dependencies with `govulncheck` and `pip-audit`; and runs Go/Python linting.
+The CI workflow builds the Go sidecar on Windows, Linux, and macOS with Go 1.26.x; runs Go vet and Go tests; installs Python dependencies; runs the Python test suite; checks dependencies with `govulncheck` and `pip-audit`; runs golangci-lint, flake8, and `black --check`; and packages the desktop app on all three platforms.
 
 The release workflow builds Windows, Linux, and macOS artifacts, verifies that the sidecar is bundled, calculates SHA256 checksums, packages the artifacts, and publishes a GitHub release.
 
@@ -393,7 +415,7 @@ Open `Tools > ViperGirls Posting History` to copy the failed post text, copy the
 
 **Build fails**
 
-Confirm Python 3.11+ and Go 1.25.9+ are installed, then rerun the appropriate build script with `--clean`.
+Confirm Python 3.11+ and Go 1.26+ are installed, then rerun the appropriate build script with `--clean`.
 
 **Dependency installation fails**
 

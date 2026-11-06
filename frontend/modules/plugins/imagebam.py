@@ -29,7 +29,7 @@ class ImageBamPlugin(ImageHostPlugin):
     def metadata(self) -> Dict[str, Any]:
         """Plugin metadata for ImageBam.com"""
         return {
-            "version": "3.1.1",
+            "version": "3.1.2",
             "author": "Connie's Uploader Team",
             "description": "Upload images to ImageBam.com with optional authentication and CSRF-protected uploads",
             "website": "https://imagebam.com",
@@ -242,7 +242,9 @@ class ImageBamPlugin(ImageHostPlugin):
             "response_type": "json",
         }
 
-    def _build_pre_request(self, session_fields: Dict[str, str], creds: Dict[str, Any]) -> Dict[str, Any]:
+    def _build_pre_request(
+        self, session_fields: Dict[str, str], creds: Dict[str, Any]
+    ) -> Dict[str, Any]:
         upload_session = self._upload_session_request(session_fields)
         get_api_csrf = {
             "action": "get_api_csrf",

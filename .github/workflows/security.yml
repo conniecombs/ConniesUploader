@@ -74,7 +74,7 @@ jobs:
 
     - name: Run gosec
       run: |
-        go install github.com/securego/gosec/v2/cmd/gosec@latest
+        go install github.com/securego/gosec/v2/cmd/gosec@v2.30.0
         gosec -fmt sarif -out ../gosec-results.sarif ./...
       working-directory: backend
 
@@ -125,7 +125,7 @@ jobs:
         python-version: '3.11'
 
     - name: Install Bandit
-      run: pip install bandit[sarif]
+      run: pip install "bandit[sarif]==1.9.4"
 
     - name: Run Bandit
       run: bandit -r frontend/main.py frontend/modules/ --severity-level medium -f sarif -o bandit-results.sarif

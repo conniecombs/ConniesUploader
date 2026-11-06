@@ -41,6 +41,7 @@ Complete guide to the current documentation for Connie's Uploader.
 ## Release Docs
 
 - [Current Release Notes](releases/RELEASE_NOTES.md)
+- [v3.1.2 Release Notes](releases/RELEASE_NOTES_v3.1.2.md)
 - [v3.1.1 Release Notes](releases/RELEASE_NOTES_v3.1.1.md)
 - [v3.1.0 Release Notes](releases/RELEASE_NOTES_v3.1.0.md)
 - [vBleedingEdge Release Notes](releases/RELEASE_NOTES_vBleedingEdge.md)
@@ -95,7 +96,7 @@ docs/
 ├── assets/
 │   └── screenshots/
 ├── archive/
-│   └── README.md
+│   └── README.md            # history of removed legacy code
 ├── benchmarks/
 │   └── README.md
 ├── guides/
@@ -106,6 +107,7 @@ docs/
 │   └── USER_TUTORIAL.md
 ├── releases/
 │   ├── RELEASE_NOTES.md
+│   ├── RELEASE_NOTES_v3.1.2.md
 │   ├── RELEASE_NOTES_v3.1.1.md
 │   ├── RELEASE_NOTES_v3.1.0.md
 │   ├── RELEASE_NOTES_vBleedingEdge.md
@@ -136,6 +138,14 @@ docs/
 
 - Added the detailed RAM-first archive and file-host implementation plan, with Rapidgator as the first provider and disk archive creation requiring explicit user selection.
 - Linked the proposal separately from current behavior documentation.
+
+### 2026-11-06
+
+- Promoted current release documentation, build metadata, and app metadata to `v3.1.2`.
+- Added v3.1.2 release notes and the lifecycle hardening design and plan under `plans/`.
+- Documented the sidecar `cancel` action, per-file validation, and the `literal_values`, `timeout_seconds`, and `reset_cookies` request flags in `TRANSPORT_CONTRACT.md`.
+- Updated architecture, user, contributor, and build docs for Cancelled rows, the session-based AutoPoster, `black` in CI, and the Go 1.26 requirement.
+- Rewrote `archive/README.md` as the record of code removed in v3.1.2.
 
 ### 2026-09-07
 
@@ -193,7 +203,7 @@ docs/
 - Update plugin docs when plugin discovery, schema fields, request specs, or packaging hidden imports change.
 - Keep historical docs clearly separated from current guidance.
 
-- **Last Updated:** 2026-09-07
-- **Documentation Version:** 3.1.1
-- **Project Version:** v3.1.1
+- **Last Updated:** 2026-11-06
+- **Documentation Version:** 3.1.2
+- **Project Version:** v3.1.2
 

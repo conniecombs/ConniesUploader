@@ -40,7 +40,8 @@ def test_transport_request_prefers_raw_response_contract():
 
     payload, timeout = bridge.calls[0]
     sent_spec = payload["generic_spec"]
-    assert timeout == 12
+    assert timeout == 17
+    assert sent_spec["timeout_seconds"] == 12
     assert payload["action"] == "http_request"
     assert payload["service"] == "example.test"
     assert payload["rate_limits"] == {"requests_per_second": 1.0, "burst_size": 2}
@@ -92,3 +93,37 @@ def test_transport_contract_documents_legacy_parser_boundary():
     assert "response_body" in contract
     assert "status_code" in contract
     assert "final_url" in contract
+
+
+def test_transport_spec_flags_are_opt_in():
+    default_spec = build_transport_spec("https://example.test/")
+    assert "literal_values" not in default_spec
+    assert "reset_cookies" not in default_spec
+
+    flagged = build_transport_spec("https://example.test/", literal_values=True, reset_cookies=True)
+    assert flagged["literal_values"] is True
+    assert flagged["reset_cookies"] is True
+
+
+def test_transport_request_sends_timeout_and_margin():
+    bridge = FakeBridge({"status": "success", "data": {}})
+    spec = build_transport_spec("https://example.test/")
+
+    execute_transport_request(spec, timeout=30, bridge=bridge)
+
+    payload, timeout = bridge.calls[0]
+    assert payload["generic_spec"]["timeout_seconds"] == 30
+    assert timeout == 35.0
+
+
+def test_transport_request_can_disable_retries():
+    bridge = FakeBridge({"status": "success", "data": {}})
+    spec = build_transport_spec("https://example.test/")
+
+    execute_transport_request(spec, bridge=bridge)
+    execute_transport_request(spec, bridge=bridge, retry=False)
+
+    default_payload, _ = bridge.calls[0]
+    unretried_payload, _ = bridge.calls[1]
+    assert "retry_config" not in default_payload
+    assert unretried_payload["retry_config"] == {"max_retries": 0}

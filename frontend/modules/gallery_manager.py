@@ -20,7 +20,6 @@ from .gallery_service import (
     parse_pixhost_gallery_import,
 )
 
-
 PIXHOST_SERVICE = config.PIXHOST_SERVICE_ID
 IMX_SERVICE = "imx.to"
 
@@ -177,9 +176,7 @@ class GalleryManager(ctk.CTkToplevel):
         except Exception:
             pass
         try:
-            self.btn_sync_all.configure(
-                state="normal" if service == IMX_SERVICE else "disabled"
-            )
+            self.btn_sync_all.configure(state="normal" if service == IMX_SERVICE else "disabled")
         except Exception:
             pass
 
@@ -215,11 +212,13 @@ class GalleryManager(ctk.CTkToplevel):
             return
 
         if service == IMX_SERVICE and not str(self.creds.get("imx_api") or "").strip():
-            self._render_result_message(GalleryResult(
-                GalleryStatus.MISSING_CREDENTIALS,
-                "Set your IMX API key in Credentials before using Gallery Manager.",
-                service,
-            ))
+            self._render_result_message(
+                GalleryResult(
+                    GalleryStatus.MISSING_CREDENTIALS,
+                    "Set your IMX API key in Credentials before using Gallery Manager.",
+                    service,
+                )
+            )
             return
 
         records = self.gallery_cache.records_for_service(service)
@@ -280,17 +279,18 @@ class GalleryManager(ctk.CTkToplevel):
         ctk.CTkLabel(self.scroll, text="Syncing all IMX.to galleries...").pack(pady=20)
 
         def _progress(page: int, total: int):
-            self.after(
-                0,
-                lambda page=page, total=total: self._set_status(
-                    f"Syncing IMX.to galleries... page {page}, {total} found."
-                ),
-            )
+            def _update(page=page, total=total):
+                if not self._window_alive():
+                    return
+                self._set_status(f"Syncing IMX.to galleries... page {page}, {total} found.")
+
+            try:
+                self.after(0, _update)
+            except Exception:
+                pass  # window already destroyed
 
         def _task():
-            result = self.gallery_service.sync_all_galleries(
-                service, progress_callback=_progress
-            )
+            result = self.gallery_service.sync_all_galleries(service, progress_callback=_progress)
             self.after(0, lambda: self._handle_sync_all_result(request_id, service, result))
 
         threading.Thread(target=_task, daemon=True).start()
@@ -355,11 +355,7 @@ class GalleryManager(ctk.CTkToplevel):
         self.current_page = result.page
 
         if not result.ok:
-            if (
-                service == IMX_SERVICE
-                and result.status == GalleryStatus.EMPTY
-                and result.page > 1
-            ):
+            if service == IMX_SERVICE and result.status == GalleryStatus.EMPTY and result.page > 1:
                 records = self.gallery_cache.records_for_service(service)
                 if records:
                     self.current_page = max(1, result.page - 1)
@@ -403,10 +399,15 @@ class GalleryManager(ctk.CTkToplevel):
         self._set_status(status_message, is_warning=result.cached)
         self._render_current_records()
 
-    def _handle_sync_all_result(
-        self, request_id: int, service: str, result: GalleryResult
-    ):
-        if self._is_stale_sync(request_id, service):
+    def _window_alive(self) -> bool:
+        """False once the window was closed; background callbacks must then do nothing."""
+        try:
+            return bool(self.winfo_exists())
+        except Exception:
+            return False
+
+    def _handle_sync_all_result(self, request_id: int, service: str, result: GalleryResult):
+        if not self._window_alive() or self._is_stale_sync(request_id, service):
             return
 
         self._clear_scroll()
@@ -436,8 +437,7 @@ class GalleryManager(ctk.CTkToplevel):
 
     def _records_with_cache_metadata(self, service: str, records):
         cached_by_id = {
-            record.id: record
-            for record in self.gallery_cache.records_for_service(service)
+            record.id: record for record in self.gallery_cache.records_for_service(service)
         }
         merged = []
         for record in records:
@@ -455,9 +455,7 @@ class GalleryManager(ctk.CTkToplevel):
             return None
         return GalleryResult(
             status=GalleryStatus.SUCCESS,
-            message=(
-                f"{result.message} Showing {len(records)} cached gallery record(s) instead."
-            ),
+            message=(f"{result.message} Showing {len(records)} cached gallery record(s) instead."),
             service=service,
             records=records,
             page=result.page,
@@ -686,7 +684,9 @@ class GalleryManager(ctk.CTkToplevel):
         initial_image = ""
         if service == IMX_SERVICE:
             if not str(self.creds.get("imx_api") or "").strip():
-                self._set_status("Set your IMX API key in Credentials before creating a gallery.", is_error=True)
+                self._set_status(
+                    "Set your IMX API key in Credentials before creating a gallery.", is_error=True
+                )
                 return
             try:
                 require_upload_credentials(self.creds)
@@ -695,7 +695,8 @@ class GalleryManager(ctk.CTkToplevel):
                 self._set_status(str(exc), is_error=True)
                 return
             initial_image = filedialog.askopenfilename(
-                parent=self, title="Choose the first image to upload into the new IMX gallery",
+                parent=self,
+                title="Choose the first image to upload into the new IMX gallery",
                 filetypes=[("IMX images", "*.jpg *.jpeg *.png *.gif")],
             )
             if not initial_image:
@@ -709,7 +710,9 @@ class GalleryManager(ctk.CTkToplevel):
         def _task():
             try:
                 if initial_image:
-                    result = self.gallery_service.create_gallery(service, name, initial_image=initial_image)
+                    result = self.gallery_service.create_gallery(
+                        service, name, initial_image=initial_image
+                    )
                 else:
                     result = self.gallery_service.create_gallery(service, name)
             except Exception:
@@ -724,6 +727,8 @@ class GalleryManager(ctk.CTkToplevel):
 
     def _handle_create_result(self, request_id: int, service: str, result: GalleryResult):
         self._creating_gallery = False
+        if not self._window_alive():
+            return
         if "btn_create" in self.__dict__:
             self.btn_create.configure(state="normal")
         if self._is_stale_create(request_id, service):
@@ -782,9 +787,7 @@ class GalleryManager(ctk.CTkToplevel):
 
     def _delete_gallery(self, record: GalleryRecord):
         if record.service not in DELETE_SUPPORTED:
-            self._set_status(
-                f"{record.service} does not support gallery deletion.", is_error=True
-            )
+            self._set_status(f"{record.service} does not support gallery deletion.", is_error=True)
             return
 
         confirmed = messagebox.askyesno(
@@ -803,9 +806,7 @@ class GalleryManager(ctk.CTkToplevel):
 
         def _task():
             result = self.gallery_service.delete_gallery(service, record)
-            self.after(
-                0, lambda: self._handle_delete_result(request_id, service, record, result)
-            )
+            self.after(0, lambda: self._handle_delete_result(request_id, service, record, result))
 
         threading.Thread(target=_task, daemon=True).start()
 
@@ -816,7 +817,7 @@ class GalleryManager(ctk.CTkToplevel):
         record: GalleryRecord,
         result: GalleryResult,
     ):
-        if self._is_stale_delete(request_id, service):
+        if not self._window_alive() or self._is_stale_delete(request_id, service):
             return
 
         if not result.ok:
@@ -835,9 +836,7 @@ class GalleryManager(ctk.CTkToplevel):
     def _render_created_gallery(self, record: GalleryRecord):
         self._records = [record]
         self._clear_scroll()
-        ctk.CTkLabel(self.scroll, text="Gallery created", font=("", 16, "bold")).pack(
-            pady=(22, 4)
-        )
+        ctk.CTkLabel(self.scroll, text="Gallery created", font=("", 16, "bold")).pack(pady=(22, 4))
         ctk.CTkLabel(
             self.scroll,
             text="Choose what to do with the new gallery.",
@@ -898,9 +897,7 @@ class GalleryManager(ctk.CTkToplevel):
 
     def _render_inline_empty_state(self, title: str, message: str, actions):
         ctk.CTkLabel(self.scroll, text=title, font=("", 14, "bold")).pack(pady=(24, 4))
-        ctk.CTkLabel(self.scroll, text=message, wraplength=500, justify="center").pack(
-            pady=(0, 12)
-        )
+        ctk.CTkLabel(self.scroll, text=message, wraplength=500, justify="center").pack(pady=(0, 12))
         self._render_empty_actions(actions)
 
     def _render_empty_actions(self, actions):
@@ -909,9 +906,7 @@ class GalleryManager(ctk.CTkToplevel):
         frame = ctk.CTkFrame(self.scroll, fg_color="transparent")
         frame.pack(pady=8)
         for label, command in actions:
-            ctk.CTkButton(frame, text=label, width=145, command=command).pack(
-                side="left", padx=4
-            )
+            ctk.CTkButton(frame, text=label, width=145, command=command).pack(side="left", padx=4)
 
     def _clear_search(self):
         self.search_var.set("")

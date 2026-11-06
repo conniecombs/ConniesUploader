@@ -5,9 +5,12 @@
 
 from __future__ import annotations
 
+import functools
 import json
 import os
 import shutil
+import tempfile
+import threading
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional
 
@@ -28,12 +31,29 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
+def _locked(method):
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        with self._LOCK:
+            return method(self, *args, **kwargs)
+
+    return wrapper
+
+
 class GalleryCache:
-    """Load, save, and update cached gallery lists."""
+    """Load, save, and update cached gallery lists.
+
+    Gallery Manager actions on the Tk thread and the upload dispatch thread
+    both read-modify-write the cache file; one process-wide lock keeps those
+    updates from overwriting each other.
+    """
+
+    _LOCK = threading.RLock()
 
     def __init__(self, filepath: str = DEFAULT_GALLERY_CACHE_FILE):
         self.filepath = filepath
 
+    @_locked
     def load(self) -> Dict[str, Any]:
         if not os.path.exists(self.filepath):
             return self._empty_payload()
@@ -47,16 +67,31 @@ class GalleryCache:
 
         return self._normalize_payload(raw_data)
 
+    @_locked
     def save(self, payload: Dict[str, Any]) -> None:
         directory = os.path.dirname(self.filepath)
         if directory:
             os.makedirs(directory, exist_ok=True)
         normalized = self._normalize_payload(payload)
-        tmp_path = f"{self.filepath}.tmp"
-        with open(tmp_path, "w", encoding="utf-8") as f:
-            json.dump(normalized, f, indent=4, ensure_ascii=False)
-            f.write("\n")
-        os.replace(tmp_path, self.filepath)
+        handle = tempfile.NamedTemporaryFile(
+            "w",
+            encoding="utf-8",
+            dir=directory or ".",
+            prefix=os.path.basename(self.filepath) + ".",
+            suffix=".tmp",
+            delete=False,
+        )
+        try:
+            with handle as f:
+                json.dump(normalized, f, indent=4, ensure_ascii=False)
+                f.write("\n")
+            os.replace(handle.name, self.filepath)
+        except BaseException:
+            try:
+                os.unlink(handle.name)
+            except OSError:
+                pass
+            raise
 
     def records_for_service(self, service: str) -> List[GalleryRecord]:
         service = config.normalize_service_id(service)
@@ -72,6 +107,7 @@ class GalleryCache:
                 records.append(record)
         return sorted(records, key=self._cached_record_sort_key)
 
+    @_locked
     def upsert_records(self, service: str, records: Iterable[GalleryRecord]) -> None:
         service = config.normalize_service_id(service)
         payload = self.load()
@@ -97,6 +133,7 @@ class GalleryCache:
     def upsert_record(self, record: GalleryRecord) -> None:
         self.upsert_records(record.service, [record])
 
+    @_locked
     def remove_record(self, service: str, gallery_id: str) -> bool:
         service = config.normalize_service_id(service)
         gallery_id = str(gallery_id or "").strip()
@@ -116,6 +153,7 @@ class GalleryCache:
         self.save(payload)
         return True
 
+    @_locked
     def mark_used(self, record: GalleryRecord, timestamp: Optional[str] = None) -> str:
         service = config.normalize_service_id(record.service)
         payload = self.load()
@@ -133,6 +171,7 @@ class GalleryCache:
         self.save(payload)
         return used_at
 
+    @_locked
     def toggle_pinned(self, record: GalleryRecord) -> bool:
         service = config.normalize_service_id(record.service)
         payload = self.load()
@@ -172,9 +211,7 @@ class GalleryCache:
                 if item:
                     normalized_records[item["id"]] = item
             if normalized_records:
-                normalized["services"][service_id] = self._trim_service_records(
-                    normalized_records
-                )
+                normalized["services"][service_id] = self._trim_service_records(normalized_records)
 
         return normalized
 

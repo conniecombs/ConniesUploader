@@ -73,7 +73,9 @@ class FakeImxSession:
 
     def get(self, url, timeout=0):
         self.get_calls.append((url, timeout))
-        return FakeResponse('<a href="/logout.php">Log out</a>' if url.endswith("/dashboard") else "", url=url)
+        return FakeResponse(
+            '<a href="/logout.php">Log out</a>' if url.endswith("/dashboard") else "", url=url
+        )
 
     def close(self):
         pass
@@ -347,9 +349,7 @@ def test_list_galleries_parses_imagebam_upload_gallery_dropdown():
         responses=[
             {
                 "status": "success",
-                "data": {
-                    "response_body": '<input type="hidden" name="_token" value="tok">'
-                },
+                "data": {"response_body": '<input type="hidden" name="_token" value="tok">'},
             },
             {
                 "status": "success",
@@ -372,9 +372,7 @@ def test_list_galleries_parses_imagebam_upload_gallery_dropdown():
             },
         ]
     )
-    service = GalleryService(
-        bridge, {"imagebam_user": "user", "imagebam_pass": "pass"}
-    )
+    service = GalleryService(bridge, {"imagebam_user": "user", "imagebam_pass": "pass"})
 
     result = service.list_galleries("imagebam.com")
 
@@ -388,8 +386,7 @@ def test_list_galleries_parses_imagebam_upload_gallery_dropdown():
     login_payload = bridge.calls[1][0]
     assert login_payload["service"] == "imagebam.com"
     assert (
-        login_payload["generic_spec"]["headers"]["Referer"]
-        == "https://www.imagebam.com/auth/login"
+        login_payload["generic_spec"]["headers"]["Referer"] == "https://www.imagebam.com/auth/login"
     )
     assert login_payload["generic_spec"]["form_fields"]["email"] == "user"
     assert "pre_request" not in login_payload["generic_spec"]
@@ -400,14 +397,11 @@ def test_list_imagebam_galleries_rejects_login_page_after_post():
         responses=[
             {
                 "status": "success",
-                "data": {
-                    "response_body": '<input type="hidden" name="_token" value="tok">'
-                },
+                "data": {"response_body": '<input type="hidden" name="_token" value="tok">'},
             },
             {
                 "status": "success",
-                "data": {
-                    "response_body": """
+                "data": {"response_body": """
                     <html>
                       <body>
                         <form action="https://www.imagebam.com/auth/login">
@@ -415,14 +409,11 @@ def test_list_imagebam_galleries_rejects_login_page_after_post():
                         </form>
                       </body>
                     </html>
-                    """
-                },
+                    """},
             },
         ]
     )
-    service = GalleryService(
-        bridge, {"imagebam_user": "user", "imagebam_pass": "wrong"}
-    )
+    service = GalleryService(bridge, {"imagebam_user": "user", "imagebam_pass": "wrong"})
 
     result = service.list_galleries("imagebam.com")
 
@@ -554,9 +545,7 @@ def test_create_gallery_normalizes_pixhost_success_response():
 
 def test_create_imx_gallery_uses_live_login_and_add_gallery_forms(monkeypatch):
     fake_session = FakeImxSession()
-    monkeypatch.setattr(
-        "modules.gallery_service.requests.Session", lambda: fake_session
-    )
+    monkeypatch.setattr("modules.gallery_service.requests.Session", lambda: fake_session)
     service = GalleryService(
         FakeBridge(), {"imx_user": "user", "imx_pass": "secret", "imx_api": "key"}
     )
@@ -592,8 +581,7 @@ def test_sync_all_imx_galleries_uses_one_login_and_stops_at_empty_page(monkeypat
     fake_session = FakePagedImxSession(
         {
             "1": "\n".join(
-                f'<a href="/g/page1{index:03d}">Page One {index:03d}</a>'
-                for index in range(100)
+                f'<a href="/g/page1{index:03d}">Page One {index:03d}</a>' for index in range(100)
             ),
             "2": """
             <a href="/g/page2a">Page Two A</a>
@@ -602,9 +590,7 @@ def test_sync_all_imx_galleries_uses_one_login_and_stops_at_empty_page(monkeypat
         }
     )
     progress = []
-    monkeypatch.setattr(
-        "modules.gallery_service.requests.Session", lambda: fake_session
-    )
+    monkeypatch.setattr("modules.gallery_service.requests.Session", lambda: fake_session)
     service = GalleryService(
         FakeBridge(), {"imx_user": "user", "imx_pass": "secret", "imx_api": "key"}
     )
@@ -626,7 +612,7 @@ def test_sync_all_imx_galleries_uses_one_login_and_stops_at_empty_page(monkeypat
                 "usr_email": "user",
                 "pwd": "secret",
                 "doLogin": "Login",
-                },
+            },
             10,
         )
     ]
@@ -640,9 +626,7 @@ def test_sync_all_imx_galleries_uses_one_login_and_stops_at_empty_page(monkeypat
 
 def test_delete_imx_gallery_posts_edit_form_and_confirms_gallery_removed(monkeypatch):
     fake_session = FakeImxSession()
-    monkeypatch.setattr(
-        "modules.gallery_service.requests.Session", lambda: fake_session
-    )
+    monkeypatch.setattr("modules.gallery_service.requests.Session", lambda: fake_session)
     service = GalleryService(
         FakeBridge(), {"imx_user": "user", "imx_pass": "secret", "imx_api": "key"}
     )
@@ -683,12 +667,12 @@ def test_delete_imx_gallery_reports_error_when_gallery_still_listed(monkeypatch)
                     '<a href="/g/abc123">Delete Me</a>',
                     url=url,
                 )
-            return FakeResponse('<a href="/logout.php">Log out</a>' if url.endswith("/dashboard") else "", url=url)
+            return FakeResponse(
+                '<a href="/logout.php">Log out</a>' if url.endswith("/dashboard") else "", url=url
+            )
 
     fake_session = FakeStillListedSession()
-    monkeypatch.setattr(
-        "modules.gallery_service.requests.Session", lambda: fake_session
-    )
+    monkeypatch.setattr("modules.gallery_service.requests.Session", lambda: fake_session)
     service = GalleryService(
         FakeBridge(), {"imx_user": "user", "imx_pass": "secret", "imx_api": "key"}
     )
@@ -1234,7 +1218,9 @@ def test_gallery_manager_result_messages_show_expected_empty_and_error_actions()
     manager.scroll = FakeWidget()
     manager._clear_scroll = lambda: None
     manager._set_status = lambda message, is_error=False: statuses.append((message, is_error))
-    manager._render_empty_actions = lambda actions: actions_seen.append([label for label, _ in actions])
+    manager._render_empty_actions = lambda actions: actions_seen.append(
+        [label for label, _ in actions]
+    )
 
     def fake_label(*args, **kwargs):
         labels_seen.append(kwargs.get("text", ""))
@@ -1380,7 +1366,9 @@ def test_gallery_manager_remove_saved_pixhost_gallery_deletes_local_cache_only(t
         (message, is_error, is_warning)
     )
     manager._render_current_records = lambda: render_calls.append(list(manager._records))
-    manager._render_pixhost_local_result = lambda request_id: render_calls.append(("empty", request_id))
+    manager._render_pixhost_local_result = lambda request_id: render_calls.append(
+        ("empty", request_id)
+    )
 
     with patch("modules.gallery_manager.messagebox.askyesno", return_value=True) as confirm:
         GalleryManager._remove_saved_gallery(manager, remove)
@@ -1546,3 +1534,85 @@ def test_gallery_manager_open_gallery_uses_url_when_available():
     )
 
     assert statuses[-1] == ("No gallery URL is available.", True)
+
+
+def test_gallery_cache_concurrent_upserts_keep_all_records(tmp_path):
+    import threading
+
+    cache = GalleryCache(str(tmp_path / "gallery_cache.json"))
+    records = [
+        GalleryRecord(service="imx.to", id=f"g{index}", name=f"Gallery {index}", url="", raw={})
+        for index in range(50)
+    ]
+
+    threads = [threading.Thread(target=cache.upsert_record, args=(record,)) for record in records]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(5)
+
+    assert len(cache.records_for_service("imx.to")) == 50
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+class ClosingImxSession(FakeImxSession):
+    def __init__(self):
+        super().__init__()
+        self.closed = False
+
+    def close(self):
+        self.closed = True
+
+
+def test_imx_list_closes_session_on_success(monkeypatch):
+    fake_session = ClosingImxSession()
+    monkeypatch.setattr("modules.gallery_service.requests.Session", lambda: fake_session)
+    service = GalleryService(
+        FakeBridge(), {"imx_user": "user", "imx_pass": "secret", "imx_api": "key"}
+    )
+
+    service._list_imx_galleries(1)
+
+    assert fake_session.closed is True
+
+
+def test_imx_create_closes_session_on_success(monkeypatch):
+    fake_session = ClosingImxSession()
+    monkeypatch.setattr("modules.gallery_service.requests.Session", lambda: fake_session)
+    service = GalleryService(
+        FakeBridge(), {"imx_user": "user", "imx_pass": "secret", "imx_api": "key"}
+    )
+
+    result = service._create_imx_gallery("Batch Gallery")
+
+    assert result.status == GalleryStatus.SUCCESS
+    assert fake_session.closed is True
+
+
+def test_gallery_manager_callbacks_ignore_destroyed_window():
+    from modules.gallery_manager import GalleryManager
+
+    class FakeButton:
+        def __init__(self):
+            self.configured = []
+
+        def configure(self, **kwargs):
+            self.configured.append(kwargs)
+
+    window = GalleryManager.__new__(GalleryManager)
+    window.winfo_exists = lambda: False
+    window.btn_create = FakeButton()
+    window._creating_gallery = True
+    result = GalleryResult(status=GalleryStatus.SUCCESS, message="", service="imx.to")
+
+    GalleryManager._handle_create_result(window, 1, "imx.to", result)
+    GalleryManager._handle_sync_all_result(window, 1, "imx.to", result)
+    GalleryManager._handle_delete_result(
+        window,
+        1,
+        "imx.to",
+        GalleryRecord(service="imx.to", id="1", name="n", url="", raw={}),
+        result,
+    )
+
+    assert window.btn_create.configured == []

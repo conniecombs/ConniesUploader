@@ -37,7 +37,7 @@ class ImgurPlugin(ImageHostPlugin):
     def metadata(self) -> Dict[str, Any]:
         """Plugin metadata for Imgur"""
         return {
-            "version": "3.1.1",
+            "version": "3.1.2",
             "author": "Connie's Uploader Team",
             "description": "Upload images to Imgur with anonymous or authenticated uploads, album support, and automatic thumbnail generation",
             "website": "https://imgur.com",
@@ -147,9 +147,7 @@ class ImgurPlugin(ImageHostPlugin):
         selected_size = str(config.get("thumbnail_size", ""))
         if selected_size in self.THUMBNAIL_SIZE_LABELS.values():
             selected_size = next(
-                code
-                for code, label in self.THUMBNAIL_SIZE_LABELS.items()
-                if label == selected_size
+                code for code, label in self.THUMBNAIL_SIZE_LABELS.items() if label == selected_size
             )
             config["thumbnail_size"] = selected_size
 

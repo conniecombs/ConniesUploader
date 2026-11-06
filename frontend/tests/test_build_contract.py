@@ -5,12 +5,8 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-WINDOWS_HOOKS_ARG = (
-    '--additional-hooks-dir "..\\packaging\\pyinstaller_hooks"'
-)
-POSIX_HOOKS_ARG = (
-    '--additional-hooks-dir "../packaging/pyinstaller_hooks"'
-)
+WINDOWS_HOOKS_ARG = '--additional-hooks-dir "..\\packaging\\pyinstaller_hooks"'
+POSIX_HOOKS_ARG = '--additional-hooks-dir "../packaging/pyinstaller_hooks"'
 
 
 def _load_root_launcher():
@@ -123,10 +119,28 @@ def test_windows_build_uses_local_pyinstaller_hooks_and_verifies_tkinter():
 
 def test_other_build_entrypoints_use_local_pyinstaller_hooks():
     build_script = (ROOT / "build.sh").read_text(encoding="utf-8")
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
 
     assert POSIX_HOOKS_ARG in build_script
-    assert POSIX_HOOKS_ARG in makefile
+
+
+def test_ci_code_quality_runs_black_and_pins_tools():
+    ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    security = (ROOT / ".github" / "workflows" / "security.yml").read_text(encoding="utf-8")
+
+    assert "black==26.10.1" in ci
+    assert "black --check ." in ci
+    assert "golangci-lint@v2.15.0" in ci
+    assert "gosec@v2.30.0" in security
+    assert "bandit[sarif]==1.9.4" in security
+    assert "@latest" not in ci
+    assert "@latest" not in security
+
+
+def test_makefile_delegates_packaging_to_shared_script():
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+
+    assert "scripts/maintenance/package_app.py" in makefile
+    assert '--add-data "../$(GO_OUTPUT)' not in makefile
 
 
 def test_build_entrypoints_use_short_app_name_in_titles():
@@ -140,24 +154,18 @@ def test_release_workflow_uses_local_pyinstaller_hooks():
     workflow_path = ROOT / ".github" / "workflows" / "release.yml"
     workflow = workflow_path.read_text(encoding="utf-8")
 
-    assert workflow.count('python scripts/maintenance/package_app.py') == 3
-    package_script = (ROOT / 'scripts/maintenance/package_app.py').read_text(encoding='utf-8')
+    assert workflow.count("python scripts/maintenance/package_app.py") == 3
+    package_script = (ROOT / "scripts/maintenance/package_app.py").read_text(encoding="utf-8")
     assert '"--specpath"' in package_script
     assert '"--additional-hooks-dir"' in package_script
-    assert 'packaging/pyinstaller_hooks' in package_script
-    assert 'CArchiveReader' in package_script
-    assert (
-        workflow.count("cache-dependency-path: backend/go.sum") >= 3
-    )
-    assert (
-        workflow.count("cache-dependency-path: frontend/requirements.txt") >= 3
-    )
+    assert "packaging/pyinstaller_hooks" in package_script
+    assert "CArchiveReader" in package_script
+    assert workflow.count("cache-dependency-path: backend/go.sum") >= 3
+    assert workflow.count("cache-dependency-path: frontend/requirements.txt") >= 3
 
 
 def test_customtkinter_hook_preserves_assets_and_adds_tcl_tk_binaries():
-    hook_path = (
-        ROOT / "packaging" / "pyinstaller_hooks" / "hook-customtkinter.py"
-    )
+    hook_path = ROOT / "packaging" / "pyinstaller_hooks" / "hook-customtkinter.py"
     hook = hook_path.read_text(encoding="utf-8")
 
     assert 'collect_data_files("customtkinter")' in hook
@@ -188,3 +196,105 @@ def test_cleanup_helper_covers_generated_artifacts_and_user_data():
     assert "Output/" in gitignore
     assert "user_settings.json" in gitignore
     assert "user_templates.json" in gitignore
+
+
+def test_system_tray_is_available_only_after_start(monkeypatch):
+    import threading
+    import types
+
+    started = threading.Event()
+    stop = threading.Event()
+
+    class FakeIcon:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def run(self):
+            started.set()
+            stop.wait(5)
+
+        def stop(self):
+            stop.set()
+
+    fake_pystray = types.SimpleNamespace(
+        Icon=FakeIcon,
+        Menu=lambda *items: items,
+        MenuItem=lambda *args, **kwargs: (args, kwargs),
+    )
+    module_name = "system_tray_with_fake_pystray"
+    module_path = ROOT / "frontend" / "modules" / "ui" / "system_tray.py"
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    module = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, "pystray", fake_pystray)
+    sys.modules.pop(module_name, None)
+    spec.loader.exec_module(module)
+
+    manager = module.SystemTrayManager(main_window=object())
+    assert manager.icon is not None
+    assert manager.is_available() is False
+
+    manager.start()
+    assert started.wait(2)
+    assert manager.is_available() is True
+
+    manager.stop()
+    manager._thread.join(2)
+    assert manager.is_available() is False
+
+
+def test_dead_modules_are_gone():
+    removed = [
+        ROOT / "frontend" / "modules" / "controller.py",
+        ROOT / "frontend" / "tests" / "test_controller.py",
+        ROOT / "frontend" / "modules" / "validation.py",
+        ROOT / "frontend" / "tests" / "test_validation.py",
+        ROOT / "archive",
+        ROOT / "VGPost.txt",
+    ]
+    assert [str(path) for path in removed if path.exists()] == []
+
+    modules_dir = ROOT / "frontend" / "modules"
+    stale_imports = []
+    for source in modules_dir.rglob("*.py"):
+        text = source.read_text(encoding="utf-8")
+        if "modules.controller" in text or "from .controller" in text:
+            stale_imports.append(str(source))
+        if "modules.validation" in text or "from .validation" in text:
+            stale_imports.append(str(source))
+    assert stale_imports == []
+
+
+def test_version_strings_agree():
+    import re
+
+    from modules import config
+    from modules.plugin_manager import PluginManager
+
+    expected = "3.1.2"
+    assert config.APP_VERSION == expected
+    assert f"VERSION := {expected}" in (ROOT / "Makefile").read_text(encoding="utf-8")
+    assert f'VERSION="{expected}"' in (ROOT / "build.sh").read_text(encoding="utf-8")
+    assert f'set "VERSION={expected}"' in (ROOT / "build_uploader.bat").read_text(encoding="utf-8")
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert f"badge/app-v{expected}-" in readme
+    assert f"### v{expected}" in readme
+    changelog = (ROOT / "docs" / "CHANGELOG.md").read_text(encoding="utf-8")
+    assert re.search(rf"^## \[{re.escape(expected)}\] - 2026-11-06$", changelog, re.MULTILINE)
+    assert (ROOT / "docs" / "releases" / f"RELEASE_NOTES_v{expected}.md").is_file()
+    for plugin in PluginManager().get_all_plugins():
+        assert plugin.metadata.get("version") == expected, plugin.id
+
+
+def test_transport_contract_documents_cancel_and_flags():
+    contract = (ROOT / "docs" / "TRANSPORT_CONTRACT.md").read_text(encoding="utf-8")
+    for term in (
+        "batch_id",
+        '"cancel"',
+        "per-file",
+        "Cancelled",
+        "literal_values",
+        "timeout_seconds",
+        "reset_cookies",
+        "batch_complete",
+    ):
+        assert term in contract, term

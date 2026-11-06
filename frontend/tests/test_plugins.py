@@ -599,20 +599,14 @@ class TestUploadManagerJobConfig(unittest.TestCase):
     def test_rate_limits_default_to_none_for_legacy_throughput(self):
         from modules.upload_manager import UploadManager
 
-        limits = UploadManager._rate_limits_for_job(
-            "pixhost.cc", {"threads": 5}
-        )
+        limits = UploadManager._rate_limits_for_job("pixhost.cc", {"threads": 5})
         self.assertIsNone(limits)
 
     def test_threads_are_clamped_to_visible_thread_limit_range(self):
         from modules.upload_manager import UploadManager
 
-        too_high = UploadManager._normalize_job_config(
-            {"service": "pixhost.cc", "pix_threads": 99}
-        )
-        too_low = UploadManager._normalize_job_config(
-            {"service": "pixhost.cc", "pix_threads": 0}
-        )
+        too_high = UploadManager._normalize_job_config({"service": "pixhost.cc", "pix_threads": 99})
+        too_low = UploadManager._normalize_job_config({"service": "pixhost.cc", "pix_threads": 0})
 
         self.assertEqual(too_high["threads"], 10)
         self.assertEqual(too_low["threads"], 1)
@@ -632,7 +626,9 @@ class TestImxPlugin(unittest.TestCase):
         group.gallery_service = ""
         config = {"auto_gallery": True}
         context = {"pending_files": ["image.jpg"]}
-        upload = ImxGalleryUpload("abc123", "Batch Gallery", "https://imx.to/i/one", "https://imx.to/t/one.jpg")
+        upload = ImxGalleryUpload(
+            "abc123", "Batch Gallery", "https://imx.to/i/one", "https://imx.to/t/one.jpg"
+        )
 
         with patch.object(imx, "create_gallery_with_image", return_value=upload) as create:
             plugin.prepare_group(
@@ -643,7 +639,9 @@ class TestImxPlugin(unittest.TestCase):
             )
 
         self.assertEqual(create.call_args.args, ("api-key", "Batch Gallery", "image.jpg"))
-        self.assertEqual(context["completed_uploads"], [("image.jpg", upload.image_url, upload.thumbnail_url)])
+        self.assertEqual(
+            context["completed_uploads"], [("image.jpg", upload.image_url, upload.thumbnail_url)]
+        )
         self.assertEqual(group.gallery_id, "abc123")
         self.assertEqual(group.gallery_name, "Batch Gallery")
         self.assertEqual(group.gallery_url, "https://imx.to/g/abc123")
@@ -780,9 +778,7 @@ class TestViprPlugin(unittest.TestCase):
 
             plugin._refresh_galleries(parent)
 
-        get_metadata.assert_called_once_with(
-            {"vipr_user": "johngrimm", "vipr_pass": "secret"}
-        )
+        get_metadata.assert_called_once_with({"vipr_user": "johngrimm", "vipr_pass": "secret"})
         plugin.cb_gallery.configure.assert_called_once_with(values=["None", "First Gallery"])
         self.assertEqual(plugin.vipr_galleries_map, {"First Gallery": "123"})
         self.assertEqual(
@@ -850,9 +846,7 @@ class TestViprPlugin(unittest.TestCase):
         )
         self.assertEqual(group.gallery_id, "104999")
         self.assertEqual(group.gallery_name, "Batch Gallery")
-        self.assertEqual(
-            group.gallery_url, "https://vipr.im/p/johngrimm/104999/Batch%20Gallery"
-        )
+        self.assertEqual(group.gallery_url, "https://vipr.im/p/johngrimm/104999/Batch%20Gallery")
         self.assertEqual(group.gallery_service, "vipr.im")
         self.assertEqual(config["vipr_gal_id"], "104999")
         self.assertEqual(config["selected_gallery_url"], group.gallery_url)
@@ -902,9 +896,7 @@ class TestViprPlugin(unittest.TestCase):
             {"vipr_user": "user", "vipr_pass": "secret"},
         )
 
-        self.assertEqual(
-            request["multipart_fields"]["fld_id"]["value"], "created-for-group"
-        )
+        self.assertEqual(request["multipart_fields"]["fld_id"]["value"], "created-for-group")
 
 
 class TestImageBamPlugin(unittest.TestCase):
@@ -943,11 +935,9 @@ class TestImageBamPlugin(unittest.TestCase):
             login_request["extract_fields"],
             {"imagebam_login_marker": "form[action*='logout']"},
         )
-        session_request = (
-            request["pre_request"]["follow_up_request"]["follow_up_request"][
-                "follow_up_request"
-            ]
-        )
+        session_request = request["pre_request"]["follow_up_request"]["follow_up_request"][
+            "follow_up_request"
+        ]
         self.assertEqual(session_request["url"], "https://www.imagebam.com/upload/session")
         self.assertEqual(session_request["headers"]["Referer"], "https://www.imagebam.com/")
         self.assertEqual(

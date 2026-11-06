@@ -1061,8 +1061,16 @@ func ExecuteGenericRequest(ctx context.Context, client *http.Client, spec *Gener
 		useClient = preRequestClient(client, true)
 	}
 
+	// Python sends resolved values when literal_values is set; keep them as-is.
+	resolve := func(value string) (string, error) {
+		if spec.LiteralValues {
+			return value, nil
+		}
+		return substituteValues(value, extractedValues)
+	}
+
 	// Build the main request.
-	resolvedURL, err := substituteValues(spec.URL, extractedValues)
+	resolvedURL, err := resolve(spec.URL)
 	if err != nil {
 		return extractedValues, err
 	}
@@ -1076,7 +1084,7 @@ func ExecuteGenericRequest(ctx context.Context, client *http.Client, spec *Gener
 	if len(spec.FormFields) > 0 {
 		v := url.Values{}
 		for k, val := range spec.FormFields {
-			subVal, subErr := substituteValues(val, extractedValues)
+			subVal, subErr := resolve(val)
 			if subErr != nil {
 				return extractedValues, subErr
 			}
@@ -1102,7 +1110,7 @@ func ExecuteGenericRequest(ctx context.Context, client *http.Client, spec *Gener
 			// Re-create body for retries.
 			v := url.Values{}
 			for k, val := range spec.FormFields {
-				subVal, subErr := substituteValues(val, extractedValues)
+				subVal, subErr := resolve(val)
 				if subErr != nil {
 					return reqResult{}, 0, subErr
 				}
@@ -1120,7 +1128,7 @@ func ExecuteGenericRequest(ctx context.Context, client *http.Client, spec *Gener
 			req.Header.Set("Content-Type", contentType)
 		}
 		for k, v := range spec.Headers {
-			subVal, subErr := substituteValues(v, extractedValues)
+			subVal, subErr := resolve(v)
 			if subErr != nil {
 				return reqResult{}, 0, subErr
 			}

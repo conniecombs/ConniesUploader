@@ -65,12 +65,8 @@ class FakeBridge:
 def point_viper_storage(monkeypatch, tmp_path):
     monkeypatch.setattr(viper_api, "_USER_DATA_DIR", str(tmp_path))
     monkeypatch.setattr(viper_api, "THREADS_FILE", str(tmp_path / "saved_threads.json"))
-    monkeypatch.setattr(
-        viper_api, "POSTING_HISTORY_FILE", str(tmp_path / "posting_history.json")
-    )
-    monkeypatch.setattr(
-        viper_api, "SCHEDULED_POSTS_FILE", str(tmp_path / "scheduled_posts.json")
-    )
+    monkeypatch.setattr(viper_api, "POSTING_HISTORY_FILE", str(tmp_path / "posting_history.json"))
+    monkeypatch.setattr(viper_api, "SCHEDULED_POSTS_FILE", str(tmp_path / "scheduled_posts.json"))
 
 
 @pytest.mark.unit
@@ -118,16 +114,38 @@ def test_parse_thread_title_cleans_title_suffixes():
 
 @pytest.mark.unit
 def test_fetch_thread_title_uses_vipergirls_headers():
-    session = FakeSession('<span class="threadtitle">Fetched Thread</span>')
+    bridge = FakeBridge(
+        response={
+            "status": "success",
+            "data": {"response_body": '<span class="threadtitle">Fetched Thread</span>'},
+        }
+    )
 
     title = viper_api.fetch_thread_title(
         "https://vipergirls.to/threads/12345-fetched",
-        session=session,
+        bridge=bridge,
     )
 
     assert title == "Fetched Thread"
-    assert session.requests[0][0] == "https://vipergirls.to/threads/12345-fetched"
-    assert "User-Agent" in session.requests[0][1]["headers"]
+    payload, timeout = bridge.requests[0]
+    spec = payload["generic_spec"]
+    assert payload["action"] == "http_request"
+    assert payload["service"] == "vipergirls.to"
+    assert spec["url"] == "https://vipergirls.to/threads/12345-fetched"
+    assert spec["method"] == "GET"
+    assert "User-Agent" in spec["headers"]
+    assert spec["timeout_seconds"] == viper_api.THREAD_TITLE_TIMEOUT_SECONDS
+    assert timeout == viper_api.THREAD_TITLE_TIMEOUT_SECONDS + 5
+
+
+def test_fetch_thread_title_returns_empty_on_transport_failure():
+    bridge = FakeBridge(
+        response={"status": "failed", "msg": "Timeout waiting for sidecar response"}
+    )
+
+    assert viper_api.fetch_thread_title("https://vipergirls.to/threads/1", bridge=bridge) == ""
+    assert viper_api.fetch_thread_title("https://attacker.example/t", bridge=bridge) == ""
+    assert len(bridge.requests) == 1
 
 
 @pytest.mark.unit
@@ -178,13 +196,15 @@ def test_vipergirls_post_reply_uses_live_reply_form_fields(monkeypatch):
     fetch_spec = fetch_payload["generic_spec"]
     spec = submit_payload["generic_spec"]
 
-    assert fetch_timeout == 30
+    assert fetch_timeout == 35
+    assert fetch_spec["timeout_seconds"] == 30
     assert fetch_spec["method"] == "GET"
     assert fetch_spec["url"] == "https://vipergirls.to/newreply.php?do=newreply&t=12345"
     assert fetch_spec["include_response_body"] is True
     assert fetch_spec["include_transport_metadata"] is True
     assert "extract_fields" not in fetch_spec
-    assert submit_timeout == 60
+    assert submit_timeout == 65
+    assert spec["timeout_seconds"] == 60
     assert "pre_request" not in spec
     assert "extract_fields" not in spec
     assert "success_check" not in spec
@@ -363,13 +383,9 @@ def test_import_export_saved_threads_round_trip(tmp_path, monkeypatch):
 @pytest.mark.unit
 def test_mark_thread_target_used_updates_saved_target(tmp_path, monkeypatch):
     point_viper_storage(monkeypatch, tmp_path)
-    viper_api.save_saved_threads(
-        {"Target": viper_api.normalize_thread_record("Target", "12345")}
-    )
+    viper_api.save_saved_threads({"Target": viper_api.normalize_thread_record("Target", "12345")})
 
-    updated = viper_api.mark_thread_target_used(
-        "Target", timestamp="2026-06-21T10:00:00+00:00"
-    )
+    updated = viper_api.mark_thread_target_used("Target", timestamp="2026-06-21T10:00:00+00:00")
     saved = viper_api.load_saved_threads()
 
     assert updated["last_used_at"] == "2026-06-21T10:00:00+00:00"
@@ -467,9 +483,7 @@ def test_auto_poster_records_pending_failure_states(tmp_path, monkeypatch):
 @pytest.mark.unit
 def test_auto_poster_marks_target_used(tmp_path, monkeypatch):
     point_viper_storage(monkeypatch, tmp_path)
-    viper_api.save_saved_threads(
-        {"Target": viper_api.normalize_thread_record("Target", "54321")}
-    )
+    viper_api.save_saved_threads({"Target": viper_api.normalize_thread_record("Target", "54321")})
     poster = AutoPoster(
         {"vg_user": "user", "vg_pass": "password"},
         viper_api.load_saved_threads(),
@@ -542,9 +556,7 @@ def test_python_scheduler_processes_due_posts(tmp_path, monkeypatch):
         {"vg_user": "user", "vg_pass": "password"},
         ListQueue(),
     )
-    scheduler.process_due_posts(
-        datetime.datetime(2026, 6, 30, 20, 1, tzinfo=datetime.timezone.utc)
-    )
+    scheduler.process_due_posts(datetime.datetime(2026, 6, 30, 20, 1, tzinfo=datetime.timezone.utc))
 
     posts = viper_api.load_scheduled_posts()
     assert calls == [
@@ -633,3 +645,372 @@ def test_group_thread_dropdown_refreshes_and_resets_missing_selection():
     assert group.thread_combo.values == ["Do Not Post", "Alpha", "Beta"]
     assert group.thread_var.get() == "Do Not Post"
     assert group.selected_thread == "Do Not Post"
+
+
+REPLY_FORM_HTML = """
+<html><head><title>Thread - Reply to Topic</title></head><body>
+<form action="newreply.php?do=postreply&amp;t=12345" method="post" name="vbform">
+  <input name="title" value="Re: Set {HD}">
+  <textarea name="message"></textarea>
+  <input type="hidden" name="securitytoken" value="tok">
+  <input type="hidden" name="do" value="postreply">
+  <input type="hidden" name="t" value="12345">
+  <input type="hidden" name="loggedinuser" value="412723">
+  <input type="submit" name="sbutton" value="Submit Reply">
+</form></body></html>
+"""
+LOGIN_PAGE_HTML = """
+<html><head><title>Log in</title></head><body>
+<form action="login.php?do=login" method="post">
+  <input name="vb_login_username"><input name="vb_login_password">
+</form></body></html>
+"""
+LOGGED_IN_HTML = (
+    "<html><body><a href='logout.php'>Log Out</a>Thank you for logging in</body></html>"
+)
+
+
+def _ok(body):
+    return {"status": "success", "data": {"response_body": body}}
+
+
+@pytest.mark.unit
+def test_login_seed_resets_cookies(monkeypatch):
+    bridge = FakeBridge(responses=[_ok(""), _ok(LOGGED_IN_HTML)])
+    monkeypatch.setattr(viper_api.SidecarBridge, "get", staticmethod(lambda: bridge))
+
+    api = viper_api.ViperGirlsAPI()
+
+    assert api.login("user", "password") is True
+    seed_payload, _ = bridge.requests[0]
+    assert seed_payload["generic_spec"]["reset_cookies"] is True
+    login_payload, _ = bridge.requests[1]
+    assert "reset_cookies" not in login_payload["generic_spec"]
+
+
+@pytest.mark.unit
+def test_reply_spec_is_literal_and_unretried(monkeypatch):
+    bridge = FakeBridge(responses=[_ok(REPLY_FORM_HTML), _ok("Thank you for posting")])
+    monkeypatch.setattr(viper_api.SidecarBridge, "get", staticmethod(lambda: bridge))
+
+    api = viper_api.ViperGirlsAPI()
+
+    assert api.post_reply("12345", "Set {HD} part 2") is True
+    submit_payload, _ = bridge.requests[1]
+    spec = submit_payload["generic_spec"]
+    assert spec["literal_values"] is True
+    assert spec["form_fields"]["message"] == "Set {HD} part 2"
+    assert spec["form_fields"]["title"] == "Re: Set {HD}"
+    assert submit_payload["retry_config"] == {"max_retries": 0}
+    fetch_payload, _ = bridge.requests[0]
+    assert "retry_config" not in fetch_payload
+
+
+@pytest.mark.unit
+def test_post_reply_relogs_in_once_on_login_page(monkeypatch):
+    bridge = FakeBridge(
+        responses=[
+            _ok(""),
+            _ok(LOGGED_IN_HTML),  # initial login
+            _ok(LOGIN_PAGE_HTML),  # reply form fetch finds the session gone
+            _ok(""),
+            _ok(LOGGED_IN_HTML),  # re-login
+            _ok(REPLY_FORM_HTML),  # fetch again
+            _ok("Thank you for posting"),
+        ]
+    )
+    monkeypatch.setattr(viper_api.SidecarBridge, "get", staticmethod(lambda: bridge))
+
+    api = viper_api.ViperGirlsAPI()
+    assert api.login("user", "password") is True
+
+    assert api.post_reply("12345", "hello") is True
+    assert len(bridge.requests) == 7
+    relogin_payload, _ = bridge.requests[4]
+    assert relogin_payload["generic_spec"]["form_fields"]["vb_login_username"] == "user"
+
+
+@pytest.mark.unit
+def test_post_reply_does_not_loop_on_repeated_login_page(monkeypatch):
+    bridge = FakeBridge(
+        responses=[
+            _ok(""),
+            _ok(LOGGED_IN_HTML),
+            _ok(LOGIN_PAGE_HTML),
+            _ok(""),
+            _ok(LOGGED_IN_HTML),
+            _ok(LOGIN_PAGE_HTML),
+        ]
+    )
+    monkeypatch.setattr(viper_api.SidecarBridge, "get", staticmethod(lambda: bridge))
+
+    api = viper_api.ViperGirlsAPI()
+    assert api.login("user", "password") is True
+
+    assert api.post_reply("12345", "hello") is False
+    assert len(bridge.requests) == 6
+
+
+@pytest.mark.unit
+def test_post_reply_without_stored_credentials_does_not_relogin(monkeypatch):
+    bridge = FakeBridge(responses=[_ok(LOGIN_PAGE_HTML)])
+    monkeypatch.setattr(viper_api.SidecarBridge, "get", staticmethod(lambda: bridge))
+
+    api = viper_api.ViperGirlsAPI()
+
+    assert api.post_reply("12345", "hello") is False
+    assert len(bridge.requests) == 1
+
+
+@pytest.mark.unit
+def test_scheduler_does_not_clobber_posts_added_mid_run(tmp_path, monkeypatch):
+    point_viper_storage(monkeypatch, tmp_path)
+    viper_api.add_scheduled_post(
+        {
+            "id": "post-1",
+            "thread_id": "54321",
+            "thread_name": "Target",
+            "message": "first",
+            "scheduled_time": "2026-06-30T20:00:00+00:00",
+        }
+    )
+
+    class FakeViperGirlsAPI:
+        def login(self, username, password):
+            return True
+
+        def post_reply(self, thread_id, message):
+            # The UI schedules another post while this one is being sent.
+            viper_api.add_scheduled_post(
+                {
+                    "id": "post-2",
+                    "thread_id": "54321",
+                    "thread_name": "Target",
+                    "message": "second",
+                    "scheduled_time": "2026-12-30T20:00:00+00:00",
+                }
+            )
+            return True
+
+    monkeypatch.setattr(viper_api, "ViperGirlsAPI", FakeViperGirlsAPI)
+    scheduler = viper_api.ViperGirlsPostScheduler({"vg_user": "u", "vg_pass": "p"})
+    scheduler.process_due_posts(datetime.datetime(2026, 6, 30, 20, 1, tzinfo=datetime.timezone.utc))
+
+    posts = {post["id"]: post for post in viper_api.load_scheduled_posts()}
+    assert posts["post-1"]["status"] == "posted"
+    assert posts["post-2"]["status"] == "pending"
+
+
+@pytest.mark.unit
+def test_scheduler_reads_credentials_from_provider(tmp_path, monkeypatch):
+    point_viper_storage(monkeypatch, tmp_path)
+    viper_api.add_scheduled_post(
+        {
+            "id": "post-1",
+            "thread_id": "54321",
+            "thread_name": "Target",
+            "message": "body",
+            "scheduled_time": "2026-06-30T20:00:00+00:00",
+        }
+    )
+    logins = []
+
+    class FakeViperGirlsAPI:
+        def login(self, username, password):
+            logins.append((username, password))
+            return True
+
+        def post_reply(self, thread_id, message):
+            return True
+
+    monkeypatch.setattr(viper_api, "ViperGirlsAPI", FakeViperGirlsAPI)
+    creds = {"vg_user": "", "vg_pass": ""}
+    scheduler = viper_api.ViperGirlsPostScheduler(lambda: creds)
+    creds.update({"vg_user": "late-user", "vg_pass": "late-pass"})
+
+    scheduler.process_due_posts(datetime.datetime(2026, 6, 30, 20, 1, tzinfo=datetime.timezone.utc))
+
+    assert logins == [("late-user", "late-pass")]
+
+
+@pytest.mark.unit
+def test_set_scheduled_post_status_updates_one_record(tmp_path, monkeypatch):
+    point_viper_storage(monkeypatch, tmp_path)
+    for post_id in ("a", "b"):
+        viper_api.add_scheduled_post(
+            {
+                "id": post_id,
+                "thread_id": "54321",
+                "thread_name": "Target",
+                "message": "body",
+                "scheduled_time": "2026-06-30T20:00:00+00:00",
+            }
+        )
+
+    updated = viper_api.set_scheduled_post_status("a", "failed", "boom")
+
+    assert updated["status"] == "failed" and updated["error"] == "boom"
+    posts = {post["id"]: post for post in viper_api.load_scheduled_posts()}
+    assert posts["b"]["status"] == "pending"
+    assert viper_api.set_scheduled_post_status("missing", "failed") is None
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+@pytest.mark.unit
+def test_concurrent_saved_thread_updates_keep_both(tmp_path, monkeypatch):
+    import threading
+
+    point_viper_storage(monkeypatch, tmp_path)
+    names = [f"Target {index}" for index in range(20)]
+    viper_api.save_saved_threads(
+        {
+            name: viper_api.normalize_thread_record(name, str(10000 + i))
+            for i, name in enumerate(names)
+        }
+    )
+
+    threads = [
+        threading.Thread(target=viper_api.mark_thread_target_used, args=(name,)) for name in names
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(5)
+
+    saved = viper_api.load_saved_threads()
+    assert all(saved[name]["last_used_at"] for name in names)
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+@pytest.mark.unit
+def test_loaded_records_blank_foreign_urls(tmp_path, monkeypatch):
+    point_viper_storage(monkeypatch, tmp_path)
+    (tmp_path / "saved_threads.json").write_text(
+        json.dumps(
+            {
+                "Evil": {"url": "https://attacker.example/x", "thread_id": "123"},
+                "Legacy": "https://attacker.example/legacy?t=456",
+                "NoId": {"url": "file:///etc/passwd", "thread_id": ""},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    saved = viper_api.load_saved_threads()
+
+    assert saved["Evil"]["url"] == "https://vipergirls.to/threads/123"
+    assert saved["Legacy"]["url"] == "https://vipergirls.to/threads/456"
+    assert saved["NoId"]["url"] == ""
+
+
+@pytest.mark.unit
+def test_file_url_is_rejected_on_import(tmp_path, monkeypatch):
+    point_viper_storage(monkeypatch, tmp_path)
+    import_path = tmp_path / "import.json"
+    import_path.write_text(
+        json.dumps({"Bad": {"url": "file:///C:/secrets.txt", "thread_id": "789"}}),
+        encoding="utf-8",
+    )
+
+    imported, _count, _skipped = viper_api.import_saved_threads_file(str(import_path))
+
+    assert imported["Bad"]["url"] == "https://vipergirls.to/threads/789"
+
+
+@pytest.mark.unit
+def test_safe_target_url_keeps_forum_links_and_drops_others():
+    assert (
+        viper_api.safe_target_url("https://vipergirls.to/threads/1-a", "1")
+        == "https://vipergirls.to/threads/1-a"
+    )
+    assert viper_api.safe_target_url("https://attacker.example/", "55") == (
+        "https://vipergirls.to/threads/55"
+    )
+    assert viper_api.safe_target_url("javascript:alert(1)", "") == ""
+    assert viper_api.safe_target_url("threads/12", "12") == "https://vipergirls.to/threads/12"
+
+
+@pytest.mark.unit
+def test_open_supported_url_refuses_foreign_hosts(monkeypatch):
+    opened = []
+    monkeypatch.setattr(viper_api.webbrowser, "open", lambda url: opened.append(url))
+
+    assert viper_api.open_supported_url("https://attacker.example/x") is False
+    assert viper_api.open_supported_url("") is False
+    assert viper_api.open_supported_url("https://vipergirls.to/threads/1") is True
+    assert opened == ["https://vipergirls.to/threads/1"]
+
+
+@pytest.mark.unit
+def test_blanked_url_record_still_resolves_thread_id():
+    poster = AutoPoster({"vg_user": "u", "vg_pass": "p"}, {"T": {"url": "", "thread_id": "123"}})
+
+    assert poster._resolve_thread_id("T") == ("123", None)
+    assert poster._target_url("T", "123") == "https://vipergirls.to/threads/123"
+
+
+class _FakeEntry:
+    def __init__(self, value):
+        self.value = value
+
+    def get(self):
+        return self.value
+
+
+class _FakeButton:
+    def __init__(self):
+        self.states = []
+
+    def configure(self, **kwargs):
+        if "state" in kwargs:
+            self.states.append(kwargs["state"])
+
+
+class _InlineThread:
+    def __init__(self, target=None, args=(), kwargs=None, daemon=None, name=None):
+        self._target = target
+        self._args = args
+        self._kwargs = kwargs or {}
+
+    def start(self):
+        self._target(*self._args, **self._kwargs)
+
+
+@pytest.mark.unit
+def test_save_target_builds_record_off_thread(tmp_path, monkeypatch):
+    point_viper_storage(monkeypatch, tmp_path)
+    monkeypatch.setattr(viper_api.threading, "Thread", _InlineThread)
+    built = []
+
+    def fake_build(fallback_name, target, **kwargs):
+        built.append(threading_name())
+        return "Fetched Name", viper_api.normalize_thread_record("Fetched Name", "12345"), "Fetched"
+
+    import threading as _threading
+
+    def threading_name():
+        return _threading.current_thread().name
+
+    monkeypatch.setattr(viper_api, "build_site_named_thread_record", fake_build)
+
+    window = viper_api.ViperToolsWindow.__new__(viper_api.ViperToolsWindow)
+    window.ent_name = _FakeEntry("Fallback")
+    window.ent_url = _FakeEntry("12345")
+    window.ent_tags = _FakeEntry("")
+    window.ent_notes = _FakeEntry("")
+    window.editing_name = None
+    window.saved_threads = {}
+    window.save_button = _FakeButton()
+    window.refresh_names_button = _FakeButton()
+    window.after = lambda _delay, callback: callback()
+    window.cancel_edit = lambda clear_fields=True: None
+    window.refresh_list = lambda: None
+    window._notify_changed = lambda: None
+    window._find_duplicate_thread_id = lambda thread_id, exclude=None: None
+
+    window.save_target()
+
+    assert "Fetched Name" in window.saved_threads
+    assert viper_api.load_saved_threads()["Fetched Name"]["thread_id"] == "12345"
+    assert window.save_button.states == ["disabled", "normal"]
+    assert built == ["MainThread"]  # inline fake thread; real runs use a worker thread

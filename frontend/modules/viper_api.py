@@ -7,15 +7,16 @@ from datetime import datetime, timezone
 import json
 import os
 import re
+import functools
 import shutil
+import tempfile
 import threading
 import webbrowser
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Union
 from urllib.parse import urljoin, urlparse
 
 import customtkinter as ctk
 import pyperclip
-import requests
 from bs4 import BeautifulSoup
 from tkinter import filedialog, messagebox
 from loguru import logger
@@ -38,6 +39,46 @@ THREAD_TITLE_USER_AGENT = (
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
 )
 VIPERGIRLS_RATE_LIMIT = {"requests_per_second": 1.0, "burst_size": 3}
+
+# One process-wide lock serializes every load-modify-save on the JSON files in
+# the user data directory. The UI thread, the AutoPoster, and the scheduler all
+# write them; without the lock a slow writer overwrote newer records.
+_STORAGE_LOCK = threading.RLock()
+
+
+def _locked(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        with _STORAGE_LOCK:
+            return func(*args, **kwargs)
+
+    return wrapper
+
+
+def _atomic_write_json(path: str, payload: Any) -> None:
+    """Write JSON through a uniquely named temp file, then rename over ``path``."""
+    directory = os.path.dirname(path) or "."
+    os.makedirs(directory, exist_ok=True)
+    handle = tempfile.NamedTemporaryFile(
+        "w",
+        encoding="utf-8",
+        dir=directory,
+        prefix=os.path.basename(path) + ".",
+        suffix=".tmp",
+        delete=False,
+    )
+    try:
+        with handle as f:
+            json.dump(payload, f, indent=4, ensure_ascii=False)
+            f.write("\n")
+        os.replace(handle.name, path)
+    except BaseException:
+        try:
+            os.unlink(handle.name)
+        except OSError:
+            pass
+        raise
+
 
 THREAD_ID_PATTERNS = (
     re.compile(r"^\d+$"),
@@ -95,6 +136,38 @@ def _is_supported_vipergirls_url(value: str) -> bool:
 
 def _canonical_thread_url(thread_id: str) -> str:
     return f"{VIPERGIRLS_BASE_URL}/threads/{thread_id}"
+
+
+def safe_target_url(url: str, thread_id: str) -> str:
+    """Return ``url`` only when it points at ViperGirls; otherwise a canonical
+    thread link for ``thread_id`` or an empty string.
+
+    Saved and imported target files are user data; a foreign or non-http URL
+    must never reach ``webbrowser.open``.
+    """
+    clean_url = str(url or "").strip()
+    clean_id = extract_thread_id(str(thread_id or "")) or ""
+    parsed = urlparse(clean_url)
+    if (
+        clean_url
+        and parsed.scheme in ("http", "https")
+        and parsed.netloc
+        and _is_supported_vipergirls_url(clean_url)
+    ):
+        return clean_url
+    if clean_id:
+        return _canonical_thread_url(clean_id)
+    return ""
+
+
+def open_supported_url(url: str) -> bool:
+    """Open ``url`` in the browser only when it is a ViperGirls link."""
+    clean_url = str(url or "").strip()
+    if not clean_url or safe_target_url(clean_url, "") != clean_url:
+        logger.warning(f"Refusing to open a non-ViperGirls URL: {clean_url!r}")
+        return False
+    webbrowser.open(clean_url)
+    return True
 
 
 def normalize_tags(tags: object) -> List[str]:
@@ -192,28 +265,38 @@ def parse_thread_title_from_html(html_text: str) -> str:
 def fetch_thread_title(
     url: str,
     timeout: int = THREAD_TITLE_TIMEOUT_SECONDS,
-    session: Optional[Any] = None,
+    bridge: Optional[Any] = None,
 ) -> str:
-    """Fetch the current ViperGirls thread title from the live thread page."""
+    """Fetch the current ViperGirls thread title through the sidecar transport."""
     if not url or not _is_supported_vipergirls_url(url):
         return ""
 
-    client = session or requests
+    spec = build_transport_spec(
+        url,
+        method="GET",
+        headers={
+            "User-Agent": THREAD_TITLE_USER_AGENT,
+            "Referer": f"{VIPERGIRLS_BASE_URL}/forum.php",
+        },
+        use_cookies=True,
+    )
     try:
-        response = client.get(
-            url,
+        response = execute_transport_request(
+            spec,
+            service="vipergirls.to",
             timeout=timeout,
-            headers={
-                "User-Agent": THREAD_TITLE_USER_AGENT,
-                "Referer": f"{VIPERGIRLS_BASE_URL}/forum.php",
-            },
+            bridge=bridge,
+            rate_limits=VIPERGIRLS_RATE_LIMIT,
         )
-        if hasattr(response, "raise_for_status"):
-            response.raise_for_status()
-        return parse_thread_title_from_html(getattr(response, "text", "") or "")
-    except (requests.RequestException, AttributeError, ValueError) as exc:
+    except Exception as exc:
         logger.warning(f"Could not fetch ViperGirls thread title for {url}: {exc}")
         return ""
+    if not response.ok:
+        logger.warning(
+            f"Could not fetch ViperGirls thread title for {url}: {response.message or 'failed'}"
+        )
+        return ""
+    return parse_thread_title_from_html(response.body or "")
 
 
 def unique_target_name(
@@ -312,8 +395,7 @@ def _normalize_loaded_record(name: str, record: object) -> Tuple[Optional[Dict[s
     if isinstance(record, dict):
         url = str(record.get("url") or "")
         thread_id = str(record.get("thread_id") or extract_thread_id(url) or "")
-        if not url and thread_id:
-            url = _canonical_thread_url(thread_id)
+        url = safe_target_url(url, thread_id)
         normalized = {
             "url": url,
             "thread_id": thread_id,
@@ -343,9 +425,10 @@ def _normalize_loaded_record(name: str, record: object) -> Tuple[Optional[Dict[s
         try:
             return normalize_thread_record(name, record), True
         except ThreadTargetError:
+            legacy_id = extract_thread_id(record) or ""
             return {
-                "url": record,
-                "thread_id": extract_thread_id(record) or "",
+                "url": safe_target_url(record, legacy_id),
+                "thread_id": legacy_id,
                 "created_at": now,
                 "updated_at": now,
                 "last_used_at": None,
@@ -370,6 +453,7 @@ def _backup_corrupt_threads_file(exc: Exception) -> None:
         logger.error(f"Failed to back up unreadable ViperGirls targets: {backup_exc}")
 
 
+@_locked
 def load_saved_threads() -> Dict[str, Dict[str, object]]:
     """Load and migrate saved ViperGirls posting targets."""
     if not os.path.exists(THREADS_FILE):
@@ -406,14 +490,11 @@ def load_saved_threads() -> Dict[str, Dict[str, object]]:
     return migrated
 
 
+@_locked
 def save_saved_threads(saved_threads: Dict[str, Dict[str, object]]) -> None:
     """Atomically save normalized ViperGirls posting targets."""
     os.makedirs(_USER_DATA_DIR, exist_ok=True)
-    tmp_path = f"{THREADS_FILE}.tmp"
-    with open(tmp_path, "w", encoding="utf-8") as f:
-        json.dump(saved_threads, f, indent=4, ensure_ascii=False)
-        f.write("\n")
-    os.replace(tmp_path, THREADS_FILE)
+    _atomic_write_json(THREADS_FILE, saved_threads)
 
 
 def validate_saved_thread_record(name: str, record: object) -> List[str]:
@@ -512,11 +593,7 @@ def export_saved_threads_file(
 ) -> int:
     """Export saved targets to a portable JSON file."""
     selected_names = names if names is not None else sorted(saved_threads)
-    targets = {
-        name: saved_threads[name]
-        for name in selected_names
-        if name in saved_threads
-    }
+    targets = {name: saved_threads[name] for name in selected_names if name in saved_threads}
     export_data = {
         "version": TARGETS_EXPORT_VERSION,
         "exported_at": _now_iso(),
@@ -528,7 +605,10 @@ def export_saved_threads_file(
     return len(targets)
 
 
-def mark_thread_target_used(name: str, timestamp: Optional[str] = None) -> Optional[Dict[str, object]]:
+@_locked
+def mark_thread_target_used(
+    name: str, timestamp: Optional[str] = None
+) -> Optional[Dict[str, object]]:
     """Update a saved target's last-used timestamp."""
     target_name = str(name or "").strip()
     if not target_name:
@@ -578,6 +658,7 @@ def _canonical_history_entry(entry: Dict[str, Any]) -> Dict[str, str]:
     }
 
 
+@_locked
 def load_posting_history() -> List[Dict[str, str]]:
     """Load persisted ViperGirls posting history."""
     if not os.path.exists(POSTING_HISTORY_FILE):
@@ -596,28 +677,22 @@ def load_posting_history() -> List[Dict[str, str]]:
         )
         return []
 
-    return [
-        _canonical_history_entry(item)
-        for item in raw_data
-        if isinstance(item, dict)
-    ][-POSTING_HISTORY_LIMIT:]
+    return [_canonical_history_entry(item) for item in raw_data if isinstance(item, dict)][
+        -POSTING_HISTORY_LIMIT:
+    ]
 
 
+@_locked
 def save_posting_history(history: List[Dict[str, Any]]) -> None:
     """Atomically save ViperGirls posting history."""
     os.makedirs(_USER_DATA_DIR, exist_ok=True)
-    normalized = [
-        _canonical_history_entry(item)
-        for item in history
-        if isinstance(item, dict)
-    ][-POSTING_HISTORY_LIMIT:]
-    tmp_path = f"{POSTING_HISTORY_FILE}.tmp"
-    with open(tmp_path, "w", encoding="utf-8") as f:
-        json.dump(normalized, f, indent=4, ensure_ascii=False)
-        f.write("\n")
-    os.replace(tmp_path, POSTING_HISTORY_FILE)
+    normalized = [_canonical_history_entry(item) for item in history if isinstance(item, dict)][
+        -POSTING_HISTORY_LIMIT:
+    ]
+    _atomic_write_json(POSTING_HISTORY_FILE, normalized)
 
 
+@_locked
 def append_posting_history(entry: Dict[str, Any]) -> Dict[str, str]:
     """Append one ViperGirls posting attempt to history."""
     normalized = _canonical_history_entry(entry)
@@ -674,6 +749,7 @@ def _canonical_scheduled_post(entry: Dict[str, Any]) -> Dict[str, str]:
     }
 
 
+@_locked
 def load_scheduled_posts() -> List[Dict[str, str]]:
     """Load persisted ViperGirls scheduled posts."""
     raw_data = _read_json_file(SCHEDULED_POSTS_FILE, [])
@@ -682,28 +758,18 @@ def load_scheduled_posts() -> List[Dict[str, str]]:
             SCHEDULED_POSTS_FILE, ValueError("scheduled posts data is not a JSON list")
         )
         return []
-    return [
-        _canonical_scheduled_post(item)
-        for item in raw_data
-        if isinstance(item, dict)
-    ]
+    return [_canonical_scheduled_post(item) for item in raw_data if isinstance(item, dict)]
 
 
+@_locked
 def save_scheduled_posts(posts: List[Dict[str, Any]]) -> None:
     """Atomically save ViperGirls scheduled posts."""
     os.makedirs(_USER_DATA_DIR, exist_ok=True)
-    normalized = [
-        _canonical_scheduled_post(item)
-        for item in posts
-        if isinstance(item, dict)
-    ]
-    tmp_path = f"{SCHEDULED_POSTS_FILE}.tmp"
-    with open(tmp_path, "w", encoding="utf-8") as f:
-        json.dump(normalized, f, indent=4, ensure_ascii=False)
-        f.write("\n")
-    os.replace(tmp_path, SCHEDULED_POSTS_FILE)
+    normalized = [_canonical_scheduled_post(item) for item in posts if isinstance(item, dict)]
+    _atomic_write_json(SCHEDULED_POSTS_FILE, normalized)
 
 
+@_locked
 def add_scheduled_post(post: Dict[str, Any]) -> Dict[str, str]:
     """Persist one pending ViperGirls scheduled post."""
     normalized = _canonical_scheduled_post({**post, "status": "pending", "error": ""})
@@ -722,18 +788,35 @@ def add_scheduled_post(post: Dict[str, Any]) -> Dict[str, str]:
     return normalized
 
 
+@_locked
 def cancel_scheduled_post(post_id: str) -> bool:
     """Remove a pending scheduled post by ID."""
     clean_id = str(post_id or "").strip()
     posts = load_scheduled_posts()
     kept = [
-        post for post in posts
+        post
+        for post in posts
         if not (post.get("id") == clean_id and post.get("status") == "pending")
     ]
     if len(kept) == len(posts):
         return False
     save_scheduled_posts(kept)
     return True
+
+
+@_locked
+def set_scheduled_post_status(
+    post_id: str, status: str, error: str = ""
+) -> Optional[Dict[str, str]]:
+    """Update one scheduled post on disk and return it, or None if unknown."""
+    clean_id = str(post_id or "").strip()
+    posts = load_scheduled_posts()
+    updated = _update_scheduled_post_status(posts, clean_id, status, error)
+    match = next((item for item in updated if item.get("id") == clean_id), None)
+    if match is None:
+        return None
+    save_scheduled_posts(updated)
+    return match
 
 
 def _update_scheduled_post_status(
@@ -831,10 +914,11 @@ def build_vipergirls_reply_spec(thread_id: str, message: str, html_text: str) ->
             str(element.get("name") or "")
             for element in candidate.select("input, textarea, select")
         }
-        if (
-            "newreply.php" in action
-            and "do=postreply" in action
-        ) or {"message", "securitytoken", "do"}.issubset(input_names):
+        if ("newreply.php" in action and "do=postreply" in action) or {
+            "message",
+            "securitytoken",
+            "do",
+        }.issubset(input_names):
             form = candidate
             break
 
@@ -846,8 +930,7 @@ def build_vipergirls_reply_spec(thread_id: str, message: str, html_text: str) ->
     missing = sorted(name for name in required_fields if name not in form_fields)
     if missing:
         raise ViperPostError(
-            "ViperGirls reply form is missing required field(s): "
-            + ", ".join(missing)
+            "ViperGirls reply form is missing required field(s): " + ", ".join(missing)
         )
 
     form_fields["message"] = str(message)
@@ -875,13 +958,26 @@ def build_vipergirls_reply_spec(thread_id: str, message: str, html_text: str) ->
         },
         "include_response_body": True,
         "include_transport_metadata": True,
+        # The post body and copied form values are final text; Go must not
+        # treat "{...}" inside them as template tokens.
+        "literal_values": True,
     }
+
+
+def _is_vipergirls_login_page(body: str) -> bool:
+    """True when the forum answered with its login form instead of content."""
+    lowered = (body or "").lower()
+    return "vb_login_username" in lowered and "logout.php" not in lowered
 
 
 class ViperGirlsPostScheduler:
     """Python-owned scheduled-post runner for ViperGirls."""
 
-    def __init__(self, creds: Dict[str, str], event_queue: Optional[Any] = None):
+    def __init__(
+        self,
+        creds: Union[Mapping[str, str], Callable[[], Mapping[str, str]]],
+        event_queue: Optional[Any] = None,
+    ):
         self.creds = creds
         self.event_queue = event_queue
         self._stop_event = threading.Event()
@@ -907,13 +1003,15 @@ class ViperGirlsPostScheduler:
         if self.event_queue is None:
             return
         try:
-            self.event_queue.put_nowait({
-                "type": "scheduled_post_completed",
-                "id": post.get("id"),
-                "status": status,
-                "msg": msg,
-                "data": post,
-            })
+            self.event_queue.put_nowait(
+                {
+                    "type": "scheduled_post_completed",
+                    "id": post.get("id"),
+                    "status": status,
+                    "msg": msg,
+                    "data": post,
+                }
+            )
         except Exception:
             logger.debug("Could not emit scheduled post event.", exc_info=True)
 
@@ -925,11 +1023,26 @@ class ViperGirlsPostScheduler:
                 logger.warning(f"Scheduled ViperGirls post check failed: {exc}")
             self._stop_event.wait(60.0)
 
+    def _credentials(self) -> Dict[str, str]:
+        source = self.creds
+        try:
+            values = source() if callable(source) else source
+        except Exception as exc:
+            logger.error(f"Scheduled posts: could not read credentials: {exc}")
+            values = {}
+        return {str(key): str(value or "") for key, value in dict(values or {}).items()}
+
+    def _fail_due_posts(self, due_posts: List[Dict[str, str]], error: str) -> None:
+        for post in due_posts:
+            failed_post = set_scheduled_post_status(post["id"], "failed", error)
+            if failed_post is not None:
+                self._emit(failed_post, "failed", error)
+
     def process_due_posts(self, now: Optional[datetime] = None) -> List[Dict[str, str]]:
         now_utc = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
-        posts = load_scheduled_posts()
         due_posts = [
-            post for post in posts
+            post
+            for post in load_scheduled_posts()
             if post.get("status") == "pending"
             and (scheduled_at := _parse_scheduled_time(post.get("scheduled_time", "")))
             and scheduled_at <= now_utc
@@ -937,25 +1050,16 @@ class ViperGirlsPostScheduler:
         if not due_posts:
             return []
 
-        user = str(self.creds.get("vg_user") or "")
-        pwd = str(self.creds.get("vg_pass") or "")
+        credentials = self._credentials()
+        user = credentials.get("vg_user", "")
+        pwd = credentials.get("vg_pass", "")
         if not user or not pwd:
-            error = "Missing ViperGirls credentials."
-            for post in due_posts:
-                posts = _update_scheduled_post_status(posts, post["id"], "failed", error)
-                failed_post = next(item for item in posts if item.get("id") == post["id"])
-                self._emit(failed_post, "failed", error)
-            save_scheduled_posts(posts)
+            self._fail_due_posts(due_posts, "Missing ViperGirls credentials.")
             return due_posts
 
         api = ViperGirlsAPI()
         if not api.login(user, pwd):
-            error = "ViperGirls login failed."
-            for post in due_posts:
-                posts = _update_scheduled_post_status(posts, post["id"], "failed", error)
-                failed_post = next(item for item in posts if item.get("id") == post["id"])
-                self._emit(failed_post, "failed", error)
-            save_scheduled_posts(posts)
+            self._fail_due_posts(due_posts, "ViperGirls login failed.")
             return due_posts
 
         for post in due_posts:
@@ -966,10 +1070,10 @@ class ViperGirlsPostScheduler:
             except Exception as exc:
                 status = "failed"
                 error = str(exc)
-            posts = _update_scheduled_post_status(posts, post["id"], status, error)
-            updated_post = next(item for item in posts if item.get("id") == post["id"])
-            self._emit(updated_post, status, error or "Post successful")
-            save_scheduled_posts(posts)
+            # Update only this record so posts added or cancelled meanwhile survive.
+            updated_post = set_scheduled_post_status(post["id"], status, error)
+            if updated_post is not None:
+                self._emit(updated_post, status, error or "Post successful")
 
         return due_posts
 
@@ -977,7 +1081,7 @@ class ViperGirlsPostScheduler:
 class ViperGirlsAPI:
     def __init__(self):
         self.bridge = SidecarBridge.get()
-        self.is_logged_in = False
+        self._credentials: Optional[Tuple[str, str]] = None
 
     def login(self, username, login_value):
         logger.info("ViperAPI: Logging in...")
@@ -988,10 +1092,13 @@ class ViperGirlsAPI:
         legacy_md5 = getattr(hashlib, "md5")
         md5_pass = legacy_md5(login_value.encode(), usedforsecurity=False).hexdigest()
 
+        # Start from an empty cookie jar so an older session cannot make a
+        # wrong password look like a successful login.
         seed_spec = build_transport_spec(
             f"{VIPERGIRLS_BASE_URL}/login.php?do=login",
             method="GET",
             use_cookies=True,
+            reset_cookies=True,
         )
         seed_resp = execute_transport_request(
             seed_spec,
@@ -1017,6 +1124,7 @@ class ViperGirlsAPI:
                 "securitytoken": "guest",
             },
             headers={"Referer": f"{VIPERGIRLS_BASE_URL}/forum.php"},
+            literal_values=True,
         )
         resp = execute_transport_request(
             spec,
@@ -1027,12 +1135,20 @@ class ViperGirlsAPI:
         )
 
         if resp.ok and _vipergirls_login_succeeded(resp.body, resp.final_url):
-            self.is_logged_in = True
+            self._credentials = (username, login_value)
             logger.info("ViperAPI: Login Successful")
             return True
 
         logger.error(f"ViperAPI: Login Failed: {resp.message or 'unexpected page'}")
         return False
+
+    def _relogin(self) -> bool:
+        """Re-establish the forum session once after it was lost mid-run."""
+        if not self._credentials:
+            return False
+        logger.warning("ViperAPI: session lost; logging in again.")
+        username, login_value = self._credentials
+        return self.login(username, login_value)
 
     def post_reply(self, thread_id, message):
         logger.info(f"ViperAPI: Posting to thread {thread_id}...")
@@ -1042,45 +1158,62 @@ class ViperGirlsAPI:
             return False
 
         reply_url = f"{VIPERGIRLS_BASE_URL}/newreply.php?do=newreply&t={clean_thread_id}"
-        fetch_spec = build_transport_spec(
-            reply_url,
-            method="GET",
-            headers={"Referer": f"{VIPERGIRLS_BASE_URL}/forum.php"},
-            use_cookies=True,
-        )
-        fetch_resp = execute_transport_request(
-            fetch_spec,
-            service="vipergirls.to",
-            timeout=30,
-            bridge=self.bridge,
-            rate_limits=VIPERGIRLS_RATE_LIMIT,
-        )
-        if not fetch_resp.ok:
-            logger.error(f"ViperAPI: Reply form fetch failed: {fetch_resp.message}")
+        relogin_allowed = True
+        while True:
+            fetch_spec = build_transport_spec(
+                reply_url,
+                method="GET",
+                headers={"Referer": f"{VIPERGIRLS_BASE_URL}/forum.php"},
+                use_cookies=True,
+            )
+            fetch_resp = execute_transport_request(
+                fetch_spec,
+                service="vipergirls.to",
+                timeout=30,
+                bridge=self.bridge,
+                rate_limits=VIPERGIRLS_RATE_LIMIT,
+            )
+            if not fetch_resp.ok:
+                logger.error(f"ViperAPI: Reply form fetch failed: {fetch_resp.message}")
+                return False
+            if _is_vipergirls_login_page(fetch_resp.body):
+                if relogin_allowed and self._relogin():
+                    relogin_allowed = False
+                    continue
+                logger.error("ViperAPI: Post Failed: ViperGirls returned a login page.")
+                return False
+
+            try:
+                post_spec = build_vipergirls_reply_spec(clean_thread_id, message, fetch_resp.body)
+            except ViperPostError as exc:
+                logger.error(f"ViperAPI: Post Failed: {exc}")
+                return False
+
+            # A reply must never be retried by the transport: a repeated POST
+            # whose first attempt actually landed would post twice.
+            resp = execute_transport_request(
+                post_spec,
+                service="vipergirls.to",
+                timeout=60,
+                bridge=self.bridge,
+                rate_limits=VIPERGIRLS_RATE_LIMIT,
+                retry=False,
+            )
+
+            if resp.ok and _vipergirls_post_succeeded(resp.body, resp.final_url):
+                logger.info("ViperAPI: Post Successful")
+                return True
+            if resp.ok and _is_vipergirls_login_page(resp.body) and relogin_allowed:
+                if self._relogin():
+                    relogin_allowed = False
+                    continue
+
+            logger.error(f"ViperAPI: Post Failed: {resp.message or 'unexpected page'}")
             return False
 
-        try:
-            post_spec = build_vipergirls_reply_spec(clean_thread_id, message, fetch_resp.body)
-        except ViperPostError as exc:
-            logger.error(f"ViperAPI: Post Failed: {exc}")
-            return False
-
-        resp = execute_transport_request(
-            post_spec,
-            service="vipergirls.to",
-            timeout=60,
-            bridge=self.bridge,
-            rate_limits=VIPERGIRLS_RATE_LIMIT,
-        )
-
-        if resp.ok and _vipergirls_post_succeeded(resp.body, resp.final_url):
-            logger.info("ViperAPI: Post Successful")
-            return True
-
-        logger.error(f"ViperAPI: Post Failed: {resp.message or 'unexpected page'}")
-        return False
-
-    def schedule_post(self, post_id, thread_id, thread_name, message, scheduled_time, cover_thumbnail=""):
+    def schedule_post(
+        self, post_id, thread_id, thread_name, message, scheduled_time, cover_thumbnail=""
+    ):
         logger.info(f"ViperAPI: Scheduling post to thread {thread_id} for {scheduled_time}...")
         try:
             add_scheduled_post(
@@ -1104,9 +1237,6 @@ class ViperGirlsAPI:
 
     def list_scheduled_posts(self):
         return load_scheduled_posts()
-
-    def close(self):
-        pass
 
 
 class ViperToolsWindow(ctk.CTkToplevel):
@@ -1220,12 +1350,13 @@ class ViperToolsWindow(ctk.CTkToplevel):
         ctk.CTkButton(toolbar, text="Export All", width=92, command=self.export_all_targets).grid(
             row=0, column=5, padx=3, pady=8
         )
-        ctk.CTkButton(
+        self.refresh_names_button = ctk.CTkButton(
             toolbar,
             text="Refresh Names",
             width=115,
             command=self.refresh_target_names,
-        ).grid(row=0, column=6, padx=3, pady=8)
+        )
+        self.refresh_names_button.grid(row=0, column=6, padx=3, pady=8)
         ctk.CTkButton(
             toolbar,
             text="Export Selected",
@@ -1265,7 +1396,9 @@ class ViperToolsWindow(ctk.CTkToplevel):
         )
         self.ent_name.grid(row=2, column=0, sticky="ew", padx=14, pady=(2, 10))
 
-        ctk.CTkLabel(self.controls, text="Thread URL or ID").grid(row=3, column=0, sticky="w", padx=14)
+        ctk.CTkLabel(self.controls, text="Thread URL or ID").grid(
+            row=3, column=0, sticky="w", padx=14
+        )
         self.ent_url = ctk.CTkEntry(
             self.controls,
             placeholder_text="URL, threads/12345, or 12345",
@@ -1489,12 +1622,12 @@ class ViperToolsWindow(ctk.CTkToplevel):
 
         actions = ctk.CTkFrame(row, fg_color="transparent")
         actions.grid(row=0, column=5, rowspan=2, sticky="e", padx=6, pady=4)
-        ctk.CTkButton(actions, text="Edit", width=52, command=lambda n=name: self.edit_thread(n)).pack(
-            side="left", padx=2
-        )
-        ctk.CTkButton(actions, text="Open", width=55, command=lambda n=name: self.open_thread(n)).pack(
-            side="left", padx=2
-        )
+        ctk.CTkButton(
+            actions, text="Edit", width=52, command=lambda n=name: self.edit_thread(n)
+        ).pack(side="left", padx=2)
+        ctk.CTkButton(
+            actions, text="Open", width=55, command=lambda n=name: self.open_thread(n)
+        ).pack(side="left", padx=2)
         ctk.CTkButton(
             actions,
             text="Validate",
@@ -1547,7 +1680,8 @@ class ViperToolsWindow(ctk.CTkToplevel):
 
     @staticmethod
     def open_url(url: str) -> None:
-        webbrowser.open(url)
+        if not open_supported_url(url):
+            messagebox.showerror("Open Target", "Only ViperGirls links can be opened from here.")
 
     @staticmethod
     def _shorten(value: str, max_len: int) -> str:
@@ -1565,6 +1699,45 @@ class ViperToolsWindow(ctk.CTkToplevel):
                 continue
         return selected
 
+    def _busy_buttons(self) -> List[Any]:
+        return [
+            button
+            for button in (
+                getattr(self, "save_button", None),
+                getattr(self, "refresh_names_button", None),
+            )
+            if button is not None
+        ]
+
+    def _run_in_background(self, work: Callable[[], Any], done: Callable[[Any], None]) -> None:
+        """Run network work on a worker thread; apply its result on the Tk thread.
+
+        Title fetches go through the sidecar and can take several seconds per
+        target, so they must never block the UI thread.
+        """
+        buttons = self._busy_buttons()
+        for button in buttons:
+            button.configure(state="disabled")
+
+        def _finish(result: Any, error: Optional[BaseException]) -> None:
+            for button in buttons:
+                button.configure(state="normal")
+            if error is not None:
+                logger.error(f"ViperGirls target task failed: {error}")
+                messagebox.showerror("Posting Targets", f"Operation failed:\n{error}")
+                return
+            done(result)
+
+        def _task() -> None:
+            try:
+                result = work()
+            except BaseException as exc:  # surfaced on the Tk thread
+                self.after(0, lambda exc=exc: _finish(None, exc))
+                return
+            self.after(0, lambda: _finish(result, None))
+
+        threading.Thread(target=_task, name="ViperTargetsWorker", daemon=True).start()
+
     def save_target(self) -> None:
         fallback_name = self.ent_name.get().strip()
         target = self.ent_url.get().strip()
@@ -1572,27 +1745,42 @@ class ViperToolsWindow(ctk.CTkToplevel):
         notes = self.ent_notes.get().strip()
         old_name = self.editing_name
         existing = self.saved_threads.get(old_name or fallback_name, {})
+        existing_names = list(self.saved_threads.keys())
 
-        try:
-            name, record, fetched_title = build_site_named_thread_record(
-                fallback_name,
-                target,
-                existing=existing,
-                notes=notes,
-                tags=tags,
-                existing_names=self.saved_threads.keys(),
-                exclude=old_name,
-            )
-        except ThreadTargetError as exc:
-            messagebox.showerror("Invalid Target", str(exc))
-            return
+        def _work():
+            try:
+                return build_site_named_thread_record(
+                    fallback_name,
+                    target,
+                    existing=existing,
+                    notes=notes,
+                    tags=tags,
+                    existing_names=existing_names,
+                    exclude=old_name,
+                )
+            except ThreadTargetError as exc:
+                return exc
 
+        def _done(result):
+            if isinstance(result, ThreadTargetError):
+                messagebox.showerror("Invalid Target", str(result))
+                return
+            name, record, fetched_title = result
+            self._apply_saved_target(name, record, fetched_title, old_name)
+
+        self._run_in_background(_work, _done)
+
+    def _apply_saved_target(
+        self, name: str, record: Dict[str, object], fetched_title: str, old_name: Optional[str]
+    ) -> None:
         if not fetched_title:
             logger.warning(
                 f"Saved ViperGirls target '{name}' without a live site title; using fallback name."
             )
 
-        duplicate_thread = self._find_duplicate_thread_id(str(record["thread_id"]), exclude=old_name)
+        duplicate_thread = self._find_duplicate_thread_id(
+            str(record["thread_id"]), exclude=old_name
+        )
         if duplicate_thread and not messagebox.askyesno(
             "Duplicate Thread ID",
             (
@@ -1624,65 +1812,78 @@ class ViperToolsWindow(ctk.CTkToplevel):
             messagebox.showwarning("Refresh Names", "No saved targets are available to refresh.")
             return
 
-        updated = dict(self.saved_threads)
-        renamed = 0
-        failed = 0
+        snapshot = dict(self.saved_threads)
         editing_name = self.editing_name
         expanded_targets = dict(getattr(self, "expanded_targets", {}))
 
-        for current_name in names:
-            record = updated.get(current_name)
-            if not isinstance(record, dict):
-                failed += 1
-                continue
+        def _work():
+            updated = dict(snapshot)
+            renamed = 0
+            failed = 0
+            current_editing = editing_name
+            expanded = dict(expanded_targets)
+            for current_name in names:
+                record = updated.get(current_name)
+                if not isinstance(record, dict):
+                    failed += 1
+                    continue
 
-            target = _import_record_target(record)
-            try:
-                new_name, new_record, fetched_title = build_site_named_thread_record(
-                    current_name,
-                    target,
-                    existing=record,
-                    notes=record.get("notes"),
-                    tags=record.get("tags"),
-                    existing_names=updated.keys(),
-                    exclude=current_name,
-                    fetch_title=True,
-                )
-            except ThreadTargetError:
-                failed += 1
-                continue
+                target = _import_record_target(record)
+                try:
+                    new_name, new_record, fetched_title = build_site_named_thread_record(
+                        current_name,
+                        target,
+                        existing=record,
+                        notes=record.get("notes"),
+                        tags=record.get("tags"),
+                        existing_names=updated.keys(),
+                        exclude=current_name,
+                        fetch_title=True,
+                    )
+                except ThreadTargetError:
+                    failed += 1
+                    continue
 
-            if not fetched_title:
-                failed += 1
-                continue
+                if not fetched_title:
+                    failed += 1
+                    continue
 
-            if new_name != current_name:
-                updated.pop(current_name, None)
-                if editing_name == current_name:
-                    editing_name = new_name
-                if current_name in expanded_targets:
-                    expanded_targets[new_name] = expanded_targets.pop(current_name)
-            updated[new_name] = new_record
-            renamed += 1
+                if new_name != current_name:
+                    updated.pop(current_name, None)
+                    if current_editing == current_name:
+                        current_editing = new_name
+                    if current_name in expanded:
+                        expanded[new_name] = expanded.pop(current_name)
+                updated[new_name] = new_record
+                renamed += 1
+            return updated, renamed, failed, current_editing, expanded
 
-        if renamed:
-            try:
-                save_saved_threads(updated)
-            except OSError as exc:
-                messagebox.showerror("Refresh Names Failed", f"Failed to save refreshed targets:\n{exc}")
-                return
-            self.saved_threads = updated
-            self.editing_name = editing_name
-            self.expanded_targets = expanded_targets
-            self.refresh_list()
-            self._notify_changed()
+        def _done(result):
+            updated, renamed, failed, current_editing, expanded = result
+            if renamed:
+                try:
+                    save_saved_threads(updated)
+                except OSError as exc:
+                    messagebox.showerror(
+                        "Refresh Names Failed", f"Failed to save refreshed targets:\n{exc}"
+                    )
+                    return
+                self.saved_threads = updated
+                self.editing_name = current_editing
+                self.expanded_targets = expanded
+                self.refresh_list()
+                self._notify_changed()
 
-        messagebox.showinfo(
-            "Refresh Names",
-            f"Updated {renamed} target name(s). Failed to fetch {failed} title(s).",
-        )
+            messagebox.showinfo(
+                "Refresh Names",
+                f"Updated {renamed} target name(s). Failed to fetch {failed} title(s).",
+            )
 
-    def _find_duplicate_thread_id(self, thread_id: str, exclude: Optional[str] = None) -> Optional[str]:
+        self._run_in_background(_work, _done)
+
+    def _find_duplicate_thread_id(
+        self, thread_id: str, exclude: Optional[str] = None
+    ) -> Optional[str]:
         for name, data in self.saved_threads.items():
             if name == exclude:
                 continue
@@ -1732,7 +1933,9 @@ class ViperToolsWindow(ctk.CTkToplevel):
         if errors:
             messagebox.showerror("Invalid Target", f"'{name}' is invalid:\n\n" + "\n".join(errors))
             return
-        thread_id = str(data.get("thread_id") or extract_thread_id(str(data.get("url") or "")) or "")
+        thread_id = str(
+            data.get("thread_id") or extract_thread_id(str(data.get("url") or "")) or ""
+        )
         messagebox.showinfo("Target Valid", f"'{name}' resolves to thread ID {thread_id}.")
 
     def delete_thread(self, name: str) -> None:
@@ -1823,7 +2026,9 @@ class ViperToolsWindow(ctk.CTkToplevel):
             raw_targets = _targets_from_import_payload(raw_data)
         except Exception:
             return []
-        return [str(name).strip() for name in raw_targets if str(name).strip() in self.saved_threads]
+        return [
+            str(name).strip() for name in raw_targets if str(name).strip() in self.saved_threads
+        ]
 
     def export_all_targets(self) -> None:
         self._export_targets(sorted(self.saved_threads))
@@ -1866,7 +2071,9 @@ class ViperToolsWindow(ctk.CTkToplevel):
         user = creds.get("vg_user", "")
         pwd = creds.get("vg_pass", "")
         if not user or not pwd:
-            messagebox.showerror("Missing Credentials", "Set ViperGirls credentials before testing login.")
+            messagebox.showerror(
+                "Missing Credentials", "Set ViperGirls credentials before testing login."
+            )
             self._update_health()
             return
 
@@ -1897,7 +2104,9 @@ class ViperToolsWindow(ctk.CTkToplevel):
             else:
                 webbrowser.open(_USER_DATA_DIR)
         except Exception as exc:
-            messagebox.showerror("Open Folder Failed", f"Could not open:\n{_USER_DATA_DIR}\n\n{exc}")
+            messagebox.showerror(
+                "Open Folder Failed", f"Could not open:\n{_USER_DATA_DIR}\n\n{exc}"
+            )
 
     def open_history(self) -> None:
         PostingHistoryWindow(self)
@@ -2060,11 +2269,11 @@ class PostingHistoryWindow(ctk.CTkToplevel):
             messagebox.showerror("Copy Failed", f"Could not copy text:\n{exc}")
 
     def open_target(self, entry: Dict[str, str]) -> None:
-        url = str(entry.get("target_url") or "")
+        url = safe_target_url(str(entry.get("target_url") or ""), str(entry.get("thread_id") or ""))
         if not url:
-            messagebox.showerror("Open Target", "No target URL is available.")
+            messagebox.showerror("Open Target", "No ViperGirls target URL is available.")
             return
-        webbrowser.open(url)
+        open_supported_url(url)
 
     def clear_history(self) -> None:
         if not self.history:
