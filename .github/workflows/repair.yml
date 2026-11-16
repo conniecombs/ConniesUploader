@@ -86,7 +86,7 @@ jobs:
           private-key: ${{ secrets.CI_REPAIR_APP_PRIVATE_KEY }}
       - name: Create or update repair PR
         id: pr
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ steps.app.outputs.token || secrets.CI_REPAIR_TOKEN || github.token }}
           branch: connie/automated-ci-repair
