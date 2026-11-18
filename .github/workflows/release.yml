@@ -39,16 +39,13 @@ jobs:
 
     - name: Extract release notes
       id: release_notes
+      env:
+        VERSION: ${{ steps.get_version.outputs.version }}
       run: |
-        VERSION="${{ steps.get_version.outputs.version }}"
-        VERSION_NUM="${VERSION#v}"
-        CHANGELOG_PATH="docs/CHANGELOG.md"
-        if [ -f "$CHANGELOG_PATH" ]; then
-          awk "/## \[$VERSION_NUM\]/,/## \[/" "$CHANGELOG_PATH" | sed '/## \['"$VERSION_NUM"'\]/d' | sed '/## \[/Q' | head -n -1 > /tmp/release_notes.md
-          if [ ! -s /tmp/release_notes.md ]; then cp "$CHANGELOG_PATH" /tmp/release_notes.md; fi
-        else
-          git log --pretty=format:"- %s (%h)" $(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")..HEAD >> /tmp/release_notes.md
-        fi
+        # Body is this version's docs/CHANGELOG.md section only. A missing or
+        # empty section fails the release rather than publishing a wrong body.
+        python3 scripts/maintenance/extract_release_notes.py "$VERSION" docs/CHANGELOG.md > /tmp/release_notes.md
+        echo "Release notes: $(wc -l < /tmp/release_notes.md) lines for $VERSION"
 
     - name: Upload release notes
       uses: actions/upload-artifact@v6

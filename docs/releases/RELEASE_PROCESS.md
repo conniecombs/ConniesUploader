@@ -18,7 +18,7 @@ Our release process is fully automated using GitHub Actions. When you push a ver
 
 1. ✅ Builds cross-platform binaries (Windows, Linux, macOS)
 2. ✅ Generates SHA256 checksums for verification
-3. ✅ Extracts release notes from `docs/CHANGELOG.md`
+3. ✅ Uses this version's `docs/CHANGELOG.md` section as the release description (`scripts/maintenance/extract_release_notes.py`); the release fails if that section is missing or empty
 4. ✅ Creates a GitHub Release with all artifacts
 5. ✅ Uploads packaged distributions (.zip, .tar.gz)
 
@@ -180,14 +180,17 @@ sha256sum ConniesUploader  # or shasum -a 256 on macOS
 4. Delete the tag: `git tag -d vX.Y.Z && git push origin :refs/tags/vX.Y.Z`
 5. Re-create the tag with the fix
 
-### Release Notes Are Empty
+### Release Notes Step Fails
 
-**Problem:** Release has no description or wrong content
+**Problem:** The "Extract release notes" step fails with `Cannot build release notes`.
 
 **Solution:**
-1. Ensure `docs/CHANGELOG.md` has a section for this version
-2. Format must be: `## [X.Y.Z] - YYYY-MM-DD`
-3. Re-run the workflow or edit the release manually on GitHub
+1. Ensure `docs/CHANGELOG.md` has a non-empty section for this version.
+2. The heading must be `## [X.Y.Z] - YYYY-MM-DD`; the label must match the tag without its leading `v` exactly.
+3. Check locally before tagging: `python3 scripts/maintenance/extract_release_notes.py vX.Y.Z`
+4. Re-run the workflow, or edit the release description on GitHub.
+
+Releases published before v3.1.4 used the whole changelog as their description because of an extraction bug; their descriptions can be replaced by hand with the version's section.
 
 ### Checksum Mismatch
 
