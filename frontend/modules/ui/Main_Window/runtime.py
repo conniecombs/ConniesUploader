@@ -129,7 +129,7 @@ class RuntimeMixin:
         except queue.Empty:
             pass
 
-        while row_limit > 0 and self.__dict__.get("pending_ui_rows"):
+        while row_limit > 0 and self.pending_ui_rows:
             epoch, f, g, preview_requested = self.pending_ui_rows.popleft()
             if not self._is_import_epoch_current(epoch) or not self._group_widget_exists(g):
                 with self.lock:
@@ -151,7 +151,7 @@ class RuntimeMixin:
         if touched_groups:
             self._finish_ui_row_batch(touched_groups)
 
-        remaining = len(self.__dict__.get("pending_ui_rows", []) or [])
+        remaining = len(self.pending_ui_rows)
         if processed_rows > 0 and (self.ui_queue.qsize() > 100 or remaining > 100):
             logger.debug(
                 f"UI queue processed {processed_rows} rows, "
@@ -171,7 +171,7 @@ class RuntimeMixin:
                 self._apply_auto_covers_to_group(group, touched["files"])
         with self.lock:
             file_count = len(self.file_widgets)
-        remaining = len(self.__dict__.get("pending_ui_rows", []) or [])
+        remaining = len(self.pending_ui_rows)
         self.lbl_eta.configure(
             text=(
                 f"Loading files... {remaining} remaining" if remaining else f"Files: {file_count}"
@@ -180,7 +180,6 @@ class RuntimeMixin:
         self._refresh_queue_state()
 
     def _apply_thumbnail_result(self, epoch: Optional[int], fp: str, pil_image: Any) -> None:
-        self._ensure_import_state()
         if not self._is_import_epoch_current(epoch):
             return
 
@@ -337,7 +336,6 @@ class RuntimeMixin:
             pil_image: PIL Image object for thumbnail (or None)
             group_widget: CollapsibleGroupFrame to add the row to
         """
-        self._ensure_import_state()
         group_widget.add_file(fp)
         row = ctk.CTkFrame(group_widget.content_frame)
         row.pack(fill="x", pady=1)
@@ -532,9 +530,7 @@ class RuntimeMixin:
         self._set_row_retry_visible(row_data, False)
 
     def _upload_in_progress(self) -> bool:
-        return bool(
-            self.__dict__.get("is_uploading", False) or self.__dict__.get("_finalizing", False)
-        )
+        return bool(self.is_uploading or self._finalizing)
 
     def _retry_file(self, filepath: str) -> None:
         if self._upload_in_progress():
@@ -669,7 +665,7 @@ class RuntimeMixin:
             logger.error(f"Group Update Error: {e}", exc_info=True)
 
     def finish_upload(self) -> None:
-        if not self.is_uploading or self.__dict__.get("_finalizing", False):
+        if not self.is_uploading or self._finalizing:
             return
         # Stay "uploading" until _on_upload_complete so Start/Retry cannot
         # re-enter while galleries are finalized on the worker thread.
@@ -747,7 +743,7 @@ class RuntimeMixin:
         total_count = len(states)
         output_files = list(self.current_output_files)
         generated_count = len(output_files)
-        copyable_output_files = list(self.__dict__.get("copyable_output_files", output_files))
+        copyable_output_files = list(self.copyable_output_files)
         auto_copy_requested = bool(self.var_auto_copy.get())
         has_copy_text = bool(self.clipboard_buffer or copyable_output_files)
 
@@ -809,25 +805,16 @@ class RuntimeMixin:
 
     def _upload_result_map(self) -> Dict[str, Tuple[str, str]]:
         res_map = {}
-        for fp, viewer_url, thumb_url in self.__dict__.get("results", []):
+        for fp, viewer_url, thumb_url in self.results:
             viewer_url = str(viewer_url or "").strip()
             thumb_url = str(thumb_url or "").strip()
             if viewer_url:
                 res_map[fp] = (viewer_url, thumb_url)
 
-        file_widgets = self.__dict__.get("file_widgets", {})
-        lock = self.__dict__.get("lock")
-        if lock is not None:
-            with lock:
-                stored_results = {
-                    fp: data.get("upload_result")
-                    for fp, data in file_widgets.items()
-                    if isinstance(data, dict)
-                }
-        else:
+        with self.lock:
             stored_results = {
                 fp: data.get("upload_result")
-                for fp, data in file_widgets.items()
+                for fp, data in self.file_widgets.items()
                 if isinstance(data, dict)
             }
 
@@ -853,9 +840,8 @@ class RuntimeMixin:
 
     def stop_upload(self):
         self.cancel_event.set()
-        upload_manager = self.__dict__.get("upload_manager")
-        if upload_manager is not None and hasattr(upload_manager, "cancel_batch"):
-            upload_manager.cancel_batch()
+        if self.upload_manager is not None:
+            self.upload_manager.cancel_batch()
         self.lbl_eta.configure(text="Stopping...")
         self.add_activity(
             "Stopping upload; queued and in-flight files are being cancelled.", "warning"
@@ -955,8 +941,6 @@ class RuntimeMixin:
             with open(out_name, "w", encoding="utf-8") as f:
                 f.write(text)
             self.current_output_files.append(out_name)
-            if "copyable_output_files" not in self.__dict__:
-                self.copyable_output_files = []
             self.copyable_output_files.append(out_name)
             self.log(f"Saved: {out_name}")
             self.add_activity(f"Saved output: {os.path.basename(out_name)}.", "success")
@@ -1012,12 +996,12 @@ class RuntimeMixin:
 
     def _skip_poster_for_group(self, group) -> None:
         """Tell the AutoPoster this group will never post so later batches proceed."""
-        target = group.__dict__.get("selected_thread", "")
+        target = group.selected_thread
         if not target or target == "Do Not Post":
             return
-        poster = self.__dict__.get("auto_poster")
-        batch_index = group.__dict__.get("batch_index")
-        if poster is None or not hasattr(poster, "skip") or not isinstance(batch_index, int):
+        poster = self.auto_poster
+        batch_index = group.batch_index
+        if poster is None or not isinstance(batch_index, int):
             return
         with self.lock:
             states = [self.file_widgets.get(fp, {}).get("state") for fp in group.files]
@@ -1163,7 +1147,6 @@ class RuntimeMixin:
         self.add_activity("Cleared upload queue.")
 
     def _clear_import_work(self) -> None:
-        self._ensure_import_state()
         with self.lock:
             self.import_epoch += 1
             self.active_import_ids.clear()

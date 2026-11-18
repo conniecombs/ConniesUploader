@@ -111,7 +111,7 @@ class GalleryActionsMixin:
     def _apply_vipr_gallery_selection(self, record_data: Dict[str, str]) -> None:
         name = record_data["name"]
         gid = record_data["id"]
-        vipr_galleries_map = self.__dict__.setdefault("vipr_galleries_map", {})
+        vipr_galleries_map = self.vipr_galleries_map
         vipr_galleries_map[name] = gid
         plugin = self.__dict__.get("service_plugins", {}).get("vipr.im")
         if plugin:
@@ -134,17 +134,15 @@ class GalleryActionsMixin:
         return len(self._selected_groups_for_gallery_assignment())
 
     def _selected_groups_for_gallery_assignment(self) -> List[Any]:
-        selected_files = list(self.__dict__.get("selected_files", set()) or [])
+        selected_files = list(self.selected_files)
         if not selected_files:
             return []
 
         groups = []
         seen = set()
-        lock = self.__dict__.get("lock")
-        context = lock if lock is not None else nullcontext()
-        with context:
+        with self.lock:
             for file_path in selected_files:
-                group = self.__dict__.get("file_widgets", {}).get(file_path, {}).get("group")
+                group = self.file_widgets.get(file_path, {}).get("group")
                 if group is None or id(group) in seen:
                     continue
                 seen.add(id(group))
@@ -260,21 +258,21 @@ class GalleryActionsMixin:
         if not gallery_hash or not upload_hash:
             return False
 
-        for existing in self.__dict__.get("pix_galleries_to_finalize", []):
+        for existing in self.pix_galleries_to_finalize:
             if (
                 str(existing.get("gallery_hash") or "") == gallery_hash
                 and str(existing.get("gallery_upload_hash") or "") == upload_hash
             ):
                 return False
 
-        self.__dict__.setdefault("pix_galleries_to_finalize", []).append(gallery)
+        self.pix_galleries_to_finalize.append(gallery)
         return True
 
     def _selected_gallery_for_service(
         self, service_id: str, cfg: Optional[Dict[str, Any]] = None
     ) -> Optional[Dict[str, str]]:
         service_id = config.normalize_service_id(service_id)
-        selected = self.__dict__.get("selected_gallery_by_service", {}) or {}
+        selected = self.selected_gallery_by_service
         record = selected.get(service_id) if isinstance(selected, dict) else None
         if not isinstance(record, dict) and service_id == config.PIXHOST_SERVICE_ID:
             record = selected.get(config.PIXHOST_LEGACY_SERVICE_ID)
@@ -312,9 +310,7 @@ class GalleryActionsMixin:
             if not gallery_name or gallery_name == "None":
                 return ""
             mapped_id = str(
-                cfg.get("vipr_gal_id")
-                or self.__dict__.get("vipr_galleries_map", {}).get(gallery_name)
-                or ""
+                cfg.get("vipr_gal_id") or self.vipr_galleries_map.get(gallery_name) or ""
             ).strip()
             return "" if mapped_id == "0" else mapped_id
         if service_id == "imx.to":

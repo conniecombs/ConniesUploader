@@ -14,6 +14,7 @@ import pytest
 from modules import config
 from modules.gallery_service import GalleryRecord
 from modules.ui.main_window import UploaderApp
+from tests.app_factory import make_app
 
 
 class FakeLabel:
@@ -63,6 +64,8 @@ class FakeGroup(FakeFrame):
         self.files = list(files or [])
         self.cover_files = []
         self.cover_selection_manual = False
+        self.selected_thread = "Do Not Post"
+        self.batch_index = None
         self.is_completed = False
         self.prog_value = None
         self.prog = SimpleNamespace(set=lambda value: setattr(self, "prog_value", value))
@@ -232,7 +235,7 @@ def test_preview_data_uses_storage_thumbnail_value_for_readable_service_label():
             assert value == "Medium (320 px)"
             return "m"
 
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.groups = [FakeGroup("Batch", ["image.jpg"])]
     app.var_service = FakeVar("imgur.com")
     app.settings_view = FakeSettingsView()
@@ -306,7 +309,7 @@ def test_worker_count_is_in_global_advanced_section():
 
 @pytest.mark.unit
 def test_global_thread_limit_is_bounded_without_rewriting_service_thread_vars():
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.menu_thread_var = FakeVar(config.DEFAULT_THREAD_COUNT)
     app._last_global_thread_limit_value = config.DEFAULT_THREAD_COUNT
     for _, var_name, default in UploaderApp._service_thread_var_specs():
@@ -328,7 +331,7 @@ def test_global_thread_limit_is_bounded_without_rewriting_service_thread_vars():
 
 @pytest.mark.unit
 def test_gather_settings_clamps_worker_and_changed_global_thread_limit():
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.var_service = FakeVar("imx.to")
     app.var_global_worker_count = FakeVar(99)
     app.menu_thread_var = FakeVar(99)
@@ -367,7 +370,7 @@ def test_template_recovery_actions_are_available_from_main_window():
 
 @pytest.mark.unit
 def test_host_readiness_reports_account_free_host_ready():
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.creds = {}
     app.var_auto_gallery = FakeVar(False)
     app.service_plugins = {
@@ -390,7 +393,7 @@ def test_host_readiness_reports_account_free_host_ready():
 
 @pytest.mark.unit
 def test_host_readiness_reports_missing_required_credentials():
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.creds = {}
     app.var_auto_gallery = FakeVar(False)
     app.service_plugins = {
@@ -415,7 +418,7 @@ def test_host_readiness_reports_missing_required_credentials():
 
 @pytest.mark.unit
 def test_host_readiness_reports_imgur_api_requirement():
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.creds = {"imgur_client_id": "", "imgur_access_token": ""}
     app.var_auto_gallery = FakeVar(False)
     app.service_plugins = {
@@ -447,7 +450,7 @@ def test_host_readiness_reports_imgur_api_requirement():
 def test_host_readiness_requires_imx_upload_username_and_password():
     from modules.plugins.imx import ImxPlugin
 
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.creds = {"imx_api": "api-key", "imx_user": "", "imx_pass": ""}
     app.var_auto_gallery = FakeVar(True)
     app.service_plugins = {"imx.to": ImxPlugin()}
@@ -459,7 +462,7 @@ def test_host_readiness_requires_imx_upload_username_and_password():
 
 @pytest.mark.unit
 def test_host_readiness_credentials_button_uses_full_width_layout():
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.var_service = FakeVar("imgur.com")
     app.lbl_host_readiness = FakeFrame()
     app.btn_host_credentials = FakeFrame()
@@ -482,7 +485,7 @@ def test_host_readiness_credentials_button_uses_full_width_layout():
 
 @pytest.mark.unit
 def test_start_button_disabled_until_pending_files_exist():
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.lock = Lock()
     app.file_widgets = {}
     app.is_uploading = False
@@ -497,7 +500,7 @@ def test_start_button_disabled_until_pending_files_exist():
 
 @pytest.mark.unit
 def test_start_button_enabled_with_pending_files_and_ready_host():
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.lock = Lock()
     app.file_widgets = {
         "one.jpg": {"state": "pending"},
@@ -529,7 +532,7 @@ def test_start_button_enabled_with_pending_files_and_ready_host():
 
 @pytest.mark.unit
 def test_start_button_disabled_when_host_needs_attention():
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.lock = Lock()
     app.file_widgets = {"one.jpg": {"state": "pending"}}
     app.is_uploading = False
@@ -559,7 +562,7 @@ def test_start_button_disabled_when_host_needs_attention():
 
 @pytest.mark.unit
 def test_start_button_disabled_while_uploading():
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.lock = Lock()
     app.file_widgets = {"one.jpg": {"state": "pending"}}
     app.is_uploading = True
@@ -577,7 +580,7 @@ def test_start_button_disabled_while_uploading():
 
 @pytest.mark.unit
 def test_stop_button_is_gray_when_upload_is_inactive():
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.btn_stop = FakeFrame()
 
     UploaderApp._configure_stop_button(app, False)
@@ -590,7 +593,7 @@ def test_stop_button_is_gray_when_upload_is_inactive():
 def test_start_upload_without_pending_files_uses_inline_feedback(monkeypatch):
     from modules.ui import main_window
 
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.groups = []
     app.lock = Lock()
     app.lbl_eta = FakeLabel()
@@ -619,7 +622,7 @@ def test_start_upload_without_pending_files_uses_inline_feedback(monkeypatch):
 def test_open_output_folder_without_files_uses_inline_feedback(monkeypatch):
     from modules.ui import main_window
 
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.current_output_files = []
     app.lbl_eta = FakeLabel()
     activity = []
@@ -644,7 +647,7 @@ def test_process_files_without_valid_images_uses_inline_import_checks(tmp_path, 
     bad_file = tmp_path / "notes.txt"
     bad_file.write_text("not an image", encoding="utf-8")
 
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.lbl_eta = FakeLabel()
     app.var_show_previews = FakeVar(True)
     app.update_idletasks = lambda: None
@@ -674,7 +677,7 @@ def test_process_files_without_valid_images_uses_inline_import_checks(tmp_path, 
 
 @pytest.mark.unit
 def test_process_files_submits_background_import_without_scanning_inline(monkeypatch):
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.lock = Lock()
     app.lbl_eta = FakeLabel()
     app.var_show_previews = FakeVar(True)
@@ -704,7 +707,7 @@ def test_process_files_submits_background_import_without_scanning_inline(monkeyp
 
 @pytest.mark.unit
 def test_import_complete_buffers_rows_and_ui_loop_creates_them_in_batches(monkeypatch):
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.lock = Lock()
     app.ui_queue = queue.Queue()
     app.import_epoch = 0
@@ -782,7 +785,7 @@ def test_import_complete_buffers_rows_and_ui_loop_creates_them_in_batches(monkey
 
 @pytest.mark.unit
 def test_clear_import_work_invalidates_pending_rows_and_stale_events():
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.lock = Lock()
     app.ui_queue = queue.Queue()
     app.import_epoch = 0
@@ -815,7 +818,7 @@ def test_import_checks_panel_has_inline_retry_actions():
 
 @pytest.mark.unit
 def test_refresh_queue_state_updates_summary_and_empty_state():
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.lock = Lock()
     app.file_widgets = {}
     app.groups = []
@@ -847,7 +850,7 @@ def test_refresh_queue_state_updates_summary_and_empty_state():
 
 @pytest.mark.unit
 def test_add_activity_is_session_only_without_disk_writes(tmp_path, monkeypatch):
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.activity_events = []
     app.activity_text = None
     app.activity_panel = None
@@ -871,7 +874,7 @@ def test_selection_action_bar_removes_selected_files_as_a_batch():
     refreshed = []
     activity = []
 
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.lock = Lock()
     app.groups = [group]
     app.is_uploading = False
@@ -905,7 +908,7 @@ def test_deleting_last_image_removes_empty_batch():
     refreshed = []
     activity = []
 
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.lock = Lock()
     app.groups = [group]
     app.file_widgets = {
@@ -941,7 +944,7 @@ def test_moving_last_image_removes_old_batch():
     refreshed = []
     activity = []
 
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.lock = Lock()
     app.groups = [old_group, new_group]
     app.file_widgets = {"move.jpg": {"row": old_row, "group": old_group, "state": "pending"}}
@@ -977,7 +980,7 @@ def test_move_file_relative_updates_upload_order_and_repacks_rows():
     refreshed = []
     activity = []
 
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.lock = Lock()
     app.is_uploading = False
     app.file_widgets = {
@@ -1000,7 +1003,7 @@ def test_row_selection_supports_ctrl_shift_and_persists_after_release():
     group = FakeGroup("Batch", ["one.jpg", "two.jpg", "three.jpg", "four.jpg"])
     rows = {filepath: FakeFrame() for filepath in group.files}
 
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.lock = Lock()
     app.groups = [group]
     app.is_uploading = False
@@ -1046,7 +1049,7 @@ def test_selected_files_move_as_one_ordered_block():
     refreshed = []
     activity = []
 
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.lock = Lock()
     app.groups = [group]
     app.is_uploading = False
@@ -1084,7 +1087,7 @@ def test_sort_group_files_updates_upload_order_by_name_modified_and_reverse(tmp_
     refreshed = []
     activity = []
 
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.lock = Lock()
     app.is_uploading = False
     app.file_widgets = {
@@ -1122,7 +1125,7 @@ def test_auto_cover_count_marks_first_images_until_user_changes_selection():
     group = FakeGroup("Batch", ["one.jpg", "two.jpg", "three.jpg"])
     buttons = {filepath: FakeFrame() for filepath in group.files}
 
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.lock = Lock()
     app.file_widgets = {
         filepath: {"group": group, "cover": buttons[filepath]} for filepath in group.files
@@ -1149,7 +1152,7 @@ def test_selected_cover_files_are_ordered_first_for_preview_output():
     group = FakeGroup("Batch", ["one.jpg", "two.jpg", "three.jpg"])
     group.set_cover_file("three.jpg", True, manual=True)
 
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
 
     preview = UploaderApp._preview_group_results(app, group)
 
@@ -1161,7 +1164,7 @@ def test_upload_preflight_reports_ready_summary(tmp_path):
     image_path = tmp_path / "ready.jpg"
     image_path.write_bytes(b"fake image")
 
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.creds = {}
     app.output_dir = str(tmp_path / "Output")
     app.central_history_path = str(tmp_path / "history")
@@ -1193,7 +1196,7 @@ def test_upload_preflight_reports_ready_summary(tmp_path):
 
 @pytest.mark.unit
 def test_gallery_manager_selection_preserves_gallery_metadata():
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.settings_view = FakeSettingsView()
     app.var_service = FakeVar("imx.to")
     app.selected_gallery_by_service = {}
@@ -1233,7 +1236,7 @@ def test_gallery_manager_can_assign_gallery_to_selected_batches(tmp_path):
     image_path = str(tmp_path / "selected.jpg")
     group = FakeGroup("Batch Alpha", [image_path])
 
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.lock = Lock()
     app.file_widgets = {image_path: {"group": group}}
     app.selected_files = {image_path}
@@ -1270,7 +1273,7 @@ def test_upload_preflight_shows_selected_gallery_details_and_validates_hash(tmp_
     image_path = tmp_path / "ready.jpg"
     image_path.write_bytes(b"fake image")
 
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.creds = {}
     app.output_dir = str(tmp_path / "Output")
     app.central_history_path = str(tmp_path / "history")
@@ -1328,7 +1331,7 @@ def test_upload_preflight_previews_one_gallery_per_folder(tmp_path):
     first.write_bytes(b"fake image")
     second.write_bytes(b"fake image")
 
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.creds = {}
     app.output_dir = str(tmp_path / "Output")
     app.central_history_path = str(tmp_path / "history")
@@ -1373,7 +1376,7 @@ def test_upload_preflight_allows_vipr_one_gallery_per_folder(tmp_path):
     image_path = tmp_path / "ready.jpg"
     image_path.write_bytes(b"fake image")
 
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.creds = {"vipr_user": "user", "vipr_pass": "secret"}
     app.output_dir = str(tmp_path / "Output")
     app.central_history_path = str(tmp_path / "history")
@@ -1416,7 +1419,7 @@ def test_imx_upload_preflight_uses_api_key_and_validates_gallery_names(tmp_path,
 
     image_path = tmp_path / "ready.png"
     image_path.write_bytes(b"fake image")
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.creds = {"imx_api": "key", "imx_user": "user", "imx_pass": "secret"}
     app.output_dir = str(tmp_path / "Output")
     app.central_history_path = str(tmp_path / "history")
@@ -1440,7 +1443,7 @@ def test_upload_preflight_reports_specific_blockers(tmp_path):
     image_path = tmp_path / "unsupported.bmp"
     image_path.write_bytes(b"fake image")
 
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.creds = {}
     app.output_dir = str(tmp_path / "Output")
     app.central_history_path = str(tmp_path / "history")
@@ -1493,7 +1496,7 @@ def test_upload_preflight_reports_vipergirls_posting_blockers(tmp_path, monkeypa
     ignored_group = FakeGroup("No Post Batch", [str(image_path)])
     ignored_group.selected_thread = "Do Not Post"
 
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.creds = {}
     app.output_dir = str(tmp_path / "Output")
     app.central_history_path = str(tmp_path / "history")
@@ -1555,7 +1558,7 @@ def test_upload_preflight_accepts_valid_vipergirls_posting_target(tmp_path, monk
     group = FakeGroup("Ready Batch", [str(image_path)])
     group.selected_thread = "Ready Target"
 
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.creds = {"vg_user": "user", "vg_pass": "password"}
     app.output_dir = str(tmp_path / "Output")
     app.central_history_path = str(tmp_path / "history")
@@ -1601,7 +1604,7 @@ def test_upload_preflight_records_problem_folder_action(tmp_path):
     image_path.write_bytes(b"fake image")
     output_dir = tmp_path / "Output"
 
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.creds = {}
     app.output_dir = str(output_dir)
     app.central_history_path = str(tmp_path / "history")
@@ -1640,7 +1643,7 @@ def test_upload_preflight_records_problem_folder_action(tmp_path):
 
 @pytest.mark.unit
 def test_preflight_issue_handler_populates_in_window_checks():
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.lbl_eta = FakeLabel()
     shown_checks = []
     activity = []
@@ -1665,7 +1668,7 @@ def test_preflight_issue_handler_populates_in_window_checks():
 
 @pytest.mark.unit
 def test_preflight_credentials_shortcut_only_for_credential_issues():
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
 
     assert UploaderApp._preflight_issues_need_credentials(
         app, ["Imgur requires a Client ID or Access Token."]
@@ -1707,7 +1710,7 @@ def test_batch_header_offers_vipergirls_post_preview_action():
 
 @pytest.mark.unit
 def test_upload_checks_show_only_relevant_actions():
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.upload_checks_actions = FakeFrame()
     app.btn_upload_checks_credentials = FakeFrame()
     app.btn_upload_checks_viper_targets = FakeFrame()
@@ -1762,7 +1765,7 @@ def test_upload_checks_show_only_relevant_actions():
 @pytest.mark.unit
 def test_vipergirls_queue_activity_includes_batch_target_and_thread_id():
     group = FakeGroup("Batch Alpha")
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.saved_threads_data = {
         "My Target": {
             "url": "https://vipergirls.to/threads/98765-title",
@@ -1801,7 +1804,7 @@ def test_vipergirls_post_preview_uses_batch_target_thread_and_template_text(tmp_
     group.selected_thread = "My Target"
     group.selected_template = "BBCode"
 
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.settings = {"service": "pixhost.cc", "pix_thumb": "200"}
     app.template_mgr = FakeTemplateManager()
     app.saved_threads_data = {
@@ -1850,7 +1853,7 @@ def test_generate_group_output_populates_supported_template_context(tmp_path):
     history_dir = tmp_path / "history"
     history_dir.mkdir()
 
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.results = [(file_path, "https://img.test/view", "https://img.test/thumb")]
     app.settings = {"service": "pixhost.cc", "pix_thumb": "200"}
     app.template_mgr = FakeTemplateManager()
@@ -1911,7 +1914,7 @@ def test_group_output_waits_for_all_group_files_to_succeed():
     activity = []
     logs = []
 
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.lock = Lock()
     app.file_widgets = {
         "ok.jpg": {"state": "success", "group": group},
@@ -1942,7 +1945,7 @@ def test_group_output_generates_when_all_group_files_succeed():
     group = FakeGroup("Batch Alpha", ["one.jpg", "two.jpg"])
     generated = []
 
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.lock = Lock()
     app.file_widgets = {
         "one.jpg": {
@@ -1971,7 +1974,7 @@ def test_group_output_waits_for_result_urls_before_completion():
     group = FakeGroup("Batch Alpha", ["one.jpg", "two.jpg"])
     generated = []
 
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.lock = Lock()
     app.results = []
     app.result_queue = queue.Queue()
@@ -2028,7 +2031,7 @@ def test_imx_gallery_seed_completes_batches_and_writes_output(monkeypatch, tmp_p
         "modules.ui.Main_Window.runtime.threading.Thread",
         lambda target, **kwargs: SimpleNamespace(start=target),
     )
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.lock = Lock()
     app.progress_queue, app.result_queue = queue.Queue(), queue.Queue()
     app.results = []
@@ -2116,7 +2119,7 @@ def test_generate_group_output_skips_incomplete_or_blank_results(tmp_path):
     activity = []
     logs = []
 
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.results = [
         (first, "https://img.test/first", "https://img.test/first-thumb"),
         (second, "", ""),
@@ -2146,7 +2149,7 @@ def test_generate_group_output_skips_empty_groups():
     activity = []
     logs = []
 
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.results = []
     app.settings = {"service": "pixhost.cc"}
     app.template_mgr = FailingTemplateManager()
@@ -2173,7 +2176,7 @@ def test_generate_group_output_uses_stored_row_results_after_retry(tmp_path):
     group.selected_template = "BBCode"
     group.selected_thread = "Do Not Post"
 
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.lock = Lock()
     app.results = [(second, "https://img.test/second", "https://img.test/second-thumb")]
     app.file_widgets = {
@@ -2220,7 +2223,7 @@ def test_failed_batch_report_is_written_but_not_copyable(tmp_path):
     activity = []
     logs = []
 
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.lock = Lock()
     app.results = []
     app.file_widgets = {
@@ -2293,7 +2296,7 @@ def test_generate_group_output_uses_real_gallery_name_when_available(tmp_path):
     group.gallery_url = "https://pixhost.cc/gallery/G123"
     group.gallery_service = "pixhost.cc"
 
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.results = [(file_path, "https://img.test/view", "https://img.test/thumb")]
     app.settings = {"service": "pixhost.cc", "pix_thumb": "200"}
     app.template_mgr = FakeTemplateManager()
@@ -2325,7 +2328,7 @@ def test_selected_pixhost_gallery_with_upload_hash_registers_for_finalization(tm
     image_path = str(tmp_path / "ready.jpg")
     group = FakeGroup("Batch Alpha", [image_path])
 
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.pix_galleries_to_finalize = []
     app.selected_gallery_by_service = {
         "pixhost.cc": {
@@ -2369,7 +2372,7 @@ def test_pixhost_finalization_events_are_added_before_completion():
     activity = []
     completed = []
 
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.add_activity = lambda message, level="info": activity.append((message, level))
     app._on_upload_complete = lambda: completed.append(True)
 
@@ -2405,7 +2408,7 @@ def test_generate_group_output_uses_selected_covers_before_standard_images(tmp_p
     history_dir = tmp_path / "history"
     history_dir.mkdir()
 
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.results = [
         (first, "https://img.test/first", "https://img.test/t-first"),
         (second, "https://img.test/second", "https://img.test/t-second"),
@@ -2445,7 +2448,7 @@ def test_remove_preflight_file_issues_keeps_unrelated_upload_checks():
     group = FakeGroup("Batch", ["bad.bmp", "good.jpg"])
     activity = []
 
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.lock = Lock()
     app.groups = [group]
     app.file_widgets = {
@@ -2483,7 +2486,7 @@ def test_open_preflight_problem_folder_uses_nearest_existing_parent(tmp_path):
     opened = []
     activity = []
 
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.preflight_action_folders = [
         {"label": "Output folder", "path": str(tmp_path / "missing" / "child")}
     ]
@@ -2501,13 +2504,14 @@ def test_completion_summary_counts_results_and_outputs(tmp_path):
     output_file = tmp_path / "batch.txt"
     output_file.write_text("generated output", encoding="utf-8")
 
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.lock = Lock()
     app.file_widgets = {
         "one.jpg": {"state": "success"},
         "two.jpg": {"state": "failed"},
     }
     app.current_output_files = [str(output_file)]
+    app.copyable_output_files = [str(output_file)]
     app.clipboard_buffer = []
     app.var_auto_copy = FakeVar(True)
 
@@ -2528,7 +2532,7 @@ def test_copy_completion_output_reads_generated_files(tmp_path, monkeypatch):
     output_file.write_text("generated output", encoding="utf-8")
     copied = []
 
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.clipboard_buffer = []
     monkeypatch.setattr(main_window.pyperclip, "copy", lambda text: copied.append(text))
 
@@ -2546,7 +2550,7 @@ def test_completion_summary_renders_inline_with_relevant_actions(tmp_path):
     output_file = tmp_path / "batch.txt"
     output_file.write_text("generated output", encoding="utf-8")
 
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.completion_panel = FakeFrame()
     app.queue_footer = FakeFrame()
     app.lbl_completion_title = FakeFrame()
@@ -2602,7 +2606,7 @@ def test_completion_summary_renders_inline_with_relevant_actions(tmp_path):
 
 @pytest.mark.unit
 def test_completion_summary_success_hides_failed_only_action():
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.completion_panel = FakeFrame()
     app.lbl_completion_title = FakeFrame()
     app.lbl_completion_status = FakeFrame()
@@ -2645,7 +2649,7 @@ def test_completion_copy_again_updates_inline_feedback(monkeypatch):
 
     copied = []
     activity = []
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.current_completion_summary = {
         "output_files": [],
         "has_copy_text": True,
@@ -2678,7 +2682,7 @@ def test_upload_completion_uses_inline_summary_instead_of_modal():
 
 @pytest.mark.unit
 def test_activity_events_are_capped_and_keep_latest():
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.activity_events = []
     app.activity_text = None
     app.activity_panel = None
@@ -2693,7 +2697,7 @@ def test_activity_events_are_capped_and_keep_latest():
 
 @pytest.mark.unit
 def test_activity_hide_is_respected_until_user_shows_panel():
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.activity_events = []
     app.activity_panel = FakeFrame()
     app.activity_panel.pack()
@@ -2733,7 +2737,7 @@ def test_activity_panel_and_execution_log_menu_contract():
 
 @pytest.mark.unit
 def test_error_status_marks_failed_and_adds_activity_reason():
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.lock = Lock()
     app.progress_queue = queue.Queue()
     app.upload_count = 0
@@ -2779,7 +2783,7 @@ def test_error_status_marks_failed_and_adds_activity_reason():
 def test_turbo_result_gallery_url_updates_group_metadata():
     gallery_url = "https://www.turboimagehost.com/album/394761/miscellaneous"
     group = FakeGroup("Turbo Batch", ["image.jpg"])
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.progress_queue = queue.Queue()
     app.settings = {"service": "turboimagehost"}
     app.file_widgets = {"image.jpg": {"group": group}}
@@ -2799,7 +2803,7 @@ def test_turbo_result_gallery_url_updates_group_metadata():
 
 @pytest.mark.unit
 def test_retry_file_resets_only_target_failed_row_and_starts_upload():
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.lock = Lock()
     app.is_uploading = False
     activity = []
@@ -2864,7 +2868,7 @@ def test_retry_file_resets_only_target_failed_row_and_starts_upload():
 
 @pytest.mark.unit
 def test_retry_file_waits_when_upload_is_active():
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.is_uploading = True
     activity = []
     app.add_activity = lambda message, level="info": activity.append((message, level))
@@ -2882,7 +2886,7 @@ def test_copy_file_error_copies_failure_reason(monkeypatch):
 
     copied = []
     activity = []
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.lock = Lock()
     app.file_widgets = {"bad.jpg": {"error": "network timeout"}}
     app.add_activity = lambda message, level="info": activity.append((message, level))
@@ -2896,7 +2900,7 @@ def test_copy_file_error_copies_failure_reason(monkeypatch):
 
 @pytest.mark.unit
 def test_friendly_row_status_labels_are_user_readable():
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
 
     assert UploaderApp._friendly_row_status(app, "") == "Waiting"
     assert UploaderApp._friendly_row_status(app, "queued") == "Queued"
@@ -2950,7 +2954,7 @@ def test_queue_selection_bar_exposes_bulk_cover_remove_and_shortcuts():
 
 
 def _status_app(states):
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.lock = Lock()
     app.progress_queue = queue.Queue()
     app.upload_count = 0
@@ -3117,7 +3121,7 @@ def test_finish_upload_keeps_is_uploading_until_complete(monkeypatch):
 
 @pytest.mark.unit
 def test_retry_button_disabled_while_uploading():
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.btn_clear_list = FakeFrame()
     app.btn_retry_failed = FakeFrame()
     app.is_uploading = True
@@ -3130,7 +3134,7 @@ def test_retry_button_disabled_while_uploading():
 
 @pytest.mark.unit
 def test_close_hides_when_tray_available():
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     calls = []
     app.system_tray = SimpleNamespace(is_available=lambda: True)
     app.withdraw = lambda: calls.append("withdraw")
@@ -3143,7 +3147,7 @@ def test_close_hides_when_tray_available():
 
 @pytest.mark.unit
 def test_close_shuts_down_without_tray():
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     calls = []
     app.system_tray = SimpleNamespace(is_available=lambda: False)
     app.withdraw = lambda: calls.append("withdraw")
@@ -3156,7 +3160,7 @@ def test_close_shuts_down_without_tray():
 
 @pytest.mark.unit
 def test_close_shuts_down_before_tray_exists():
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     calls = []
     app.withdraw = lambda: calls.append("withdraw")
     app.graceful_shutdown = lambda: calls.append("shutdown")
@@ -3167,7 +3171,7 @@ def test_close_shuts_down_before_tray_exists():
 
 
 def _failed_output_app(tmp_path, group, states, selected_thread, batch_index):
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.lock = Lock()
     app.results = []
     app.file_widgets = {
@@ -3236,7 +3240,7 @@ def test_prepare_poster_session_registers_only_posting_groups_in_order():
     finished_earlier = FakeGroup("Zero", ["z.jpg"])
     finished_earlier.selected_thread = "Thread"
 
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.groups = [posting, do_not_post, finished_earlier]
     app.list_container = SimpleNamespace(
         winfo_children=lambda: [finished_earlier, do_not_post, posting]
@@ -3255,3 +3259,31 @@ def test_prepare_poster_session_registers_only_posting_groups_in_order():
     assert do_not_post.batch_index == 1
     assert posting.batch_index == 2
     assert sessions == [[2]]
+
+
+@pytest.mark.unit
+def test_mixins_read_runtime_state_directly():
+    """State set by _init_runtime_state must be read as attributes, not probed.
+
+    Probing self.__dict__ for these names hid missing-attribute bugs from the
+    tests and diverged from production, where the initializer always runs.
+    Widget-presence checks (for widgets built later in _init_ui) are allowed.
+    """
+    import re
+
+    state_names = set(make_app().__dict__)
+    sources = sorted(Path("modules/ui/Main_Window").glob("*.py"))
+    offenders = []
+    for source in sources:
+        text = source.read_text(encoding="utf-8")
+        for name in state_names:
+            patterns = (
+                rf'self\.__dict__\.get\("{re.escape(name)}"',
+                rf'self\.__dict__\.setdefault\("{re.escape(name)}"',
+                rf'"{re.escape(name)}" (?:not )?in self\.__dict__',
+            )
+            for pattern in patterns:
+                for match in re.finditer(pattern, text):
+                    line = text.count("\n", 0, match.start()) + 1
+                    offenders.append(f"{source.name}:{line} {name}")
+    assert offenders == []

@@ -510,6 +510,7 @@ class CollapsibleGroupFrame(ctk.CTkFrame):
         self.cover_files = []
         self.cover_selection_manual = False
         self.selected_thread = "Do Not Post"
+        self.batch_index = None
         self.selected_template = default_template
         self.post_preview_callback = post_preview_callback
 
