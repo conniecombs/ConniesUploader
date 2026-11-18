@@ -1101,3 +1101,11 @@ def test_login_waits_for_an_in_flight_post(monkeypatch):
     login.join(5)
 
     assert order == ["post:fetch", "post:submit", "login:seed", "login:submit"]
+
+
+@pytest.mark.unit
+def test_viper_api_facade_refuses_sidecar_bridge_patch():
+    from modules import viper_api
+
+    with pytest.raises(AttributeError, match="patch modules.viper_client.SidecarBridge"):
+        viper_api.SidecarBridge = object

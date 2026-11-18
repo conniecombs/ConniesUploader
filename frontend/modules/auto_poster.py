@@ -186,6 +186,14 @@ class AutoPoster:
     def _should_stop(self, cancel_event: threading.Event, generation: int) -> bool:
         return self._superseded(generation) or self._stop_event.is_set() or cancel_event.is_set()
 
+    def _stop_reason(self, cancel_event: threading.Event, generation: int) -> str:
+        """Why this worker must not post now, or "" when it may."""
+        if self._superseded(generation):
+            return "superseded by a new upload"
+        if self._stop_event.is_set() or cancel_event.is_set():
+            return "cancelled before posting"
+        return ""
+
     def _wait_for_index(
         self,
         batch_index: int,
@@ -275,7 +283,9 @@ class AutoPoster:
                 )
                 self.next_index = batch_index + 1
                 continue
-            self._post_item(vg, batch_index, item)
+            self._post_item(
+                vg, batch_index, item, lambda: self._stop_reason(cancel_event, generation)
+            )
             if self._stop_event.wait(config.POST_COOLDOWN_SECONDS) or self._superseded(generation):
                 return
 
@@ -300,11 +310,19 @@ class AutoPoster:
                     return
                 self._stop_event.wait(0.25)
                 continue
-            self._post_item(vg, batch_index, item)
+            self._post_item(
+                vg, batch_index, item, lambda: self._stop_reason(cancel_event, generation)
+            )
             if self._stop_event.wait(config.POST_COOLDOWN_SECONDS) or self._superseded(generation):
                 return
 
-    def _post_item(self, vg: Any, batch_index: int, item: Dict[str, str]) -> None:
+    def _post_item(
+        self,
+        vg: Any,
+        batch_index: int,
+        item: Dict[str, str],
+        stop_reason: Callable[[], str] = lambda: "",
+    ) -> None:
         content = item.get("content", "")
         thread_name = item.get("thread", "")
         batch_name = item.get("batch_name", f"Batch {batch_index + 1}")
@@ -322,15 +340,25 @@ class AutoPoster:
                 f"({batch_name}) to '{thread_name}' (thread {thread_id})."
             )
             error = ""
-            try:
-                posted = vg.post_reply(thread_id, content)
-            except Exception as exc:
-                error = str(exc)
-                logger.exception(
-                    f"Auto-Post Queue: Batch #{batch_index} post failed "
-                    f"for '{thread_name}' (thread {thread_id}): {exc}"
-                )
-                posted = False
+            # Wait our turn on the shared forum session, then re-check: the
+            # scheduler may have held it for a minute or more, and the user may
+            # have pressed Stop or started a new upload meanwhile.
+            with viper_client.session_lock():
+                reason = stop_reason()
+                if reason:
+                    logger.info(f"Auto-Post Queue: Batch #{batch_index} not posted: {reason}.")
+                    self._record_history_item(item, "failure", thread_id, reason)
+                    self.next_index = batch_index + 1
+                    return
+                try:
+                    posted = vg.post_reply(thread_id, content)
+                except Exception as exc:
+                    error = str(exc)
+                    logger.exception(
+                        f"Auto-Post Queue: Batch #{batch_index} post failed "
+                        f"for '{thread_name}' (thread {thread_id}): {exc}"
+                    )
+                    posted = False
 
             if posted:
                 logger.info(f"Auto-Post Queue: Batch #{batch_index} SUCCESS.")

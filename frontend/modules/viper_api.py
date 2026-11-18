@@ -9,10 +9,13 @@ The implementation now lives in three modules:
 - ``modules.viper_client``: thread titles, login, replies, and the post scheduler
 - ``modules.viper_ui``: the posting-target and posting-history windows
 
-This module re-exports their names for older imports. Assigning to a
-re-exported name here (for example ``monkeypatch.setattr(viper_api,
-"THREADS_FILE", ...)``) would not change the owning module, so it raises with
-the module to patch instead.
+This module re-exports the functions, classes, and constants those modules
+define, plus ``SidecarBridge`` and the transport helpers, for older imports.
+Values are bound at import time: read changed settings from the owning module.
+Assigning to a re-exported name here (for example ``monkeypatch.setattr(
+viper_api, "THREADS_FILE", ...)``) would not change the owning module, so it
+raises with the module to patch instead. Third-party imports such as
+``logger`` or ``messagebox`` are no longer available here.
 """
 
 import re as _re
@@ -32,8 +35,11 @@ for _module in (_viper_storage, _viper_client, _viper_ui):
         _OWNERS[_name] = _module.__name__
         globals()[_name] = getattr(_module, _name)
 
-# Names older callers reached through this module.
-SidecarBridge = _viper_client.SidecarBridge
+# Imported names older callers reached through this module. Listed in
+# _OWNERS too, so a patch here is refused like any other re-export.
+for _name in ("SidecarBridge", "build_transport_spec", "execute_transport_request"):
+    _OWNERS[_name] = _viper_client.__name__
+    globals()[_name] = getattr(_viper_client, _name)
 
 
 class _ViperApiFacade(_types.ModuleType):

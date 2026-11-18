@@ -17,12 +17,13 @@ The `v3.1.2` tag was cut before the fixes from its final code review merged. Tho
 - The scheduler can no longer log in to ViperGirls between the auto-poster's reply-form fetch and its submit. The sidecar has one cookie jar and logging in resets it, so login and posting are now serialized across clients.
 - A late "Preparing" or "Uploading" status from a worker that lost a race with Stop no longer relabels a row that already finished.
 - The sidecar forgets cancelled batch ids after an hour instead of keeping one per Stop press for the life of the process.
+- An auto-post that had to wait for the scheduler's forum session is re-checked once it gets its turn, so it is no longer sent after Stop or after a new upload superseded it; it is recorded as "cancelled before posting" or "superseded by a new upload".
 
 ### Changed
 
 - The per-file size cap is 100 MB on both sides. The app used to reject files over 50 MB at import while the sidecar accepted up to 100 MB; files between 50 and 100 MB can now be added, and each host's own lower limit is still applied by Upload Checks. The cap lives in `config.MAX_FILE_SIZE` (Python) and `core.MaxUploadFileSize` (Go), is documented in `docs/TRANSPORT_CONTRACT.md`, and a contract test keeps them equal. The sidecar's "file too large" error names the limit.
 - Each upload job sends the sidecar only the credentials its plugin declares; other services' passwords and API keys stay in Python.
-- `viper_api.py` (2,288 lines) is split into `viper_storage.py` (JSON files on disk), `viper_client.py` (forum workflow and scheduler), and `viper_ui.py` (Tk windows). `viper_api.py` remains as a compatibility facade that re-exports every name and refuses assignments, so a monkeypatch cannot silently miss the module that reads the value.
+- `viper_api.py` (2,288 lines) is split into `viper_storage.py` (JSON files on disk), `viper_client.py` (forum workflow and scheduler), and `viper_ui.py` (Tk windows). `viper_api.py` remains as a compatibility facade that re-exports the names those modules define (plus `SidecarBridge` and the transport helpers) and refuses assignments to them, so a monkeypatch cannot silently miss the module that reads the value. Imported names such as `logger` and `messagebox` are no longer reachable through it.
 - The main window sets all plain-Python state in one initializer that the contract tests reuse through `tests/app_factory.make_app()`, so tests and production share the same defaults. A guard test fails if mixin code probes `self.__dict__` for that state.
 - Bumped app, build-script, and active plugin metadata to `3.1.3`.
 

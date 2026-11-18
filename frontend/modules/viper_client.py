@@ -397,6 +397,15 @@ class ViperGirlsPostScheduler:
 _SESSION_LOCK = threading.RLock()
 
 
+def session_lock() -> "threading.RLock":
+    """The lock that serializes ViperGirls sessions across clients.
+
+    A caller that must re-check a stop condition after waiting its turn (the
+    AutoPoster) holds this around post_reply; the lock is re-entrant.
+    """
+    return _SESSION_LOCK
+
+
 def _serialized_session(method):
     @functools.wraps(method)
     def wrapper(*args, **kwargs):
