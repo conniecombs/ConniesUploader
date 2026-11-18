@@ -4,23 +4,24 @@ This directory contains release notes and publishing guidance for Connie's Uploa
 
 ## Latest Release
 
-**v3.1.2 - "Lifecycle Hardening"**
-Release date: November 6, 2026
-Tag: `v3.1.2`
+**v3.1.3 - "Posting Sessions & Shared Limits"**
+Release date: November 18, 2026
+Tag: `v3.1.3`
 
-Read the full notes: [RELEASE_NOTES_v3.1.2.md](RELEASE_NOTES_v3.1.2.md)
-Previous release notes: [RELEASE_NOTES_v3.1.1.md](RELEASE_NOTES_v3.1.1.md)
+Read the full notes: [RELEASE_NOTES_v3.1.3.md](RELEASE_NOTES_v3.1.3.md)
+Previous release notes: [RELEASE_NOTES_v3.1.2.md](RELEASE_NOTES_v3.1.2.md)
 
 ### Summary
 
-- Fixed the batch wedge caused by filenames containing `..`, double-counted failures, and a Stop button that could not stop anything; Stop now cancels in the sidecar and rows end as `Cancelled`.
-- Fixed auto-posting stalls behind non-posting batches, forum posts containing `{...}`, stale credentials, duplicate-post retries, and shared-file races.
-- Enforced `black` in CI, pinned lint tools, removed dead code, and bumped app, build scripts, plugin metadata, and release docs to `3.1.2`.
+- Ships the v3.1.2 review fixes that merged after the `v3.1.2` tag: no dropped or competing auto-posts when a new upload starts, and no late forum replies after the app reported a failure.
+- Aligns the per-file size limit at 100 MB in the app and the sidecar, and sends the sidecar only the credentials a host needs.
+- Splits the ViperGirls module into storage, client, and UI parts, and bumps app, build scripts, plugin metadata, and release docs to `3.1.3`.
 
 ## Release History
 
 | Version | Date | Focus | Notes |
 |---------|------|-------|-------|
+| v3.1.3 | 2026-11-18 | Posting Sessions & Shared Limits | [Notes](RELEASE_NOTES_v3.1.3.md) |
 | v3.1.2 | 2026-11-06 | Lifecycle Hardening | [Notes](RELEASE_NOTES_v3.1.2.md) |
 | v3.1.1 | 2026-09-07 | Activity Hide & IMX Thumbnail Fix | [Notes](RELEASE_NOTES_v3.1.1.md) |
 | v3.1.0 | 2026-09-04 | Folder Size Template Placeholder | [Notes](RELEASE_NOTES_v3.1.0.md) |

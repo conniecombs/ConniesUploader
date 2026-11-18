@@ -2,9 +2,9 @@
 
 ## Current Status
 
-- **Product Version:** v3.1.2
-- **Architecture Version:** v3.1.2
-- **Last Updated:** 2026-11-06
+- **Product Version:** v3.1.3
+- **Architecture Version:** v3.1.3
+- **Last Updated:** 2026-11-18
 
 Connie's Uploader is a hybrid desktop app:
 
@@ -121,6 +121,8 @@ Gallery list/create flows distinguish unsupported service, missing credentials, 
 
 ### ViperGirls Posting
 
+Code layout: `modules/viper_storage.py` owns the JSON files (targets, history, scheduled posts) behind one storage lock; `modules/viper_client.py` owns the forum workflow (titles, login, replies, scheduler) and talks only to the sidecar transport; `modules/viper_ui.py` owns the Tk windows. `modules/viper_api.py` is a compatibility facade that re-exports those names and refuses assignments, so a monkeypatch must target the owning module.
+
 ViperGirls automation is a post-upload workflow, not part of the image-host upload itself.
 
 - Saved targets: `~/.conniesuploader/saved_threads.json`
@@ -205,15 +207,16 @@ Current strengths:
 
 - Credentials are stored through the operating system keyring.
 - Credentials are passed to the sidecar through local stdin events, not CLI arguments.
+- Each upload job carries only the credentials its plugin declares in `metadata["credentials"]`; other services' passwords and keys never reach the sidecar.
 - TLS verification remains enabled.
 - Python supplies host-specific sidecar rate limits for upload and forum posting paths.
 - User JSON files use atomic-save/recovery patterns where practical.
 
 Known hardening opportunities:
 
-- Continue tightening Go-side file validation (paths are now validated per file; the 100 MiB limit and regular-file checks remain).
+- Continue tightening Go-side file validation (paths are validated per file; the shared 100 MB cap and regular-file checks remain, see `TRANSPORT_CONTRACT.md`).
 - Replace any `regexp.MustCompile()` path that can receive plugin-provided patterns with `regexp.Compile()` and graceful error returns.
-- Continue retiring legacy Go parser compatibility by moving upload response parsing into Python.
+- Retire the legacy Go parser compatibility by moving upload sessions and response parsing into Python; designed in [`plans/V3_2_0_PYTHON_UPLOAD_PARSING_DESIGN.md`](plans/V3_2_0_PYTHON_UPLOAD_PARSING_DESIGN.md), targeted for v3.2.0.
 - Consider stricter plugin trust/sandboxing if third-party plugin loading becomes a supported user feature.
 
 ## Performance Characteristics

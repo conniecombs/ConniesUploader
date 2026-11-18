@@ -49,7 +49,9 @@ from .common import (  # noqa: F401
     threading,
     time,
     tk,
-    viper_api,
+    viper_client,
+    viper_storage,
+    viper_ui,
 )
 
 
@@ -117,7 +119,6 @@ class FileQueueMixin:
         self._set_completion_summary(None)
         self._set_import_checks([])
 
-        self._ensure_import_state()
         preview_var = self.__dict__.get("var_show_previews")
         separate_var = self.__dict__.get("var_separate_batches")
         show_previews = bool(preview_var.get()) if preview_var else True
@@ -129,7 +130,7 @@ class FileQueueMixin:
         if hasattr(self, "update_idletasks"):
             self.update_idletasks()
 
-        executor = self.__dict__.get("import_executor")
+        executor = self.import_executor
         if executor is None:
             result = self._scan_import_inputs(inputs)
             self._handle_import_complete(
@@ -156,25 +157,10 @@ class FileQueueMixin:
                 "Processing Error", f"An error occurred while processing files:\n\n{str(e)}"
             )
 
-    def _ensure_import_state(self) -> None:
-        if "import_epoch" not in self.__dict__:
-            self.import_epoch = 0
-        if "import_counter" not in self.__dict__:
-            self.import_counter = 0
-        if "active_import_ids" not in self.__dict__:
-            self.active_import_ids = set()
-        if "pending_filepaths" not in self.__dict__:
-            self.pending_filepaths = set()
-        if "pending_ui_rows" not in self.__dict__:
-            self.pending_ui_rows = deque()
-        if "pending_thumbnails" not in self.__dict__:
-            self.pending_thumbnails = {}
-
     def _import_lock(self):
-        return self.__dict__.get("lock") or nullcontext()
+        return self.lock
 
     def _register_import(self) -> Tuple[int, int]:
-        self._ensure_import_state()
         with self._import_lock():
             self.import_counter += 1
             import_id = self.import_counter
@@ -182,7 +168,6 @@ class FileQueueMixin:
             return import_id, self.import_epoch
 
     def _finish_import(self, import_id: int, epoch: int) -> None:
-        self._ensure_import_state()
         with self._import_lock():
             if epoch == self.import_epoch:
                 self.active_import_ids.discard(import_id)
@@ -190,7 +175,6 @@ class FileQueueMixin:
     def _is_import_epoch_current(self, epoch: Optional[int]) -> bool:
         if epoch is None:
             return True
-        self._ensure_import_state()
         with self._import_lock():
             return epoch == self.import_epoch
 
@@ -373,7 +357,6 @@ class FileQueueMixin:
             return []
 
         queued_files = []
-        self._ensure_import_state()
         with self._import_lock():
             for filepath in files:
                 if filepath in self.file_widgets or filepath in self.pending_filepaths:
@@ -383,7 +366,7 @@ class FileQueueMixin:
                 self.pending_ui_rows.append((epoch, filepath, group_widget, show_previews))
                 queued_files.append(filepath)
 
-        if show_previews and queued_files and self.__dict__.get("thumb_executor"):
+        if show_previews and queued_files and self.thumb_executor:
             self.thumb_executor.submit(
                 self._thumb_worker, queued_files, group_widget, show_previews, epoch
             )

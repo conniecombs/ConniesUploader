@@ -48,7 +48,9 @@ from .common import (  # noqa: F401
     threading,
     time,
     tk,
-    viper_api,
+    viper_client,
+    viper_storage,
+    viper_ui,
 )
 
 
@@ -276,9 +278,7 @@ class SettingsMixin:
 
         settings_view = self.__dict__.get("settings_view")
         if settings_view is None:
-            cfg["selected_gallery_by_service"] = dict(
-                self.__dict__.get("selected_gallery_by_service", {}) or {}
-            )
+            cfg["selected_gallery_by_service"] = dict(self.selected_gallery_by_service)
             selected_gallery = self._selected_gallery_for_service(selected_service, cfg)
             if selected_gallery:
                 cfg.update(
@@ -297,9 +297,7 @@ class SettingsMixin:
         selected_config = settings_view.get_validated_config(selected_service)
         cfg.update(selected_config)
         cfg.update(settings_view.alias_config(selected_service, selected_config))
-        cfg["selected_gallery_by_service"] = dict(
-            self.__dict__.get("selected_gallery_by_service", {}) or {}
-        )
+        cfg["selected_gallery_by_service"] = dict(self.selected_gallery_by_service)
         selected_gallery = self._selected_gallery_for_service(selected_service, cfg)
         if selected_gallery:
             cfg.update(

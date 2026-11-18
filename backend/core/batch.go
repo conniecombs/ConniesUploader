@@ -6,7 +6,17 @@ package core
 import (
 	"context"
 	"sync"
+	"time"
 )
+
+// cancelledBatchTTL bounds how long a cancelled batch id is remembered so
+// jobs still queued for it are skipped. Python starts a new batch id per
+// upload, so an hour is far longer than any queue wait while keeping the
+// set from growing for the life of the sidecar.
+const cancelledBatchTTL = time.Hour
+
+// batchNow is the clock used for cancelled-batch expiry (replaced in tests).
+var batchNow = time.Now
 
 // batchEntry tracks the shared context for every job of one Python batch.
 type batchEntry struct {
@@ -18,8 +28,19 @@ type batchEntry struct {
 var (
 	batchMu        sync.Mutex
 	liveBatches    = map[string]*batchEntry{}
-	cancelledBatch = map[string]bool{}
+	cancelledBatch = map[string]time.Time{}
 )
+
+// pruneCancelledLocked drops cancelled ids older than cancelledBatchTTL.
+// Callers must hold batchMu.
+func pruneCancelledLocked() {
+	cutoff := batchNow().Add(-cancelledBatchTTL)
+	for id, at := range cancelledBatch {
+		if at.Before(cutoff) {
+			delete(cancelledBatch, id)
+		}
+	}
+}
 
 // RegisterBatch returns a context shared by every job of batchID and a
 // release func the caller must invoke when its job finishes. A batch that
@@ -32,13 +53,14 @@ func RegisterBatch(batchID string) (context.Context, func()) {
 
 	batchMu.Lock()
 	defer batchMu.Unlock()
+	pruneCancelledLocked()
 
 	entry := liveBatches[batchID]
 	if entry == nil {
 		ctx, cancel := context.WithCancel(context.Background())
 		entry = &batchEntry{ctx: ctx, cancel: cancel}
 		liveBatches[batchID] = entry
-		if cancelledBatch[batchID] {
+		if _, cancelled := cancelledBatch[batchID]; cancelled {
 			cancel()
 		}
 	}
@@ -71,8 +93,9 @@ func CancelBatch(batchID string) bool {
 
 	batchMu.Lock()
 	defer batchMu.Unlock()
+	pruneCancelledLocked()
 
-	cancelledBatch[batchID] = true
+	cancelledBatch[batchID] = batchNow()
 	entry := liveBatches[batchID]
 	if entry == nil {
 		return false
@@ -88,5 +111,6 @@ func BatchCancelled(batchID string) bool {
 	}
 	batchMu.Lock()
 	defer batchMu.Unlock()
-	return cancelledBatch[batchID]
+	_, cancelled := cancelledBatch[batchID]
+	return cancelled
 }

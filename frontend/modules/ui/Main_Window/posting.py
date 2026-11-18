@@ -48,7 +48,7 @@ from .common import (  # noqa: F401
     threading,
     time,
     tk,
-    viper_api,
+    viper_storage,
 )
 
 
@@ -88,7 +88,7 @@ class PostingMixin:
 
         result = modal.get_result()
         if result:
-            from modules.viper_api import ViperGirlsAPI
+            from modules.viper_client import ViperGirlsAPI
             import uuid
 
             post_id = str(uuid.uuid4())
@@ -173,7 +173,7 @@ class PostingMixin:
         }
 
     def preview_vipergirls_post(self, group: Any) -> None:
-        self.saved_threads_data = viper_api.load_saved_threads()
+        self.saved_threads_data = viper_storage.load_saved_threads()
         try:
             auto_poster = object.__getattribute__(self, "auto_poster")
         except AttributeError:

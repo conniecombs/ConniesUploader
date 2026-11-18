@@ -72,8 +72,11 @@ def create_gallery_with_image(
         ".gif",
     }:
         raise ImxApiError("Choose an existing JPG, PNG, or GIF as the first gallery image.")
-    if not 0 < path.stat().st_size <= 100 * 1024 * 1024:
-        raise ImxApiError("The first IMX gallery image must be nonempty and at most 100 MB.")
+    limit_mb = config.MAX_FILE_SIZE // (1024 * 1024)
+    if not 0 < path.stat().st_size <= config.MAX_FILE_SIZE:
+        raise ImxApiError(
+            f"The first IMX gallery image must be nonempty and at most {limit_mb} MB."
+        )
 
     # Only documented options are forwarded. A selected gallery must never
     # compete with create_gallery, and the response must always be JSON.

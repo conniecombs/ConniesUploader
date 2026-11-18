@@ -8,7 +8,7 @@ import time
 
 import pytest
 
-from modules import auto_poster, config, viper_api
+from modules import auto_poster, config, viper_client
 
 
 class FakeViperGirlsAPI:
@@ -27,7 +27,7 @@ class FakeViperGirlsAPI:
 @pytest.fixture(autouse=True)
 def fast_poster(monkeypatch):
     monkeypatch.setattr(config, "POST_COOLDOWN_SECONDS", 0.01)
-    monkeypatch.setattr(viper_api, "ViperGirlsAPI", FakeViperGirlsAPI)
+    monkeypatch.setattr(viper_client, "ViperGirlsAPI", FakeViperGirlsAPI)
     FakeViperGirlsAPI.posted = []
     FakeViperGirlsAPI.logins = []
 
@@ -166,7 +166,7 @@ class SlowViperGirlsAPI(FakeViperGirlsAPI):
 
 
 def test_begin_session_supersedes_mid_post_worker_without_zombie(monkeypatch):
-    monkeypatch.setattr(viper_api, "ViperGirlsAPI", SlowViperGirlsAPI)
+    monkeypatch.setattr(viper_client, "ViperGirlsAPI", SlowViperGirlsAPI)
     SlowViperGirlsAPI.started.clear()
     poster = make_poster()
     poster.begin_session([0, 1])
@@ -203,3 +203,58 @@ def test_begin_session_records_queued_posts_as_superseded():
         ("Batch 3", "failure", "superseded by a new upload"),
     ]
     assert poster.post_queue == {}
+
+
+def _hold_session_lock():
+    """Hold the shared ViperGirls session lock on another thread until released."""
+    from modules import viper_client
+
+    acquired = threading.Event()
+    release = threading.Event()
+
+    def holder():
+        with viper_client.session_lock():
+            acquired.set()
+            release.wait(5)
+
+    thread = threading.Thread(target=holder, daemon=True)
+    thread.start()
+    assert acquired.wait(2)
+    return release, thread
+
+
+def test_post_waiting_on_session_lock_is_dropped_when_superseded():
+    poster = make_poster()
+    release, holder = _hold_session_lock()
+    poster.begin_session([0])
+    poster.start_processing(lambda: True, threading.Event())
+    poster.queue_post(0, "old", "Thread")
+    time.sleep(0.4)  # worker has popped the item and is waiting on the lock
+
+    poster.begin_session([])  # a new upload supersedes this session
+    release.set()
+    holder.join(2)
+
+    assert wait_until(
+        lambda: not any(t.is_alive() for t in threading.enumerate() if t.name == "AutoPoster")
+    )
+    assert FakeViperGirlsAPI.posted == []
+    assert ("Batch 1", "failure", "superseded by a new upload") in poster.history
+
+
+def test_post_waiting_on_session_lock_is_dropped_after_stop():
+    poster = make_poster()
+    cancel = threading.Event()
+    release, holder = _hold_session_lock()
+    poster.begin_session([0])
+    poster.start_processing(lambda: True, cancel)
+    poster.queue_post(0, "old", "Thread")
+    time.sleep(0.4)
+
+    cancel.set()  # the user pressed Stop
+    release.set()
+    holder.join(2)
+
+    assert wait_until(lambda: not poster.is_running)
+    assert FakeViperGirlsAPI.posted == []
+    assert ("Batch 1", "failure", "cancelled before posting") in poster.history

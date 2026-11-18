@@ -48,7 +48,9 @@ from .common import (  # noqa: F401
     threading,
     time,
     tk,
-    viper_api,
+    viper_client,
+    viper_storage,
+    viper_ui,
 )
 
 
@@ -491,9 +493,7 @@ class LayoutMixin:
 
     def _refresh_queue_action_buttons(self, queue_is_empty: bool) -> None:
         clear_state = "disabled" if queue_is_empty else "normal"
-        busy = bool(
-            self.__dict__.get("is_uploading", False) or self.__dict__.get("_finalizing", False)
-        )
+        busy = bool(self.is_uploading or self._finalizing)
         retry_state = "disabled" if queue_is_empty or busy else "normal"
         if "btn_clear_list" in self.__dict__:
             self.btn_clear_list.configure(state=clear_state)
@@ -515,7 +515,7 @@ class LayoutMixin:
                 self.selection_actions.pack_forget()
 
     def _selected_queue_files(self) -> List[str]:
-        selection = set(self.__dict__.get("selected_files", set()) or [])
+        selection = set(self.selected_files)
         if not selection:
             return []
 

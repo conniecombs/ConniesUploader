@@ -437,7 +437,7 @@ class UploadManager:
                         "action": "http_upload",
                         "service": service_id,
                         "files": [os.path.normpath(f) for f in file_list],
-                        "creds": creds,
+                        "creds": self._credentials_for_plugin(plugin, creds),
                         "config": str_config,
                         "http_spec": http_spec,
                         "context_data": {},
@@ -480,6 +480,21 @@ class UploadManager:
         for file_path in file_list:
             self.result_queue.put((file_path, "", ""))
             self.progress_queue.put(("status", file_path, "error: plugin missing http_spec"))
+
+    @staticmethod
+    def _credentials_for_plugin(plugin: Any, creds: Dict[str, str]) -> Dict[str, str]:
+        """Return only the credentials the plugin declares in its metadata.
+
+        Job credentials are serialized to the sidecar and merged into its
+        template-substitution values, so every other service's passwords and
+        API keys stay in Python. Plugins read their full credentials on the
+        Python side (build_http_request, prepare_group) as before.
+        """
+        metadata = getattr(plugin, "metadata", None) or {}
+        declared = [
+            str(item.get("key")) for item in metadata.get("credentials", []) if item.get("key")
+        ]
+        return {key: creds[key] for key in declared if key in creds}
 
     @staticmethod
     def _normalize_job_config(cfg: Dict[str, Any]) -> Dict[str, Any]:

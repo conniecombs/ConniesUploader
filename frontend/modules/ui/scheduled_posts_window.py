@@ -4,7 +4,8 @@ from tkinter import messagebox
 import customtkinter as ctk
 
 from modules.ui.safe_scrollable_frame import SafeScrollableFrame
-from modules.viper_api import ViperGirlsAPI, extract_thread_id
+from modules.viper_client import ViperGirlsAPI
+from modules.viper_storage import extract_thread_id
 
 
 class SchedulePostModal(ctk.CTkToplevel):

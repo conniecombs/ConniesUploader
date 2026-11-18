@@ -13,6 +13,7 @@ from modules.gallery_service import GalleryService, GalleryStatus
 from modules.imx_api import ImxApiError
 from modules.plugins.imx import ImxPlugin
 from modules.ui.main_window import UploaderApp
+from tests.app_factory import make_app
 
 CREDS = {"imx_user": "test-user", "imx_pass": "test-password", "imx_api": "test-key"}
 
@@ -22,7 +23,7 @@ CREDS = {"imx_user": "test-user", "imx_pass": "test-password", "imx_api": "test-
 def test_upload_policy_blocks_ui_and_runtime_when_a_credential_is_missing(missing, auto_gallery):
     creds = {**CREDS, missing: " \t "}
     plugin = ImxPlugin()
-    app = UploaderApp.__new__(UploaderApp)
+    app = make_app()
     app.creds = creds
     app.service_plugins = {"imx.to": plugin}
     cfg = {"auto_gallery": auto_gallery}

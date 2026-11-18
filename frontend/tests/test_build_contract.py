@@ -270,7 +270,7 @@ def test_version_strings_agree():
     from modules import config
     from modules.plugin_manager import PluginManager
 
-    expected = "3.1.2"
+    expected = "3.1.3"
     assert config.APP_VERSION == expected
     assert f"VERSION := {expected}" in (ROOT / "Makefile").read_text(encoding="utf-8")
     assert f'VERSION="{expected}"' in (ROOT / "build.sh").read_text(encoding="utf-8")
@@ -279,7 +279,7 @@ def test_version_strings_agree():
     assert f"badge/app-v{expected}-" in readme
     assert f"### v{expected}" in readme
     changelog = (ROOT / "docs" / "CHANGELOG.md").read_text(encoding="utf-8")
-    assert re.search(rf"^## \[{re.escape(expected)}\] - 2026-11-06$", changelog, re.MULTILINE)
+    assert re.search(rf"^## \[{re.escape(expected)}\] - 2026-11-18$", changelog, re.MULTILINE)
     assert (ROOT / "docs" / "releases" / f"RELEASE_NOTES_v{expected}.md").is_file()
     for plugin in PluginManager().get_all_plugins():
         assert plugin.metadata.get("version") == expected, plugin.id
@@ -298,3 +298,21 @@ def test_transport_contract_documents_cancel_and_flags():
         "batch_complete",
     ):
         assert term in contract, term
+
+
+def test_upload_size_limit_is_shared_by_python_go_and_contract():
+    import re
+
+    from modules import config
+
+    validate_go = (ROOT / "backend" / "core" / "validate.go").read_text(encoding="utf-8")
+    match = re.search(r"MaxUploadFileSize\s*=\s*(\d+)\s*\*\s*1024\s*\*\s*1024", validate_go)
+    assert match, "backend/core/validate.go must export MaxUploadFileSize as N * 1024 * 1024"
+    go_limit = int(match.group(1)) * 1024 * 1024
+
+    assert config.MAX_FILE_SIZE == go_limit == 100 * 1024 * 1024
+
+    contract = (ROOT / "docs" / "TRANSPORT_CONTRACT.md").read_text(encoding="utf-8")
+    assert "MaxUploadFileSize" in contract
+    assert "config.MAX_FILE_SIZE" in contract
+    assert "104,857,600 bytes" in contract

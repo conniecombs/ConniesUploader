@@ -25,7 +25,8 @@ from .common import (  # noqa: F401
     TemplateManager,
     CredentialsManager,
     AutoPoster,
-    viper_api,
+    viper_client,
+    viper_storage,
 )
 from .cover_helpers import CoverHelpersMixin
 from .diagnostics import DiagnosticsMixin
@@ -57,6 +58,9 @@ class UploaderApp(
     def __init__(self) -> None:
         """Initialize the uploader application."""
         super().__init__()
+        # Plain state first: every later step (and any Tk callback they
+        # trigger, such as WM_DELETE_WINDOW) can rely on these attributes.
+        self._init_runtime_state()
         self.TkdndVersion = TkinterDnD._require(self)
         self._init_window()
         self._init_variables()
@@ -88,15 +92,16 @@ class UploaderApp(
         except Exception as e:
             logger.warning(f"Icon load warning: {e}")
 
-    def _init_variables(self):
-        """Initialize UI variables and executors."""
-        self.menu_thread_var = tk.IntVar(value=5)
+    def _init_runtime_state(self) -> None:
+        """Initialize plain-Python application state.
+
+        No Tk variables, widgets, or threads are created here, so the test
+        factory (``tests/app_factory.make_app``) calls this same method on an
+        ``UploaderApp`` built with ``__new__``. Production and tests therefore
+        share one set of defaults, and mixin code can read these attributes
+        directly instead of probing ``self.__dict__``.
+        """
         self._last_global_thread_limit_value = config.DEFAULT_THREAD_COUNT
-        self.var_show_previews = tk.BooleanVar(value=True)
-        self.var_separate_batches = tk.BooleanVar(value=False)
-        self.var_appearance_mode = tk.StringVar(value="System")
-        self.import_executor = ThreadPoolExecutor(max_workers=config.IMPORT_WORKERS)
-        self.thumb_executor = ThreadPoolExecutor(max_workers=config.THUMBNAIL_WORKERS)
 
         # Queues for thread communication
         self.progress_queue = queue.Queue(maxsize=1000)
@@ -104,6 +109,14 @@ class UploaderApp(
         self.result_queue = queue.Queue(maxsize=1000)
         self.cancel_event = threading.Event()
         self.lock = threading.Lock()
+
+        # Background services, created in _init_variables / _init_managers.
+        self.import_executor = None
+        self.thumb_executor = None
+        self.upload_manager = None
+        self.auto_poster = None
+        self.system_tray = None
+        self.viper_scheduler = None
 
         # UI state
         self.file_widgets = {}
@@ -137,8 +150,6 @@ class UploaderApp(
         self.output_dir = "Output"
         self._template_recovery_notice_shown = False
 
-    def _init_state(self):
-        """Initialize application state tracking."""
         # Batch/Group tracking
         self.group_counter = 0
 
@@ -147,11 +158,23 @@ class UploaderApp(
         self.selected_files = set()
         self.selection_anchor = None
         self.highlighted_row = None
-        self.context_menu = tk.Menu(self, tearoff=0)
 
         # Service-specific state
         self.vipr_galleries_map = {}
         self.selected_gallery_by_service = {}
+
+    def _init_variables(self):
+        """Initialize Tk variables and executors."""
+        self.menu_thread_var = tk.IntVar(value=5)
+        self.var_show_previews = tk.BooleanVar(value=True)
+        self.var_separate_batches = tk.BooleanVar(value=False)
+        self.var_appearance_mode = tk.StringVar(value="System")
+        self.import_executor = ThreadPoolExecutor(max_workers=config.IMPORT_WORKERS)
+        self.thumb_executor = ThreadPoolExecutor(max_workers=config.THUMBNAIL_WORKERS)
+
+    def _init_state(self):
+        """Initialize Tk-backed state (needs a live interpreter)."""
+        self.context_menu = tk.Menu(self, tearoff=0)
 
     def _init_managers(self):
         """Initialize manager objects and background workers."""
@@ -177,7 +200,7 @@ class UploaderApp(
         if not os.path.exists(self.central_history_path):
             os.makedirs(self.central_history_path)
 
-        self.saved_threads_data = viper_api.load_saved_threads()
+        self.saved_threads_data = viper_storage.load_saved_threads()
 
         # Initialize AutoPoster
         # The provider keeps the poster current after credentials are changed.
@@ -191,7 +214,7 @@ class UploaderApp(
 
         # Start Python-owned ViperGirls scheduled posting.
         self.scheduler_queue = queue.Queue()
-        self.viper_scheduler = viper_api.ViperGirlsPostScheduler(
+        self.viper_scheduler = viper_client.ViperGirlsPostScheduler(
             lambda: self.creds,
             self.scheduler_queue,
         )
@@ -309,8 +332,7 @@ class UploaderApp(
 
     def _on_close_request(self) -> None:
         """Hide to the system tray when it is available, else shut down."""
-        tray = self.__dict__.get("system_tray")
-        if tray is not None and tray.is_available():
+        if self.system_tray is not None and self.system_tray.is_available():
             self.withdraw()
             return
         self.graceful_shutdown()

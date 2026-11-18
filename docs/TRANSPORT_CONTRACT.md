@@ -91,9 +91,28 @@ emit `Cancelled` for each file instead of uploading; every job still ends with
 `batch_complete`.
 
 Upload files are validated per-file as a worker reaches them. A bad path
-(missing, not a regular file, over 100 MiB, or a `..` path component) gets its
-own `status: "Failed"` and `error` events and the rest of the job proceeds. A
-`..` inside a file name (`photo..jpg`) is accepted.
+(missing, not a regular file, over the size limit below, or a `..` path
+component) gets its own `status: "Failed"` and `error` events and the rest of
+the job proceeds. A `..` inside a file name (`photo..jpg`) is accepted.
+
+## File Size Limit
+
+The app-wide per-file cap is **100 MB = 100 × 1024 × 1024 = 104,857,600 bytes**.
+Python and Go each hold the number in exactly one place:
+
+| Side | Constant |
+| --- | --- |
+| Python | `config.MAX_FILE_SIZE` in `frontend/modules/config.py` |
+| Go | `core.MaxUploadFileSize` in `backend/core/validate.go` |
+
+Python rejects larger files at import and in the pre-upload checks, so the Go
+check is a backstop for files that grew after they were queued. A host plugin
+may declare a lower `limits["max_file_size"]` (Pixhost, Imgur, and others do);
+the pre-upload checks apply the plugin's limit when one is set. A plugin limit
+above the app-wide cap has no effect, because both sides still enforce the cap.
+
+To change the cap, change both constants and this section together;
+`frontend/tests/test_build_contract.py` fails if they disagree.
 
 Terminal events per file are exactly one of: `result` (then `status: "Done"`),
 `status: "Failed"` followed by `error` with the reason, or

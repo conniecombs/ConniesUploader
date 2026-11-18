@@ -255,3 +255,22 @@ class TestValidExtensions:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+def test_default_size_limit_matches_sidecar_100_mib(tmp_path):
+    from modules import config
+    from modules.exceptions import InvalidFileException
+    from modules.file_handler import validate_file_size
+
+    assert config.MAX_FILE_SIZE == 100 * 1024 * 1024
+
+    sixty_mb = tmp_path / "sixty.jpg"
+    with open(sixty_mb, "wb") as handle:
+        handle.truncate(60 * 1024 * 1024)  # sparse; no real 60 MB write
+    assert validate_file_size(str(sixty_mb)) is True
+
+    over = tmp_path / "over.jpg"
+    with open(over, "wb") as handle:
+        handle.truncate(config.MAX_FILE_SIZE + 1)
+    with pytest.raises(InvalidFileException, match="Maximum allowed size is 100.0MB"):
+        validate_file_size(str(over))
