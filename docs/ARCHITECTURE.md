@@ -207,6 +207,7 @@ Current strengths:
 
 - Credentials are stored through the operating system keyring.
 - Credentials are passed to the sidecar through local stdin events, not CLI arguments.
+- Each upload job carries only the credentials its plugin declares in `metadata["credentials"]`; other services' passwords and keys never reach the sidecar.
 - TLS verification remains enabled.
 - Python supplies host-specific sidecar rate limits for upload and forum posting paths.
 - User JSON files use atomic-save/recovery patterns where practical.

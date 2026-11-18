@@ -148,3 +148,37 @@ def test_jobs_carry_batch_and_job_ids(manager, monkeypatch):
     assert payload["batch_id"] == "b9"
     assert payload["id"].startswith("b9:")
     assert manager.um._job_files[payload["id"]] == ["/e.jpg"]
+
+
+def test_jobs_send_only_the_plugins_declared_credentials(manager, monkeypatch):
+    class Plugin:
+        metadata = {"credentials": [{"key": "vipr_user"}, {"key": "vipr_pass"}]}
+
+        def build_http_request(self, file_path, config, creds):
+            return {"url": "https://host.test/u", "multipart_fields": {}}
+
+    monkeypatch.setattr(manager.um.plugin_manager, "get_plugin", lambda service_id: Plugin())
+    all_creds = {
+        "vipr_user": "u",
+        "vipr_pass": "p",
+        "imx_api": "secret-api-key",
+        "vg_pass": "forum-password",
+    }
+
+    manager.um._send_job(["/e.jpg"], {"service": "vipr.im"}, all_creds)
+
+    assert manager.bridge.sent[-1]["creds"] == {"vipr_user": "u", "vipr_pass": "p"}
+
+
+def test_jobs_for_plugins_without_credentials_send_none(manager, monkeypatch):
+    class Plugin:
+        metadata = {}
+
+        def build_http_request(self, file_path, config, creds):
+            return {"url": "https://host.test/u", "multipart_fields": {}}
+
+    monkeypatch.setattr(manager.um.plugin_manager, "get_plugin", lambda service_id: Plugin())
+
+    manager.um._send_job(["/e.jpg"], {"service": "pixhost.cc"}, {"imx_api": "secret"})
+
+    assert manager.bridge.sent[-1]["creds"] == {}
