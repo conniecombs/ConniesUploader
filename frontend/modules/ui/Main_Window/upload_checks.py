@@ -50,7 +50,7 @@ from .common import (  # noqa: F401
     threading,
     time,
     tk,
-    viper_api,
+    viper_storage,
 )
 
 
@@ -189,7 +189,7 @@ class UploadChecksMixin:
         are never waited on by the poster.
         """
         if saved_threads is None:
-            saved_threads = viper_api.load_saved_threads()
+            saved_threads = viper_storage.load_saved_threads()
         self.saved_threads_data = saved_threads
         self.auto_poster.saved_threads_data = saved_threads
 
@@ -487,12 +487,12 @@ class UploadChecksMixin:
 
     def _thread_id_from_vipergirls_record(self, record: Any) -> str:
         if isinstance(record, dict):
-            thread_id = viper_api.extract_thread_id(str(record.get("thread_id") or ""))
+            thread_id = viper_storage.extract_thread_id(str(record.get("thread_id") or ""))
             if thread_id:
                 return thread_id
-            return viper_api.extract_thread_id(str(record.get("url") or "")) or ""
+            return viper_storage.extract_thread_id(str(record.get("url") or "")) or ""
 
-        return viper_api.extract_thread_id(str(record or "")) or ""
+        return viper_storage.extract_thread_id(str(record or "")) or ""
 
     def _preflight_check_vipergirls_posting(
         self,
@@ -512,7 +512,7 @@ class UploadChecksMixin:
             )
 
         try:
-            saved_threads = viper_api.load_saved_threads()
+            saved_threads = viper_storage.load_saved_threads()
         except Exception as exc:
             self.preflight_action_viper_targets = True
             issues.append(f"ViperGirls posting targets could not be loaded: {exc}")

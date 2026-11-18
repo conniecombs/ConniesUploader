@@ -8,7 +8,7 @@ import time
 
 import pytest
 
-from modules import auto_poster, config, viper_api
+from modules import auto_poster, config, viper_client
 
 
 class FakeViperGirlsAPI:
@@ -27,7 +27,7 @@ class FakeViperGirlsAPI:
 @pytest.fixture(autouse=True)
 def fast_poster(monkeypatch):
     monkeypatch.setattr(config, "POST_COOLDOWN_SECONDS", 0.01)
-    monkeypatch.setattr(viper_api, "ViperGirlsAPI", FakeViperGirlsAPI)
+    monkeypatch.setattr(viper_client, "ViperGirlsAPI", FakeViperGirlsAPI)
     FakeViperGirlsAPI.posted = []
     FakeViperGirlsAPI.logins = []
 
@@ -166,7 +166,7 @@ class SlowViperGirlsAPI(FakeViperGirlsAPI):
 
 
 def test_begin_session_supersedes_mid_post_worker_without_zombie(monkeypatch):
-    monkeypatch.setattr(viper_api, "ViperGirlsAPI", SlowViperGirlsAPI)
+    monkeypatch.setattr(viper_client, "ViperGirlsAPI", SlowViperGirlsAPI)
     SlowViperGirlsAPI.started.clear()
     poster = make_poster()
     poster.begin_session([0, 1])

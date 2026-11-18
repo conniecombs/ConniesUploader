@@ -79,7 +79,10 @@ ConniesUploader/
 │   │   ├── sidecar.py             # Go sidecar process bridge
 │   │   ├── template_manager.py    # Template storage, validation, parser, rendering
 │   │   ├── upload_manager.py      # Upload job orchestration
-│   │   └── viper_api.py           # ViperGirls target/history UI and posting helpers
+│   │   ├── viper_storage.py       # ViperGirls targets, history, scheduled posts (JSON on disk)
+│   │   ├── viper_client.py        # ViperGirls titles, login, replies, post scheduler
+│   │   ├── viper_ui.py            # ViperGirls target manager and posting history windows
+│   │   └── viper_api.py           # Compatibility facade re-exporting the three above
 │   └── tests/                     # Python test suite
 ├── backend/
 │   ├── main.go                    # Go sidecar entry point

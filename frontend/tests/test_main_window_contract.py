@@ -1516,7 +1516,7 @@ def test_upload_preflight_reports_vipergirls_posting_blockers(tmp_path, monkeypa
         )
     }
     monkeypatch.setattr(
-        "modules.ui.main_window.viper_api.load_saved_threads",
+        "modules.viper_storage.load_saved_threads",
         lambda: {
             "Bad Target": {
                 "url": "https://vipergirls.to/not-a-thread",
@@ -1578,7 +1578,7 @@ def test_upload_preflight_accepts_valid_vipergirls_posting_target(tmp_path, monk
         )
     }
     monkeypatch.setattr(
-        "modules.ui.main_window.viper_api.load_saved_threads",
+        "modules.viper_storage.load_saved_threads",
         lambda: {
             "Ready Target": {
                 "url": "https://vipergirls.to/threads/12345-title",

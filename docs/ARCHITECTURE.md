@@ -121,6 +121,8 @@ Gallery list/create flows distinguish unsupported service, missing credentials, 
 
 ### ViperGirls Posting
 
+Code layout: `modules/viper_storage.py` owns the JSON files (targets, history, scheduled posts) behind one storage lock; `modules/viper_client.py` owns the forum workflow (titles, login, replies, scheduler) and talks only to the sidecar transport; `modules/viper_ui.py` owns the Tk windows. `modules/viper_api.py` is a compatibility facade that re-exports those names and refuses assignments, so a monkeypatch must target the owning module.
+
 ViperGirls automation is a post-upload workflow, not part of the image-host upload itself.
 
 - Saved targets: `~/.conniesuploader/saved_threads.json`

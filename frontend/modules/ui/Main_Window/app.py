@@ -25,7 +25,8 @@ from .common import (  # noqa: F401
     TemplateManager,
     CredentialsManager,
     AutoPoster,
-    viper_api,
+    viper_client,
+    viper_storage,
 )
 from .cover_helpers import CoverHelpersMixin
 from .diagnostics import DiagnosticsMixin
@@ -199,7 +200,7 @@ class UploaderApp(
         if not os.path.exists(self.central_history_path):
             os.makedirs(self.central_history_path)
 
-        self.saved_threads_data = viper_api.load_saved_threads()
+        self.saved_threads_data = viper_storage.load_saved_threads()
 
         # Initialize AutoPoster
         # The provider keeps the poster current after credentials are changed.
@@ -213,7 +214,7 @@ class UploaderApp(
 
         # Start Python-owned ViperGirls scheduled posting.
         self.scheduler_queue = queue.Queue()
-        self.viper_scheduler = viper_api.ViperGirlsPostScheduler(
+        self.viper_scheduler = viper_client.ViperGirlsPostScheduler(
             lambda: self.creds,
             self.scheduler_queue,
         )

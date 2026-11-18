@@ -48,7 +48,8 @@ from .common import (  # noqa: F401
     threading,
     time,
     tk,
-    viper_api,
+    viper_storage,
+    viper_ui,
 )
 
 
@@ -122,9 +123,9 @@ class MenuActionsMixin:
         ctk.set_appearance_mode(mode)
 
     def open_viper_tools(self):
-        self.saved_threads_data = viper_api.load_saved_threads()
+        self.saved_threads_data = viper_storage.load_saved_threads()
 
-        viper_api.ViperToolsWindow(self, creds=self.creds, callback=self.refresh_thread_data)
+        viper_ui.ViperToolsWindow(self, creds=self.creds, callback=self.refresh_thread_data)
 
     def open_scheduled_posts(self):
         from modules.ui.scheduled_posts_window import ScheduledPostsWindow
@@ -133,11 +134,11 @@ class MenuActionsMixin:
         win.grab_set()
 
     def open_vipergirls_history(self):
-        viper_api.PostingHistoryWindow(self)
+        viper_ui.PostingHistoryWindow(self)
 
     def refresh_thread_data(self):
         """Refresh saved thread data from disk and update AutoPoster."""
-        self.saved_threads_data = viper_api.load_saved_threads()
+        self.saved_threads_data = viper_storage.load_saved_threads()
         self.auto_poster.saved_threads_data = self.saved_threads_data
         thread_names = list(self.saved_threads_data.keys()) if self.saved_threads_data else []
         for group in getattr(self, "groups", []):

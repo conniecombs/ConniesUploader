@@ -32,7 +32,7 @@ from modules.settings_manager import SettingsManager
 from modules.template_manager import TemplateManager, TemplateEditor
 from modules.upload_manager import UploadManager
 from modules.utils import ContextUtils
-from modules import viper_api
+from modules import viper_client, viper_storage, viper_ui
 from modules import file_handler
 from modules.dnd import DragDropMixin
 from modules.credentials_manager import CredentialsManager
@@ -86,5 +86,7 @@ __all__ = [
     "threading",
     "time",
     "tk",
-    "viper_api",
+    "viper_client",
+    "viper_storage",
+    "viper_ui",
 ]

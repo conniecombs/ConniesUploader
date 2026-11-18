@@ -9,7 +9,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from loguru import logger
 from modules import config
-from modules import viper_api
+from modules import viper_client, viper_storage
 
 CredentialsSource = Union[Mapping[str, str], Callable[[], Mapping[str, str]]]
 
@@ -225,7 +225,7 @@ class AutoPoster:
             self._record_all_pending_failures("missing credentials")
             return
 
-        vg = viper_api.ViperGirlsAPI()
+        vg = viper_client.ViperGirlsAPI()
         if not vg.login(user, pwd):
             logger.error(
                 "Auto-Post Queue: ViperGirls login failed; check credentials before retrying."
@@ -362,15 +362,15 @@ class AutoPoster:
 
         data = self.saved_threads_data[clean_name]
         if isinstance(data, dict):
-            thread_id = viper_api.extract_thread_id(str(data.get("thread_id") or ""))
+            thread_id = viper_storage.extract_thread_id(str(data.get("thread_id") or ""))
             if thread_id:
                 return thread_id, None
 
-            thread_id = viper_api.extract_thread_id(str(data.get("url") or ""))
+            thread_id = viper_storage.extract_thread_id(str(data.get("url") or ""))
             if thread_id:
                 return thread_id, None
         else:
-            thread_id = viper_api.extract_thread_id(str(data or ""))
+            thread_id = viper_storage.extract_thread_id(str(data or ""))
             if thread_id:
                 return thread_id, None
 
@@ -385,7 +385,7 @@ class AutoPoster:
         if isinstance(data, dict) and data.get("url"):
             return str(data.get("url") or "")
         if thread_id:
-            return f"{viper_api.VIPERGIRLS_BASE_URL}/threads/{thread_id}"
+            return f"{viper_storage.VIPERGIRLS_BASE_URL}/threads/{thread_id}"
         return ""
 
     def _record_history_item(
@@ -397,7 +397,7 @@ class AutoPoster:
     ) -> None:
         thread_name = str(item.get("thread") or "")
         try:
-            viper_api.append_posting_history(
+            viper_storage.append_posting_history(
                 {
                     "batch_name": item.get("batch_name") or "Batch",
                     "target_name": thread_name,
@@ -423,7 +423,7 @@ class AutoPoster:
 
     def _mark_target_used(self, thread_name: str) -> None:
         try:
-            record = viper_api.mark_thread_target_used(thread_name)
+            record = viper_storage.mark_thread_target_used(thread_name)
         except OSError as exc:
             logger.error(f"Could not update ViperGirls target last-used time: {exc}")
             return

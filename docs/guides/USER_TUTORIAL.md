@@ -1247,7 +1247,9 @@ Example:
 | `frontend/modules/template_manager.py` | Stores templates, validates placeholders, renders output, previews posts, and powers the Template Editor. |
 | `frontend/modules/gallery_manager.py` | Shows and creates supported image-host galleries. |
 | `frontend/modules/transport.py` | Builds and executes raw sidecar HTTP requests for Python-owned gallery/forum workflows. |
-| `frontend/modules/viper_api.py` | Manages ViperGirls targets, thread validation, thread-title fetching, scheduled posts, and posting history windows. |
+| `frontend/modules/viper_storage.py` | Stores ViperGirls posting targets, posting history, and scheduled posts under `~/.conniesuploader/`. |
+| `frontend/modules/viper_client.py` | Fetches thread titles, logs in, posts replies, and runs scheduled posts through the sidecar. |
+| `frontend/modules/viper_ui.py` | Draws the ViperGirls posting-target manager and posting history windows. |
 | `frontend/modules/ui/scheduled_posts_window.py` | Shows scheduled ViperGirls posts and their current status. |
 | `frontend/modules/auto_poster.py` | Posts completed ViperGirls batches sequentially with cooldowns and clearer failure reporting. |
 | `backend/handlers.go`, `backend/main.go`, and `backend/core/` | Implement the Go sidecar's job handling, worker limits, validation, rate limiting, HTTP execution, retries, and compatibility upload result extraction. |
