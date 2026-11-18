@@ -37,6 +37,7 @@ Complete guide to the current documentation for Connie's Uploader.
 ## Implementation Plans
 
 - [RAM-First Archives and File-Host Uploads](plans/RAM_FIRST_FILE_HOST_IMPLEMENTATION_PLAN.md) is the detailed proposal for RAM-backed ZIP creation, explicit disk opt-in, a reusable provider engine, Rapidgator integration, recovery, forum posting, implementation milestones, and acceptance tests. It describes planned work, not shipped functionality.
+- [v3.2.0 Python-owned upload sessions and parsing (proposed)](plans/V3_2_0_PYTHON_UPLOAD_PARSING_DESIGN.md)
 
 ## Release Docs
 

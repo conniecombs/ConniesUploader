@@ -216,7 +216,7 @@ Known hardening opportunities:
 
 - Continue tightening Go-side file validation (paths are validated per file; the shared 100 MB cap and regular-file checks remain, see `TRANSPORT_CONTRACT.md`).
 - Replace any `regexp.MustCompile()` path that can receive plugin-provided patterns with `regexp.Compile()` and graceful error returns.
-- Continue retiring legacy Go parser compatibility by moving upload response parsing into Python.
+- Retire the legacy Go parser compatibility by moving upload sessions and response parsing into Python; designed in [`plans/V3_2_0_PYTHON_UPLOAD_PARSING_DESIGN.md`](plans/V3_2_0_PYTHON_UPLOAD_PARSING_DESIGN.md), targeted for v3.2.0.
 - Consider stricter plugin trust/sandboxing if third-party plugin loading becomes a supported user feature.
 
 ## Performance Characteristics
