@@ -211,7 +211,7 @@ Current strengths:
 
 Known hardening opportunities:
 
-- Continue tightening Go-side file validation (paths are now validated per file; the 100 MiB limit and regular-file checks remain).
+- Continue tightening Go-side file validation (paths are validated per file; the shared 100 MB cap and regular-file checks remain, see `TRANSPORT_CONTRACT.md`).
 - Replace any `regexp.MustCompile()` path that can receive plugin-provided patterns with `regexp.Compile()` and graceful error returns.
 - Continue retiring legacy Go parser compatibility by moving upload response parsing into Python.
 - Consider stricter plugin trust/sandboxing if third-party plugin loading becomes a supported user feature.

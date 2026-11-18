@@ -159,7 +159,7 @@ Supported extensions are:
 .jpg, .jpeg, .png, .gif, .bmp, .webp
 ```
 
-The app validates files before adding them. The default per-file size limit is 50 MB, and a single scan is capped at 1000 files.
+The app validates files before adding them. The app-wide per-file size limit is 100 MB, and a single scan is capped at 1000 files. Some hosts accept less; the Upload Checks panel flags files that are over the selected host's own limit before the upload starts.
 
 ## Upload Queue
 

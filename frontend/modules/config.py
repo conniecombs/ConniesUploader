@@ -98,7 +98,9 @@ SIDECAR_RESTART_DELAY_SECONDS = 2  # Initial restart delay before exponential ba
 SIDECAR_MAX_RESTARTS = 5  # Maximum restart attempts before giving up
 
 # File Size Limits (in bytes)
-MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
+# App-wide per-file cap, shared with the Go sidecar (core.MaxUploadFileSize).
+# Host plugins may declare a lower limits["max_file_size"]; preflight uses that.
+MAX_FILE_SIZE = 100 * 1024 * 1024  # 100 MiB = 104,857,600 bytes
 MAX_FILENAME_LENGTH = 255
 MAX_SCAN_FILES = 1000  # Maximum images accepted from a single scan/batch
 

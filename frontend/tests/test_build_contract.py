@@ -298,3 +298,21 @@ def test_transport_contract_documents_cancel_and_flags():
         "batch_complete",
     ):
         assert term in contract, term
+
+
+def test_upload_size_limit_is_shared_by_python_go_and_contract():
+    import re
+
+    from modules import config
+
+    validate_go = (ROOT / "backend" / "core" / "validate.go").read_text(encoding="utf-8")
+    match = re.search(r"MaxUploadFileSize\s*=\s*(\d+)\s*\*\s*1024\s*\*\s*1024", validate_go)
+    assert match, "backend/core/validate.go must export MaxUploadFileSize as N * 1024 * 1024"
+    go_limit = int(match.group(1)) * 1024 * 1024
+
+    assert config.MAX_FILE_SIZE == go_limit == 100 * 1024 * 1024
+
+    contract = (ROOT / "docs" / "TRANSPORT_CONTRACT.md").read_text(encoding="utf-8")
+    assert "MaxUploadFileSize" in contract
+    assert "config.MAX_FILE_SIZE" in contract
+    assert "104,857,600 bytes" in contract

@@ -11,6 +11,12 @@ import (
 	"strings"
 )
 
+// MaxUploadFileSize is the largest file the sidecar will upload: 100 MiB
+// (104,857,600 bytes). frontend/modules/config.py MAX_FILE_SIZE must hold the
+// same value; docs/TRANSPORT_CONTRACT.md records it and a contract test in
+// frontend/tests/test_build_contract.py keeps the three in step.
+const MaxUploadFileSize = 100 * 1024 * 1024
+
 func ValidateFilePath(filePath string) error {
 	if filePath == "" {
 		return fmt.Errorf("file path cannot be empty")
@@ -31,9 +37,8 @@ func ValidateFilePath(filePath string) error {
 	if !fileInfo.Mode().IsRegular() {
 		return fmt.Errorf("not a regular file")
 	}
-	const maxFileSize = 100 * 1024 * 1024
-	if fileInfo.Size() > maxFileSize {
-		return fmt.Errorf("file too large")
+	if fileInfo.Size() > MaxUploadFileSize {
+		return fmt.Errorf("file too large (limit %d MB)", MaxUploadFileSize/(1024*1024))
 	}
 	return nil
 }

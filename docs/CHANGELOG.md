@@ -5,6 +5,13 @@ All notable changes to Connie's Uploader Ultimate will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- Aligned the per-file size cap at 100 MB on both sides. The app used to reject files over 50 MB at import while the sidecar accepted up to 100 MB; files between 50 and 100 MB can now be added for hosts whose own limit allows them. The cap lives in `config.MAX_FILE_SIZE` (Python) and `core.MaxUploadFileSize` (Go), is documented in `docs/TRANSPORT_CONTRACT.md`, and a contract test keeps them equal.
+- The sidecar's "file too large" error now names the limit.
+
 ## [3.1.2] - 2026-11-06
 
 ### Fixed
