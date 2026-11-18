@@ -41,6 +41,7 @@ Complete guide to the current documentation for Connie's Uploader.
 ## Release Docs
 
 - [Current Release Notes](releases/RELEASE_NOTES.md)
+- [v3.1.3 Release Notes](releases/RELEASE_NOTES_v3.1.3.md)
 - [v3.1.2 Release Notes](releases/RELEASE_NOTES_v3.1.2.md)
 - [v3.1.1 Release Notes](releases/RELEASE_NOTES_v3.1.1.md)
 - [v3.1.0 Release Notes](releases/RELEASE_NOTES_v3.1.0.md)
@@ -107,6 +108,7 @@ docs/
 │   └── USER_TUTORIAL.md
 ├── releases/
 │   ├── RELEASE_NOTES.md
+│   ├── RELEASE_NOTES_v3.1.3.md
 │   ├── RELEASE_NOTES_v3.1.2.md
 │   ├── RELEASE_NOTES_v3.1.1.md
 │   ├── RELEASE_NOTES_v3.1.0.md
@@ -138,6 +140,12 @@ docs/
 
 - Added the detailed RAM-first archive and file-host implementation plan, with Rapidgator as the first provider and disk archive creation requiring explicit user selection.
 - Linked the proposal separately from current behavior documentation.
+
+### 2026-11-18
+
+- Promoted current release documentation, build metadata, and app metadata to `v3.1.3`.
+- Added v3.1.3 release notes; moved the two post-tag review fixes from the 3.1.2 changelog section into 3.1.3, where they first ship.
+- Documented the shared 100 MB per-file limit in `TRANSPORT_CONTRACT.md` and the ViperGirls module split in `ARCHITECTURE.md` and the contributor and user guides.
 
 ### 2026-11-06
 
@@ -203,7 +211,7 @@ docs/
 - Update plugin docs when plugin discovery, schema fields, request specs, or packaging hidden imports change.
 - Keep historical docs clearly separated from current guidance.
 
-- **Last Updated:** 2026-11-06
-- **Documentation Version:** 3.1.2
-- **Project Version:** v3.1.2
+- **Last Updated:** 2026-11-18
+- **Documentation Version:** 3.1.3
+- **Project Version:** v3.1.3
 

@@ -1,7 +1,7 @@
 # Connie's Uploader
 
-![Current app build badge showing v3.1.2](https://img.shields.io/badge/app-v3.1.2-orange.svg)
-![Latest tagged release badge showing v3.1.2](https://img.shields.io/badge/latest%20release-v3.1.2-blue.svg)
+![Current app build badge showing v3.1.3](https://img.shields.io/badge/app-v3.1.3-orange.svg)
+![Latest tagged release badge showing v3.1.3](https://img.shields.io/badge/latest%20release-v3.1.3-blue.svg)
 ![MIT License badge](https://img.shields.io/badge/license-MIT-green.svg)
 ![Supported platforms: Windows, Linux, and macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)
 ![Continuous integration workflow status: passing](https://github.com/conniecombs/ConniesUploader/actions/workflows/ci.yml/badge.svg?branch=main)
@@ -12,7 +12,7 @@
 
 Connie's Uploader is a desktop image-uploading tool with a CustomTkinter GUI and a Go sidecar for concurrent uploads. It supports batch uploads, gallery workflows, custom output templates, drag and drop, secure credential storage, ViperGirls posting workflows, and automated release builds for Windows, Linux, and macOS.
 
-**Latest tagged release:** v3.1.2 "Lifecycle Hardening" (November 6, 2026)
+**Latest tagged release:** v3.1.3 "Posting Sessions & Shared Limits" (November 18, 2026)
 
 **Current release branch:** `main`
 
@@ -91,6 +91,24 @@ The active upload plugins are:
 - `vipr.im`
 
 ## Latest Changelog
+
+### v3.1.3 - Posting Sessions & Shared Limits
+
+Released November 18, 2026.
+
+**Fixed**
+
+- Ships the v3.1.2 review fixes that merged after its tag: starting a new upload no longer drops or races posts still queued from the previous one, and a forum reply that waited past its deadline is reported failed instead of landing later.
+- The scheduler and the auto-poster no longer log in over each other's session; finished rows keep their final label; cancelled batch ids expire.
+
+**Changed**
+
+- Per-file size limit is 100 MB in both the app and the sidecar (hosts with lower limits are still checked before upload).
+- Upload jobs send the sidecar only the credentials that host needs.
+- The ViperGirls code is split into storage, client, and UI modules; the old `viper_api` module remains as a compatibility facade.
+- Bumped the app, build scripts, and active plugin metadata to `v3.1.3`.
+
+Full history is available in [CHANGELOG.md](docs/CHANGELOG.md), and the full v3.1.3 release notes are available in [RELEASE_NOTES_v3.1.3.md](docs/releases/RELEASE_NOTES_v3.1.3.md).
 
 ### v3.1.2 - Lifecycle Hardening
 
@@ -213,13 +231,13 @@ Full history is available in [CHANGELOG.md](docs/CHANGELOG.md).
 
 ### Download a Release
 
-Download the latest release from [GitHub Releases](https://github.com/conniecombs/ConniesUploader/releases/tag/v3.1.2).
+Download the latest release from [GitHub Releases](https://github.com/conniecombs/ConniesUploader/releases/tag/v3.1.3).
 
 Expected release artifacts:
 
-- `ConniesUploader-v3.1.2-windows-x64.zip`
-- `ConniesUploader-v3.1.2-linux-x64.tar.gz`
-- `ConniesUploader-v3.1.2-macos-arm64.zip`
+- `ConniesUploader-v3.1.3-windows-x64.zip`
+- `ConniesUploader-v3.1.3-linux-x64.tar.gz`
+- `ConniesUploader-v3.1.3-macos-arm64.zip`
 
 Each release artifact includes a SHA256 checksum.
 

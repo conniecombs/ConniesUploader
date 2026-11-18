@@ -21,7 +21,7 @@ endif
 # Build configuration
 GO_FLAGS := -ldflags="-s -w"
 APP_NAME := ConniesUploader
-VERSION := 3.1.2
+VERSION := 3.1.3
 
 # Default target
 all: build

@@ -5,12 +5,26 @@ All notable changes to Connie's Uploader Ultimate will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [3.1.3] - 2026-11-18
+
+The `v3.1.2` tag was cut before the fixes from its final code review merged. Those fixes ship here for the first time and are listed under Fixed.
+
+### Fixed
+
+- A forum reply that waited in the sidecar queue past its deadline is reported as failed instead of being sent after the app already gave up on it, so a retry cannot double-post.
+- Starting another upload while earlier batches are still queued for posting records those posts as "superseded by a new upload" instead of silently dropping them, and the previous posting worker finishes its in-flight post and exits.
+- Main-window contract tests run under real tkinter again: production code no longer reads state through `getattr` defaults that recurse inside `tkinter.Misc.__getattr__` on an object built without `__init__`.
+- The scheduler can no longer log in to ViperGirls between the auto-poster's reply-form fetch and its submit. The sidecar has one cookie jar and logging in resets it, so login and posting are now serialized across clients.
+- A late "Preparing" or "Uploading" status from a worker that lost a race with Stop no longer relabels a row that already finished.
+- The sidecar forgets cancelled batch ids after an hour instead of keeping one per Stop press for the life of the process.
 
 ### Changed
 
-- Aligned the per-file size cap at 100 MB on both sides. The app used to reject files over 50 MB at import while the sidecar accepted up to 100 MB; files between 50 and 100 MB can now be added for hosts whose own limit allows them. The cap lives in `config.MAX_FILE_SIZE` (Python) and `core.MaxUploadFileSize` (Go), is documented in `docs/TRANSPORT_CONTRACT.md`, and a contract test keeps them equal.
-- The sidecar's "file too large" error now names the limit.
+- The per-file size cap is 100 MB on both sides. The app used to reject files over 50 MB at import while the sidecar accepted up to 100 MB; files between 50 and 100 MB can now be added, and each host's own lower limit is still applied by Upload Checks. The cap lives in `config.MAX_FILE_SIZE` (Python) and `core.MaxUploadFileSize` (Go), is documented in `docs/TRANSPORT_CONTRACT.md`, and a contract test keeps them equal. The sidecar's "file too large" error names the limit.
+- Each upload job sends the sidecar only the credentials its plugin declares; other services' passwords and API keys stay in Python.
+- `viper_api.py` (2,288 lines) is split into `viper_storage.py` (JSON files on disk), `viper_client.py` (forum workflow and scheduler), and `viper_ui.py` (Tk windows). `viper_api.py` remains as a compatibility facade that re-exports every name and refuses assignments, so a monkeypatch cannot silently miss the module that reads the value.
+- The main window sets all plain-Python state in one initializer that the contract tests reuse through `tests/app_factory.make_app()`, so tests and production share the same defaults. A guard test fails if mixin code probes `self.__dict__` for that state.
+- Bumped app, build-script, and active plugin metadata to `3.1.3`.
 
 ## [3.1.2] - 2026-11-06
 
@@ -32,8 +46,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Gallery Manager results arriving after the window was closed are ignored, and IMX gallery sessions are always closed.
 - A crashed sidecar's restart backoff no longer blocks commands for the whole delay.
 - Thumbnail previews refuse images above 50 megapixels so a decompression bomb cannot take the sidecar down.
-- A forum reply that waited in the sidecar queue past its deadline is reported as failed instead of being sent after the app already gave up on it, so a retry cannot double-post.
-- Starting another upload while earlier batches are still queued for posting records those posts as "superseded by a new upload" instead of silently dropping them, and the previous posting worker finishes its in-flight post and exits.
 
 ### Changed
 
