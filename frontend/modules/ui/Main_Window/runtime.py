@@ -241,7 +241,12 @@ class RuntimeMixin:
                             self._apply_result_gallery_url(f, v)
                         elif k == "status":
                             status_text = str(v or "")
-                            if not self._apply_terminal_status(f, w, status_text):
+                            if self._apply_terminal_status(f, w, status_text):
+                                pass
+                            elif w.get("state") not in TERMINAL_ROW_STATES:
+                                # A late "Preparing"/"Uploading" from a worker
+                                # that lost a race with Stop must not relabel
+                                # a row that already finished.
                                 w["status"].configure(text=self._friendly_row_status(status_text))
                         elif k == "prog":
                             progress_value = self._normalize_progress_value(v)

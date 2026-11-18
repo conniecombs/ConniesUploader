@@ -6,6 +6,7 @@ package core
 import (
 	"context"
 	"testing"
+	"time"
 )
 
 func TestCancelBatchCancelsRegisteredContext(t *testing.T) {
@@ -47,5 +48,34 @@ func TestCancelUnknownBatchIsNoop(t *testing.T) {
 	defer release()
 	if ctx.Err() != nil {
 		t.Fatalf("empty batch id must yield a live background context")
+	}
+}
+
+func TestCancelledBatchIDsArePrunedAfterTTL(t *testing.T) {
+	start := time.Date(2026, 11, 18, 12, 0, 0, 0, time.UTC)
+	now := start
+	oldNow := batchNow
+	batchNow = func() time.Time { return now }
+	defer func() { batchNow = oldNow }()
+
+	CancelBatch("stale")
+	if !BatchCancelled("stale") {
+		t.Fatalf("freshly cancelled batch must be remembered")
+	}
+
+	now = start.Add(cancelledBatchTTL - time.Minute)
+	CancelBatch("trigger-prune-early")
+	if !BatchCancelled("stale") {
+		t.Fatalf("cancelled batch forgotten before its TTL")
+	}
+
+	now = start.Add(cancelledBatchTTL + time.Minute)
+	_, release := RegisterBatch("new-batch")
+	release()
+	if BatchCancelled("stale") {
+		t.Fatalf("cancelled batch still remembered after its TTL")
+	}
+	if !BatchCancelled("trigger-prune-early") {
+		t.Fatalf("batch cancelled within the TTL was pruned too early")
 	}
 }

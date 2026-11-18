@@ -8,6 +8,7 @@ request at a time (see docs/TRANSPORT_CONTRACT.md).
 """
 
 from datetime import datetime, timezone
+import functools
 import re
 import threading
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Union
@@ -390,11 +391,27 @@ class ViperGirlsPostScheduler:
         return due_posts
 
 
+# The sidecar has one shared cookie jar, and login() resets it. The AutoPoster
+# and the scheduler each hold a ViperGirlsAPI; this lock keeps one client's
+# login from landing between another client's reply-form fetch and submit.
+_SESSION_LOCK = threading.RLock()
+
+
+def _serialized_session(method):
+    @functools.wraps(method)
+    def wrapper(*args, **kwargs):
+        with _SESSION_LOCK:
+            return method(*args, **kwargs)
+
+    return wrapper
+
+
 class ViperGirlsAPI:
     def __init__(self):
         self.bridge = SidecarBridge.get()
         self._credentials: Optional[Tuple[str, str]] = None
 
+    @_serialized_session
     def login(self, username, login_value):
         logger.info("ViperAPI: Logging in...")
         import hashlib
@@ -462,6 +479,7 @@ class ViperGirlsAPI:
         username, login_value = self._credentials
         return self.login(username, login_value)
 
+    @_serialized_session
     def post_reply(self, thread_id, message):
         logger.info(f"ViperAPI: Posting to thread {thread_id}...")
         clean_thread_id = extract_thread_id(str(thread_id or "")) or ""

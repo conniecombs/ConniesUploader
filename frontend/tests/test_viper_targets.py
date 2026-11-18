@@ -1054,3 +1054,50 @@ def test_viper_storage_has_no_network_or_tk_dependencies():
         "modules.transport",
     ):
         assert forbidden not in source, forbidden
+
+
+@pytest.mark.unit
+def test_login_waits_for_an_in_flight_post(monkeypatch):
+    """Poster and scheduler share the sidecar cookie jar; a login (which resets
+    it) must not land between another client's reply-form fetch and submit."""
+    import threading
+    import time as _time
+
+    fetch_started = threading.Event()
+    release_fetch = threading.Event()
+    order = []
+
+    class OrderedBridge:
+        def request_sync(self, payload, timeout=0):
+            spec = payload["generic_spec"]
+            url = spec["url"]
+            if "do=newreply" in url:
+                order.append("post:fetch")
+                fetch_started.set()
+                release_fetch.wait(5)
+                return _ok(REPLY_FORM_HTML)
+            if "do=postreply" in url:
+                order.append("post:submit")
+                return _ok("Thank you for posting")
+            if spec.get("reset_cookies"):
+                order.append("login:seed")
+                return _ok("")
+            order.append("login:submit")
+            return _ok(LOGGED_IN_HTML)
+
+    bridge = OrderedBridge()
+    monkeypatch.setattr(viper_client.SidecarBridge, "get", staticmethod(lambda: bridge))
+    poster_api = viper_client.ViperGirlsAPI()
+    scheduler_api = viper_client.ViperGirlsAPI()
+
+    poster = threading.Thread(target=poster_api.post_reply, args=("12345", "hello"))
+    poster.start()
+    assert fetch_started.wait(2)
+    login = threading.Thread(target=scheduler_api.login, args=("user", "password"))
+    login.start()
+    _time.sleep(0.2)  # give the login a chance to run if it is not serialized
+    release_fetch.set()
+    poster.join(5)
+    login.join(5)
+
+    assert order == ["post:fetch", "post:submit", "login:seed", "login:submit"]

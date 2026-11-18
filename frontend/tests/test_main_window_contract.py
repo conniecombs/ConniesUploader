@@ -3287,3 +3287,17 @@ def test_mixins_read_runtime_state_directly():
                     line = text.count("\n", 0, match.start()) + 1
                     offenders.append(f"{source.name}:{line} {name}")
     assert offenders == []
+
+
+@pytest.mark.unit
+def test_late_non_terminal_status_keeps_terminal_row_label():
+    app = _status_app({"a.jpg": "uploading"})
+    app.progress_queue.put(("status", "a.jpg", "Cancelled"))
+    app.progress_queue.put(("status", "a.jpg", "Preparing"))
+
+    UploaderApp._process_progress_queue(app)
+
+    row = app.file_widgets["a.jpg"]
+    assert row["state"] == "cancelled"
+    assert row["status"].text == "Cancelled"
+    assert app.upload_count == 1
