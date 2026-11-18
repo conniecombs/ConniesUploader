@@ -5,6 +5,12 @@ All notable changes to Connie's Uploader Ultimate will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- GitHub releases use only their own version's changelog section as the description. The release workflow's extraction always came out empty and silently fell back to publishing the entire `docs/CHANGELOG.md` (v3.1.3 and earlier releases are affected). Extraction now lives in `scripts/maintenance/extract_release_notes.py` with unit tests, and a missing or empty section fails the release instead of publishing a wrong body.
+
 ## [3.1.3] - 2026-11-18
 
 The `v3.1.2` tag was cut before the fixes from its final code review merged. Those fixes ship here for the first time and are listed under Fixed.
