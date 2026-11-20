@@ -226,9 +226,7 @@ def test_stale_saved_pick_is_ignored_for_output(plugin_manager):
 
 
 @pytest.mark.unit
-def test_assigning_gallery_to_selected_batches_leaves_other_batches_alone(
-    plugin_manager, tmp_path
-):
+def test_assigning_gallery_to_selected_batches_leaves_other_batches_alone(plugin_manager, tmp_path):
     app, _view = _gallery_app(plugin_manager, "imx.to")
     selected_path = str(tmp_path / "a.jpg")
     selected, other = FakeGroup("Selected", [selected_path]), FakeGroup("Other")
@@ -300,3 +298,52 @@ def test_vipr_upload_gallery_follows_the_dropdown(cfg, expected):
     spec = ViprPlugin().build_http_request("/x/a.jpg", cfg, _VIPR_CREDS)
 
     assert spec["multipart_fields"]["fld_id"]["value"] == expected
+
+
+# --- E4: unmatched Vipr gallery name must block the upload ------------------
+
+_VIPR_UNMATCHED = (
+    'Vipr gallery "Summer 2026" could not be matched to an upload ID. '
+    "Refresh galleries or select it again."
+)
+
+
+@pytest.mark.unit
+def test_vipr_saved_gallery_name_without_id_is_reported(plugin_manager):
+    app, view = _gallery_app(plugin_manager, "vipr.im")
+    vipr = plugin_manager.get_plugin("vipr.im")
+    view.set_value("vipr.im", "vipr_gallery_name", "Summer 2026")
+    cfg = app._gather_settings()
+    groups = {FakeGroup("Batch A"): ["/x/1.jpg"], FakeGroup("Batch B"): ["/x/2.jpg"]}
+
+    issues = []
+    app._preflight_check_galleries(vipr, groups, cfg, issues)
+
+    assert cfg["vipr_gal_id"] == "0"
+    assert issues == [_VIPR_UNMATCHED]
+
+
+@pytest.mark.unit
+def test_vipr_unmatched_check_skips_batches_with_their_own_gallery():
+    app = make_app()
+    group = FakeGroup("Batch A")
+    group.gallery_id = "555"
+    group.gallery_service = "vipr.im"
+    cfg = {"service": "vipr.im", "vipr_gallery_name": "Summer 2026", "vipr_gal_id": "0"}
+
+    issues = []
+    app._preflight_check_galleries(ViprPlugin(), {group: ["/x/1.jpg"]}, cfg, issues)
+
+    assert issues == []
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("name", ["None", ""])
+def test_vipr_no_gallery_selected_is_not_an_issue(name):
+    app = make_app()
+    cfg = {"service": "vipr.im", "vipr_gallery_name": name, "vipr_gal_id": "0"}
+
+    issues = []
+    app._preflight_check_galleries(ViprPlugin(), {FakeGroup("A"): ["/x/1.jpg"]}, cfg, issues)
+
+    assert issues == []
