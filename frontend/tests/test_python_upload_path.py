@@ -453,6 +453,22 @@ def test_sidecar_failures_still_end_files(env):
     assert status_of(env, "/b.jpg") == ["error: no result received from sidecar"]
 
 
+def test_a_job_level_error_ends_the_job_without_batch_complete(env):
+    # The sidecar rejects a whole job (invalid job, recovered panic) with an
+    # error that names no file and sends no batch_complete afterwards.
+    env.plugin.options = {"sequential": True}
+    env.um._send_job(["/s/1.jpg", "/s/2.jpg"], CFG, CREDS)
+    first = env.bridge.jobs()[0]
+    env.um._handle_event({"id": first["id"], "type": "error", "msg": "Panic: boom"})
+    wait_for(env, lambda: len(env.bridge.jobs()) == 2)
+    second = env.bridge.jobs()[1]
+    env.um._handle_event({"id": second["id"], "type": "error", "msg": "Invalid job: no files"})
+    wait_for(env, lambda: len(env.bridge.closes()) == 1)
+    assert status_of(env, "/s/1.jpg") == ["error: Panic: boom"]
+    assert status_of(env, "/s/2.jpg") == ["error: Invalid job: no files"]
+    assert env.um._open_session_jobs == []
+
+
 # --- Stop and crashes ----------------------------------------------------------------
 
 

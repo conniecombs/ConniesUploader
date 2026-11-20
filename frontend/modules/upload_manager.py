@@ -1182,9 +1182,15 @@ class UploadManager:
             if fp:
                 self.progress_queue.put(("status", fp, f"error: {data.get('msg')}"))
             elif job_id:
-                self._fail_active_files(
-                    self._job_files.get(job_id, []), str(data.get("msg") or "sidecar error")
-                )
+                job_files = self._job_files.get(job_id, [])
+                unfinished = [path for path in job_files if path in self.active_files]
+                self._fail_active_files(job_files, str(data.get("msg") or "sidecar error"))
+                if session_job is not None:
+                    # The sidecar rejected the whole job (an invalid job or a
+                    # recovered panic) and sends no batch_complete after it.
+                    with self._jobs_lock:
+                        self._job_files.pop(job_id, None)
+                        self._session_sidecar_job_done(job_id, unfinished)
 
     def shutdown(self) -> None:
         """Shutdown the upload manager gracefully."""
