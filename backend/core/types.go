@@ -18,11 +18,24 @@ func GetUserAgent(config map[string]string) string {
 }
 
 const (
+	// ClientTimeout bounds a whole non-upload request (generic requests,
+	// pre-requests on the shared client, result-page polls). Upload transfers
+	// are not bounded by it; see UploadStallTimeout.
 	ClientTimeout           = 180 * time.Second
 	PreRequestTimeout       = 60 * time.Second
 	ResponseHeaderTimeout   = 60 * time.Second
 	PreRequestHeaderTimeout = 30 * time.Second
 	ProgressReportInterval  = 2 * time.Second
+)
+
+// Upload transfers have no wall-clock limit, so a large file on a slow uplink
+// takes as long as it needs. An upload attempt fails instead when no request
+// body bytes move for UploadStallTimeout, or when the host has not finished
+// answering UploadResponseTimeout after the body was sent. These are
+// variables so tests can shrink them.
+var (
+	UploadStallTimeout    = 120 * time.Second
+	UploadResponseTimeout = 120 * time.Second
 )
 
 // RequestTimeout converts a per-request timeout in seconds into a duration,

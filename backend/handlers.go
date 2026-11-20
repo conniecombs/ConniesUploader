@@ -256,7 +256,10 @@ func processFileGeneric(fp string, job *JobRequest) {
 }
 
 func processFileGenericCtx(parent context.Context, fp string, job *JobRequest) {
-	ctx, cancel := context.WithTimeout(parent, core.ClientTimeout)
+	// No wall-clock deadline: a large file on a slow uplink takes as long as
+	// it needs. core bounds each attempt by a stall timeout and a bounded wait
+	// for the host's answer, so ctx ends only when the batch is cancelled.
+	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 
 	type result struct {
@@ -294,12 +297,7 @@ func processFileGenericCtx(parent context.Context, fp string, job *JobRequest) {
 			sendJobEvent(job, OutputEvent{Type: "status", FilePath: fp, Status: "Done"})
 		}
 	case <-ctx.Done():
-		if parent.Err() == context.Canceled {
-			emitCancelledFiles(job, []string{fp})
-			return
-		}
-		sendJobEvent(job, OutputEvent{Type: "status", FilePath: fp, Status: "Timeout"})
-		sendJobEvent(job, OutputEvent{Type: "error", FilePath: fp, Msg: "Upload timed out"})
+		emitCancelledFiles(job, []string{fp})
 	}
 }
 

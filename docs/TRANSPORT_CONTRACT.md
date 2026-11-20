@@ -80,6 +80,23 @@ Optional request flags (all off by default):
 Python disables transport retries for a request that must not be repeated
 (for example a forum reply) by sending `"retry_config": {"max_retries": 0}`.
 
+## Retries and Upload Time Limits
+
+Go retries an attempt only when no response arrived and the failure is a
+network error (timeout, refused or reset connection, early close, DNS), or
+when the response status is in `retry_config.retryable_http_codes`. It never
+reads response text to decide. A failure after a response arrived (parsing, a
+follow-up request) is not retried.
+
+An upload is not sent again once its body was fully written: if the host's
+answer is then lost, the file fails with "no response from host after upload;
+check the host before retrying", because the host may already have stored it.
+
+Upload transfers have no wall-clock limit. An attempt fails when no body bytes
+move for 120 s (`upload stalled`), or when, after the body was sent, the
+host's response headers take longer than 60 s or the whole answer longer than
+120 s. Non-upload requests keep their own deadlines.
+
 ## Batches, Cancellation, and Per-File Validation
 
 Every `http_upload` job of one Start carries the same `batch_id` and its own
