@@ -69,9 +69,7 @@ def test_load_repairs_only_the_bad_key(manager, key, bad, expected):
 
 @pytest.mark.unit
 @pytest.mark.parametrize(("saved", "expected"), [("180", "200"), ("120", "150"), ("700", "600")])
-def test_load_moves_a_turbo_size_turbo_does_not_offer_to_the_nearest_one(
-    manager, saved, expected
-):
+def test_load_moves_a_turbo_size_turbo_does_not_offer_to_the_nearest_one(manager, saved, expected):
     # Before v3.2.0 the Turbo default was 180, which Turbo does not offer:
     # uploads send the nearest offered size, so #thumb_size# must say the same.
     _write(manager, {"service": "turboimagehost", "turbo_thumb": saved})
