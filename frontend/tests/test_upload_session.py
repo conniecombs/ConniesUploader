@@ -152,6 +152,87 @@ def test_second_upload_starts_with_fresh_output_and_counts_only_its_files(
     assert summary["output_files"] == []
 
 
+@pytest.fixture
+def frozen_minute(monkeypatch):
+    from datetime import datetime
+
+    class FrozenDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 11, 20, 19, 8, 30)
+
+    monkeypatch.setattr("modules.ui.Main_Window.runtime.datetime", FrozenDatetime)
+
+
+def _output_app(tmp_path, results):
+    app = _ui_app(tmp_path)
+    app.results = list(results)
+    app.var_auto_copy = FakeVar(True)
+    app.var_imagebam_links = FakeVar(False)
+    app.settings = {"service": "imagebam.com", "save_links": True}
+    return app
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("titles", [("Photos", "Photos"), ("Set (1)", "Set [1]")])
+def test_batches_with_colliding_output_names_never_overwrite(
+    tmp_path, frozen_minute, monkeypatch, titles
+):
+    monkeypatch.setattr("modules.ui.Main_Window.runtime.pyperclip.copy", lambda text: None)
+    first = FakeGroup(titles[0], ["/2024/Photos/a.jpg"])
+    second = FakeGroup(titles[1], ["/2025/Photos/b.jpg"])
+    for group in (first, second):
+        group.selected_template = "BBCode"
+    app = _output_app(
+        tmp_path,
+        [
+            ("/2024/Photos/a.jpg", "http://v/a", "http://t/a"),
+            ("/2025/Photos/b.jpg", "http://v/b", "http://t/b"),
+        ],
+    )
+
+    UploaderApp.generate_group_output(app, first)
+    UploaderApp.generate_group_output(app, second)
+
+    outputs = app.current_output_files
+    assert len(outputs) == len(set(outputs)) == 2
+    assert [Path(path).read_text(encoding="utf-8") for path in outputs] == [
+        "http://v/a",
+        "http://v/b",
+    ]
+    output_dir = Path(app.output_dir)
+    assert sorted(p.name for p in output_dir.glob("*_links.txt")) == sorted(
+        f"{Path(path).stem}_links.txt" for path in outputs
+    )
+    links = sorted(p.read_text(encoding="utf-8") for p in output_dir.glob("*_links.txt"))
+    assert links == ["http://v/a", "http://v/b"]
+    history = sorted(p.read_text() for p in Path(app.central_history_path).iterdir())
+    assert history == ["http://v/a", "http://v/b"]
+    summary = UploaderApp._build_completion_summary(app)
+    assert UploaderApp._completion_output_text(app, summary) == "http://v/a\n\nhttp://v/b"
+
+
+@pytest.mark.unit
+def test_failed_reports_with_the_same_name_never_overwrite(tmp_path, frozen_minute):
+    first = FakeGroup("Photos", ["/x/a.jpg"])
+    second = FakeGroup("Photos", ["/y/b.jpg"])
+    app = _output_app(tmp_path, [])
+    app.file_widgets = {
+        "/x/a.jpg": _row(first, "failed", error="first reason"),
+        "/y/b.jpg": _row(second, "failed", error="second reason"),
+    }
+
+    UploaderApp.generate_failed_group_output(app, first, 1)
+    UploaderApp.generate_failed_group_output(app, second, 1)
+
+    reports = app.current_output_files
+    assert len(set(reports)) == 2
+    assert all(path.endswith("_FAILED.txt") for path in reports)
+    assert "first reason" in Path(reports[0]).read_text(encoding="utf-8")
+    assert "second reason" in Path(reports[1]).read_text(encoding="utf-8")
+    assert len(list(Path(app.central_history_path).iterdir())) == 2
+
+
 def _finishing_app(tmp_path, monkeypatch, files, auto_copy=False):
     """Upload in progress; finalization runs inline and after() callbacks are captured."""
     monkeypatch.setattr(

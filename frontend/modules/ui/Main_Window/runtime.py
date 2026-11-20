@@ -61,6 +61,26 @@ CANCELLED_REASON = "Upload cancelled."
 NO_LINK_REASON = "Host returned no link"
 
 
+def write_new_text_file(directory: str, stem: str, tail: str, text: str) -> str:
+    """Write ``text`` to a new file ``directory/stem + tail`` and return its path.
+
+    An existing file is never replaced: on a name collision the stem gets a
+    numeric suffix (``_2``, ``_3``, ...). The file is created exclusively, so
+    two batches finishing in the same minute cannot race for one name.
+    """
+    os.makedirs(directory, exist_ok=True)
+    for attempt in range(1, 10000):
+        suffix = "" if attempt == 1 else f"_{attempt}"
+        path = os.path.join(directory, f"{stem}{suffix}{tail}")
+        try:
+            with open(path, "x", encoding="utf-8") as handle:
+                handle.write(text)
+        except FileExistsError:
+            continue
+        return path
+    raise FileExistsError(f"No free file name for {stem}{tail} in {directory}")
+
+
 class RuntimeMixin:
     def update_ui_loop(self):
         """Main UI update loop - processes all queues and checks upload completion."""
@@ -968,13 +988,11 @@ class RuntimeMixin:
         try:
             from modules.file_handler import sanitize_filename
 
-            safe_title = sanitize_filename(group.title)
+            safe_title = sanitize_filename(group.title) or "Batch"
             ts = datetime.now().strftime("%Y%m%d_%H%M")
             out_dir = getattr(self, "output_dir", "Output")
-            os.makedirs(out_dir, exist_ok=True)
-            out_name = os.path.join(out_dir, f"{safe_title}_{ts}.txt")
-            with open(out_name, "w", encoding="utf-8") as f:
-                f.write(text)
+            out_name = write_new_text_file(out_dir, f"{safe_title}_{ts}", ".txt", text)
+            out_stem = os.path.splitext(os.path.basename(out_name))[0]
             self.current_output_files.append(out_name)
             self.copyable_output_files.append(out_name)
             self.log(f"Saved: {out_name}")
@@ -992,11 +1010,9 @@ class RuntimeMixin:
                 message, level = self._vipergirls_queue_activity(group, tgt_thread)
                 self.add_activity(message, level)
 
-            central_name = os.path.join(self.central_history_path, f"{safe_title}_{ts}.txt")
-            with open(central_name, "w", encoding="utf-8") as f:
-                f.write(text)
+            write_new_text_file(self.central_history_path, out_stem, ".txt", text)
 
-            self.lbl_eta.configure(text=f"Saved: {safe_title}_{ts}.txt")
+            self.lbl_eta.configure(text=f"Saved: {os.path.basename(out_name)}")
             self.btn_open.configure(state="normal")
             if self.var_auto_copy.get():
                 self.clipboard_buffer.append(text)
@@ -1018,10 +1034,8 @@ class RuntimeMixin:
                 need_links_txt = True
 
             if need_links_txt:
-                links_name = os.path.join(out_dir, f"{safe_title}_{ts}_links.txt")
                 raw_links = "\n".join([r[0] for r in group_results])
-                with open(links_name, "w", encoding="utf-8") as f:
-                    f.write(raw_links)
+                links_name = write_new_text_file(out_dir, f"{out_stem}_links", ".txt", raw_links)
                 self.log(f"Saved Links: {links_name}")
                 self.add_activity(f"Saved links file: {os.path.basename(links_name)}.", "success")
 
@@ -1057,7 +1071,6 @@ class RuntimeMixin:
             now = datetime.now()
             ts = now.strftime("%Y%m%d_%H%M")
             out_dir = getattr(self, "output_dir", "Output")
-            os.makedirs(out_dir, exist_ok=True)
 
             lines = [
                 f"Batch: {batch_name}",
@@ -1092,17 +1105,13 @@ class RuntimeMixin:
                 lines.append(f"  Path: {fp}")
 
             text = "\n".join(lines) + "\n"
-            out_name = os.path.join(out_dir, f"{safe_title}_{ts}_FAILED.txt")
-            with open(out_name, "w", encoding="utf-8") as f:
-                f.write(text)
+            out_name = write_new_text_file(out_dir, f"{safe_title}_{ts}", "_FAILED.txt", text)
             self.current_output_files.append(out_name)
 
             history_dir = getattr(self, "central_history_path", "")
             if history_dir:
-                os.makedirs(history_dir, exist_ok=True)
-                central_name = os.path.join(history_dir, f"{safe_title}_{ts}_FAILED.txt")
-                with open(central_name, "w", encoding="utf-8") as f:
-                    f.write(text)
+                report_stem = os.path.basename(out_name)[: -len("_FAILED.txt")]
+                write_new_text_file(history_dir, report_stem, "_FAILED.txt", text)
 
             self.btn_open.configure(state="normal")
             self.log(f"Saved failed batch report: {out_name}")
