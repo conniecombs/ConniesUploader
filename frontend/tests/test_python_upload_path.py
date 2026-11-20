@@ -401,6 +401,47 @@ def test_a_parser_exception_fails_the_file(env):
     wait_for(env, lambda: len(env.bridge.closes()) == 1)
 
 
+def test_a_result_with_none_fields_still_ends_the_file(env):
+    # A parser that writes UploadResult(url=data.get("url"), ...) for an
+    # answer without those keys.
+    env.plugin.parse = lambda fp, r: UploadResult(url=None, thumb=None, gallery_url=None)
+    env.um._send_job(["/n/a.jpg"], CFG, CREDS)
+    finish_raw(env, env.bridge.jobs()[0], ["/n/a.jpg"])
+    wait_for(env, lambda: len(env.bridge.closes()) == 1)
+    assert status_of(env, "/n/a.jpg")[-1] == "error: Host returned no link"
+    assert env.result_items == [("/n/a.jpg", "", "")]
+    assert env.um._open_session_jobs == []
+
+
+def test_a_thumbnail_link_that_cannot_be_read_fails_the_file_instead_of_leaving_it(env):
+    # A host's page can hold a malformed link that a parser's pattern still
+    # captures; reading it (the thumbnail canonicalisation) raises ValueError.
+    env.plugin.parse = lambda fp, r: UploadResult("https://h/v/a", "https://i1.vipr.im]/th/a.jpg")
+    env.um._send_job(["/n/a.jpg", "/n/b.jpg"], CFG, CREDS)
+    finish_raw(env, env.bridge.jobs()[0], ["/n/a.jpg", "/n/b.jpg"])
+    wait_for(env, lambda: len(env.bridge.closes()) == 1)
+    for fp in ("/n/a.jpg", "/n/b.jpg"):
+        assert status_of(env, fp)[-1] == (
+            "error: could not read the host's answer: Invalid IPv6 URL"
+        ), status_of(env, fp)
+    assert sorted(env.result_items) == [("/n/a.jpg", "", ""), ("/n/b.jpg", "", "")]
+    assert env.um._open_session_jobs == []
+
+
+def test_a_failure_while_reporting_a_parsed_file_still_ends_it(env, monkeypatch):
+    def broken(thumb):
+        raise RuntimeError(f"cannot report {thumb} for key-secret-99")
+
+    monkeypatch.setattr(env.um, "_canonicalize_imx_thumbnail_url", broken)
+    env.um._send_job(["/n/a.jpg"], CFG, CREDS)
+    finish_raw(env, env.bridge.jobs()[0], ["/n/a.jpg"])
+    wait_for(env, lambda: len(env.bridge.closes()) == 1)
+    assert status_of(env, "/n/a.jpg")[-1] == (
+        "error: could not read the host's answer: cannot report https://h/t for [redacted]"
+    )
+    assert env.result_items == [("/n/a.jpg", "", "")]
+
+
 def test_session_open_failure_fails_the_group_with_the_reason(env):
     env.bridge.open_reply = {"status": "failed", "msg": "batch cancelled"}
     env.um._send_job(["/a.jpg", "/b.jpg"], CFG, CREDS)

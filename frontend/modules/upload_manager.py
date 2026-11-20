@@ -1103,12 +1103,34 @@ class UploadManager:
             except Exception as exc:
                 logger.exception(f"{job.service}: parsing the upload of {file_path} failed")
                 result = UploadResult.failed(f"could not read the host's answer: {exc}")
-            self._report_parsed(job, file_path, result)
+            self._report_parsed_or_fail(job, file_path, result)
         finally:
             job.state.settle(key)
             with self._jobs_lock:
                 job.post_pending -= 1
             self._advance_session_job(job)
+
+    def _report_parsed_or_fail(
+        self, job: _SessionJob, file_path: str, result: UploadResult
+    ) -> None:
+        """Report a parsed file; if reading the result fails, fail the file instead.
+
+        Reading a result can raise (a thumbnail link the canonicalisation
+        cannot split, for example). The file must still end, or the batch
+        never finishes.
+        """
+        try:
+            self._report_parsed(job, file_path, result)
+            return
+        except Exception as exc:
+            logger.exception(f"{job.service}: reporting the upload of {file_path} failed")
+            reason = f"could not read the host's answer: {exc}"
+        try:
+            self._report_parsed(job, file_path, UploadResult.failed(reason))
+        except Exception:
+            logger.exception(f"{job.service}: could not report the failure of {file_path}")
+            if not self._token_superseded(job.cancel):
+                self._finish_files([file_path], "error: could not read the host's answer")
 
     def _report_parsed(self, job: _SessionJob, file_path: str, result: UploadResult) -> None:
         """Report a parsed file. Never call with ``_jobs_lock`` held."""

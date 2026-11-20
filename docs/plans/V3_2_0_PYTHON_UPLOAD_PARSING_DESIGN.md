@@ -379,6 +379,12 @@ Python `re` replaces RE2; avoid backtracking-only constructs. BeautifulSoup's
 
 - A result with no viewer URL fails the file ("Host returned no link");
   return `UploadResult.failed(reason)` with a better reason when you have one.
+  `UploadResult` fields are always text (`None` becomes ""), so
+  `UploadResult(url=data.get("url"))` is safe.
+- Every file ends. A parser that raises or returns something other than an
+  `UploadResult`, and a result the manager cannot report (for example a
+  thumbnail link it cannot split), fail the file with "could not read the
+  host's answer: …".
 - Every failure reason is redacted with `session_state.secrets` (the
   plugin's declared credentials and every `session_values` value of 4+
   characters). Add tokens a parser extracts with `session_state.add_secrets`.
