@@ -41,6 +41,11 @@ def _job_files(bridge):
     return [[os.path.basename(path) for path in job["files"]] for job in bridge.sent]
 
 
+# The ImageBam cases run on its legacy spec, which this fake bridge can take;
+# the split is the same on the Python path (tests/test_imagebam_python_path.py).
+IMAGEBAM_LEGACY = {"service": "imagebam.com", "legacy_upload_parsing": True}
+
+
 def test_session_created_gallery_gets_covers_and_files_in_one_job(manager):
     um, bridge = manager
     files = ["/set/p1.jpg", "/set/cover.jpg", "/set/p2.jpg"]
@@ -48,7 +53,7 @@ def test_session_created_gallery_gets_covers_and_files_in_one_job(manager):
 
     um._dispatch_jobs(
         {group: list(files)},
-        {"service": "imagebam.com", "auto_gallery": True, "thumbnail_size": "180"},
+        dict(IMAGEBAM_LEGACY, auto_gallery=True, thumbnail_size="180"),
         {"imagebam_user": "user@example.com", "imagebam_pass": "secret"},
     )
 
@@ -65,7 +70,7 @@ def test_session_gallery_host_without_a_new_gallery_keeps_separate_cover_job(man
     files = ["/set/cover.jpg", "/set/p1.jpg"]
     group = Group("Beach", files, covers=["/set/cover.jpg"])
 
-    um._dispatch_jobs({group: list(files)}, {"service": "imagebam.com"}, {})
+    um._dispatch_jobs({group: list(files)}, dict(IMAGEBAM_LEGACY), {})
 
     assert _job_files(bridge) == [["cover.jpg"], ["p1.jpg"]]
     assert bridge.sent[0]["config"]["thumbnail_size"] == "300"
