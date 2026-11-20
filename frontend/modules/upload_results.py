@@ -36,7 +36,7 @@ from decimal import Decimal
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 from urllib.parse import urlsplit, urlunsplit
 
-from bs4 import BeautifulSoup, NavigableString, Tag
+from bs4 import BeautifulSoup, Doctype, NavigableString, Tag
 
 # Shown when a host's answer has no viewer link and the parser gave no reason.
 NO_LINK_ERROR = "Host returned no link"
@@ -348,31 +348,65 @@ def _json_string_at(data: Any, path: str) -> str:
     return current.strip() if isinstance(current, str) else ""
 
 
-_SKIPPED_TAGS = frozenset({"script", "style", "noscript", "template", "head"})
+# Elements whose text is never visible, wherever they are.
+_HIDDEN_TAGS = frozenset({"script", "style", "noscript", "template"})
+# Elements an HTML5 parser keeps in <head> while no body content came yet.
+_HEAD_TAGS = _HIDDEN_TAGS | {"title", "meta", "link", "base", "basefont", "bgsound"}
+# Tags an HTML5 parser drops once the body started: their content joins the body.
+_TRANSPARENT_TAGS = frozenset({"html", "head", "body"})
+_ASCII_WHITESPACE = " \t\n\f\r"
 
 
 def html_visible_text(body: str) -> str:
-    """The visible text of an HTML page: its body without scripts or styles, else its title."""
-    soup = BeautifulSoup(body, "html.parser")
-    root: Any = soup.body
-    skipped = _SKIPPED_TAGS
-    if root is None:
-        # Without a <body> the whole document counts, as an HTML5 parser
-        # would put it in one, except what belongs in <head>.
-        root = soup
-        skipped = _SKIPPED_TAGS | {"title"}
-    parts: List[str] = []
+    """The visible text of an HTML page: its body without scripts or styles, else its title.
 
-    def walk(node: Any) -> None:
+    "Body" is what an HTML5 parser (Go's, on the legacy path) puts there:
+    everything from the first visible content on, wherever the page's own
+    <html>, <head> and <body> tags are. Text a PHP error printed before
+    <html> or after </html> counts, a <title> after body content is text,
+    and text on both sides of a dropped tag is one piece ("a<body>b" reads
+    "ab"). A <frameset> before any content means the page has no body.
+    """
+    soup = BeautifulSoup(body, "html.parser")
+    pieces: List[str] = []
+    in_body = False
+    joined = False  # the next text continues the last piece (no node between)
+
+    def walk(node: Any) -> bool:
+        """Collect ``node``'s children; False once a frameset ended the document."""
+        nonlocal in_body, joined
         for child in node.children:
             if isinstance(child, Tag):
-                if child.name not in skipped:
-                    walk(child)
+                name = child.name
+                if name in _TRANSPARENT_TAGS:
+                    in_body = in_body or name == "body"
+                    if not walk(child):
+                        return False
+                    continue
+                if not in_body and name in _HEAD_TAGS:
+                    continue  # head content
+                if not in_body and name == "frameset":
+                    return False  # the frameset replaces the body
+                in_body, joined = True, False
+                if name not in _HIDDEN_TAGS and not walk(child):
+                    return False
+                joined = False
             elif type(child) is NavigableString:
-                parts.append(str(child))
+                text = str(child)
+                if not in_body and not text.strip(_ASCII_WHITESPACE):
+                    continue
+                in_body = True
+                if joined:
+                    pieces[-1] += text
+                else:
+                    pieces.append(text)
+                    joined = True
+            elif in_body and not isinstance(child, Doctype):
+                joined = False  # a comment or processing instruction is a node of its own
+        return True
 
-    walk(root)
-    text = collapse_text(" ".join(parts))
+    walk(soup)
+    text = collapse_text(" ".join(pieces))
     if text:
         return text
     return collapse_text(soup.title.get_text()) if soup.title else ""

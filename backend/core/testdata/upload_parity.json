@@ -199,6 +199,69 @@
       "body": "Wrong PIN éé",
       "secrets": ["éé"],
       "want": "login failed (HTTP 401): Wrong PIN éé"
+    },
+    {
+      "name": "a php warning printed before the page",
+      "reason": "upload rejected",
+      "status": 500,
+      "body": "<br />\n<b>Warning</b>:  move_uploaded_file(): Unable to move '/tmp/phpX' in <b>/var/www/upload.php</b> on line <b>42</b><br />\n<html><head><title>Error</title></head><body><h1>Upload failed</h1></body></html>",
+      "want": "upload rejected (HTTP 500): Warning : move_uploaded_file(): Unable to move '/tmp/phpX' in /var/www/upload.php on line 42 Error Upload failed"
+    },
+    {
+      "name": "a fatal error printed after the page",
+      "reason": "upload rejected",
+      "status": 500,
+      "body": "<html><head><title>Error</title></head><body><h1>Upload failed</h1></body></html>\nFatal error: Allowed memory size exhausted",
+      "want": "upload rejected (HTTP 500): Upload failed Fatal error: Allowed memory size exhausted"
+    },
+    {
+      "name": "text before the html tag runs into the body's text",
+      "reason": "upload rejected",
+      "status": 400,
+      "body": "Error: file too large<html><body>Try again</body></html>",
+      "want": "upload rejected (HTTP 400): Error: file too largeTry again"
+    },
+    {
+      "name": "an element after the html end tag",
+      "reason": "upload rejected",
+      "status": 400,
+      "body": "<html><body>Body text</body></html><p>after html</p>",
+      "want": "upload rejected (HTTP 400): Body text after html"
+    },
+    {
+      "name": "text between head and body",
+      "reason": "upload rejected",
+      "status": 400,
+      "body": "<html><head><title>T</title></head>Stray text<body>Real</body></html>",
+      "want": "upload rejected (HTTP 400): Stray textReal"
+    },
+    {
+      "name": "a title after the body is text",
+      "reason": "upload rejected",
+      "status": 400,
+      "body": "<html><head><title>A</title></head><body>B</body><title>C</title></html>",
+      "want": "upload rejected (HTTP 400): B C"
+    },
+    {
+      "name": "a processing instruction before the text",
+      "reason": "upload rejected",
+      "status": 400,
+      "body": "<?php echo 1; ?>Notice: x<html><body>y</body></html>",
+      "want": "upload rejected (HTTP 400): Notice: xy"
+    },
+    {
+      "name": "a comment after the html end tag",
+      "reason": "upload rejected",
+      "status": 400,
+      "body": "<html><body><p>one</p></body></html><!-- trailing -->two",
+      "want": "upload rejected (HTTP 400): one two"
+    },
+    {
+      "name": "a frameset page has no body text",
+      "reason": "upload rejected",
+      "status": 400,
+      "body": "<frameset><frame src='a'></frameset>after",
+      "want": "upload rejected (HTTP 400): <frameset><frame src='a'></frameset>after"
     }
   ],
   "redactions": [
