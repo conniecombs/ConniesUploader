@@ -396,8 +396,11 @@ class SidecarBridge:
                 return generation
             except (BrokenPipeError, OSError, ValueError) as exc:
                 logger.error(f"Send error: {exc}")
-                self._handle_crash()
-                return None
+        # Restart off this thread and without cmd_lock: the restart backs off
+        # for seconds, and other senders (Stop's cancel on the Tk thread
+        # among them) must fail fast meanwhile, not wait for it.
+        threading.Thread(target=self._handle_crash, name="SidecarRestart", daemon=True).start()
+        return None
 
     def request_sync(self, payload: JsonDict, timeout: float = 5.0) -> JsonDict:
         """Send a command and wait for a correlated terminal response."""

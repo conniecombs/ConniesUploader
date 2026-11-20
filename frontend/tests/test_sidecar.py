@@ -610,3 +610,53 @@ def test_send_job_returns_the_generation_it_was_written_to():
     bridge._start_process = lambda: False
     assert bridge.send_job({"action": "noop"}) is None
     assert bridge.send_cmd({"action": "noop"}) is False
+
+
+def _bridge_whose_write_fails():
+    from types import SimpleNamespace
+
+    def broken_pipe(_text):
+        raise BrokenPipeError("sidecar exited")
+
+    bridge = SidecarBridge.__new__(SidecarBridge)
+    bridge.proc = SimpleNamespace(
+        poll=lambda: None, stdin=SimpleNamespace(write=broken_pipe, flush=lambda: None)
+    )
+    bridge.generation = 1
+    bridge.cmd_lock = threading.RLock()
+    bridge.restart_lock = threading.RLock()
+    bridge.backoff_started = threading.Event()
+
+    def restart_with_backoff():
+        bridge.backoff_started.set()
+        time.sleep(1.0)  # _handle_crash sleeps before restarting
+
+    bridge._handle_crash = restart_with_backoff
+    return bridge
+
+
+@pytest.mark.unit
+def test_restart_after_a_failed_write_does_not_hold_the_command_lock():
+    bridge = _bridge_whose_write_fails()
+    sender = threading.Thread(target=bridge.send_job, args=({"action": "http_upload"},))
+    sender.start()
+    assert bridge.backoff_started.wait(2)
+
+    # Stop's cancel_batch on the Tk thread needs cmd_lock during the backoff.
+    acquired = bridge.cmd_lock.acquire(timeout=0.5)
+    if acquired:
+        bridge.cmd_lock.release()
+    sender.join(3)
+
+    assert acquired, "every other sender waits out the restart backoff"
+
+
+@pytest.mark.unit
+def test_failed_write_returns_without_waiting_for_the_restart_backoff():
+    bridge = _bridge_whose_write_fails()
+
+    started = time.monotonic()
+    assert bridge.send_job({"action": "cancel", "batch_id": "b"}) is None
+
+    assert time.monotonic() - started < 0.5
+    assert bridge.backoff_started.wait(2)  # the restart still happens
