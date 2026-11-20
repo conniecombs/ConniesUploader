@@ -165,7 +165,7 @@ func init() {
 // ---------------------------------------------------------------------------
 
 func main() {
-	workerCount := flag.Int("workers", 8, "Number of worker goroutines")
+	workerCount := flag.Int("workers", 8, "Number of upload worker goroutines")
 	flag.Parse()
 	clampedWorkerCount := clampSidecarWorkers(*workerCount)
 	if clampedWorkerCount != *workerCount {
@@ -180,55 +180,125 @@ func main() {
 
 	initHTTPClient()
 
-	jobQueue := make(chan JobRequest, 100)
-	var wg sync.WaitGroup
 	shutdownChan := make(chan struct{})
-
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-
-	for i := 0; i < clampedWorkerCount; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for job := range jobQueue {
-				handleJob(job)
-			}
-		}()
-	}
-
 	go func() {
 		<-sigChan
 		close(shutdownChan)
 	}()
 
-	decoder := json.NewDecoder(os.Stdin)
+	runSidecar(os.Stdin, clampedWorkerCount, shutdownChan)
+	core.SendJSON(OutputEvent{Type: "log", Msg: "=== GO SIDECAR SHUTDOWN COMPLETE ==="})
+}
+
+// requestWorkerCount sizes the pool for every action except http_upload
+// (http_request, http_batch_resolve, generate_thumb). It is separate from the
+// upload pool so a login, a forum post or a gallery call never waits behind
+// queued uploads.
+const requestWorkerCount = 4
+
+// jobQueue is an unbounded FIFO. Pushing never blocks, so the stdin reader
+// keeps reading (and handling cancel) however many upload jobs are waiting.
+type jobQueue struct {
+	mu     sync.Mutex
+	cond   *sync.Cond
+	jobs   []JobRequest
+	closed bool
+}
+
+func newJobQueue() *jobQueue {
+	q := &jobQueue{}
+	q.cond = sync.NewCond(&q.mu)
+	return q
+}
+
+func (q *jobQueue) push(job JobRequest) {
+	q.mu.Lock()
+	q.jobs = append(q.jobs, job)
+	q.mu.Unlock()
+	q.cond.Signal()
+}
+
+// pop waits for the next job; ok is false once the queue is closed and empty.
+func (q *jobQueue) pop() (job JobRequest, ok bool) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	for len(q.jobs) == 0 && !q.closed {
+		q.cond.Wait()
+	}
+	if len(q.jobs) == 0 {
+		return JobRequest{}, false
+	}
+	job = q.jobs[0]
+	q.jobs[0] = JobRequest{}
+	q.jobs = q.jobs[1:]
+	return job, true
+}
+
+func (q *jobQueue) close() {
+	q.mu.Lock()
+	q.closed = true
+	q.mu.Unlock()
+	q.cond.Broadcast()
+}
+
+func startWorkers(wg *sync.WaitGroup, queue *jobQueue, count int) {
+	for i := 0; i < count; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				job, ok := queue.pop()
+				if !ok {
+					return
+				}
+				handleJob(job)
+			}
+		}()
+	}
+}
+
+// runSidecar reads one JSON job per line from input until input ends or
+// shutdown is closed, then waits for every queued job to finish. Uploads run
+// on uploadWorkers workers; every other action runs on its own pool; cancel
+// is handled inline.
+func runSidecar(input io.Reader, uploadWorkers int, shutdown <-chan struct{}) {
+	uploads := newJobQueue()
+	requests := newJobQueue()
+	var wg sync.WaitGroup
+	startWorkers(&wg, uploads, uploadWorkers)
+	startWorkers(&wg, requests, requestWorkerCount)
+	defer func() {
+		uploads.close()
+		requests.close()
+		wg.Wait()
+	}()
+
+	decoder := json.NewDecoder(input)
 	for {
 		select {
-		case <-shutdownChan:
-			goto shutdown
+		case <-shutdown:
+			return
 		default:
-			var job JobRequest
-			if err := decoder.Decode(&job); err != nil {
-				if err == io.EOF {
-					close(shutdownChan)
-					goto shutdown
-				}
-				core.SendJSON(OutputEvent{Type: "error", Msg: fmt.Sprintf("JSON decode error: %v", err)})
-				continue
+		}
+		var job JobRequest
+		if err := decoder.Decode(&job); err != nil {
+			if err == io.EOF {
+				return
 			}
-			job.EnqueuedAt = time.Now()
-			if job.Action == "cancel" {
-				// Handled inline so a cancel is never stuck behind busy workers.
-				handleJob(job)
-				continue
-			}
-			jobQueue <- job
+			core.SendJSON(OutputEvent{Type: "error", Msg: fmt.Sprintf("JSON decode error: %v", err)})
+			continue
+		}
+		job.EnqueuedAt = time.Now()
+		switch job.Action {
+		case "cancel":
+			// Handled inline so a cancel is never stuck behind busy workers.
+			handleJob(job)
+		case "http_upload":
+			uploads.push(job)
+		default:
+			requests.push(job)
 		}
 	}
-
-shutdown:
-	close(jobQueue)
-	wg.Wait()
-	core.SendJSON(OutputEvent{Type: "log", Msg: "=== GO SIDECAR SHUTDOWN COMPLETE ==="})
 }

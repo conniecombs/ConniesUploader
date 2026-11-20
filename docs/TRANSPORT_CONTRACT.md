@@ -106,6 +106,11 @@ Every `http_upload` job of one Start carries the same `batch_id` and its own
 {"action": "cancel", "batch_id": "<batch id>"}
 ```
 
+`http_upload` jobs run on the `--workers` pool. Every other action
+(`http_request` and the rest) runs on a separate small pool, so a login,
+forum post or gallery call never waits behind queued uploads. Go reads stdin
+without blocking on busy workers, however many jobs are queued.
+
 `cancel` is handled as soon as it is read from stdin, even while every worker
 is busy. In-flight uploads of that batch are aborted and report
 `status: "Cancelled"` plus an `error` event; jobs still queued for that batch
