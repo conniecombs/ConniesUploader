@@ -136,8 +136,18 @@ func retryAfter(header string) (time.Duration, bool) {
 		return 0, false
 	}
 	var wait time.Duration
-	if seconds, err := strconv.Atoi(header); err == nil {
-		wait = time.Duration(seconds) * time.Second
+	if seconds, err := strconv.ParseInt(header, 10, 64); err == nil || errors.Is(err, strconv.ErrRange) {
+		// Compare before multiplying: a huge value would overflow
+		// time.Duration and wrap to a short (or negative) wait. Digits
+		// beyond int64 parse as its limit.
+		switch {
+		case seconds <= 0:
+			wait = 0
+		case seconds > int64(RawRetryAfterCap/time.Second):
+			wait = RawRetryAfterCap
+		default:
+			wait = time.Duration(seconds) * time.Second
+		}
 	} else if at, err := http.ParseTime(header); err == nil {
 		wait = time.Until(at)
 	} else {

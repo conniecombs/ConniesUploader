@@ -96,9 +96,10 @@ upload path; the host's login, every upload of the job and every follow-up
 request run on it.
 
 ```json
-{"action": "session_open", "id": "session-open:<uuid>", "batch_id": "<batch id>"}
+{"action": "session_open", "id": "session-open:<uuid>", "batch_id": "<batch id>", "timeout_seconds": 30}
 → {"id": "session-open:<uuid>", "type": "result", "status": "success", "data": {"session_id": "s-<24 chars>"}}
 → {"id": "session-open:<uuid>", "type": "result", "status": "failed", "msg": "batch cancelled"}
+→ {"id": "session-open:<uuid>", "type": "result", "status": "failed", "msg": "request deadline passed while queued (waited 31s)"}
 
 {"action": "session_close", "id": "session-close:<uuid>", "session_id": "s-…"}
 → {"id": "session-close:<uuid>", "type": "result", "status": "success", "data": {"session_id": "s-…", "closed": "true"}}
@@ -112,13 +113,35 @@ request run on it.
   requests running on them end at once (`transport session closed`). A
   `session_open` for a batch already cancelled fails with `batch cancelled`,
   also when the cancel races with the open.
-- Sessions unused for 30 minutes are reaped. A session is in use while an
-  upload job or request runs on it, and is never reaped then.
+- A session is reaped once it has been unused for 30 minutes, counted from
+  the end of its last use. It is in use, and never reaped, while a request
+  runs on it and from the moment Go reads an `http_upload` job that names it
+  until that job ends, including the time the job waits in the upload queue
+  behind other jobs. A `session_close` or a batch `cancel` still closes a
+  session in use.
+- `session_open`'s `timeout_seconds` is its deadline, counted from when Go
+  queued it, as for an `http_request` (values above the client ceiling clamp
+  to it; without one the ceiling applies). An open still queued at its
+  deadline opens nothing and fails with `request deadline passed while
+  queued`. Python waits that long plus a small margin, so Go answers first;
+  should a session open after Python stopped waiting all the same (a reply
+  delayed on its way, or Stop), the sidecar bridge closes it as soon as the
+  reply arrives, so no session is left for the idle reaper.
 - `session_close` of a session that is not open answers `"closed": "false"`.
   It answers only a request that carries an `id`; without one it logs.
-- Both actions run on the request pool, never behind queued uploads.
+- Both actions, and every `http_request` that names a `session_id`, run on
+  the session request pool (see "Batches, Cancellation, and Per-File
+  Validation"), never behind queued uploads or other requests.
 - Sessions die with the sidecar process: after a restart Python never
-  closes, or uses, a session of the dead process.
+  closes, or uses, a session of the dead process. Python writes everything
+  that names a session (its upload jobs, the requests on it, its close) only
+  to the process that opened it: the bridge checks the process and writes in
+  one step (`SidecarBridge.send_job_to`), so this holds even before Python
+  has handled the crash report. Once that process is gone nothing is
+  written: a request (a parser's follow-up, a result-page poll) fails at
+  once with `Uploader process restarted; upload interrupted`, the files of
+  an upload job that was not written yet end with it, and the close is
+  skipped.
 
 ## Raw Upload Jobs
 
@@ -185,7 +208,9 @@ for it, and substitutes no `{token}`s:
   the final refusal is the raw result. The legacy path instead retries every
   code of `retryable_http_codes` (`408`, `429`, `500`, `502`, `503`, `504` by
   default). A refused attempt does not count as a body the host may have
-  kept (`body_sent`).
+  kept (`body_sent`), and neither does the final refusal: Python does not
+  count a raw result with status `429` or `503` as an upload that reached
+  the host.
 - `"sequential": true` uploads the job's files one at a time, in list order.
   (The Python upload manager goes further for a sequential host: it sends
   one file per job, each after the previous file was parsed.)
@@ -225,10 +250,18 @@ Every `http_upload` job of one Start carries the same `batch_id` and its own
 {"action": "cancel", "batch_id": "<batch id>"}
 ```
 
-`http_upload` jobs run on the `--workers` pool. Every other action
-(`http_request`, `session_open`, `session_close` and the rest) runs on a
-separate small pool, so a login, forum post or gallery call never waits
-behind queued uploads. Go reads stdin without blocking on busy workers,
+`http_upload` jobs run on the `--workers` pool. The Python upload path's
+requests (`session_open`, `session_close` and every `http_request` on a
+transport session: a host's login, a parser's follow-ups and result-page
+polls) run on a session request pool of 8 workers. Every other action
+(`http_request` without a session, `http_batch_resolve`, `generate_thumb`)
+runs on a request pool of 4. So a login, forum post or gallery call never
+waits behind queued uploads, and a request on a session never waits behind
+forum posts, gallery calls or thumbnails: a request's deadline counts from
+when it was queued, so a parser's follow-up stuck there would expire and
+fail an upload the host had stored. Python has at most 5 session requests
+waiting at a time (4 parser threads and the dispatch thread), so none
+waits for a worker. Go reads stdin without blocking on busy workers,
 however many jobs are queued.
 
 `cancel` is handled as soon as it is read from stdin, even while every worker
@@ -292,7 +325,9 @@ value the `pre_request` login step extracted redacted (whether it ran once for
 the job or for the file alone). Go does not re-send such an upload: the host
 already answered. On the Python path the same rules come from
 `frontend/modules/upload_results.py`, which redacts every session value and
-applies the same snippet rules to failed follow-up requests;
+applies the same snippet rules to failed follow-up requests, and the upload
+manager redacts the same values from every `error` Go reports for a raw
+job (a transport error can quote the upload URL);
 `backend/core/testdata/upload_parity.json` holds the fixtures both
 implementations are tested against.
 
@@ -350,10 +385,12 @@ stays `(`), and `{url_dot_ext}` is that extension (`.jpg`), so
 On the Python path a plugin polls the result page itself, with
 `resolve_from_result_page` and the job's `ResultPageMatcher`
 (`frontend/modules/result_matcher.py`), which ports the rules below. There,
-"attempts that reached the host" are the files with a raw result or a
-`Failed` event carrying `body_sent` (a raw upload is re-sent only after a
-`429`/`503` refusal, which the host did not keep, so those are not counted;
-should a host list one anyway, the file fails as ambiguous), an entry
+"attempts that reached the host" are the files with a raw result other
+than a `429`/`503` refusal, or a `Failed` event carrying `body_sent` (a raw
+upload is re-sent only after a `429`/`503` refusal, which the host did not
+keep, so refused attempts are not counted, the final refusal that arrives
+as the raw result included; should a host list one anyway, the file fails
+as ambiguous), an entry
 is held back only by a file whose upload reached the host and that is still
 being parsed, and the upload manager sends a sequential host's next file only
 after the previous one was resolved.
@@ -416,7 +453,8 @@ when their lookups run at the same time.
 - Backend tests cover per-file validation, `cancel`, `literal_values`, braces
   in user values, `timeout_seconds` clamping, site-scoped `reset_cookies`,
   retry classification, lost upload responses, upload stall and response
-  limits, per-job Thread Limits, and the separate request pool; Python tests
+  limits, per-job Thread Limits, and the separate request and session
+  request pools; Python tests
   cover event scoping by batch, stragglers after `batch_complete`, and the
   single-count rule for terminal events.
 - Backend tests cover transport sessions (cookie isolation between sessions

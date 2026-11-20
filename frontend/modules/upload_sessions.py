@@ -21,7 +21,8 @@ class SessionState(dict):
     It is a dict a plugin may keep its own values in (for example a gallery
     URL found by the first file). The job's files are parsed concurrently, so
     a read-modify-write must hold ``lock``; ``get_or_create`` does that for
-    you.
+    you. Hold ``lock`` only for such short steps, never across a request or
+    a ``transport.pause``: the job's other parsers wait for it meanwhile.
 
     ``files`` lists the job's files (as the sidecar reports them), and
     ``secrets`` the values no failure message may quote (the plugin's
@@ -31,12 +32,20 @@ class SessionState(dict):
     ``result_matcher(mode)`` returns the job's shared ``ResultPageMatcher`` for
     that mode. The upload manager keeps it informed: ``record_uploaded`` when
     the host received a file's whole body, ``settle`` when a file is finished.
+
+    That bookkeeping (and ``secrets``) uses a lock of its own, never ``lock``:
+    the upload manager calls it on the sidecar event listener, which must not
+    wait for a lock plugin code holds.
     """
 
     def __init__(self, files: Sequence[str] = (), secrets: Iterable[str] = ()) -> None:
         super().__init__()
         self.files: Tuple[str, ...] = tuple(files)
+        # For plugin code: guards the plugin's own values in the dict.
         self.lock = threading.RLock()
+        # For the framework: guards everything below. Held only briefly, and
+        # only around the matchers' own (equally brief) locks.
+        self._internal_lock = threading.RLock()
         self._secrets: List[str] = list(secrets)
         self._uploaded: List[str] = []
         self._settled: set = set()
@@ -44,22 +53,22 @@ class SessionState(dict):
 
     @property
     def secrets(self) -> List[str]:
-        with self.lock:
+        with self._internal_lock:
             return normalize_secrets(self._secrets)
 
     def add_secrets(self, *values: str) -> None:
         """Values to redact from failure messages, such as a token a parser extracted."""
-        with self.lock:
+        with self._internal_lock:
             self._secrets.extend(str(value) for value in values if value)
 
     @property
     def uploaded_files(self) -> Tuple[str, ...]:
         """Files whose whole body reached the host, in that order."""
-        with self.lock:
+        with self._internal_lock:
             return tuple(self._uploaded)
 
     def is_settled(self, file_path: str) -> bool:
-        with self.lock:
+        with self._internal_lock:
             return file_path in self._settled
 
     def get_or_create(self, key: str, factory: Callable[[], Any]) -> Any:
@@ -70,7 +79,7 @@ class SessionState(dict):
             return self[key]
 
     def record_uploaded(self, file_path: str) -> None:
-        with self.lock:
+        with self._internal_lock:
             if file_path in self._uploaded:
                 return
             self._uploaded.append(file_path)
@@ -78,7 +87,7 @@ class SessionState(dict):
                 matcher.record_uploaded(file_path)
 
     def settle(self, file_path: str) -> None:
-        with self.lock:
+        with self._internal_lock:
             self._settled.add(file_path)
             for matcher in self._matchers.values():
                 matcher.settle(file_path)
@@ -88,7 +97,7 @@ class SessionState(dict):
     ) -> ResultPageMatcher:
         """The job's matcher for ``mode`` (created on first use, then shared)."""
         key = (str(mode or ""), tuple(sorted((file_names or {}).items())))
-        with self.lock:
+        with self._internal_lock:
             matcher = self._matchers.get(key)
             if matcher is None:
                 matcher = ResultPageMatcher(self.files, mode=mode, file_names=file_names)

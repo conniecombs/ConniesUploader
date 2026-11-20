@@ -40,8 +40,16 @@ TERMINAL_FILE_STATUSES = frozenset({"Done", "Failed", "Cancelled"})
 # the upload and the plugin's parser is reading the answer.
 UPLOADED_STATUS = "Uploaded"
 
-# Threads that run plugin parsers (and their follow-up requests).
+# Threads that run plugin parsers (and their follow-up requests). The
+# sidecar's session request pool (sessionRequestWorkerCount in
+# backend/main.go) covers these plus the dispatch thread, so no follow-up
+# waits for a worker (tests/test_build_contract.py).
 POST_PROCESS_WORKERS = 4
+
+# Answers with which a host refuses an upload without taking it ("too many
+# requests", "unavailable"). The sidecar re-sends such an upload; a raw result
+# with one of them is the last refusal, an upload the host did not keep.
+REFUSAL_STATUS_CODES = frozenset({429, 503})
 
 SERVICE_THREAD_KEYS = {
     "imx.to": "imx_threads",
@@ -170,10 +178,23 @@ class UploadManager:
         """Remember which files a sidecar job owns so its events can be scoped."""
         self._job_files[job_id] = list(files)
 
-    def _submit_job(self, job_id: str, job_data: Dict[str, Any]) -> bool:
-        """Write a registered job to the sidecar and remember which process got it."""
+    def _submit_job(
+        self, job_id: str, job_data: Dict[str, Any], generation: Optional[int] = None
+    ) -> bool:
+        """Write a registered job to the sidecar and remember which process got it.
+
+        With ``generation`` (a job on a transport session), the job goes only
+        to that process: once it is gone, even if the crash report has not
+        been handled yet, nothing is written and False is returned.
+        """
+        send_to = getattr(self.bridge, "send_job_to", None) if generation is not None else None
         send_job = getattr(self.bridge, "send_job", None)
-        if callable(send_job):
+        if callable(send_to):
+            written = send_to(job_data, generation)
+            if written is None:
+                return False
+            generation = written if isinstance(written, int) else None
+        elif callable(send_job):
             generation = send_job(job_data)
             if generation is None:
                 return False
@@ -877,6 +898,7 @@ class UploadManager:
             bridge=self.bridge,
             rate_limits=rate_limits,
             cancel_event=token,
+            generation=session.generation,
         )
         try:
             # Plugins that do not subclass ImageHostPlugin get its defaults.
@@ -968,14 +990,23 @@ class UploadManager:
         Called whenever a sidecar job of it completes or a parse ends; it does
         something only when neither is outstanding. Finishing ends files that
         were never sent and closes the session if its process is alive.
+
+        Choosing the next files and reserving their sidecar job happen in one
+        ``_jobs_lock`` section: two advances (a parse's and batch_complete's)
+        can run at once, and the second must find the first one's job
+        outstanding, or a sequential job would send two files at once, or
+        finish and close its session while its last file is being sent.
         """
         send: List[str] = []
+        job_id = ""
         leftovers: List[str] = []
         end_status = ""
         close = False
         with self._jobs_lock:
             if job.finished or job.sidecar_jobs or job.post_pending:
                 return
+            if not job.dead and not self._session_alive(job.session):
+                self._mark_session_dead(job, f"error: {PROCESS_RESTARTED_MSG}")
             superseded = self._token_superseded(job.cancel)
             cancelled = self._token_cancelled(job.cancel)
             if job.queued and not (job.dead or cancelled or superseded):
@@ -983,6 +1014,7 @@ class UploadManager:
                     send = [job.queued.pop(0)]
                 else:
                     send, job.queued = job.queued, []
+                job_id = self._reserve_session_sidecar_job(job, send)
             else:
                 leftovers, job.queued = job.queued, []
                 job.finished = True
@@ -992,35 +1024,25 @@ class UploadManager:
                     leftovers = []  # a cleared batch's rows are gone
                 end_status = "Cancelled" if cancelled else (job.end_status or "Cancelled")
                 close = not job.dead and self._session_alive(job.session)
-        if send:
-            self._send_session_sidecar_job(job, send)
+        if job_id:
+            self._send_session_sidecar_job(job, job_id, send)
             return
         self._finish_files(leftovers, end_status)
         if close:
             self._close_session(job.session)
 
-    def _send_session_sidecar_job(self, job: _SessionJob, files: List[str]) -> None:
-        with self._jobs_lock:
-            job.sent_jobs += 1
-            job_id = job.id_base if job.sent_jobs == 1 else f"{job.id_base}.{job.sent_jobs}"
-            superseded = self._token_superseded(job.cancel)
-            if not self._session_alive(job.session):
-                self._mark_session_dead(job, f"error: {PROCESS_RESTARTED_MSG}")
-            if superseded:
-                status_text = ""  # cleared meanwhile: send and report nothing
-            elif job.dead:
-                status_text = job.end_status
-            else:
-                status_text = ""
-                job.sidecar_jobs.add(job_id)
-                self._session_jobs[job_id] = job
-                self.active_files.update(files)
-                self._register_job(job_id, files)
-        if superseded or status_text:
-            self._finish_files(files if status_text else [], status_text)
-            self._advance_session_job(job)
-            return
+    def _reserve_session_sidecar_job(self, job: _SessionJob, files: List[str]) -> str:
+        """Register the next sidecar job of ``job`` for ``files``; call with ``_jobs_lock`` held."""
+        job.sent_jobs += 1
+        job_id = job.id_base if job.sent_jobs == 1 else f"{job.id_base}.{job.sent_jobs}"
+        job.sidecar_jobs.add(job_id)
+        self._session_jobs[job_id] = job
+        self.active_files.update(files)
+        self._register_job(job_id, files)
+        return job_id
 
+    def _send_session_sidecar_job(self, job: _SessionJob, job_id: str, files: List[str]) -> None:
+        """Write a reserved sidecar job; never call with ``_jobs_lock`` held."""
         payload: Dict[str, Any] = {
             "id": job_id,
             "batch_id": job.batch_id,
@@ -1037,17 +1059,34 @@ class UploadManager:
         }
         if job.rate_limits:
             payload["rate_limits"] = job.rate_limits
-        if self._submit_job(job_id, payload):
+        if self._submit_job(job_id, payload, generation=job.session.generation):
             return
+        status_text = (
+            f"error: {PROCESS_RESTARTED_MSG}"
+            if self._session_process_gone(job.session)
+            else "error: sidecar unavailable"
+        )
         with self._jobs_lock:
-            self._job_files.pop(job_id, None)
+            # A Clear List or a crash report may have ended the job meanwhile;
+            # its files are then no longer this job's to report.
+            owned = self._job_files.pop(job_id, None) is not None
             self._session_jobs.pop(job_id, None)
             job.sidecar_jobs.discard(job_id)
-            self._mark_session_dead(job, "error: sidecar unavailable")
+            self._mark_session_dead(job, status_text)
             for fp in files:
                 self.active_files.discard(fp)
-        self._finish_files(files, "error: sidecar unavailable")
+        if owned:
+            self._finish_files(files, status_text)
         self._advance_session_job(job)
+
+    def _session_process_gone(self, session: TransportSession) -> bool:
+        """Whether the bridge runs another process now, or none, than the session's."""
+        current = getattr(self.bridge, "generation", None)
+        if isinstance(current, int) and isinstance(session.generation, int):
+            if current != session.generation:
+                return True
+        alive = getattr(self.bridge, "is_process_alive", None)
+        return callable(alive) and alive() is False
 
     def _mark_session_dead(self, job: _SessionJob, status_text: str) -> None:
         """The session's sidecar process is gone; call with ``_jobs_lock`` held."""
@@ -1080,7 +1119,10 @@ class UploadManager:
             data=dict(payload),
             raw=dict(data),
         )
-        job.state.record_uploaded(os.path.normpath(file_path))
+        if response.status_code not in REFUSAL_STATUS_CODES:
+            # A 429/503 here is the last refusal after the sidecar's retries ran
+            # out: the host did not take the file, so it is not counted.
+            job.state.record_uploaded(os.path.normpath(file_path))
         with self._jobs_lock:
             job.post_pending += 1
         self._post_pool.submit(lambda: self._post_process(job, file_path, response))
@@ -1103,12 +1145,34 @@ class UploadManager:
             except Exception as exc:
                 logger.exception(f"{job.service}: parsing the upload of {file_path} failed")
                 result = UploadResult.failed(f"could not read the host's answer: {exc}")
-            self._report_parsed(job, file_path, result)
+            self._report_parsed_or_fail(job, file_path, result)
         finally:
             job.state.settle(key)
             with self._jobs_lock:
                 job.post_pending -= 1
             self._advance_session_job(job)
+
+    def _report_parsed_or_fail(
+        self, job: _SessionJob, file_path: str, result: UploadResult
+    ) -> None:
+        """Report a parsed file; if reading the result fails, fail the file instead.
+
+        Reading a result can raise (a thumbnail link the canonicalisation
+        cannot split, for example). The file must still end, or the batch
+        never finishes.
+        """
+        try:
+            self._report_parsed(job, file_path, result)
+            return
+        except Exception as exc:
+            logger.exception(f"{job.service}: reporting the upload of {file_path} failed")
+            reason = f"could not read the host's answer: {exc}"
+        try:
+            self._report_parsed(job, file_path, UploadResult.failed(reason))
+        except Exception:
+            logger.exception(f"{job.service}: could not report the failure of {file_path}")
+            if not self._token_superseded(job.cancel):
+                self._finish_files([file_path], "error: could not read the host's answer")
 
     def _report_parsed(self, job: _SessionJob, file_path: str, result: UploadResult) -> None:
         """Report a parsed file. Never call with ``_jobs_lock`` held."""
@@ -1357,14 +1421,20 @@ class UploadManager:
             logger.debug(f"SIDECAR: {data.get('msg')}")
 
         elif evt == "error":
-            logger.error(f"SIDECAR ERROR: {data.get('msg')}")
+            msg = data.get("msg")
+            if session_job is not None:
+                # A raw upload's transport error can quote its request (a
+                # url.Error names the upload URL), which the plugin may have
+                # built from credentials or session values.
+                msg = redact_secrets(str(msg or ""), session_job.state.secrets)
+            logger.error(f"SIDECAR ERROR: {msg}")
             if fp:
-                self.progress_queue.put(("status", fp, f"error: {data.get('msg')}"))
+                self.progress_queue.put(("status", fp, f"error: {msg}"))
             elif job_id and session_job is not None:
                 # The sidecar rejected the whole raw job (an invalid job or a
                 # recovered panic) and sends no batch_complete after it.
                 with self._jobs_lock:
-                    ended = self._end_job(job_id, f"error: {data.get('msg') or 'sidecar error'}")
+                    ended = self._end_job(job_id, f"error: {msg or 'sidecar error'}")
                 self._deliver(ended)
             elif job_id:
                 self._fail_active_files(

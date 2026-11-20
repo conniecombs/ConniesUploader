@@ -292,20 +292,40 @@ the implementation differs from the text above:
   result page changes by one upload between two resolutions. Go's own
   `sequential` flag (§7.3) is also set.
 - Session open and the plugin's login run on the dispatch thread, one job
-  after another; uploads of earlier jobs proceed meanwhile.
+  after another; uploads of earlier jobs proceed meanwhile. `session_open`
+  carries a 30 s `timeout_seconds` that Go counts from when it queued the
+  open; Python waits a little longer, and a session whose open reply arrives
+  after Python stopped waiting is closed by the sidecar bridge at once.
 - A raw upload is re-sent only after a 429 or 503 refusal (statuses that
   mean the host did not take the file), honouring Retry-After (capped at
   60 s) and the host's rate limit, within the legacy attempt count. A 408,
   500, 502, 504 or 52x answer that the legacy path would retry now fails the
   file with the host's message, since the host may have stored it. Refused
   attempts are not counted as uploads that reached the host for upload-order
-  matching; a host that listed one anyway makes the file fail as ambiguous,
-  never take another image.
+  matching, and neither is the last refusal once the attempts run out (it
+  arrives as the raw result, with status 429 or 503); a host that listed one
+  anyway makes the file fail as ambiguous, never take another image.
 - A batch's session jobs follow its own cancel token (fix/v3.2.0's per-batch
   tokens): once Clear List and a new Start supersede the batch, they send,
   parse and report nothing more. The non-terminal `Uploaded` status may be
   dropped by the sidecar bridge under load; the raw `result` is the terminal
   event it always delivers.
+- Requests on a session (logins, parser follow-ups, result-page polls) and
+  `session_open`/`session_close` run on their own sidecar pool of 8 workers,
+  sized for the 4 parser threads plus the dispatch thread, so they never
+  wait behind forum posts, gallery calls or thumbnails; on the shared pool a
+  follow-up's deadline could pass in the queue and fail an upload the host
+  had stored.
+- A session lives in one sidecar process. Its uploads, its requests
+  (`UploadTransport` knows the session's process) and its close are written
+  only to that process; after a crash a parser still running gets
+  `Uploader process restarted; upload interrupted` for its follow-ups, and a
+  sequential job's next file ends with it, even before the manager has
+  handled the crash report.
+- "30 minutes idle" counts from the end of a session's last use. A session
+  is in use from the moment Go reads an upload job that names it until the
+  job ends, so a group whose job waits behind other uploads for longer still
+  finds its session.
 
 ## 8. How to migrate a host
 
@@ -372,9 +392,17 @@ Python `re` replaces RE2; avoid backtracking-only constructs. BeautifulSoup's
 
 - A result with no viewer URL fails the file ("Host returned no link");
   return `UploadResult.failed(reason)` with a better reason when you have one.
+  `UploadResult` fields are always text (`None` becomes ""), so
+  `UploadResult(url=data.get("url"))` is safe.
+- Every file ends. A parser that raises or returns something other than an
+  `UploadResult`, and a result the manager cannot report (for example a
+  thumbnail link it cannot split), fail the file with "could not read the
+  host's answer: …".
 - Every failure reason is redacted with `session_state.secrets` (the
   plugin's declared credentials and every `session_values` value of 4+
-  characters). Add tokens a parser extracts with `session_state.add_secrets`.
+  characters): the parser's, and the transport errors the sidecar reports
+  for the job's uploads, which can quote the upload URL. Add tokens a parser
+  extracts with `session_state.add_secrets`.
   Build reasons with `upload_failure` / `request_failure`, which quote the
   host's JSON message or 200 characters of visible text, never a whole page.
 - A follow-up request that is not 2xx comes back with `ok == False` and
@@ -384,7 +412,12 @@ Python `re` replaces RE2; avoid backtracking-only constructs. BeautifulSoup's
   `Cancelled`. Just return early.
 - `parse_upload_response` runs for several files of one job at once: keep
   shared state in `session_state` (use `session_state.lock` or
-  `get_or_create` for read-modify-write).
+  `get_or_create` for read-modify-write). Hold `session_state.lock` only
+  for such a step, never across a request or `transport.pause()`: the job's
+  other parsers wait for it. The framework's own bookkeeping (uploaded and
+  finished files, the result matchers, `secrets`) uses a separate internal
+  lock, so a plugin that holds `session_state.lock` too long slows only its
+  own job's parsers, never the event listener.
 - Raise from `open_upload_session` to fail the whole group (for example a
   refused login: "Wrong password" must name the host's message, not a parse
   error). Raise from `build_raw_upload_request` to fail one file.

@@ -182,6 +182,35 @@ func TestRawUploadHonoursRetryAfterUpToTheCap(t *testing.T) {
 	}
 }
 
+// A Retry-After too large for a time.Duration is the cap, not a wrapped
+// value: 9999999999 seconds once overflowed to "send again at once".
+func TestRetryAfterSecondsBeyondTheDurationRangeAreCapped(t *testing.T) {
+	for _, header := range []string{"61", "3600", "9999999999", "99999999999999", "9223372036854775807", "99999999999999999999"} {
+		if wait, ok := retryAfter(header); !ok || wait != RawRetryAfterCap {
+			t.Errorf("Retry-After %s = %v (ok=%v), want the cap %v", header, wait, ok, RawRetryAfterCap)
+		}
+	}
+	for _, header := range []string{"0", "-1", "-9999999999", "-9223372036854775808", "-99999999999999999999"} {
+		if wait, ok := retryAfter(header); !ok || wait != 0 {
+			t.Errorf("Retry-After %s = %v (ok=%v), want 0", header, wait, ok)
+		}
+	}
+	if wait, ok := retryAfter("60"); !ok || wait != 60*time.Second {
+		t.Errorf("Retry-After 60 = %v (ok=%v), want 60s", wait, ok)
+	}
+	if wait, ok := retryAfter(" 2 "); !ok || wait != 2*time.Second {
+		t.Errorf("Retry-After 2 = %v (ok=%v), want 2s", wait, ok)
+	}
+
+	setRetryAfterCap(t, 150*time.Millisecond)
+	if wait, _ := retryAfter("9999999999"); wait != 150*time.Millisecond {
+		t.Errorf("with a 150ms cap, Retry-After 9999999999 = %v", wait)
+	}
+	if wait, _ := retryAfter("0"); wait != 0 {
+		t.Errorf("with a 150ms cap, Retry-After 0 = %v", wait)
+	}
+}
+
 func TestRawUploadStopsRetryingWhenCancelled(t *testing.T) {
 	fp := writeUploadFile(t, 512)
 	host := newStatusHost(t, "30", http.StatusServiceUnavailable)

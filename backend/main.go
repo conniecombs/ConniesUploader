@@ -194,11 +194,34 @@ func main() {
 	core.SendJSON(OutputEvent{Type: "log", Msg: "=== GO SIDECAR SHUTDOWN COMPLETE ==="})
 }
 
-// requestWorkerCount sizes the pool for every action except http_upload
-// (http_request, http_batch_resolve, generate_thumb, session_open,
-// session_close). It is separate from the upload pool so a login, a forum
+// requestWorkerCount sizes the pool for every action except http_upload and
+// the session requests below (http_request, http_batch_resolve,
+// generate_thumb). It is separate from the upload pool so a login, a forum
 // post or a gallery call never waits behind queued uploads.
 const requestWorkerCount = 4
+
+// sessionRequestWorkerCount sizes the pool for the Python upload path's
+// requests: session_open, session_close and every http_request on a
+// transport session (a host's login, a parser's follow-ups and result-page
+// polls). Their deadlines count from when they were queued, so on the
+// shared pool a parser's follow-up queued behind slow forum posts or gallery
+// calls expired and turned an upload the host had stored into a failure.
+// Python has at most POST_PROCESS_WORKERS (4) parsers and one dispatch
+// thread (a session open or login) waiting on a session request at a time,
+// so with this many workers none of them waits for a worker.
+// frontend/tests/test_build_contract.py checks the two numbers agree.
+const sessionRequestWorkerCount = 8
+
+// isSessionRequest reports whether job belongs on the session request pool.
+func isSessionRequest(job *JobRequest) bool {
+	switch job.Action {
+	case "session_open", "session_close":
+		return true
+	case "http_request":
+		return job.GenericSpec != nil && job.GenericSpec.SessionID != ""
+	}
+	return false
+}
 
 // jobQueue is an unbounded FIFO. Pushing never blocks, so the stdin reader
 // keeps reading (and handling cancel) however many upload jobs are waiting.
@@ -263,18 +286,21 @@ func startWorkers(wg *sync.WaitGroup, queue *jobQueue, count int) {
 
 // runSidecar reads one JSON job per line from input until input ends or
 // shutdown is closed, then waits for every queued job to finish. Uploads run
-// on uploadWorkers workers; every other action runs on its own pool; cancel
-// is handled inline.
+// on uploadWorkers workers, session requests on their own pool, every other
+// action on a third pool; cancel is handled inline.
 func runSidecar(input io.Reader, uploadWorkers int, shutdown <-chan struct{}) {
 	core.StartSessionReaper()
 	uploads := newJobQueue()
 	requests := newJobQueue()
+	sessionRequests := newJobQueue()
 	var wg sync.WaitGroup
 	startWorkers(&wg, uploads, uploadWorkers)
 	startWorkers(&wg, requests, requestWorkerCount)
+	startWorkers(&wg, sessionRequests, sessionRequestWorkerCount)
 	defer func() {
 		uploads.close()
 		requests.close()
+		sessionRequests.close()
 		wg.Wait()
 	}()
 
@@ -309,9 +335,18 @@ func runSidecar(input io.Reader, uploadWorkers int, shutdown <-chan struct{}) {
 			// Handled inline so a cancel is never stuck behind busy workers.
 			handleJob(job)
 		case "http_upload":
+			// The job's session stays in use while the job waits for an
+			// upload worker, so it is never reaped from under a queued job.
+			if job.SessionID != "" {
+				job.ReleaseQueueHold = core.HoldSession(job.SessionID)
+			}
 			uploads.push(job)
 		default:
-			requests.push(job)
+			if isSessionRequest(&job) {
+				sessionRequests.push(job)
+			} else {
+				requests.push(job)
+			}
 		}
 	}
 }

@@ -268,3 +268,39 @@ func TestSessionOpenIsNotQueuedBehindUploads(t *testing.T) {
 		}
 	})
 }
+
+// A session_open carries the deadline Python waits for (timeout_seconds),
+// counted from when it was queued, as an http_request does: one that waited
+// past it opens nothing, since Python has stopped waiting and would never
+// close the session.
+func TestSessionOpenSkippedWhenItsDeadlinePassedInQueue(t *testing.T) {
+	batchID := uniqueBatchID("b-sess-late")
+	late := resultFor(t, runAction(t, JobRequest{
+		ID: "open-late", Action: "session_open", BatchID: batchID,
+		TimeoutSeconds: 5, EnqueuedAt: time.Now().Add(-10 * time.Second),
+	}), "open-late")
+	if late.Status != "failed" || !strings.Contains(late.Msg, "deadline passed while queued") {
+		t.Fatalf("late session_open = %+v, want failed: deadline passed while queued", late)
+	}
+	if dataString(late, "session_id") != "" {
+		t.Fatalf("late session_open returned a session: %+v", late)
+	}
+	if n := core.CloseBatchSessions(batchID); n != 0 {
+		t.Fatalf("a late session_open left %d session(s) open", n)
+	}
+
+	// Within its deadline, or without one (the client ceiling), it opens.
+	inTime := resultFor(t, runAction(t, JobRequest{
+		ID: "open-in-time", Action: "session_open", BatchID: batchID,
+		TimeoutSeconds: 5, EnqueuedAt: time.Now().Add(-time.Second),
+	}), "open-in-time")
+	noDeadline := resultFor(t, runAction(t, JobRequest{
+		ID: "open-no-deadline", Action: "session_open", BatchID: batchID, EnqueuedAt: time.Now(),
+	}), "open-no-deadline")
+	if inTime.Status != "success" || noDeadline.Status != "success" {
+		t.Fatalf("session_open within its deadline = %+v / %+v", inTime, noDeadline)
+	}
+	if n := core.CloseBatchSessions(batchID); n != 2 {
+		t.Fatalf("closed %d sessions, want the 2 opened in time", n)
+	}
+}

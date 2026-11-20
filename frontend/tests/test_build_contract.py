@@ -316,3 +316,18 @@ def test_upload_size_limit_is_shared_by_python_go_and_contract():
     assert "MaxUploadFileSize" in contract
     assert "config.MAX_FILE_SIZE" in contract
     assert "104,857,600 bytes" in contract
+
+
+def test_the_session_request_pool_covers_every_parser_and_the_login():
+    # Each parser thread and the dispatch thread (session open, then the
+    # host's login) wait on at most one session request at a time; with at
+    # least that many session workers, none of them waits for a worker and
+    # sees its deadline pass in the queue.
+    import re
+
+    from modules.upload_manager import POST_PROCESS_WORKERS
+
+    main_go = (ROOT / "backend" / "main.go").read_text(encoding="utf-8")
+    match = re.search(r"const sessionRequestWorkerCount = (\d+)", main_go)
+    assert match, "backend/main.go must define sessionRequestWorkerCount"
+    assert int(match.group(1)) >= POST_PROCESS_WORKERS + 1
