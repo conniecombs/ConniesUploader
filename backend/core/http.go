@@ -75,7 +75,7 @@ func DoRequest(ctx context.Context, client *http.Client, method, urlStr string, 
 		for _, code := range retryConfig.RetryableHTTPCodes {
 			if resp.StatusCode == code {
 				_ = resp.Body.Close()
-				return nil, resp.StatusCode, fmt.Errorf("HTTP %d", resp.StatusCode)
+				return nil, resp.StatusCode, &HTTPStatusError{StatusCode: resp.StatusCode}
 			}
 		}
 
@@ -180,7 +180,7 @@ func ExecuteHttpUploadWithData(ctx context.Context, client *http.Client, fp stri
 	}
 	secrets := uploadSecrets(job)
 
-	res, err := RetryWithBackoff(ctx, retryConfig, func() (uploadResult, int, error) {
+	res, err := RetryWithBackoff(ctx, retryConfig, func() (_ uploadResult, _ int, attemptErr error) {
 		pr, pw := io.Pipe()
 		defer pr.Close()
 		writer := multipart.NewWriter(pw)
@@ -243,7 +243,13 @@ func ExecuteHttpUploadWithData(ctx context.Context, client *http.Client, fp stri
 			method = http.MethodPost
 		}
 
-		req, err := http.NewRequestWithContext(ctx, method, uploadURL, pr)
+		// No wall-clock limit on the transfer: the attempt fails when the body
+		// stalls or the host stops answering, and a failure after the body was
+		// sent is never retried because the host may have stored the file.
+		attempt := newUploadAttempt(ctx)
+		defer func() { attemptErr = attempt.finish(attemptErr) }()
+
+		req, err := http.NewRequestWithContext(attempt.ctx, method, uploadURL, attempt.body(pr))
 		if err != nil {
 			return uploadResult{}, 0, err
 		}
@@ -263,7 +269,7 @@ func ExecuteHttpUploadWithData(ctx context.Context, client *http.Client, fp stri
 		}
 		emitUploadStatus(job, fp, "Uploading")
 		emitUploadLog(job, fp, fmt.Sprintf("HTTP upload request started: %s", filepath.Base(fp)))
-		resp, err := useClient.Do(req)
+		resp, err := attempt.do(useClient, req)
 		if err != nil {
 			return uploadResult{}, 0, err
 		}
@@ -271,7 +277,7 @@ func ExecuteHttpUploadWithData(ctx context.Context, client *http.Client, fp stri
 
 		for _, code := range retryConfig.RetryableHTTPCodes {
 			if resp.StatusCode == code {
-				return uploadResult{}, resp.StatusCode, fmt.Errorf("HTTP %d", resp.StatusCode)
+				return uploadResult{}, resp.StatusCode, &HTTPStatusError{StatusCode: resp.StatusCode}
 			}
 		}
 
@@ -525,7 +531,7 @@ func executePreRequest(
 
 		for _, code := range retryConfig.RetryableHTTPCodes {
 			if resp.StatusCode == code {
-				return preReqResult{}, resp.StatusCode, fmt.Errorf("HTTP %d", resp.StatusCode)
+				return preReqResult{}, resp.StatusCode, &HTTPStatusError{StatusCode: resp.StatusCode}
 			}
 		}
 
@@ -728,7 +734,11 @@ func executeResponseFollowUp(ctx context.Context, client *http.Client, resp *htt
 		return nil, err
 	}
 	if nextResp.StatusCode < 200 || nextResp.StatusCode >= 300 {
-		return nil, fmt.Errorf("response follow-up HTTP %d: %s", nextResp.StatusCode, strings.TrimSpace(string(nextBody)))
+		return nil, &HTTPStatusError{
+			Context:    "response follow-up",
+			StatusCode: nextResp.StatusCode,
+			Body:       strings.TrimSpace(string(nextBody)),
+		}
 	}
 	return nextBody, nil
 }
@@ -1001,21 +1011,25 @@ func formFieldNames(form *goquery.Selection, limit int) []string {
 	return names
 }
 
+// substituteValues replaces each {name} token of input with values[name] in a
+// single pass, so text inserted from values is never scanned again.
+//
+// Brace text that names no known value is kept as written: Python puts
+// user-entered text (passwords, titles, gallery and file names) straight into
+// spec fields, and "{2024}" in a title is text, not a missing token. Because
+// nothing is ever rejected, no substituted value can end up in an error
+// message. The error result is kept for the callers' signatures and is always
+// nil.
 func substituteValues(input string, values map[string]string) (string, error) {
-	if input == "" || len(values) == 0 {
-		if templateTokenPattern.MatchString(input) {
-			return input, fmt.Errorf("unresolved template tokens remaining in: %s", input)
-		}
+	if len(values) == 0 || !strings.Contains(input, "{") {
 		return input, nil
 	}
-	result := input
-	for key, val := range values {
-		result = strings.ReplaceAll(result, "{"+key+"}", val)
-	}
-	if templateTokenPattern.MatchString(result) {
-		return result, fmt.Errorf("unresolved template tokens remaining in: %s", result)
-	}
-	return result, nil
+	return templateTokenPattern.ReplaceAllStringFunc(input, func(token string) string {
+		if val, ok := values[token[1:len(token)-1]]; ok {
+			return val
+		}
+		return token
+	}), nil
 }
 
 func resolveUploadURL(specURL string, values map[string]string) (string, error) {
@@ -1248,13 +1262,16 @@ func ExecuteGenericRequest(ctx context.Context, client *http.Client, spec *Gener
 
 		for _, code := range retryConfig.RetryableHTTPCodes {
 			if resp.StatusCode == code {
-				return reqResult{}, resp.StatusCode, fmt.Errorf("HTTP %d", resp.StatusCode)
+				return reqResult{}, resp.StatusCode, &HTTPStatusError{StatusCode: resp.StatusCode}
 			}
 		}
 
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			rawBody, _ := io.ReadAll(resp.Body)
-			return reqResult{}, resp.StatusCode, fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(rawBody)))
+			return reqResult{}, resp.StatusCode, &HTTPStatusError{
+				StatusCode: resp.StatusCode,
+				Body:       strings.TrimSpace(string(rawBody)),
+			}
 		}
 
 		bodyBytes, err := io.ReadAll(resp.Body)

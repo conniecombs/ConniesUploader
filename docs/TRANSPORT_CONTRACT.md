@@ -64,16 +64,43 @@ Python then parses the body and decides what the result means.
 Optional request flags (all off by default):
 
 - `literal_values`: send `url`, `headers`, and `form_fields` exactly as given.
-  Without it Go substitutes `{token}` placeholders from job values and fails
-  when any remain, which is wrong for final text such as a forum post.
+  Without it Go replaces each `{name}` whose name is a job value (creds,
+  config, values extracted by earlier steps) with that value, in one pass, so
+  inserted text is never scanned again. Brace text that names no job value is
+  sent unchanged, so a password or title such as `Holiday {2024}` is safe
+  either way; set the flag for final text such as a forum post so that a
+  `{name}` matching a job value is not replaced. Upload specs follow the same
+  substitution rule.
 - `timeout_seconds`: the deadline for this request. Values above the client
   ceiling (180 s) clamp to it. Python waits this long plus a small margin so
   Go always gives up first.
-- `reset_cookies`: discard the shared cookie jar before the request, so a
-  login attempt cannot ride an older session.
+- `reset_cookies`: discard the cookies of the request URL's site (its
+  registrable domain, e.g. every `*.example.com` host for
+  `https://www.example.com/login`) before the request, so a login attempt
+  cannot ride an older session. Cookies of every other site are kept, so a
+  forum login does not end an image host's session.
 
 Python disables transport retries for a request that must not be repeated
 (for example a forum reply) by sending `"retry_config": {"max_retries": 0}`.
+
+## Retries and Upload Time Limits
+
+Go retries an attempt only when no response arrived and the failure is a
+network error (timeout, refused or reset connection, early close, DNS), or
+when the response status is in `retry_config.retryable_http_codes`. It never
+reads response text to decide. A failure after a response arrived (parsing, a
+follow-up request) is not retried.
+
+An upload is not sent again once its body was fully written: if the host's
+answer is then lost, the file fails with "no response from host after upload;
+check the host before retrying", because the host may already have stored it.
+
+Upload transfers have no wall-clock limit. An attempt fails when no body bytes
+move for 120 s (`upload stalled`), or when the host has not finished answering
+5 minutes after the whole body was handed to the network. That wait is long
+because on a slow uplink the end of the body can still be queued in OS and
+modem buffers at that point; a host that drops the connection is detected at
+once. Non-upload requests keep their own deadlines.
 
 ## Batches, Cancellation, and Per-File Validation
 
@@ -83,6 +110,11 @@ Every `http_upload` job of one Start carries the same `batch_id` and its own
 ```json
 {"action": "cancel", "batch_id": "<batch id>"}
 ```
+
+`http_upload` jobs run on the `--workers` pool. Every other action
+(`http_request` and the rest) runs on a separate small pool, so a login,
+forum post or gallery call never waits behind queued uploads. Go reads stdin
+without blocking on busy workers, however many jobs are queued.
 
 `cancel` is handled as soon as it is read from stdin, even while every worker
 is busy. In-flight uploads of that batch are aborted and report
@@ -215,7 +247,9 @@ when their lookups run at the same time.
   metadata flags.
 - Backend tests cover that raw public `http_request` responses expose
   `response_body`, `status_code`, and `final_url` without leaking internal keys.
-- Backend tests cover per-file validation, `cancel`, `literal_values`,
-  `timeout_seconds` clamping, and `reset_cookies`; Python tests cover event
-  scoping by batch, stragglers after `batch_complete`, and the single-count
-  rule for terminal events.
+- Backend tests cover per-file validation, `cancel`, `literal_values`, braces
+  in user values, `timeout_seconds` clamping, site-scoped `reset_cookies`,
+  retry classification, lost upload responses, upload stall and response
+  limits, per-job Thread Limits, and the separate request pool; Python tests
+  cover event scoping by batch, stragglers after `batch_complete`, and the
+  single-count rule for terminal events.

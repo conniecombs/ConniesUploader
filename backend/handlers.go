@@ -34,11 +34,13 @@ const (
 	maxThumbnailPixels = 50_000_000
 )
 
+// serviceUploadLimiter counts the uploads running on one service across all
+// jobs. It stores no limit of its own: each job passes its configured Thread
+// Limit to acquire, so no job can change the concurrency of another.
 type serviceUploadLimiter struct {
 	mu     sync.Mutex
 	cond   *sync.Cond
 	active int
-	limit  int
 }
 
 var serviceUploadLimiters = struct {
@@ -48,45 +50,39 @@ var serviceUploadLimiters = struct {
 	limiters: make(map[string]*serviceUploadLimiter),
 }
 
-func newServiceUploadLimiter(limit int) *serviceUploadLimiter {
-	limiter := &serviceUploadLimiter{limit: limit}
+func newServiceUploadLimiter() *serviceUploadLimiter {
+	limiter := &serviceUploadLimiter{}
 	limiter.cond = sync.NewCond(&limiter.mu)
 	return limiter
 }
 
-func getServiceUploadLimiter(service string, limit int) *serviceUploadLimiter {
+func getServiceUploadLimiter(service string) *serviceUploadLimiter {
 	if service == "" {
 		service = "__default__"
 	}
-	if limit < 1 {
-		limit = 1
-	}
 
 	serviceUploadLimiters.mu.Lock()
+	defer serviceUploadLimiters.mu.Unlock()
 	limiter := serviceUploadLimiters.limiters[service]
 	if limiter == nil {
-		limiter = newServiceUploadLimiter(limit)
+		limiter = newServiceUploadLimiter()
 		serviceUploadLimiters.limiters[service] = limiter
 	}
-	serviceUploadLimiters.mu.Unlock()
-
-	limiter.setLimit(limit)
 	return limiter
 }
 
-func (l *serviceUploadLimiter) setLimit(limit int) {
-	l.mu.Lock()
-	if l.limit != limit {
-		l.limit = limit
-		l.cond.Broadcast()
+// acquire waits until fewer than limit uploads run on the service, counting
+// every job, then takes a slot. limit is the calling job's Thread Limit.
+// Jobs with different limits never override each other: the service total
+// stays within the largest limit among running jobs, and a job with a lower
+// limit starts a file only while the total is below its own limit.
+func (l *serviceUploadLimiter) acquire(limit int) {
+	if limit < 1 {
+		limit = 1
 	}
-	l.mu.Unlock()
-}
-
-func (l *serviceUploadLimiter) acquire() {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	for l.active >= l.limit {
+	for l.active >= limit {
 		l.cond.Wait()
 	}
 	l.active++
@@ -171,11 +167,13 @@ func processUploadFiles(job JobRequest, processor func(context.Context, string, 
 		return
 	}
 
-	maxWorkers := workerLimit(job.Config)
-	if maxWorkers < 1 {
-		maxWorkers = 1
+	// The configured Thread Limit bounds uploads on the service; the job's
+	// file count only caps how many goroutines this job spawns.
+	threadLimit := workerLimit(job.Config)
+	if threadLimit < 1 {
+		threadLimit = 1
 	}
-	// Cap in-job workers to the file count so we do not spawn idle goroutines.
+	maxWorkers := threadLimit
 	if n := len(job.Files); n > 0 && maxWorkers > n {
 		maxWorkers = n
 	}
@@ -211,7 +209,7 @@ func processUploadFiles(job JobRequest, processor func(context.Context, string, 
 	}
 
 	filesChan := make(chan string, len(job.Files))
-	limiter := getServiceUploadLimiter(job.Service, maxWorkers)
+	limiter := getServiceUploadLimiter(job.Service)
 	var wg sync.WaitGroup
 	for i := 0; i < maxWorkers; i++ {
 		wg.Add(1)
@@ -229,7 +227,7 @@ func processUploadFiles(job JobRequest, processor func(context.Context, string, 
 				}
 				// Only surface "Waiting" when the service-wide slot is contested.
 				// Otherwise go straight to Preparing so UI matches concurrent progress.
-				limiter.acquire()
+				limiter.acquire(threadLimit)
 				func() {
 					defer limiter.release()
 					sendJobEvent(&job, OutputEvent{
@@ -239,7 +237,7 @@ func processUploadFiles(job JobRequest, processor func(context.Context, string, 
 							"Upload slot acquired: %s (service %s, concurrent limit %d)",
 							filepath.Base(fp),
 							job.Service,
-							maxWorkers,
+							threadLimit,
 						),
 					})
 					sendJobEvent(&job, OutputEvent{Type: "status", FilePath: fp, Status: "Preparing"})
@@ -261,7 +259,10 @@ func processFileGeneric(fp string, job *JobRequest) {
 }
 
 func processFileGenericCtx(parent context.Context, fp string, job *JobRequest) {
-	ctx, cancel := context.WithTimeout(parent, core.ClientTimeout)
+	// No wall-clock deadline: a large file on a slow uplink takes as long as
+	// it needs. core bounds each attempt by a stall timeout and a bounded wait
+	// for the host's answer, so ctx ends only when the batch is cancelled.
+	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 
 	type result struct {
@@ -303,12 +304,7 @@ func processFileGenericCtx(parent context.Context, fp string, job *JobRequest) {
 			sendJobEvent(job, OutputEvent{Type: "status", FilePath: fp, Status: "Done"})
 		}
 	case <-ctx.Done():
-		if parent.Err() == context.Canceled {
-			emitCancelledFiles(job, []string{fp})
-			return
-		}
-		sendJobEvent(job, OutputEvent{Type: "status", FilePath: fp, Status: "Timeout"})
-		sendJobEvent(job, OutputEvent{Type: "error", FilePath: fp, Msg: "Upload timed out"})
+		emitCancelledFiles(job, []string{fp})
 	}
 }
 
@@ -342,7 +338,7 @@ func handleHttpRequest(job JobRequest) {
 		timeout -= waited
 	}
 	if spec.ResetCookies {
-		core.ResetCookieJar(client)
+		core.ResetSiteCookies(client, spec.URL)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()

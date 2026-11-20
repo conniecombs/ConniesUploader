@@ -6,11 +6,13 @@ package core
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
+	"io"
 	"math"
-	"regexp"
-	"strconv"
-	"strings"
+	"net"
+	"slices"
+	"syscall"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -26,51 +28,101 @@ func GetDefaultRetryConfig() *RetryConfig {
 	}
 }
 
+// HTTPStatusError reports a response whose status code failed the request.
+// Retry decisions read StatusCode only; Body is response text kept for the
+// error message and is never inspected.
+type HTTPStatusError struct {
+	// Context names the step that got the response, e.g. "response follow-up".
+	Context    string
+	StatusCode int
+	Body       string
+}
+
+func (e *HTTPStatusError) Error() string {
+	msg := fmt.Sprintf("HTTP %d", e.StatusCode)
+	if e.Context != "" {
+		msg = e.Context + " " + msg
+	}
+	if e.Body != "" {
+		msg += ": " + e.Body
+	}
+	return msg
+}
+
+// ExtractStatusCode returns the status code of an *HTTPStatusError in err's
+// chain, or 0. Error text is never parsed.
 func ExtractStatusCode(err error) int {
-	if err == nil {
-		return 0
-	}
-	errStr := err.Error()
-	if idx := strings.Index(errStr, "status code"); idx != -1 {
-		remaining := strings.TrimLeft(errStr[idx+len("status code"):], ": ")
-		if fields := strings.Fields(remaining); len(fields) > 0 {
-			if code, parseErr := strconv.Atoi(fields[0]); parseErr == nil {
-				return code
-			}
-		}
-	}
-	if idx := strings.Index(strings.ToLower(errStr), "http "); idx != -1 {
-		if fields := strings.Fields(errStr[idx+5:]); len(fields) > 0 {
-			if code, parseErr := strconv.Atoi(fields[0]); parseErr == nil {
-				return code
-			}
-		}
-	}
-	re := regexp.MustCompile(`\b([45]\d{2})\b`)
-	if matches := re.FindStringSubmatch(errStr); len(matches) > 1 {
-		if code, parseErr := strconv.Atoi(matches[1]); parseErr == nil {
-			return code
-		}
+	var statusErr *HTTPStatusError
+	if errors.As(err, &statusErr) {
+		return statusErr.StatusCode
 	}
 	return 0
 }
 
-func IsRetryableError(err error, statusCode int, config *RetryConfig) bool {
+// noRetryError marks a failure that must not be retried automatically, such
+// as an upload whose body reached the host but whose response was lost.
+type noRetryError struct{ err error }
+
+func (e *noRetryError) Error() string { return e.err.Error() }
+func (e *noRetryError) Unwrap() error { return e.err }
+
+// NoRetry wraps err so IsRetryableError reports false for it.
+func NoRetry(err error) error {
 	if err == nil {
+		return nil
+	}
+	return &noRetryError{err: err}
+}
+
+// IsRetryableError reports whether a failed attempt may be repeated.
+//
+// statusCode is the status of the response the attempt received, or 0 when
+// none arrived. Once a response arrived, only its status code decides:
+// failures that come after it (parsing, a follow-up request) are not
+// transport failures of this request and are never retried. Without a
+// response the error is classified by type. Error text, which can quote a
+// response body, is never inspected.
+func IsRetryableError(err error, statusCode int, config *RetryConfig) bool {
+	var noRetry *noRetryError
+	if err == nil || errors.As(err, &noRetry) {
 		return false
 	}
-	for _, code := range config.RetryableHTTPCodes {
-		if statusCode == code {
-			return true
-		}
+	if statusCode == 0 {
+		statusCode = ExtractStatusCode(err)
 	}
-	errStr := strings.ToLower(err.Error())
-	for _, pattern := range []string{
-		"timeout", "connection refused", "connection reset", "temporary failure",
-		"no such host", "network is unreachable", "broken pipe", "i/o timeout",
-		"tls handshake timeout", "dial tcp", "eof",
+	if statusCode != 0 {
+		return slices.Contains(config.RetryableHTTPCodes, statusCode)
+	}
+	return isTransientTransportError(err)
+}
+
+// isTransientTransportError reports network failures worth another attempt:
+// timeouts, connections that were refused, reset or closed early, and
+// failed DNS lookups.
+func isTransientTransportError(err error) bool {
+	if errors.Is(err, context.Canceled) {
+		return false
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return true
+	}
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return true
+	}
+	var opErr *net.OpError
+	if errors.As(err, &opErr) {
+		return true
+	}
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		return true
+	}
+	for _, errno := range []syscall.Errno{
+		syscall.ECONNREFUSED, syscall.ECONNRESET, syscall.ECONNABORTED,
+		syscall.EPIPE, syscall.ENETUNREACH, syscall.EHOSTUNREACH, syscall.ETIMEDOUT,
 	} {
-		if strings.Contains(errStr, pattern) {
+		if errors.Is(err, errno) {
 			return true
 		}
 	}
@@ -111,7 +163,7 @@ func RetryWithBackoff[T any](
 			}
 			return result, nil
 		}
-		if !IsRetryableError(lastErr, lastStatusCode, config) {
+		if !IsRetryableError(lastErr, lastStatusCode, config) || ctx.Err() != nil {
 			return result, lastErr
 		}
 		if attempt >= config.MaxRetries {
