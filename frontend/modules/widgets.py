@@ -506,6 +506,9 @@ class CollapsibleGroupFrame(ctk.CTkFrame):
         self.title = title
         self.is_collapsed = False
         self.is_completed = False
+        # True when the batch completed with failed or cancelled rows and
+        # only a FAILED report was written for it.
+        self.completed_with_failures = False
         self.files = []
         self.cover_files = []
         self.cover_selection_manual = False
@@ -604,13 +607,16 @@ class CollapsibleGroupFrame(ctk.CTkFrame):
     def add_file(self, filepath):
         if filepath not in self.files:
             self.files.append(filepath)
-            self.lbl_counts.configure(text=f"({len(self.files)} files)")
+        # New content means the batch's earlier output no longer covers it.
+        self.reset_completion()
+        self.lbl_counts.configure(text=f"({len(self.files)} files)")
 
     def remove_file(self, filepath):
         if filepath in self.files:
             self.files.remove(filepath)
         if filepath in self.cover_files:
             self.cover_files.remove(filepath)
+        if not self.is_completed:
             self.lbl_counts.configure(text=f"({len(self.files)} files)")
 
     def is_cover_file(self, filepath):
@@ -651,3 +657,14 @@ class CollapsibleGroupFrame(ctk.CTkFrame):
         self.lbl_title.configure(text_color="#34C759")
         self.lbl_counts.configure(text="(Completed)", text_color="#34C759")
         self.prog.configure(progress_color="#34C759")
+
+    def reset_completion(self):
+        """Forget a finished upload so the batch produces output again."""
+        self.completed_with_failures = False
+        if not self.is_completed:
+            return
+        self.is_completed = False
+        theme = ctk.ThemeManager.theme
+        self.lbl_title.configure(text_color=theme["CTkLabel"]["text_color"])
+        self.lbl_counts.configure(text=f"({len(self.files)} files)", text_color="gray")
+        self.prog.configure(progress_color=theme["CTkProgressBar"]["progress_color"])
