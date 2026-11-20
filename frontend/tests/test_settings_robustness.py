@@ -106,6 +106,22 @@ def test_corrupt_settings_file_is_backed_up_and_replaced(manager, raw):
 
 
 @pytest.mark.unit
+def test_settings_saved_with_a_utf8_bom_load_instead_of_being_reset(manager):
+    # Notepad and some editors save UTF-8 with a byte order mark.
+    with open(manager.filepath, "w", encoding="utf-8-sig") as handle:
+        json.dump(_BASE, handle)
+
+    loaded = manager.load()
+
+    assert manager.get_recovery_issue() is None
+    assert loaded["service"] == "pixhost.cc"
+    assert loaded["pix_thumb"] == "350"
+    assert loaded["auto_copy"] is True
+    with open(manager.filepath, encoding="utf-8-sig") as handle:
+        assert json.load(handle) == _BASE
+
+
+@pytest.mark.unit
 def test_startup_shows_notice_when_settings_were_reset(monkeypatch, tmp_path):
     app = make_app()
     activity = []

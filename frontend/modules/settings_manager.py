@@ -519,7 +519,8 @@ class SettingsManager:
             return dict(self.defaults)
 
         try:
-            with open(self.filepath, "r") as f:
+            # utf-8-sig also reads files an editor saved with a byte order mark.
+            with open(self.filepath, "r", encoding="utf-8-sig") as f:
                 data = json.load(f)
             if not isinstance(data, dict):
                 raise ValueError(f"expected a JSON object, found {type(data).__name__}")
