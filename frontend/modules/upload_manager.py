@@ -70,6 +70,8 @@ class UploadManager:
         self.event_queue: queue.Queue = queue.Queue(maxsize=1000)
         self.listener_thread: threading.Thread | None = None
         self.dispatch_thread: threading.Thread | None = None
+        # Cancel token of the current batch; each start_batch makes a new one.
+        self._batch_cancel = threading.Event()
         self._lifecycle_lock = threading.RLock()
         self._listener_registered = False
         self._stop_events = threading.Event()
@@ -105,32 +107,57 @@ class UploadManager:
         else:
             return False
 
+        ended = []
         with self._jobs_lock:
             if job_id not in self._job_files:
                 return True  # already ended while it was being written
             self._job_generation[job_id] = generation
             if generation is not None and generation <= self._dead_generation:
                 # The process died, and was reported, while the job was written.
-                self._end_job(job_id, f"error: {PROCESS_RESTARTED_MSG}")
+                ended = self._end_job(job_id, f"error: {PROCESS_RESTARTED_MSG}")
+        self._deliver(ended)
         return True
 
-    def _end_job(self, job_id: str, status_text: str) -> None:
+    def _end_job(self, job_id: str, status_text: str) -> List[Tuple[queue.Queue, Any]]:
         """End every unfinished file of a job the sidecar will no longer report on.
 
-        Call with ``_jobs_lock`` held. A file whose result already arrived only
-        lost its closing "Done"; every other unfinished file gets
-        ``status_text`` (a failure or "Cancelled").
+        Call with ``_jobs_lock`` held, then pass the returned queue items to
+        ``_deliver`` after releasing it: the UI queues are bounded and only the
+        Tk thread drains them, and the Tk thread takes ``_jobs_lock`` too.
+        A file whose result already arrived only lost its closing "Done";
+        every other unfinished file gets ``status_text`` (a failure or
+        "Cancelled").
         """
         files = self._job_files.pop(job_id, [])
         self._job_generation.pop(job_id, None)
+        items: List[Tuple[queue.Queue, Any]] = []
         for file_path in files:
             if file_path in self._awaiting_done:
                 self._awaiting_done.discard(file_path)
-                self.progress_queue.put(("status", file_path, "Done"))
+                items.append((self.progress_queue, ("status", file_path, "Done")))
             elif file_path in self.active_files:
                 self.active_files.discard(file_path)
-                self.result_queue.put((file_path, "", ""))
-                self.progress_queue.put(("status", file_path, status_text))
+                items.append((self.result_queue, (file_path, "", "")))
+                items.append((self.progress_queue, ("status", file_path, status_text)))
+        return items
+
+    def _deliver(self, items: List[Tuple[queue.Queue, Any]]) -> None:
+        """Put collected items on the UI queues. Never call with ``_jobs_lock`` held.
+
+        A put waits for the Tk thread to make room, but gives up on a queue a
+        new upload replaced (start_upload swaps in a new result queue), since
+        nobody reads the old one any more.
+        """
+        for target, item in items:
+            while True:
+                if target is not self.result_queue and target is not self.progress_queue:
+                    logger.debug("Dropping an item for a UI queue a new upload replaced")
+                    break
+                try:
+                    target.put(item, timeout=0.5)
+                    break
+                except queue.Full:
+                    continue
 
     def _next_job_id(self) -> str:
         self._job_counter += 1
@@ -142,6 +169,9 @@ class UploadManager:
 
     def cancel_batch(self) -> None:
         """Ask the sidecar to abort every queued and in-flight job of this batch."""
+        # The batch's own token stops its dispatch even after start_upload
+        # clears the shared cancel_event for the next batch.
+        self._batch_cancel.set()
         batch_id = self.current_batch_id
         if not batch_id:
             return
@@ -161,8 +191,14 @@ class UploadManager:
 
     def _end_all_jobs(self, status_text: str) -> None:
         with self._jobs_lock:
-            for job_id in list(self._job_files):
-                self._end_job(job_id, status_text)
+            ended = self._end_all_jobs_locked(status_text)
+        self._deliver(ended)
+
+    def _end_all_jobs_locked(self, status_text: str) -> List[Tuple[queue.Queue, Any]]:
+        ended: List[Tuple[queue.Queue, Any]] = []
+        for job_id in list(self._job_files):
+            ended += self._end_job(job_id, status_text)
+        return ended
 
     def start_batch(
         self, pending_by_group: Dict[Any, List[str]], cfg: Dict[str, Any], creds: Dict[str, str]
@@ -173,13 +209,21 @@ class UploadManager:
         """
         with self._lifecycle_lock:
             self._stop_events.clear()
-            self.current_batch_id = uuid.uuid4().hex
-            with self._jobs_lock:
-                self._job_files = {}
-                self._job_generation = {}
-                self._awaiting_done = set()
-            self._job_counter = 0
-            batch_id = self.current_batch_id
+            batch_id = uuid.uuid4().hex
+            previous = self.dispatch_thread
+            if previous is not None and previous.is_alive():
+                # A cleared batch's dispatch is still running (e.g. inside a
+                # host's gallery call). It must send nothing more, and this
+                # batch becomes current only once it has exited, so none of
+                # its files can go out under this batch's id.
+                self._batch_cancel.set()
+                logger.warning("Previous upload dispatch still running; the new batch waits for it")
+                self._reset_jobs(None)
+            else:
+                previous = None
+                self._reset_jobs(batch_id)
+            batch_cancel = threading.Event()
+            self._batch_cancel = batch_cancel
 
             if not self._listener_registered:
                 self.bridge.add_listener(self.event_queue)
@@ -193,18 +237,42 @@ class UploadManager:
                 )
                 self.listener_thread.start()
 
-            if self.dispatch_thread and self.dispatch_thread.is_alive():
-                logger.warning("Upload dispatch already running; ignoring duplicate start request")
-                return batch_id
-
             self.dispatch_thread = threading.Thread(
-                target=self._dispatch_jobs,
-                args=(pending_by_group, cfg, creds),
+                target=self._run_dispatch,
+                args=(batch_id, batch_cancel, previous, pending_by_group, cfg, creds),
                 name="UploadManagerDispatch",
                 daemon=True,
             )
             self.dispatch_thread.start()
             return batch_id
+
+    def _reset_jobs(self, batch_id: str | None) -> None:
+        """Forget earlier batches' jobs, whose events are ignored from now on.
+
+        With ``batch_id``, that batch also becomes the current one.
+        """
+        with self._jobs_lock:
+            self._job_files = {}
+            self._job_generation = {}
+            self._awaiting_done = set()
+            if batch_id is not None:
+                self.current_batch_id = batch_id
+                self._job_counter = 0
+
+    def _run_dispatch(
+        self,
+        batch_id: str,
+        batch_cancel: threading.Event,
+        previous: threading.Thread | None,
+        pending_by_group: Dict[Any, List[str]],
+        cfg: Dict[str, Any],
+        creds: Dict[str, str],
+    ) -> None:
+        """Dispatch a batch once the cleared batch's dispatch, if any, has exited."""
+        if previous is not None:
+            previous.join()
+            self._reset_jobs(batch_id)
+        self._dispatch_jobs(pending_by_group, cfg, creds, batch_cancel)
 
     def _cancel_undispatched(self, files: List[str]) -> None:
         """Give files that never reached the sidecar a terminal Cancelled state."""
@@ -213,18 +281,40 @@ class UploadManager:
             self.progress_queue.put(("status", file_path, "Cancelled"))
 
     def _dispatch_jobs(
-        self, pending_by_group: Dict[Any, List[str]], cfg: Dict[str, Any], creds: Dict[str, str]
+        self,
+        pending_by_group: Dict[Any, List[str]],
+        cfg: Dict[str, Any],
+        creds: Dict[str, str],
+        batch_cancel: threading.Event | None = None,
     ) -> None:
-        """Send job JSON payloads to the Go process via the sidecar bridge."""
+        """Send job JSON payloads to the Go process via the sidecar bridge.
+
+        ``batch_cancel`` is this batch's own cancel token (start_batch passes
+        it): start_upload clears the shared cancel_event for the next batch,
+        which must not revive a cleared batch's dispatch.
+        """
         logger.info("--- Starting Phase 1: Gallery Creation ---")
         failed_groups: Dict[Any, str] = {}
         completed_files: set[str] = set()
         cfg = cfg.copy()
         cfg["service"] = config.normalize_service_id(cfg.get("service", ""))
+        own_token = batch_cancel
+        if batch_cancel is None:
+            batch_cancel = self.cancel_event
+
+        def cancelled() -> bool:
+            return batch_cancel.is_set() or self.cancel_event.is_set()
+
+        def superseded() -> bool:
+            # A newer batch started: this one was cleared and its rows are
+            # gone; the new batch may hold rows for the same files.
+            return own_token is not None and own_token is not self._batch_cancel
 
         try:
             for group_obj, files in pending_by_group.items():
-                if self.cancel_event.is_set():
+                if cancelled():
+                    if superseded():
+                        return
                     for remaining in pending_by_group.values():
                         self._cancel_undispatched(
                             [fp for fp in remaining if fp not in completed_files]
@@ -242,7 +332,7 @@ class UploadManager:
                         context: Dict[str, Any] = {
                             "pending_files": list(files),
                             "cover_files": cover_files,
-                            "cancel_event": self.cancel_event,
+                            "cancel_event": batch_cancel,
                         }
                         temp_cfg = cfg.copy()
                         if service_id == "imx.to" and cfg.get("auto_gallery") and files:
@@ -250,6 +340,8 @@ class UploadManager:
                                 ("status", files[0], "Creating IMX gallery with first image...")
                             )
                         plugin.prepare_group(group_obj, temp_cfg, context, creds)
+                        if superseded():
+                            return  # cleared while the host call ran
 
                         for file_path, image_url, thumb_url in context.get("completed_uploads", []):
                             completed_files.add(file_path)
@@ -291,8 +383,9 @@ class UploadManager:
                 if not files:
                     continue
 
-                if self.cancel_event.is_set():
-                    self._cancel_undispatched(files)
+                if cancelled():
+                    if not superseded():
+                        self._cancel_undispatched(files)
                     continue
 
                 if group_obj in failed_groups:
@@ -699,6 +792,7 @@ class UploadManager:
         generation = data.get("generation")
         reason = str(data.get("msg") or PROCESS_RESTARTED_MSG)
         logger.error(f"SIDECAR CRASHED (process {generation}): {reason}")
+        ended: List[Tuple[queue.Queue, Any]] = []
         with self._jobs_lock:
             if isinstance(generation, int):
                 self._dead_generation = max(self._dead_generation, generation)
@@ -711,7 +805,8 @@ class UploadManager:
                     or job_generation is None
                     or job_generation <= generation
                 ):
-                    self._end_job(job_id, f"error: {reason}")
+                    ended += self._end_job(job_id, f"error: {reason}")
+        self._deliver(ended)
 
     def _handle_event(self, data: Dict[str, Any]) -> None:
         """Translate one sidecar event into progress/result queue items."""
@@ -727,8 +822,10 @@ class UploadManager:
             logger.error(f"SIDECAR STOPPED: {data.get('msg')}")
             reason = str(data.get("msg") or "sidecar stopped")
             with self._jobs_lock:
-                self._end_all_jobs(f"error: {reason}")
-                self._fail_active_files(list(self.active_files), reason)
+                ended = self._end_all_jobs_locked(f"error: {reason}")
+                stragglers = list(self.active_files)
+            self._deliver(ended)
+            self._fail_active_files(stragglers, reason)
             return
 
         if job_id and job_id not in self._job_files:
@@ -763,8 +860,11 @@ class UploadManager:
         elif evt == "batch_complete":
             logger.debug("SIDECAR: batch complete")
             if job_id:
-                stragglers = self._job_files.pop(job_id, [])
-                self._fail_active_files(stragglers, "no result received from sidecar")
+                # As after a crash: a file whose result arrived only lost its
+                # "Done"; every other unfinished file failed.
+                with self._jobs_lock:
+                    ended = self._end_job(job_id, "error: no result received from sidecar")
+                self._deliver(ended)
 
         elif evt == "log":
             logger.debug(f"SIDECAR: {data.get('msg')}")

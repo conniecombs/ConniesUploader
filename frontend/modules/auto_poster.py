@@ -21,6 +21,8 @@ UNRESOLVED_GRACE_SECONDS = 2.0
 _SKIPPED = object()
 _UNRESOLVED = object()
 _STOPPED = object()
+CANCELLED_BEFORE_POSTING = "cancelled before posting"
+TARGET_CHOSEN_AFTER_START = "the ViperGirls target was chosen after the upload started"
 
 
 class AutoPoster:
@@ -30,8 +32,9 @@ class AutoPoster:
     that never produce output call ``skip`` so later batches are not blocked.
     Credentials come from a provider callable (or a plain mapping) and are
     snapshotted at the start of each session. When a session cannot post at
-    all (missing credentials, login failed), every post queued into it is
-    recorded as failed and reported through ``notify``; none stays queued.
+    all (missing credentials, login failed) or was stopped, every post queued
+    into it is recorded as failed and reported through ``notify``, and later
+    ones are refused with the same reason; none stays queued.
     """
 
     def __init__(
@@ -127,6 +130,22 @@ class AutoPoster:
     def _is_registered(self, batch_index: int) -> bool:
         return not self._expected or batch_index in self._expected
 
+    def _refusal_reason(self, batch_index: int) -> str:
+        """Why a post for this batch would never be sent, or "" if it will be.
+
+        Call with ``self.lock`` held. A session that registered no batches
+        starts no worker, so posting is refused unless one is running (the
+        unordered compatibility mode). A batch whose target was chosen after
+        Start is not registered either way.
+        """
+        if self._session_error:
+            return self._session_error
+        if not self._is_registered(batch_index):
+            return TARGET_CHOSEN_AFTER_START
+        if not self._expected and self._generation and not self.is_running:
+            return TARGET_CHOSEN_AFTER_START
+        return ""
+
     def queue_post(
         self,
         batch_index: int,
@@ -144,9 +163,9 @@ class AutoPoster:
 
         Returns:
             "" when the post was queued (or there is nothing to post), else the
-            reason it will not be posted. A post refused because this session
-            cannot post (login failed) is recorded as failed in the history;
-            the caller reports the reason to the user.
+            reason it will not be posted. A refused post (login failed, Stop,
+            or a target chosen after Start) is recorded as failed in the
+            history; the caller reports the reason to the user.
         """
         if not thread_name or thread_name == "Do Not Post":
             return ""
@@ -157,13 +176,8 @@ class AutoPoster:
             "batch_name": batch_name or f"Batch {batch_index + 1}",
         }
         with self.lock:
-            if not self._is_registered(batch_index):
-                logger.warning(
-                    f"Auto-Post Queue: Batch #{batch_index} is not part of this session; ignored"
-                )
-                return "batch is not part of this upload"
-            session_error = self._session_error
-            if not session_error:
+            refusal = self._refusal_reason(batch_index)
+            if not refusal:
                 self._skipped.pop(batch_index, None)
                 self.post_queue[batch_index] = item
                 logger.info(
@@ -171,9 +185,9 @@ class AutoPoster:
                 )
                 return ""
 
-        logger.error(f"Auto-Post Queue: Batch #{batch_index} not queued: {session_error}.")
-        self._record_failed_item(item, session_error)
-        return session_error
+        logger.error(f"Auto-Post Queue: Batch #{batch_index} not queued: {refusal}.")
+        self._record_failed_item(item, refusal)
+        return refusal
 
     def skip(self, batch_index: int, reason: str) -> None:
         """Resolve a registered batch without posting (failed or cancelled)."""
@@ -222,7 +236,7 @@ class AutoPoster:
         if self._superseded(generation):
             return "superseded by a new upload"
         if self._stop_event.is_set() or cancel_event.is_set():
-            return "cancelled before posting"
+            return CANCELLED_BEFORE_POSTING
         return ""
 
     def _wait_for_index(
@@ -299,7 +313,8 @@ class AutoPoster:
                     logger.info("Auto-Post Queue: superseded by a new session; worker exiting.")
                     return
                 logger.info("Auto-Post Queue: Cancelled.")
-                self._record_all_pending_failures("cancelled")
+                # Batches finishing after Stop are refused and recorded too.
+                self._fail_session(generation, CANCELLED_BEFORE_POSTING)
                 return
             if item is _SKIPPED:
                 self.next_index = batch_index + 1
@@ -331,6 +346,7 @@ class AutoPoster:
         while True:
             if self._should_stop(cancel_event, generation):
                 logger.info("Auto-Post Queue: Cancelled.")
+                self._fail_session(generation, CANCELLED_BEFORE_POSTING)
                 return
             with self.lock:
                 pending = sorted(self.post_queue)

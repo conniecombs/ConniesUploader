@@ -68,6 +68,28 @@ def test_load_repairs_only_the_bad_key(manager, key, bad, expected):
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(("saved", "expected"), [("180", "200"), ("120", "150"), ("700", "600")])
+def test_load_moves_a_turbo_size_turbo_does_not_offer_to_the_nearest_one(manager, saved, expected):
+    # Before v3.2.0 the Turbo default was 180, which Turbo does not offer:
+    # uploads send the nearest offered size, so #thumb_size# must say the same.
+    _write(manager, {"service": "turboimagehost", "turbo_thumb": saved})
+
+    loaded = manager.load()
+
+    assert loaded["turbo_thumb"] == expected
+    assert any(note.startswith("turbo_thumb:") for note in manager.repairs)
+    assert manager.get_recovery_issue() is None
+
+
+@pytest.mark.unit
+def test_load_keeps_a_turbo_size_turbo_offers(manager):
+    _write(manager, {"service": "turboimagehost", "turbo_thumb": "350"})
+
+    assert manager.load()["turbo_thumb"] == "350"
+    assert manager.repairs == []
+
+
+@pytest.mark.unit
 def test_load_drops_bad_optional_key_without_default(manager):
     _write(manager, {**_BASE, "gallery_id": 123456, "auto_gallery": "maybe"})
 
@@ -103,6 +125,22 @@ def test_corrupt_settings_file_is_backed_up_and_replaced(manager, raw):
         assert handle.read() == raw
     assert _read(manager)["service"] == manager.defaults["service"]
     assert SettingsManager().load()["service"] == manager.defaults["service"]
+
+
+@pytest.mark.unit
+def test_settings_saved_with_a_utf8_bom_load_instead_of_being_reset(manager):
+    # Notepad and some editors save UTF-8 with a byte order mark.
+    with open(manager.filepath, "w", encoding="utf-8-sig") as handle:
+        json.dump(_BASE, handle)
+
+    loaded = manager.load()
+
+    assert manager.get_recovery_issue() is None
+    assert loaded["service"] == "pixhost.cc"
+    assert loaded["pix_thumb"] == "350"
+    assert loaded["auto_copy"] is True
+    with open(manager.filepath, encoding="utf-8-sig") as handle:
+        assert json.load(handle) == _BASE
 
 
 @pytest.mark.unit

@@ -264,7 +264,7 @@ def test_failed_reports_with_the_same_name_never_overwrite(tmp_path, frozen_minu
         (
             "imgur.com",
             "https://i.imgur.com/abc.jpg",
-            "https://i.imgur.com/abc.jpg",
+            "https://i.imgur.com/abcm.jpg",
             "https://i.imgur.com/abc.jpg",
         ),
         (
@@ -308,6 +308,48 @@ def test_pixhost_full_image_post_embeds_images_not_viewer_pages(tmp_path):
     assert "/show/" not in text
 
 
+def _imgur_thumb_for(link: str, size: str = "m") -> str:
+    """The thumbnail the sidecar builds from the Imgur plugin's thumb_template."""
+    from modules.plugins.imgur import ImgurPlugin
+
+    spec = ImgurPlugin().build_http_request(
+        "/x/a.jpg", {"thumbnail_size": size}, {"imgur_client_id": "cid"}
+    )
+    template = spec["response_parser"]["thumb_template"]
+    stem, dot, ext = link.rpartition(".")
+    return template.replace("{url_no_ext}", stem).replace("{url_dot_ext}", dot + ext)
+
+
+@pytest.mark.unit
+def test_imgur_direct_url_is_the_full_image_not_the_thumbnail():
+    from modules.ui.Main_Window.runtime import direct_image_url
+
+    link = "https://i.imgur.com/AbCd123.jpg"
+    thumb = _imgur_thumb_for(link)
+    assert thumb == "https://i.imgur.com/AbCd123m.jpg"
+
+    assert direct_image_url("imgur.com", link, thumb) == link
+
+
+@pytest.mark.unit
+def test_imgur_full_image_post_embeds_full_images(tmp_path):
+    from modules.template_manager import TemplateManager
+    from modules.ui.Main_Window.runtime import direct_image_url
+
+    mgr = TemplateManager(str(tmp_path / "templates.json"))
+    link = "https://i.imgur.com/AbCd123.jpg"
+    thumb = _imgur_thumb_for(link)
+
+    out = mgr.apply(
+        "ViperGirls Full Image Post",
+        {"batch_name": "Set"},
+        [(link, thumb, direct_image_url("imgur.com", link, thumb))],
+    )
+
+    assert f"[img]{link}[/img]" in out, out
+    assert f"[img]{thumb}[/img]" not in out
+
+
 def _template_app(tmp_path):
     from modules.template_manager import TemplateManager
 
@@ -328,7 +370,7 @@ def _template_app(tmp_path):
 def test_output_for_a_deleted_template_falls_back_to_the_default(tmp_path):
     app, group = _template_app(tmp_path)
     app.template_mgr.set_template("Mine", "[b]#batch_name#[/b]\n#all_images#")
-    app.template_mgr.rename_template("Mine", "Mine v2")
+    app.template_mgr.delete_template("Mine")
     app.is_uploading = True
 
     UploaderApp.generate_group_output(app, group)
@@ -384,6 +426,45 @@ def test_template_changes_switch_batches_off_missing_templates(tmp_path):
     names = app.template_mgr.get_all_keys()
     stale.update_template_names.assert_called_once_with(names, "BBCode")
     current.update_template_names.assert_called_once_with(names, "BBCode")
+    assert [level for _message, level in app.activity] == ["warning"]
+
+
+@pytest.mark.unit
+def test_renaming_a_template_moves_its_batches_to_the_new_name(tmp_path):
+    from modules.template_manager import TemplateManager
+
+    app = _ui_app(tmp_path)
+    app.template_mgr = TemplateManager(str(tmp_path / "templates.json"))
+    app.template_mgr.set_template("Mine", "#all_images#")
+    renamed = _real_group("Old")
+    renamed.selected_template = "Mine"
+    other = _real_group("Other")
+    other.selected_template = "BBCode"
+    app.groups = [renamed, other]
+
+    app.template_mgr.rename_template("Mine", "Mine v2")
+    UploaderApp._on_templates_changed(app, "Mine v2", renamed_from="Mine")
+
+    assert renamed.selected_template == "Mine v2"
+    assert other.selected_template == "BBCode"
+    assert app.activity == []
+
+
+@pytest.mark.unit
+def test_deleting_a_template_moves_its_batches_to_the_default(tmp_path):
+    from modules.template_manager import TemplateManager
+
+    app = _ui_app(tmp_path)
+    app.template_mgr = TemplateManager(str(tmp_path / "templates.json"))
+    app.template_mgr.set_template("Mine", "#all_images#")
+    group = _real_group("Old")
+    group.selected_template = "Mine"
+    app.groups = [group]
+
+    app.template_mgr.delete_template("Mine")
+    UploaderApp._on_templates_changed(app, "BBCode")
+
+    assert group.selected_template == "BBCode"
     assert [level for _message, level in app.activity] == ["warning"]
 
 
@@ -500,6 +581,107 @@ def test_removing_the_failed_image_gives_the_batch_its_output(tmp_path):
     # The upload is over, so the output is not handed to a finished poster session.
     app.auto_poster.queue_post.assert_not_called()
     assert any("not posted" in message for message, _level in app.activity)
+
+
+def _set_with_one_failed_upload(tmp_path):
+    app = _ui_app(tmp_path)
+    app.progress_queue, app.result_queue = queue.Queue(), queue.Queue()
+    app.image_refs = set()
+    app._clear_highlights = lambda *args: None
+    group = _real_group("Set", ["/s/1.jpg", "/s/bad.jpg"])
+    app.groups = [group]
+    for fp in group.files:
+        app.file_widgets[fp] = _row(group)
+    _upload(
+        app,
+        list(group.files),
+        {
+            "/s/1.jpg": ("http://v/1", "http://t/1", "Done"),
+            "/s/bad.jpg": ("", "", "error: file rejected by host"),
+        },
+    )
+    assert group.is_completed is True
+    assert group.completed_with_failures is True
+    return app, group
+
+
+@pytest.mark.unit
+def test_retry_clears_the_batchs_completed_header(tmp_path):
+    app, group = _set_with_one_failed_upload(tmp_path)
+    app.start_upload = lambda: None
+
+    UploaderApp._retry_file(app, "/s/bad.jpg")
+
+    assert group.is_completed is False
+    assert group.completed_with_failures is False
+    assert group.lbl_counts.text != "(Completed)"
+
+
+@pytest.mark.unit
+def test_removing_an_image_whose_retry_never_started_gives_the_batch_its_output(tmp_path):
+    app, group = _set_with_one_failed_upload(tmp_path)
+    # Retry Image resets the row, then Start stops at a preflight issue.
+    app.start_upload = lambda: app.add_activity("preflight issue", "warning")
+    UploaderApp._retry_file(app, "/s/bad.jpg")
+    assert app.file_widgets["/s/bad.jpg"]["state"] == "pending"
+
+    # The user gives up on that image and removes it.
+    assert UploaderApp._delete_files(app, ["/s/bad.jpg"]) is True
+
+    outputs = [p for p in app.current_output_files if not p.endswith("_FAILED.txt")]
+    assert len(outputs) == 1, "a batch with only uploaded images left never got its output"
+    assert Path(outputs[0]).read_text(encoding="utf-8") == "http://v/1"
+    assert group.is_completed is True
+
+
+@pytest.mark.unit
+def test_output_written_after_removing_a_failed_image_can_be_scheduled_and_copied(tmp_path):
+    app = _ui_app(tmp_path)
+    app.progress_queue, app.result_queue = queue.Queue(), queue.Queue()
+    app.image_refs = set()
+    app._clear_highlights = lambda *args: None
+    group = _real_group("Set", ["/s/1.jpg", "/s/2.jpg", "/s/bad.jpg"])
+    group.selected_thread = "T"
+    app.groups = [group]
+    for fp in group.files:
+        app.file_widgets[fp] = _row(group)
+    _upload(
+        app,
+        list(group.files),
+        {
+            "/s/1.jpg": ("http://v/1", "http://t/1", "Done"),
+            "/s/2.jpg": ("http://v/2", "http://t/2", "Done"),
+            "/s/bad.jpg": ("", "", "error: file rejected by host"),
+        },
+    )
+    # What _on_upload_complete() shows in the completion panel (auto-copy off).
+    summary = UploaderApp._build_completion_summary(app)
+    app.current_completion_summary = summary
+
+    assert UploaderApp._delete_files(app, ["/s/bad.jpg"]) is True
+
+    assert any("Use Schedule Post" in message for message, _ in app.activity)
+    new_output = [p for p in app.current_output_files if not p.endswith("_FAILED.txt")][0]
+    # Schedule for Later and Copy Output read exactly this text.
+    text = UploaderApp._completion_output_text(app, app.current_completion_summary)
+    assert text == Path(new_output).read_text(encoding="utf-8") == "http://v/1\nhttp://v/2"
+    assert app.current_completion_summary["generated_count"] == 2
+    assert app.current_completion_summary["has_copy_text"] is True
+    app._set_completion_summary.assert_called_with(app.current_completion_summary)
+
+
+@pytest.mark.unit
+def test_output_written_after_an_aborted_retry_shows_the_completion_panel(tmp_path):
+    app, group = _set_with_one_failed_upload(tmp_path)
+    # start_upload() hides the panel before its preflight stops the Retry.
+    app.start_upload = lambda: app._set_completion_summary(None)
+    UploaderApp._retry_file(app, "/s/bad.jpg")
+
+    UploaderApp._delete_files(app, ["/s/bad.jpg"])
+
+    summary = app._set_completion_summary.call_args.args[0]
+    assert summary is not None
+    assert UploaderApp._completion_output_text(app, summary) == "http://v/1"
 
 
 @pytest.mark.unit
@@ -746,6 +928,27 @@ def test_result_racing_the_progress_drain_is_in_the_completion_summary(tmp_path,
     assert summary["generated_count"] == 1
     assert summary["copied_to_clipboard"] is True
     assert copied[-1] == "http://v/a\nhttp://v/b"
+
+
+@pytest.mark.unit
+def test_late_statuses_of_a_cleared_upload_leave_a_re_added_row_alone(tmp_path):
+    app = _ui_app(tmp_path)
+    app.progress_queue, app.result_queue = queue.Queue(), queue.Queue()
+    group = FakeGroup("Set", ["/s/a.jpg"])
+    app.groups = [group]
+    # Clear List, then the same file is added again; no upload is running.
+    app.file_widgets = {"/s/a.jpg": _row(group)}
+    # The cleared upload's statuses for that path arrive late.
+    app.progress_queue.put(("status", "/s/a.jpg", "Uploading"))
+    app.progress_queue.put(("status", "/s/a.jpg", "Cancelled"))
+
+    UploaderApp._process_progress_queue(app)
+
+    row = app.file_widgets["/s/a.jpg"]
+    assert row["state"] == "pending"
+    assert row["status"].text is None  # still "Waiting"
+    assert app.upload_count == 0
+    assert app.activity == []
 
 
 @pytest.mark.unit

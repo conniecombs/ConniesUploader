@@ -437,6 +437,26 @@ class SettingsManager:
                 notes.append(f"{key}: {value!r} removed")
         return repaired, notes
 
+    @staticmethod
+    def _repair_turbo_thumb(data: Dict[str, Any], notes: List[str]) -> None:
+        """Move a Turbo thumbnail size Turbo does not offer to the nearest one.
+
+        Before v3.2.0 the default was 180, which Turbo does not offer: uploads
+        send the nearest offered size, so the setting (and ``#thumb_size#``)
+        must name that size too.
+        """
+        try:
+            from .plugins.turbo import TurboPlugin
+        except ImportError as e:  # pragma: no cover - plugin missing from a build
+            logger.debug(f"Turbo thumbnail sizes unavailable: {e}")
+            return
+        value = data.get("turbo_thumb")
+        if value is None or str(value) in TurboPlugin.THUMBNAIL_SIZES:
+            return
+        offered = TurboPlugin._offered_thumbnail_size(value)
+        data["turbo_thumb"] = offered
+        notes.append(f"turbo_thumb: {value!r} -> {offered!r} (nearest size Turbo offers)")
+
     def _log_repairs(self, action: str) -> None:
         if self.repairs:
             logger.warning(
@@ -519,7 +539,8 @@ class SettingsManager:
             return dict(self.defaults)
 
         try:
-            with open(self.filepath, "r") as f:
+            # utf-8-sig also reads files an editor saved with a byte order mark.
+            with open(self.filepath, "r", encoding="utf-8-sig") as f:
                 data = json.load(f)
             if not isinstance(data, dict):
                 raise ValueError(f"expected a JSON object, found {type(data).__name__}")
@@ -537,6 +558,7 @@ class SettingsManager:
                 )
             merged = self.normalize_numeric_ranges(merged_input)
             merged, self.repairs = self._repair_settings(merged)
+            self._repair_turbo_thumb(merged, self.repairs)
             self._log_repairs("loading")
 
             validation_errors = self.validate_settings(merged)
