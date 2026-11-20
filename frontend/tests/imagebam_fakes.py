@@ -74,9 +74,13 @@ BEHAVIOURS = {
     "hold": "waits for FakeImageBam.release before it handles the upload",
 }
 
-# What the Python path reports for a lost answer: the real sidecar's message
-# (SiteSidecar sends the same, so the scenarios hold for both).
-LOST_ANSWER = "no response from host after upload; check the host before retrying: EOF"
+
+def lost_answer(upload_url: str) -> str:
+    """The real sidecar's message for a lost answer (SiteSidecar sends the same)."""
+    return (
+        "no response from host after upload; check the host before retrying: "
+        f'Post "{upload_url}": EOF'
+    )
 
 
 def behaviour_of(file_name: str) -> str:
@@ -422,7 +426,8 @@ class SiteSidecar(FakeSidecar):
             if reply.lost:
                 failed = {"id": job_id, "type": "status", "file": fp, "status": "Failed"}
                 self.emit(dict(failed, data={"body_sent": "true"}))
-                self.emit({"id": job_id, "type": "error", "file": fp, "msg": LOST_ANSWER})
+                error = lost_answer(request["url"])
+                self.emit({"id": job_id, "type": "error", "file": fp, "msg": error})
                 continue
             data = {
                 "response_body": reply.body,
@@ -446,7 +451,9 @@ class FakeImageBamServer:
         self.url = f"http://127.0.0.1:{self.server.server_address[1]}"
         self.site = FakeImageBam(self.url, **site_options)
         self.clients: Dict[str, Client] = {}
-        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        threading.Thread(
+            target=self.server.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True
+        ).start()
 
     def close(self) -> None:
         self.site.release.set()
@@ -560,7 +567,8 @@ class BatchOutcome:
     manager: Any
 
     def final(self, fp: str) -> str:
-        return self.statuses[fp][-1] if self.statuses[fp] else ""
+        """The file's first terminal status (the sidecar follows Cancelled with an error)."""
+        return next((status for status in self.statuses[fp] if is_terminal(status)), "")
 
     def link(self, fp: str) -> str:
         return self.links.get(fp, ("", ""))[0]
@@ -589,7 +597,7 @@ def collect_batch(um, progress, results, files, timeout: float = 30.0) -> BatchO
         if settle_until is None and all(
             statuses[fp] and is_terminal(statuses[fp][-1]) for fp in files
         ):
-            settle_until = time.monotonic() + 0.3
+            settle_until = time.monotonic() + 0.15
         try:
             kind, fp, value = progress.get(timeout=0.05)
         except queue.Empty:
