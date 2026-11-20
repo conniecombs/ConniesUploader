@@ -256,9 +256,7 @@ def test_job_written_to_a_process_already_reported_dead_is_ended(manager, monkey
     assert drain(manager.progress) == [("status", "/c.jpg", INTERRUPTED)]
 
 
-def test_stop_ends_unfinished_files_when_the_cancel_cannot_reach_the_sidecar(
-    manager, monkeypatch
-):
+def test_stop_ends_unfinished_files_when_the_cancel_cannot_reach_the_sidecar(manager, monkeypatch):
     send_job(manager, monkeypatch, ["/c.jpg"])
     manager.bridge.available = False
 

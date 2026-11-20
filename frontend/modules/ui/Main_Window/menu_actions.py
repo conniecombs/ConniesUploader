@@ -182,7 +182,7 @@ class MenuActionsMixin:
             previous = group.selected_template
             if update(names, fallback):
                 self.add_activity(
-                    f'{self._batch_display_name(group)} now uses template '
+                    f"{self._batch_display_name(group)} now uses template "
                     f'"{group.selected_template}" because "{previous}" was renamed or deleted.',
                     "warning",
                 )
