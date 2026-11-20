@@ -284,7 +284,10 @@ class RuntimeMixin:
             while prog_limit > 0:
                 item = self.progress_queue.get_nowait()
                 k = item[0]
-                if k == "register_pix_gal":
+                if k == "activity":
+                    message, level = item[2]
+                    self.add_activity(message, level)
+                elif k == "register_pix_gal":
                     new_data = item[2]
                     if self._register_pixhost_gallery_for_finalization(new_data):
                         gallery_hash = str(new_data.get("gallery_hash") or "")
@@ -319,6 +322,13 @@ class RuntimeMixin:
                 prog_limit -= 1
         except queue.Empty:
             pass
+
+    def _queue_activity_from_worker(self, message: str, level: str = "info") -> None:
+        """Thread-safe add_activity: the UI loop shows it on the Tk thread."""
+        try:
+            self.progress_queue.put(("activity", None, (str(message), str(level))), timeout=1.0)
+        except queue.Full:
+            logger.warning(f"Progress queue full; activity not shown: {message}")
 
     @staticmethod
     def _terminal_state_for_status(status_text: str) -> Optional[str]:
@@ -1122,14 +1132,21 @@ class RuntimeMixin:
             tgt_thread = group.selected_thread
             if tgt_thread and tgt_thread != "Do Not Post":
                 if self._upload_in_progress():
-                    self.auto_poster.queue_post(
+                    not_queued = self.auto_poster.queue_post(
                         group.batch_index,
                         text,
                         tgt_thread,
                         batch_name=self._batch_display_name(group),
                     )
-                    message, level = self._vipergirls_queue_activity(group, tgt_thread)
-                    self.add_activity(message, level)
+                    if not_queued:
+                        self.add_activity(
+                            f'ViperGirls post for "{self._batch_display_name(group)}" '
+                            f"was not queued: {not_queued}.",
+                            "warning",
+                        )
+                    else:
+                        message, level = self._vipergirls_queue_activity(group, tgt_thread)
+                        self.add_activity(message, level)
                 else:
                     # The poster runs only for an upload session; a post queued
                     # now would wait unseen for the next one.

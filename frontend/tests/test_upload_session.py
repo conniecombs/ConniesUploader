@@ -655,6 +655,37 @@ def test_finalization_finishing_after_clear_list_does_not_complete_the_cleared_u
     assert app.is_uploading is False
 
 
+@pytest.mark.unit
+def test_post_refused_by_the_poster_is_reported_instead_of_queued(tmp_path):
+    app, group = _template_app(tmp_path)
+    app.template_mgr.set_template("Mine", "#all_images#")
+    app.is_uploading = True
+    app.auto_poster.queue_post = Mock(return_value="login failed")
+
+    UploaderApp.generate_group_output(app, group)
+
+    assert ('ViperGirls post for "Set" was not queued: login failed.', "warning") in app.activity
+    assert not any("Queued ViperGirls post" in message for message, _level in app.activity)
+
+
+@pytest.mark.unit
+def test_poster_notices_reach_the_activity_panel_through_the_ui_loop():
+    app = _ui_app()
+    app.progress_queue = queue.Queue()
+
+    UploaderApp._queue_activity_from_worker(app, "ViperGirls post was not sent.", "warning")
+    UploaderApp._process_progress_queue(app)
+
+    assert app.activity == [("ViperGirls post was not sent.", "warning")]
+
+
+@pytest.mark.unit
+def test_auto_poster_is_built_with_the_activity_notifier():
+    source = Path("modules/ui/Main_Window/app.py").read_text(encoding="utf-8")
+
+    assert "notify=self._queue_activity_from_worker" in source
+
+
 def _finishing_app(tmp_path, monkeypatch, files, auto_copy=False):
     """Upload in progress; finalization runs inline and after() callbacks are captured."""
     monkeypatch.setattr(

@@ -210,7 +210,12 @@ class UploaderApp(
 
         # Initialize AutoPoster
         # The provider keeps the poster current after credentials are changed.
-        self.auto_poster = AutoPoster(lambda: self.creds, self.saved_threads_data)
+        # Posts that will not be sent are reported in the activity panel.
+        self.auto_poster = AutoPoster(
+            lambda: self.creds,
+            self.saved_threads_data,
+            notify=self._queue_activity_from_worker,
+        )
 
         # System Tray Integration
         from modules.ui.system_tray import SystemTrayManager

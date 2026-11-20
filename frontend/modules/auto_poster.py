@@ -12,6 +12,8 @@ from modules import config
 from modules import viper_client, viper_storage
 
 CredentialsSource = Union[Mapping[str, str], Callable[[], Mapping[str, str]]]
+# notify(message, level) surfaces a post that will not be sent to the user.
+Notifier = Callable[[str, str], None]
 
 # Seconds the worker keeps waiting for a registered batch after uploads end
 # before recording it as "no output generated".
@@ -27,16 +29,26 @@ class AutoPoster:
     A session registers, in order, the batch indexes that will post. Groups
     that never produce output call ``skip`` so later batches are not blocked.
     Credentials come from a provider callable (or a plain mapping) and are
-    snapshotted at the start of each session.
+    snapshotted at the start of each session. When a session cannot post at
+    all (missing credentials, login failed), every post queued into it is
+    recorded as failed and reported through ``notify``; none stays queued.
     """
 
-    def __init__(self, credentials: CredentialsSource, saved_threads_data: Dict):
+    def __init__(
+        self,
+        credentials: CredentialsSource,
+        saved_threads_data: Dict,
+        notify: Optional[Notifier] = None,
+    ):
         self._credentials_source = credentials
         self.credentials: Dict[str, str] = self._resolve_credentials()
         self.saved_threads_data = saved_threads_data
+        self.notify = notify
         self.post_queue: Dict[int, Dict[str, str]] = {}
         self._skipped: Dict[int, str] = {}
         self._expected: List[int] = []
+        # Why the current session cannot post ("" while it can).
+        self._session_error = ""
         self.next_index = 0
         self.lock = threading.Lock()
         self._stop_event = threading.Event()
@@ -80,7 +92,10 @@ class AutoPoster:
             if value not in ordered:
                 ordered.append(value)
 
-        self._generation += 1
+        with self.lock:
+            # Under the lock, so a superseded worker cannot fail the new session.
+            self._generation += 1
+            self._session_error = ""
         self._stop_event.set()  # wake a waiting worker so it sees the new generation
         self._record_all_pending_failures("superseded by a new upload")
         with self.lock:
@@ -118,7 +133,7 @@ class AutoPoster:
         content: str,
         thread_name: str,
         batch_name: str = "",
-    ) -> None:
+    ) -> str:
         """Queue content for posting to a thread.
 
         Args:
@@ -126,23 +141,39 @@ class AutoPoster:
             content: Content to post (BBCode text)
             thread_name: Name of the thread to post to
             batch_name: Display name of the source batch
+
+        Returns:
+            "" when the post was queued (or there is nothing to post), else the
+            reason it will not be posted. A post refused because this session
+            cannot post (login failed) is recorded as failed in the history;
+            the caller reports the reason to the user.
         """
         if not thread_name or thread_name == "Do Not Post":
-            return
+            return ""
 
+        item = {
+            "content": content,
+            "thread": thread_name,
+            "batch_name": batch_name or f"Batch {batch_index + 1}",
+        }
         with self.lock:
             if not self._is_registered(batch_index):
                 logger.warning(
                     f"Auto-Post Queue: Batch #{batch_index} is not part of this session; ignored"
                 )
-                return
-            self._skipped.pop(batch_index, None)
-            self.post_queue[batch_index] = {
-                "content": content,
-                "thread": thread_name,
-                "batch_name": batch_name or f"Batch {batch_index + 1}",
-            }
-            logger.info(f"Auto-Post Queue: Queued Batch #{batch_index} for thread '{thread_name}'")
+                return "batch is not part of this upload"
+            session_error = self._session_error
+            if not session_error:
+                self._skipped.pop(batch_index, None)
+                self.post_queue[batch_index] = item
+                logger.info(
+                    f"Auto-Post Queue: Queued Batch #{batch_index} for thread '{thread_name}'"
+                )
+                return ""
+
+        logger.error(f"Auto-Post Queue: Batch #{batch_index} not queued: {session_error}.")
+        self._record_failed_item(item, session_error)
+        return session_error
 
     def skip(self, batch_index: int, reason: str) -> None:
         """Resolve a registered batch without posting (failed or cancelled)."""
@@ -230,7 +261,7 @@ class AutoPoster:
 
         if not user or not pwd:
             logger.error("Auto-Post Queue: Missing ViperGirls credentials; posting skipped.")
-            self._record_all_pending_failures("missing credentials")
+            self._fail_session(generation, "missing credentials")
             return
 
         vg = viper_client.ViperGirlsAPI()
@@ -238,7 +269,7 @@ class AutoPoster:
             logger.error(
                 "Auto-Post Queue: ViperGirls login failed; check credentials before retrying."
             )
-            self._record_all_pending_failures("login failed")
+            self._fail_session(generation, "login failed")
             return
 
         with self.lock:
@@ -439,15 +470,45 @@ class AutoPoster:
         except OSError as exc:
             logger.error(f"Could not save ViperGirls posting history: {exc}")
 
+    def _fail_session(self, generation: int, error: str) -> None:
+        """Mark this worker's session as unable to post and fail its queued posts.
+
+        Posts queued later are refused by ``queue_post`` with the same reason.
+        """
+        with self.lock:
+            if self._superseded(generation):
+                return  # begin_session already recorded this session's posts
+            self._session_error = error
+            pending_items = list(self.post_queue.values())
+            self.post_queue.clear()
+
+        for item in pending_items:
+            self._record_failed_item(item, error)
+            self._notify_not_sent(item, error)
+
     def _record_all_pending_failures(self, error: str) -> None:
         with self.lock:
             pending_items = list(self.post_queue.values())
             self.post_queue.clear()
 
         for item in pending_items:
-            thread_name = str(item.get("thread") or "")
-            thread_id, _thread_error = self._resolve_thread_id(thread_name)
-            self._record_history_item(item, "failure", thread_id or "", error)
+            self._record_failed_item(item, error)
+            self._notify_not_sent(item, error)
+
+    def _record_failed_item(self, item: Dict[str, str], error: str) -> None:
+        thread_name = str(item.get("thread") or "")
+        thread_id, _thread_error = self._resolve_thread_id(thread_name)
+        self._record_history_item(item, "failure", thread_id or "", error)
+
+    def _notify_not_sent(self, item: Dict[str, str], error: str) -> None:
+        notify = self.notify
+        if notify is None:
+            return
+        batch_name = item.get("batch_name") or "Batch"
+        try:
+            notify(f'ViperGirls post for "{batch_name}" was not sent: {error}.', "warning")
+        except Exception as exc:
+            logger.warning(f"Auto-Post Queue: could not report an unsent post: {exc}")
 
     def _mark_target_used(self, thread_name: str) -> None:
         try:
