@@ -648,6 +648,55 @@ class TestImxPlugin(unittest.TestCase):
         self.assertEqual(group.gallery_service, "imx.to")
         self.assertEqual(config["gallery_id"], "abc123")
 
+    def test_auto_gallery_seeds_with_the_first_image_the_gallery_api_accepts(self):
+        from modules.plugins import imx
+        from modules.imx_api import ImxGalleryUpload
+
+        plugin = imx.ImxPlugin()
+        self.assertIn(".webp", plugin.metadata["limits"]["allowed_formats"])
+        group = Mock()
+        group.title = "Beach"
+        group.gallery_id = ""
+        group.gallery_service = ""
+        context = {"pending_files": ["/set/01.webp", "/set/02.jpg", "/set/03.jpg"]}
+        upload = ImxGalleryUpload("g1", "Beach", "https://imx.to/i/2", "https://imx.to/t/2.jpg")
+
+        with patch.object(imx, "create_gallery_with_image", return_value=upload) as create:
+            plugin.prepare_group(
+                group,
+                {"auto_gallery": True},
+                context,
+                {"imx_api": "api-key", "imx_user": "user", "imx_pass": "secret"},
+            )
+
+        # The .webp file is not the gallery seed; it uploads into the gallery
+        # with the remaining files.
+        self.assertEqual(create.call_args.args[2], "/set/02.jpg")
+        self.assertEqual([item[0] for item in context["completed_uploads"]], ["/set/02.jpg"])
+        self.assertEqual(group.gallery_id, "g1")
+
+    def test_auto_gallery_without_a_seed_image_explains_why(self):
+        from modules.plugins import imx
+        from modules.imx_api import ImxApiError
+
+        plugin = imx.ImxPlugin()
+        group = Mock()
+        group.title = "Beach"
+        group.gallery_id = ""
+        group.gallery_service = ""
+
+        with patch.object(imx, "create_gallery_with_image") as create:
+            with self.assertRaises(ImxApiError) as raised:
+                plugin.prepare_group(
+                    group,
+                    {"auto_gallery": True},
+                    {"pending_files": ["/set/01.webp", "/set/02.webp"]},
+                    {"imx_api": "api-key", "imx_user": "user", "imx_pass": "secret"},
+                )
+
+        create.assert_not_called()
+        self.assertIn("JPG, PNG, or GIF", str(raised.exception))
+
     def test_build_http_request_uses_documented_api_header_and_selected_gallery(self):
         from modules.plugins import imx
 

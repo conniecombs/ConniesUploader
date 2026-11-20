@@ -42,6 +42,15 @@ class ImxGalleryUpload:
     thumbnail_url: str
 
 
+# Image types the gallery-creating upload accepts as its first image.
+GALLERY_SEED_SUFFIXES = frozenset({".jpg", ".jpeg", ".png", ".gif"})
+
+
+def can_seed_gallery(image_path: str) -> bool:
+    """Whether ``image_path`` has a type create_gallery_with_image accepts."""
+    return Path(str(image_path or "")).suffix.lower() in GALLERY_SEED_SUFFIXES
+
+
 def validate_gallery_name(name: str) -> str:
     name = str(name or "").strip()
     if not name or len(name) > 100 or not re.fullmatch(r"[A-Za-z0-9 .,_()\[\]-]+", name):
@@ -65,12 +74,7 @@ def create_gallery_with_image(
         raise ImxApiError("Set the IMX API key in Credentials before creating a gallery.")
     name = validate_gallery_name(name)
     path = Path(image_path)
-    if not path.is_file() or path.suffix.lower() not in {
-        ".jpg",
-        ".jpeg",
-        ".png",
-        ".gif",
-    }:
+    if not path.is_file() or not can_seed_gallery(image_path):
         raise ImxApiError("Choose an existing JPG, PNG, or GIF as the first gallery image.")
     limit_mb = config.MAX_FILE_SIZE // (1024 * 1024)
     if not 0 < path.stat().st_size <= config.MAX_FILE_SIZE:

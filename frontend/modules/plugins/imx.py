@@ -12,7 +12,12 @@ Python side only manages UI and gallery creation.
 from typing import Dict, Any, List
 from .base import ImageHostPlugin
 from . import helpers
-from ..imx_api import ImxApiError, create_gallery_with_image, require_upload_credentials
+from ..imx_api import (
+    ImxApiError,
+    can_seed_gallery,
+    create_gallery_with_image,
+    require_upload_credentials,
+)
 from loguru import logger
 
 
@@ -156,7 +161,14 @@ class ImxPlugin(ImageHostPlugin):
             cancel_event = context.get("cancel_event")
             if cancel_event is not None and cancel_event.is_set():
                 raise ImxApiError("IMX gallery creation cancelled before upload.")
-            first_file = files[0]
+            # The gallery-creating upload takes JPG, PNG, or GIF only; other
+            # allowed types (such as .webp) upload into the gallery afterwards.
+            first_file = next((path for path in files if can_seed_gallery(path)), None)
+            if first_file is None:
+                raise ImxApiError(
+                    "IMX creates a gallery from a JPG, PNG, or GIF image, and this batch "
+                    "has none. Add one, or turn off auto-gallery for this batch."
+                )
             first_config = config.copy()
             if first_file in context.get("cover_files", []):
                 first_config["thumbnail_size"] = "600"
