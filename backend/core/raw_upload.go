@@ -133,7 +133,8 @@ func ExecuteRawUpload(ctx context.Context, client *http.Client, fp string, job *
 	}
 	logger := log.WithFields(log.Fields{"action": "raw_upload", "file": filepath.Base(fp), "url": request.URL})
 
-	return RetryWithBackoff(ctx, rawUploadRetryConfig(job), func() (_ RawUploadResult, _ int, attemptErr error) {
+	bodySent := false
+	result, err := RetryWithBackoff(ctx, rawUploadRetryConfig(job), func() (_ RawUploadResult, _ int, attemptErr error) {
 		pr, pw := io.Pipe()
 		defer pr.Close()
 		writer := multipart.NewWriter(pw)
@@ -145,7 +146,10 @@ func ExecuteRawUpload(ctx context.Context, client *http.Client, fp string, job *
 		// stalls or the host stops answering, and a failure after the body was
 		// sent is never retried because the host may have stored the file.
 		attempt := newUploadAttempt(ctx)
-		defer func() { attemptErr = attempt.finish(attemptErr) }()
+		defer func() {
+			attemptErr = attempt.finish(attemptErr)
+			bodySent = bodySent || attempt.bodySent.Load()
+		}()
 
 		req, err := http.NewRequestWithContext(attempt.ctx, method, request.URL, attempt.body(pr))
 		if err != nil {
@@ -177,6 +181,24 @@ func ExecuteRawUpload(ctx context.Context, client *http.Client, fp string, job *
 		}
 		return result, resp.StatusCode, nil
 	}, logger)
+	if err != nil && bodySent {
+		return result, &bodySentError{err: err}
+	}
+	return result, err
+}
+
+// bodySentError marks a failed upload whose whole body reached the host, so
+// the host may have stored the file although the upload failed.
+type bodySentError struct{ err error }
+
+func (e *bodySentError) Error() string { return e.err.Error() }
+func (e *bodySentError) Unwrap() error { return e.err }
+
+// UploadBodySent reports whether a failed raw upload's whole body reached the
+// host before it failed.
+func UploadBodySent(err error) bool {
+	var sent *bodySentError
+	return errors.As(err, &sent)
 }
 
 // writeRawMultipart writes the text fields, then the file with progress

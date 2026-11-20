@@ -220,6 +220,34 @@ func TestRawUploadIsNotRepeatedWhenResponseIsLost(t *testing.T) {
 	if got := atomic.LoadInt32(&stored); got != 1 {
 		t.Fatalf("host stored the image %d times, want 1", got)
 	}
+	if !UploadBodySent(err) {
+		t.Fatal("a lost answer after the whole body was sent must report the body as sent")
+	}
+}
+
+// Python matches result pages by upload order and must know which failed
+// uploads may still have been stored by the host.
+func TestRawUploadFailureSaysWhetherTheBodyReachedTheHost(t *testing.T) {
+	setUploadLimits(t, 200*time.Millisecond, time.Second)
+	fp := writeUploadFile(t, 64*1024)
+	_, err := ExecuteRawUpload(context.Background(), &http.Client{Transport: stalledTransport{}}, fp,
+		rawJob(fp, rawRequest("http://stall.test", fp), &RetryConfig{}))
+	if err == nil || UploadBodySent(err) {
+		t.Fatalf("stalled before the body was sent: err=%v body sent=%v", err, UploadBodySent(err))
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		_, _ = w.Write([]byte(strings.Repeat("x", MaxRawResponseBytes+1)))
+	}))
+	defer server.Close()
+	_, err = ExecuteRawUpload(context.Background(), server.Client(), fp, rawJob(fp, rawRequest(server.URL, fp), fastRetries()))
+	if err == nil || !UploadBodySent(err) {
+		t.Fatalf("an oversized answer means the host got the body: err=%v", err)
+	}
+	if UploadBodySent(nil) || UploadBodySent(errMissingUploadRequest) {
+		t.Fatal("errors before any attempt must not report a sent body")
+	}
 }
 
 func TestStalledRawUploadFails(t *testing.T) {

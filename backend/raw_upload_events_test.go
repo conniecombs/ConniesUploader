@@ -113,6 +113,32 @@ func TestRawUploadJobEmitsTheRawResultThenUploaded(t *testing.T) {
 	}
 }
 
+func TestFailedRawUploadSaysWhenTheHostReceivedTheBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		if conn, _, err := w.(http.Hijacker).Hijack(); err == nil {
+			_ = conn.Close()
+		}
+	}))
+	defer server.Close()
+	useSharedClient(t)
+
+	files := writeNamedFiles(t, "lost.jpg")
+	job := asRawJob(JobRequest{ID: "raw-lost", Action: "http_upload", Service: "raw-lost.test", Files: files,
+		RetryConfig: &RetryConfig{MaxRetries: 2}}, server.URL)
+	job.FileRequests[files[0]].URL = server.URL
+	events := captureSidecarEvents(t, func() { handleJob(job) })
+
+	fileEvents := eventsForFile(events, files[0])
+	if len(fileEvents) < 2 {
+		t.Fatalf("events = %+v", fileEvents)
+	}
+	failed := fileEvents[len(fileEvents)-2]
+	if failed.Status != "Failed" || dataString(failed, "body_sent") != "true" {
+		t.Fatalf("Failed event = %+v, want data.body_sent true", failed)
+	}
+}
+
 func TestSequentialRawJobUploadsOneFileAtATimeInListOrder(t *testing.T) {
 	var mu sync.Mutex
 	active, peak := 0, 0

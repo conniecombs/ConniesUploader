@@ -429,6 +429,11 @@ func processRawFileCtx(parent context.Context, fp string, job *JobRequest) {
 		res.err = ctx.Err()
 	}
 	if res.err != nil {
+		failed := OutputEvent{Type: "status", FilePath: fp, Status: "Failed"}
+		if core.UploadBodySent(res.err) {
+			// The host got the whole file and may have stored it.
+			failed.Data = map[string]string{"body_sent": "true"}
+		}
 		switch {
 		case errors.Is(parent.Err(), context.Canceled):
 			emitCancelledFiles(job, []string{fp})
@@ -438,7 +443,7 @@ func processRawFileCtx(parent context.Context, fp string, job *JobRequest) {
 		case job.Session != nil && job.Session.Closed():
 			res.err = core.ErrSessionClosed
 		}
-		sendJobEvent(job, OutputEvent{Type: "status", FilePath: fp, Status: "Failed"})
+		sendJobEvent(job, failed)
 		sendJobEvent(job, OutputEvent{Type: "error", FilePath: fp, Msg: res.err.Error()})
 		return
 	}
