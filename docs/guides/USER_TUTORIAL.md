@@ -628,10 +628,10 @@ Custom templates are saved in `~/.conniesuploader/templates.json`. Existing `use
 | Placeholder | Meaning |
 | --- | --- |
 | `#all_images#` | All uploaded images formatted as clickable thumbnails for the selected template format. |
-| `#all_full_images#` | All uploaded images formatted as full/direct image embeds. |
+| `#all_full_images#` | All uploaded images formatted as image embeds using `#direct_url#` (full size where known, otherwise the thumbnail image). |
 | `#image_url#` | Viewer page URL for the first image when used directly, and for each image inside per-image formats. |
 | `#thumb_url#` | Thumbnail URL for the first image when used directly, and for each image inside per-image formats. |
-| `#direct_url#` | Direct image URL for the first image when used directly, and for each image when the service provides or derives one. |
+| `#direct_url#` | Image URL for the first image when used directly, and for each image inside per-image formats. It is the full-size image on IMX.to, Pixhost and Imgur, and the thumbnail image on hosts without a known full-size link (TurboImageHost, Vipr, ImageBam). It is never the viewer page. |
 | `#gallery_link#` | Gallery URL built from the selected or created gallery. |
 | `#gallery_name#` | Real gallery name from Gallery Manager or auto-gallery creation when known; otherwise the batch title. |
 | `#gallery_id#` | Gallery ID or hash. |
@@ -769,7 +769,7 @@ An image loop runs once for each regular image in the batch. Inside the loop:
 | --- | --- |
 | `#image_url#` | Viewer/page URL for the current image. |
 | `#thumb_url#` | Thumbnail URL for the current image. |
-| `#direct_url#` | Direct image URL for the current image, when the service provides or derives one. |
+| `#direct_url#` | Image URL for the current image: the full-size image where the host's link format is known, otherwise its thumbnail image. |
 | `#batch_name#`, `#service#`, `#gallery_link#`, `#thread_id#` | Still refer to the overall batch/posting context. |
 
 Do not put `#all_images#` inside `[for image]`. That repeats the entire image list once for every image. Use the per-image placeholders instead.

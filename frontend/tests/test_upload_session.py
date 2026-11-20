@@ -233,6 +233,81 @@ def test_failed_reports_with_the_same_name_never_overwrite(tmp_path, frozen_minu
     assert len(list(Path(app.central_history_path).iterdir())) == 2
 
 
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "service, viewer, thumb, direct",
+    [
+        (
+            "pixhost.cc",
+            "https://pixhost.to/show/42/a1.jpg",
+            "https://t1.pixhost.to/thumbs/42/a1.jpg",
+            "https://img1.pixhost.to/images/42/a1.jpg",
+        ),
+        (
+            "pixhost.cc",
+            "https://pixhost.cc/show/42/a1.jpg",
+            "https://t17.pixhost.cc/thumbs/42/a1.jpg",
+            "https://img17.pixhost.cc/images/42/a1.jpg",
+        ),
+        (
+            "pixhost.cc",
+            "https://pixhost.cc/show/42/image.html",
+            "https://img.pixhost.cc/thumbs/42/image.jpg",
+            "https://img.pixhost.cc/images/42/image.jpg",
+        ),
+        (
+            "imx.to",
+            "https://imx.to/i/abc",
+            "https://image.imx.to/u/t/2026/11/20/abc.jpg",
+            "https://image.imx.to/u/i/2026/11/20/abc.jpg",
+        ),
+        (
+            "imgur.com",
+            "https://i.imgur.com/abc.jpg",
+            "https://i.imgur.com/abc.jpg",
+            "https://i.imgur.com/abc.jpg",
+        ),
+        (
+            "turboimagehost",
+            "https://www.turboimagehost.com/p/1/a.jpg.html",
+            "https://s1d1.turboimg.net/t1/1_a.jpg",
+            "https://s1d1.turboimg.net/t1/1_a.jpg",
+        ),
+        ("vipr.im", "https://vipr.im/abc.html", "", ""),
+    ],
+)
+def test_direct_url_is_an_image_never_a_viewer_page(service, viewer, thumb, direct):
+    from modules.ui.Main_Window.runtime import direct_image_url
+
+    assert direct_image_url(service, viewer, thumb) == direct
+
+
+@pytest.mark.unit
+def test_pixhost_full_image_post_embeds_images_not_viewer_pages(tmp_path):
+    from modules.template_manager import TemplateManager
+
+    files = ["/a/a1.jpg", "/a/a2.jpg"]
+    group = FakeGroup("Alpha", files)
+    group.selected_template = "ViperGirls Full Image Post"
+    app = _output_app(
+        tmp_path,
+        [
+            (fp, f"https://pixhost.to/show/42/{name}", f"https://t1.pixhost.to/thumbs/42/{name}")
+            for fp, name in zip(files, ("a1.jpg", "a2.jpg"))
+        ],
+    )
+    app.var_auto_copy = FakeVar(False)
+    app.settings = {"service": "pixhost.cc"}
+    app.template_mgr = TemplateManager(str(tmp_path / "templates.json"))
+
+    UploaderApp.generate_group_output(app, group)
+
+    text = Path(app.current_output_files[0]).read_text(encoding="utf-8")
+    assert "[img]https://img1.pixhost.to/images/42/a1.jpg[/img]" in text
+    assert "[img]https://img1.pixhost.to/images/42/a2.jpg[/img]" in text
+    assert "/show/" not in text
+
+
 def _finishing_app(tmp_path, monkeypatch, files, auto_copy=False):
     """Upload in progress; finalization runs inline and after() callbacks are captured."""
     monkeypatch.setattr(

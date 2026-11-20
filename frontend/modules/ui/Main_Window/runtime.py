@@ -3,6 +3,9 @@
 
 """Runtime behavior for the main window."""
 
+import re
+import urllib.parse
+
 from .common import (  # noqa: F401
     Any,
     AutoPoster,
@@ -59,6 +62,37 @@ TERMINAL_ROW_STATES = frozenset({"success", "failed", "cancelled"})
 GENERIC_FAILURE_REASON = "Upload failed without more detail."
 CANCELLED_REASON = "Upload cancelled."
 NO_LINK_REASON = "Host returned no link"
+
+
+_PIXHOST_HOST = re.compile(r"^(?:t(?P<shard>\d+)|img\d*)\.pixhost\.(?:to|cc)$")
+
+
+def direct_image_url(service_id: str, viewer_url: str, thumb_url: str) -> str:
+    """Return a URL that is an image, for ``#direct_url#`` and ``#all_full_images#``.
+
+    The full-size image is derived where the host's URL scheme is known:
+    IMX ``.../u/t/...`` becomes ``.../u/i/...`` and Pixhost
+    ``tN.pixhost.to/thumbs/...`` becomes ``imgN.pixhost.to/images/...``.
+    Imgur's link is already the image. Otherwise the thumbnail image is used:
+    the viewer URL is a web page, which an ``[img]`` tag cannot show.
+    """
+    thumb_url = str(thumb_url or "").strip()
+    parts = urllib.parse.urlsplit(thumb_url)
+    host = (parts.hostname or "").lower()
+
+    if config.normalize_service_id(service_id) == "imx.to" and "/t/" in parts.path:
+        path = parts.path.replace("/t/", "/i/", 1)
+        return urllib.parse.urlunsplit(parts._replace(path=path))
+
+    pixhost = _PIXHOST_HOST.match(host)
+    if pixhost and parts.path.startswith("/thumbs/"):
+        shard = pixhost.group("shard")
+        image_host = f"img{shard}.{host.split('.', 1)[1]}" if shard is not None else host
+        netloc = parts.netloc.lower().replace(host, image_host, 1)
+        path = "/images/" + parts.path[len("/thumbs/") :]
+        return urllib.parse.urlunsplit(parts._replace(netloc=netloc, path=path))
+
+    return thumb_url
 
 
 def write_new_text_file(directory: str, stem: str, tail: str, text: str) -> str:
@@ -918,10 +952,7 @@ class RuntimeMixin:
                 val = res_map[fp]
                 viewer_url = val[0]
                 thumb_url = val[1]
-                direct_url = viewer_url
-                if svc == "imx.to":
-                    if "/t/" in thumb_url:
-                        direct_url = thumb_url.replace("/t/", "/i/")
+                direct_url = direct_image_url(svc, viewer_url, thumb_url)
                 group_results.append((viewer_url, thumb_url, direct_url))
 
         if len(group_results) != len(group_files):

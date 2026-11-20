@@ -123,7 +123,7 @@ Use these when you want the app to handle all image formatting automatically:
 | Placeholder | Description | Example Output |
 | :--- | :--- | :--- |
 | `#all_images#` | All images (excluding selected covers) formatted as clickable thumbnails according to the output format. | `[url=...][img]...[/img][/url] [url=...][img]...[/img][/url]` |
-| `#all_full_images#` | All images formatted as full direct embeds (using direct URLs). | `[img]https://.../1.jpg[/img] [img]https://.../2.jpg[/img]` |
+| `#all_full_images#` | All images formatted as full direct embeds (using `#direct_url#`, see below). | `[img]https://.../1.jpg[/img] [img]https://.../2.jpg[/img]` |
 | `#cover_images#` | All selected cover images formatted as clickable thumbnails. If 2 covers are selected, renders 2 covers. | `[url=...][img]...[/img][/url]` |
 | `#cover_image#` | Clickable thumbnail for the **first** cover image (or first image in batch if none selected). | `[url=...][img]...[/img][/url]` |
 | `#cover_url#` | The raw thumbnail URL string of the first cover image (useful inside custom `[url]` blocks). | `https://pixhost.cc/thumbs/1/cover.jpg` |
@@ -142,7 +142,16 @@ Use these when you want the app to handle all image formatting automatically:
 | :--- | :--- | :--- |
 | `#thumb_url#` | The thumbnail image link. | `https://img.pixhost.cc/thumbs/42/image.jpg` |
 | `#image_url#` | The host viewer web page link. | `https://pixhost.cc/show/42/image.html` |
-| `#direct_url#` | The direct full-resolution image link (when provided by the host). | `https://img.pixhost.cc/images/42/image.jpg` |
+| `#direct_url#` | An image link that works inside `[img]`: the full-resolution image where the app knows the host's link format, otherwise the thumbnail image (see below). | `https://img.pixhost.cc/images/42/image.jpg` |
+
+`#direct_url#` (and `#all_full_images#`) is never the host's viewer web page:
+
+| Host | `#direct_url#` is |
+| :--- | :--- |
+| IMX.to | The full-size image (`.../u/i/...`, derived from the `.../u/t/...` thumbnail). |
+| Pixhost | The full-size image (`imgN.pixhost.to/images/...`, derived from the `tN.pixhost.to/thumbs/...` thumbnail). |
+| Imgur | The uploaded image link. |
+| TurboImageHost, Vipr, ImageBam | The thumbnail image, because the app has no full-size image link for these hosts. |
 
 ### 3. Batch & Gallery Placeholders
 
@@ -233,7 +242,7 @@ The separator tells the app what to place between each image pass.
 ```
 
 * Shows `#batch_name#` in bold at the top.
-* Each image is embedded directly using its full resolution (`#direct_url#`).
+* Each image is embedded directly using `#direct_url#`: full resolution on IMX.to, Pixhost and Imgur, the thumbnail image on other hosts.
 * `separator=blankline` ensures there is a clean, readable empty line between every full-size photo.
 
 #### Example C: Separate Covers Section + Regular Images Grid
