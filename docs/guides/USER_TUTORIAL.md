@@ -547,8 +547,8 @@ Safe custom starter:
 | `Saved Templates` | Selects an existing template to load into the editor. |
 | `Load` | Loads the chosen saved template. |
 | `Duplicate` | Copies the current template to a new name. |
-| `Rename` | Renames the current template while keeping its content. |
-| `Delete` | Deletes the current template after confirmation. |
+| `Rename` | Renames the current custom template while keeping its content. Built-in templates can't be renamed; use `Duplicate` instead. |
+| `Delete` | Deletes the current custom template after confirmation. Built-in templates can't be deleted, because the app restores them every time it starts; for a built-in you have edited, `Delete` offers to reset it to its original text. |
 | `Import` | Imports templates from a JSON export file. |
 | `Export` | Exports saved templates to JSON. |
 | `B`, `I`, `U` | Inserts or wraps selected text with bold, italic, or underline formatting. |
@@ -558,10 +558,10 @@ Safe custom starter:
 | `Placeholders` | Switches between Images, Gallery, Batch, Service, and ViperGirls placeholder groups, including image-loop snippets. |
 | `Preview in Browser` | Opens a local browser preview using added local files and shows both rendered output and raw generated text. Add files to the queue before using this. |
 | `Copy Preview Output` | Copies the raw generated preview text without opening the browser. |
-| `Save Current` | Saves changes to the currently selected template name. |
+| `Save Current` | Saves changes to the template you are editing, the one named in `Edit Format`. |
 | `Save As New...` | Creates a new named template. |
 
-The editor warns before switching templates or closing if the current template has unsaved changes. Templates are validated before saving so empty templates, unknown `#placeholder#` values, duplicate or unmatched `[else]` tags, unclosed `[if]`, `[for image]`, or `[for cover]` blocks, and templates without image output placeholders are blocked.
+The editor warns before switching templates or closing if the current template has unsaved changes; answering `Yes` saves them to the template you were editing before the next one opens. A template you create with `Duplicate`, `Save As New...`, or `Rename` opens in the editor right away; if the `Category` or `Search` filter would hide it, the filter is cleared so the template shows in the list. Templates are validated before saving so empty templates, unknown `#placeholder#` values, duplicate or unmatched `[else]` tags, unclosed `[if]`, `[for image]`, or `[for cover]` blocks, and templates without image output placeholders are blocked.
 
 If preview data is not available, the editor explains what is missing instead of failing silently. Add at least one image to the upload queue before using browser preview or copying preview output.
 
@@ -623,6 +623,10 @@ The ViperGirls templates are designed for forum posting:
 
 Custom templates are saved in `~/.conniesuploader/templates.json`. Existing `user_templates.json` files are migrated into that location the first time the updated app runs.
 
+When two app windows are open, each save writes only the templates that window added, changed, or deleted, so templates saved from the other window are kept. `Restore Defaults` is the exception: it replaces the whole file with the built-in templates. A `templates.json` saved by an editor that adds a UTF-8 byte order mark (such as Notepad) loads normally. If an entry in the file is not text (for example `null`, a number, or a list), that entry is skipped, the other templates are kept, a copy of the original file is saved next to it as `templates.json.broken-<date>.bak`, and the app shows the Template Recovery notice listing the skipped names.
+
+`Import` accepts a file made by `Export` (with `version`, `exported_at`, and `templates`) or a plain JSON object that maps template names to template text. A file that has export fields but no `templates` object is refused. Entries whose content is not text, and names that repeat once surrounding spaces are removed, are skipped and listed in the import summary.
+
 ### Template Placeholders
 
 | Placeholder | Meaning |
@@ -656,6 +660,8 @@ If a template contains `#cover_images#`, `[for cover]`, `#cover_image#`, or `#co
 
 ViperGirls and forum templates are treated as BBCode templates by the editor toolbar, even when their saved template names are not literally `BBCode`. HTML templates still insert HTML tags.
 
+Custom templates get their output format from their text: HTML tags make them HTML, BBCode tags make them BBCode, and Markdown links, images, headings, or bold text make them Markdown. A template with none of these is Markdown or HTML when its name contains `Markdown` or `HTML`, and BBCode otherwise. That format controls how `#all_images#` and the other image placeholders are written, the toolbar tags, and the browser preview, so a duplicate of a built-in HTML or Markdown template keeps producing HTML or Markdown. See [How Format Resolution Works](TEMPLATE_EDITOR_TUTORIAL.md#how-format-resolution-works) for the exact order.
+
 ### Template Conditionals
 
 Use a conditional when a line, link, label, or whole section should appear only when certain upload data exists.
@@ -676,7 +682,7 @@ Recommended form:
 
 The condition name is the placeholder name without `#`. `[if #gallery_link#]` also works, but `[if gallery_link]` is easier to read.
 
-Truth checks match when the value is not empty after trimming spaces:
+Truth checks match when the value is not empty after trimming spaces and is not the number `0`:
 
 | Goal | Use |
 | --- | --- |
@@ -745,7 +751,9 @@ Keep these limits in mind:
 | Nested checks | Yes | Put one `[if]...[/if]` inside another. |
 | `and`, `or`, `not`, `contains`, `>`, `<` | No | Split the logic into simpler blocks or use exact comparisons. |
 
-Numeric placeholders are still treated as text for truth checks. For example, `cover_count` can be `0`, and `0` still counts as a non-empty value. If you need a specific count, use an exact comparison such as `[if cover_count=1]`. If you simply want covers to appear when selected, use `#cover_images#` or `[for cover]...[/for]`; both render nothing when no covers are selected.
+A count of `0` counts as "nothing": `[if cover_count]Covers:[/if]` shows `Covers:` only when at least one cover is used, and `[if image_count]` is false for an empty batch. If you need a specific count, use an exact comparison such as `[if cover_count=1]` (or `[if cover_count=0]`). If you simply want covers to appear when selected, use `#cover_images#` or `[for cover]...[/for]`; both render nothing when no covers are selected.
+
+Truth checks on image placeholders see the same values the output uses. `[if all_images]`, `[if cover_images]`, and `[if cover_count]` reflect the images and covers the template actually outputs, and `[if cover_image]` or `[if cover_url]` is true whenever the batch has an image, because those placeholders fall back to the first image when no cover is selected. An image that a branch sets aside as a cover is always output by that same branch.
 
 ### Template Image And Cover Loops
 
@@ -799,8 +807,9 @@ Supported separators:
 | `separator=", "` | A custom quoted separator. |
 | `sep=" \| "` | Same as `separator`, shorter to type. |
 | `separator="\n---\n"` | Custom separator using escaped line breaks. |
+| `separator="[hr]"` | A quoted separator may contain `]`. |
 
-Spacing tip: the separator is inserted between complete loop blocks. If your loop body already starts or ends with blank lines, a `blankline` separator can produce more vertical space than expected.
+Spacing tip: the separator is inserted between complete loop blocks. One line break directly after the opening `[for ...]` tag and one directly before `[/for]` only lay the loop out on its own lines and are not repeated, so `[for image separator=space]`, a line with the image block, and `[/for]` on three lines still produce a single row. Any further blank lines inside the loop body are repeated with every image and add to the separator.
 
 Common loop patterns:
 

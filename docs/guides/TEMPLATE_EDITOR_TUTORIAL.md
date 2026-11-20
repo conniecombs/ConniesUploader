@@ -78,7 +78,8 @@ Access the editor from the menu bar: **Tools > Template Editor**.
   > [!IMPORTANT]
   > Make sure you have at least one image in the main window queue before previewing, so the preview has real data to display!
 * **Copy Preview Output**: Compiles the template against the current queue data and copies the raw output text straight to your clipboard for fast testing.
-* **Save Current vs. Save As New...**: `Save Current` overwrites the active template; `Save As New...` prompts for a new name and creates a copy.
+* **Save Current vs. Save As New...**: `Save Current` overwrites the template you are editing (the one named in **Edit Format**); `Save As New...` prompts for a new name and creates a copy.
+* **Built-in templates** can be edited but not deleted or renamed: the app restores them each time it starts. **Delete** on a built-in you have edited offers to reset it to its original text; use **Duplicate** to make a copy you can rename or delete.
 
 ---
 
@@ -104,11 +105,18 @@ Connie's Uploader supports three major syntax families: **BBCode**, **Markdown**
 
 ### How Format Resolution Works
 
-Connie's Uploader knows which format to use based on the template's category:
-* **BBCode, Forum, ViperGirls** &rarr; Output engine generates BBCode.
-* **Markdown** &rarr; Output engine generates Markdown.
-* **HTML** &rarr; Output engine generates HTML.
-* **Custom Templates** &rarr; If the template contains HTML tags like `<html>` or `<a href`, it resolves to HTML. If the name contains `Markdown`, it resolves to Markdown. Otherwise, it defaults to BBCode.
+The format decides how `#all_images#`, `#all_full_images#`, `#cover_images#`, and `#cover_image#` are written, which tags the toolbar inserts, and how **Preview in Browser** renders the output. Connie's Uploader picks it like this:
+* **Built-in BBCode, Forum, ViperGirls templates** &rarr; BBCode.
+* **Built-in Markdown templates** &rarr; Markdown.
+* **Built-in HTML templates** &rarr; HTML.
+* **Custom Templates** &rarr; decided from the template text, checked in this order:
+  1. HTML tags such as `<a href`, `<img>`, `<p>`, `<center>`, or `<html>` &rarr; HTML.
+  2. BBCode tags such as `[b]`, `[url=...]`, `[img]`, or `[center]` &rarr; BBCode.
+  3. Markdown links or images (`[text](url)`, `![alt](url)`), headings (`# Title`), or bold text (`**text**`) &rarr; Markdown.
+  4. Text with none of these follows the name: a name containing `Markdown` &rarr; Markdown, a name containing `HTML` &rarr; HTML.
+  5. Otherwise &rarr; BBCode.
+
+Because the text is checked first, a template you **Duplicate** from a built-in keeps that built-in's format under any new name (a copy of `HTML` stays HTML, a copy of `Reddit Markdown` stays Markdown). If you rewrite a copy in another syntax, its format follows the new text.
 
 ---
 
@@ -199,10 +207,24 @@ The separator tells the app what to place between each image pass.
 | `separator=space` | Single space (`" "`) | Dense thumbnail grids that wrap naturally across the forum screen. |
 | `separator=none` | No separator (`""`) | Edge-to-edge images without any gaps. |
 | `separator=comma` | A comma and space (`, `) | Plain URL lists or links. |
-| `separator=" - "` | Custom characters in quotes | Custom dividers (e.g. `separator=" | "` or `separator="\n---\n"`). |
+| `separator=" - "` | Custom characters in quotes | Custom dividers (e.g. `separator=" | "`, `separator="\n---\n"`, or `separator="[hr]"`). Quoted text may contain `]`. |
 
 > [!NOTE]
 > You can also use the shorthand `sep=` instead of `separator=` (e.g. `[for image sep=space]`).
+
+### Line Breaks Around the Loop Body
+
+You can write a loop on one line or spread it over three lines. Both produce the same output:
+
+```bbcode
+[for image separator=space][url=#image_url#][img]#thumb_url#[/img][/url][/for]
+
+[for image separator=space]
+[url=#image_url#][img]#thumb_url#[/img][/url]
+[/for]
+```
+
+One line break directly after the opening `[for ...]` tag and one directly before `[/for]` only lay the loop out in the editor. They are not part of the repeated block, so the separator alone decides what goes between images: `separator=space` gives one row of thumbnails and `separator=newline` gives exactly one line break between images. Any further blank lines inside the loop body are kept and repeat with every image.
 
 ---
 
@@ -271,6 +293,8 @@ Conditionals allow you to write smart templates that show certain sections **onl
 
 * If the variable has text (like a URL, batch name, or size), the content inside is included.
 * If the variable is empty or blank, everything between `[if]` and `[/if]` is completely omitted.
+* A count of `0` counts as empty: `[if cover_count]` is only true when at least one cover is used. Use `[if cover_count=0]` to test for zero explicitly.
+* Image placeholders are tested against what the template really outputs, so a cover that an `[if]` branch sets aside is always shown by that branch and never silently dropped. `[if cover_image]` is true whenever the batch has an image, because `#cover_image#` falls back to the first image when no cover is selected.
 
 > [!TIP]
 > The condition tag takes the variable name **without** hashes: use `[if gallery_link]` rather than `[if #gallery_link#]`. (Both work, but without hashes is cleaner).
@@ -415,10 +439,17 @@ If your template doesn't produce the output you expect, consult this checklist:
 * **Behavior**: This is intentional! Connie's Uploader automatically excludes selected cover images from `#all_images#` and `[for image]` so that your cover photo isn't awkwardly repeated twice.
 * **Fix**: Place `#cover_images#` or `[for cover]` at the top of your template to showcase the covers.
 
-### 6. "Template must contain at least one image placeholder"
+### 6. "Template needs an image output placeholder"
 * **Cause**: Templates must actually output images. If you create a template with only text or batch metadata, Connie's Uploader blocks it from saving.
-* **Fix**: Include at least one image marker (`#all_images#`, `#all_full_images#`, `#cover_images#`, `#cover_image#`, `[for image]`, or `[for cover]`).
+* **Fix**: Include at least one image placeholder (`#all_images#`, `#all_full_images#`, `#cover_images#`, `#cover_image#`, `#cover_url#`, or `#image_url#` / `#thumb_url#` / `#direct_url#` inside a `[for image]` or `[for cover]` loop).
 
-### 7. Preview button doesn't do anything or shows empty data
+### 7. "Unsupported placeholder(s): {viewer}, {thumb}"
+* **Cause**: Placeholders in curly braces such as `{viewer}`, `{thumb}`, and `{direct}` are not part of the template language. They were never replaced, so they used to reach the forum post as literal text.
+* **Fix**: Use `#image_url#` instead of `{viewer}`, `#thumb_url#` instead of `{thumb}`, and `#direct_url#` instead of `{direct}`. Inside `[for image]...[/for]` they refer to each image in turn:
+  ```bbcode
+  [for image separator=space][url=#image_url#][img]#thumb_url#[/img][/url][/for]
+  ```
+
+### 8. Preview button doesn't do anything or shows empty data
 * **Cause**: The upload queue in the main Connie's Uploader window is empty.
 * **Fix**: Add at least one image or folder to the main window before clicking **Preview in Browser** or **Copy Preview Output**.

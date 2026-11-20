@@ -24,6 +24,10 @@ from tkinter import colorchooser, filedialog, messagebox
 from .widgets import MouseWheelComboBox
 from . import file_handler
 
+# The shared lock and unique-temp-file writer for JSON files in the user data
+# directory, so template saves follow the same rules as the other stores there.
+from .viper_storage import _STORAGE_LOCK, _atomic_write_json
+
 _USER_DATA_DIR = os.path.join(os.path.expanduser("~"), ".conniesuploader")
 DEFAULT_TEMPLATE_FILE = os.path.join(_USER_DATA_DIR, "templates.json")
 LEGACY_TEMPLATE_FILE = os.path.abspath("user_templates.json")
@@ -39,8 +43,17 @@ class TemplateValidationError(ValueError):
 
 
 class TemplateManager:
+    # Tag arguments end at the first "]", except inside a value quoted right after
+    # "=" (separator="[hr]", gallery_name="[HD] Set"); a quoted value stays on one line.
+    # The alternatives never overlap, so a tag that never closes fails in linear time.
+    _QUOTED_VALUE = r"\s*(?:\"[^\"\n]*\"|'[^'\n]*')"
+    _TAG_ARGUMENTS = r"(?:\s+(?:=" + _QUOTED_VALUE + r"|=(?!" + _QUOTED_VALUE + r")|[^\]=])*)?"
     TEMPLATE_TAG_PATTERN = re.compile(
-        r"\[(?P<tag>else|/if|/for|if(?:\s+[^\]]*)?|for\s+(?:image|cover)(?:\s+[^\]]*)?)\]",
+        r"\[(?P<tag>else|/if|/for|if"
+        + _TAG_ARGUMENTS
+        + r"|for\s+(?:image|cover)"
+        + _TAG_ARGUMENTS
+        + r")\]",
         re.IGNORECASE,
     )
     CONDITIONAL_START_PATTERN = re.compile(
@@ -54,9 +67,29 @@ class TemplateManager:
         re.IGNORECASE,
     )
     HASH_PLACEHOLDER_PATTERN = re.compile(r"#([A-Za-z_][A-Za-z0-9_]*)#")
+    NUMERIC_ZERO_PATTERN = re.compile(r"[+-]?(?:0+(?:\.0*)?|\.0+)")
+    # Never substituted by the renderer; kept only to point people at the # placeholders.
+    UNSUPPORTED_BRACE_PLACEHOLDERS = {
+        "{viewer}": "#image_url#",
+        "{thumb}": "#thumb_url#",
+        "{direct}": "#direct_url#",
+    }
     HTML_TAG_PATTERN = re.compile(
         r"<\s*/?\s*(?:a|b|body|br|center|div|em|font|h[1-6]|html|i|img|p|span|strong|table|td|tr|u)\b[^>]*>",
         re.IGNORECASE,
+    )
+    # A tag name followed directly by "]" or "=": [b], [/url], [size=2]. A Markdown
+    # link such as [I love this](...) is not a BBCode tag.
+    BBCODE_TAG_PATTERN = re.compile(
+        r"\[/?(?:b|i|u|s|url|img|center|left|right|size|color|font|quote|code|list"
+        r"|spoiler|hr|indent|align|table|tr|td|sup|sub|email)(?:=[^\]\n]*)?\]",
+        re.IGNORECASE,
+    )
+    MARKDOWN_SYNTAX_PATTERN = re.compile(
+        r"!?\[[^\[\]\n]*\]\([^()\s]+\)"  # [text](url) and ![alt](url)
+        r"|^[ \t]{0,3}#{1,6}[ \t]+\S"  # "# Heading" (not "#batch_name#")
+        r"|\*\*[^*\n]+\*\*",  # **bold**
+        re.MULTILINE,
     )
     ALLOWED_PLACEHOLDERS = {
         "all_images",
@@ -89,10 +122,9 @@ class TemplateManager:
         "#image_url#",
         "#thumb_url#",
         "#direct_url#",
-        "{viewer}",
-        "{thumb}",
-        "{direct}",
     )
+    # Keys of the export_templates_file() format; a file with any of them is an export.
+    EXPORT_METADATA_KEYS = ("version", "exported_at", "templates")
     CATEGORY_ALL = "All"
     CUSTOM_CATEGORY = "Custom"
     BUILTIN_TEMPLATE_CATEGORY_ORDER = [
@@ -123,7 +155,6 @@ class TemplateManager:
         "ViperGirls": "BBCode",
         "Markdown": "Markdown",
         "HTML": "HTML",
-        CUSTOM_CATEGORY: "BBCode",
     }
 
     def __init__(self, filepath: Optional[str] = None) -> None:
@@ -159,6 +190,7 @@ class TemplateManager:
         if self.uses_default_path:
             self._migrate_legacy_templates()
         self.recovery_issue: Optional[Dict[str, Any]] = None
+        self._saved_state: Dict[str, str] = {}
         self.load()
         self.save(validate=False)
 
@@ -178,44 +210,127 @@ class TemplateManager:
         except OSError as exc:
             logger.error(f"Could not migrate legacy templates: {exc}")
 
-    def load(self) -> None:
-        if os.path.exists(self.filepath):
-            try:
-                with open(self.filepath, "r", encoding="utf-8") as f:
-                    saved = json.load(f)
-                if not isinstance(saved, dict):
-                    raise ValueError("Template file must contain a JSON object.")
-                self.templates.update(saved)
-                self.recovery_issue = None
-            except Exception as e:
-                backup_path = self._backup_unreadable_file()
-                self.recovery_issue = {
-                    "filepath": os.path.abspath(self.filepath),
-                    "backup_path": backup_path,
-                    "error": str(e),
-                    "message": (
-                        "Saved templates could not be loaded. Defaults were restored "
-                        "and the broken file was preserved."
-                    ),
-                }
-                logger.error(f"Error loading templates: {e}")
+    @staticmethod
+    def _read_json_file(filepath: str) -> Any:
+        # utf-8-sig also reads files that an editor such as Notepad saved with a BOM.
+        with open(filepath, "r", encoding="utf-8-sig") as f:
+            return json.load(f)
 
-    def save(self, validate: bool = True) -> None:
+    @staticmethod
+    def _split_text_entries(saved: Dict[Any, Any]) -> Tuple[Dict[str, str], List[str]]:
+        """Return the entries whose content is text, and the names of the others."""
+        kept = {
+            name: content
+            for name, content in saved.items()
+            if isinstance(name, str) and isinstance(content, str)
+        }
+        dropped = [str(name) for name in saved if name not in kept]
+        return kept, dropped
+
+    def load(self) -> None:
+        with _STORAGE_LOCK:
+            self._load()
+
+    def _load(self) -> None:
+        # What the file held when this window last read or wrote it; save() applies
+        # only the differences from it, so other windows' saves are kept.
+        self._saved_state = {}
+        if not os.path.exists(self.filepath):
+            return
+        try:
+            saved = self._read_json_file(self.filepath)
+            if not isinstance(saved, dict):
+                raise ValueError("Template file must contain a JSON object.")
+        except Exception as e:
+            backup_path = self._backup_unreadable_file()
+            self.recovery_issue = {
+                "filepath": os.path.abspath(self.filepath),
+                "backup_path": backup_path,
+                "error": str(e),
+                "message": (
+                    "Saved templates could not be loaded. Defaults were restored "
+                    "and the broken file was preserved."
+                ),
+            }
+            logger.error(f"Error loading templates: {e}")
+            return
+
+        kept, dropped = self._split_text_entries(saved)
+        self.templates.update(kept)
+        self._saved_state = dict(kept)
+        self.recovery_issue = None
+        if dropped:
+            self.recovery_issue = {
+                "filepath": os.path.abspath(self.filepath),
+                "backup_path": self._backup_unreadable_file(),
+                "error": self._dropped_entries_message(dropped),
+                "message": (
+                    "Some saved templates could not be loaded and were skipped. "
+                    "The other templates were kept and the original file was preserved."
+                ),
+            }
+            logger.warning(f"Skipped template entries that are not text: {', '.join(dropped)}")
+
+    def _dropped_entries_message(self, dropped: List[str]) -> str:
+        message = (
+            f"Skipped {len(dropped)} saved template(s) whose content is not text: "
+            f"{', '.join(dropped)}. The other templates were kept."
+        )
+        if any(name in self.defaults for name in dropped):
+            message += " Built-in templates among them use their default text."
+        return message
+
+    def save(self, validate: bool = True, *, replace: bool = False) -> None:
+        """Write the templates to disk.
+
+        By default only this window's changes since it last read or wrote the file
+        (added, edited, deleted names) are applied to the file's current contents,
+        so templates saved meanwhile by another window are kept. ``replace=True``
+        writes exactly ``self.templates``.
+        """
         if validate:
             self.validate_all_templates(raise_on_error=True)
 
         try:
-            folder = os.path.dirname(os.path.abspath(self.filepath))
-            if folder:
-                os.makedirs(folder, exist_ok=True)
-            tmp_path = f"{self.filepath}.tmp"
-            with open(tmp_path, "w", encoding="utf-8") as f:
-                json.dump(self.templates, f, indent=4)
-                f.write("\n")
-            os.replace(tmp_path, self.filepath)
+            with _STORAGE_LOCK:
+                merged = dict(self.templates) if replace else self._merge_with_file()
+                _atomic_write_json(self.filepath, merged)
         except OSError as e:
             logger.error(f"Error saving templates: {e}")
             raise
+        self._saved_state = dict(merged)
+        self.templates = {**self.defaults, **merged}
+
+    def _merge_with_file(self) -> Dict[str, str]:
+        on_disk = self._read_saved_templates()
+        if on_disk is None:
+            return dict(self.templates)
+        merged = dict(on_disk)
+        names = list(self._saved_state) + [
+            name for name in self.templates if name not in self._saved_state
+        ]
+        for name in names:
+            ours = self.templates.get(name)
+            if ours == self._saved_state.get(name):
+                continue
+            if ours is None:
+                merged.pop(name, None)
+            else:
+                merged[name] = ours
+        return merged
+
+    def _read_saved_templates(self) -> Optional[Dict[str, str]]:
+        """Return the file's text templates, or None when it is missing or unreadable."""
+        if not os.path.exists(self.filepath):
+            return None
+        try:
+            saved = self._read_json_file(self.filepath)
+        except (OSError, ValueError) as e:
+            logger.warning(f"Replacing unreadable template file {self.filepath}: {e}")
+            return None
+        if not isinstance(saved, dict):
+            return None
+        return self._split_text_entries(saved)[0]
 
     def _backup_unreadable_file(self) -> Optional[str]:
         try:
@@ -237,7 +352,7 @@ class TemplateManager:
     def restore_defaults(self) -> None:
         self.templates = self.defaults.copy()
         self.recovery_issue = None
-        self.save()
+        self.save(replace=True)
 
     def get_template(self, fmt: str) -> str:
         return self.templates.get(fmt, self.defaults.get(fmt, ""))
@@ -254,7 +369,19 @@ class TemplateManager:
     def add_template(self, name: str, content: str) -> None:
         self.set_template(name, content)
 
+    def is_builtin_template(self, name: str) -> bool:
+        """Built-in templates always exist: every load restores them, so they can be
+        edited but not deleted or renamed away."""
+        return name in self.defaults
+
     def delete_template(self, name: str) -> None:
+        if self.is_builtin_template(name):
+            raise TemplateValidationError(
+                [
+                    f"'{name}' is a built-in template and can't be deleted. "
+                    "Use Duplicate to make a copy you can rename or delete."
+                ]
+            )
         if name in self.templates:
             del self.templates[name]
             self.save(validate=False)
@@ -270,6 +397,13 @@ class TemplateManager:
         clean_name = str(new_name or "").strip()
         if not clean_name:
             raise TemplateValidationError(["Template name is required."])
+        if clean_name != old_name and self.is_builtin_template(old_name):
+            raise TemplateValidationError(
+                [
+                    f"'{old_name}' is a built-in template and can't be renamed. "
+                    "Use Duplicate to copy it under a new name."
+                ]
+            )
         template_content = self.templates[old_name] if content is None else content
         self.validate_template(template_content, raise_on_error=True, template_name=clean_name)
         updated = dict(self.templates)
@@ -285,9 +419,39 @@ class TemplateManager:
     def get_template_category(self, name: str) -> str:
         return self.BUILTIN_TEMPLATE_CATEGORIES.get(name, self.CUSTOM_CATEGORY)
 
-    def resolve_output_format(self, name: str) -> str:
-        category = self.get_template_category(name)
-        return self.OUTPUT_FORMAT_BY_CATEGORY.get(category, "BBCode")
+    def resolve_output_format(self, name: str, content: Optional[str] = None) -> str:
+        """Return "BBCode", "Markdown" or "HTML" for the template ``name``.
+
+        Built-in templates use their category's format. A custom template's format
+        comes from ``content`` (default: its saved text), so a duplicate of a
+        built-in keeps that built-in's format; see ``detect_output_format``.
+        """
+        category = self.BUILTIN_TEMPLATE_CATEGORIES.get(name)
+        if category is not None:
+            return self.OUTPUT_FORMAT_BY_CATEGORY.get(category, "BBCode")
+        text = self.templates.get(name, "") if content is None else content
+        return self.detect_output_format(name, text)
+
+    def detect_output_format(self, name: str, content: str) -> str:
+        """Guess a custom template's format from its text, then from its name.
+
+        HTML tags mean HTML, BBCode tags mean BBCode, Markdown links, images,
+        headings or bold text mean Markdown. Text with none of those follows a
+        name containing "Markdown" or "HTML", and is BBCode otherwise.
+        """
+        text = str(content or "")
+        if self.HTML_TAG_PATTERN.search(text):
+            return "HTML"
+        if self.BBCODE_TAG_PATTERN.search(text):
+            return "BBCode"
+        if self.MARKDOWN_SYNTAX_PATTERN.search(text):
+            return "Markdown"
+        lowered_name = str(name or "").lower()
+        if "markdown" in lowered_name:
+            return "Markdown"
+        if "html" in lowered_name:
+            return "HTML"
+        return "BBCode"
 
     def template_warnings(self, name: str, content: str) -> List[str]:
         warnings: List[str] = []
@@ -360,32 +524,61 @@ class TemplateManager:
             f.write("\n")
         return len(templates)
 
+    def _read_import_templates(self, filepath: str) -> Dict[str, Any]:
+        """Return the name -> content entries of an export file or a plain template map."""
+        raw_data = self._read_json_file(filepath)
+        if not isinstance(raw_data, dict):
+            raise TemplateValidationError(["Import file must contain a template object."])
+        if any(key in raw_data for key in self.EXPORT_METADATA_KEYS):
+            raw_templates = raw_data.get("templates")
+            if not isinstance(raw_templates, dict):
+                raise TemplateValidationError(
+                    [
+                        'This file is not a template export: its "templates" entry must map '
+                        "template names to template text."
+                    ]
+                )
+            return raw_templates
+        return raw_data
+
+    def import_name_conflicts(self, filepath: str) -> List[str]:
+        """Names in the import file that already exist, as the import would see them."""
+        names = dict.fromkeys(
+            str(raw_name or "").strip() for raw_name in self._read_import_templates(filepath)
+        )
+        return [name for name in names if name in self.templates]
+
     def import_templates_file(
         self,
         filepath: str,
         overwrite: bool = True,
     ) -> Tuple[int, int, List[str]]:
-        with open(filepath, "r", encoding="utf-8") as f:
-            raw_data = json.load(f)
-
-        if isinstance(raw_data, dict) and isinstance(raw_data.get("templates"), dict):
-            raw_templates = raw_data["templates"]
-        elif isinstance(raw_data, dict):
-            raw_templates = raw_data
-        else:
-            raise TemplateValidationError(["Import file must contain a template object."])
+        raw_templates = self._read_import_templates(filepath)
 
         imported = 0
         skipped = 0
         errors = []
         updated = dict(self.templates)
+        seen_names = set()
         for raw_name, raw_content in raw_templates.items():
             name = str(raw_name or "").strip()
-            content = str(raw_content or "")
             if not name:
                 skipped += 1
                 errors.append("Skipped a template with no name.")
                 continue
+            if name in seen_names:
+                skipped += 1
+                errors.append(
+                    f'{name}: skipped "{raw_name}" because the file already has a template '
+                    "with this name (spaces around names are ignored)."
+                )
+                continue
+            seen_names.add(name)
+            if not isinstance(raw_content, str):
+                skipped += 1
+                errors.append(f"{name}: skipped because its content is not text.")
+                continue
+            content = raw_content
             if name in updated and not overwrite:
                 skipped += 1
                 continue
@@ -444,6 +637,20 @@ class TemplateManager:
         )
         if unknown:
             errors.append("Unknown placeholder(s): " + ", ".join(f"#{name}#" for name in unknown))
+        brace_placeholders = [
+            brace for brace in self.UNSUPPORTED_BRACE_PLACEHOLDERS if brace in template
+        ]
+        if brace_placeholders:
+            errors.append(
+                "Unsupported placeholder(s): "
+                + ", ".join(brace_placeholders)
+                + ". Use "
+                + ", ".join(
+                    f"{self.UNSUPPORTED_BRACE_PLACEHOLDERS[brace]} instead of {brace}"
+                    for brace in brace_placeholders
+                )
+                + "; inside [for image]...[/for] they refer to each image in turn."
+            )
         errors.extend(structure_errors)
 
         if not any(marker in template for marker in self.IMAGE_OUTPUT_MARKERS):
@@ -569,9 +776,11 @@ class TemplateManager:
 
     def _condition_matches(self, name: str, expected: Optional[str], data: Dict[str, Any]) -> bool:
         actual_value = data.get(name, "")
+        text = str(actual_value).strip()
         if expected is not None:
-            return str(actual_value).strip() == expected
-        return bool(str(actual_value).strip())
+            return text == expected
+        # A count of 0 (cover_count, image_count, ...) means "none", not "has a value".
+        return bool(text) and not self.NUMERIC_ZERO_PATTERN.fullmatch(text)
 
     def _loop_separator_from_tag(self, raw_tag: str) -> str:
         match = self.LOOP_START_PATTERN.fullmatch(raw_tag.strip())
@@ -674,7 +883,7 @@ class TemplateManager:
                     {"for_end"},
                 )
                 node_kind = "for_cover" if kind == "for_cover_start" else "for_image"
-                nodes.append((node_kind, separator, body_nodes))
+                nodes.append((node_kind, separator, self._trim_loop_layout(body_nodes)))
                 position = next_position
                 continue
 
@@ -684,6 +893,28 @@ class TemplateManager:
             nodes.append(("text", template_content[position:]))
 
         return nodes, len(template_content), ""
+
+    @staticmethod
+    def _trim_loop_layout(body_nodes: List[Tuple[Any, ...]]) -> List[Tuple[Any, ...]]:
+        """Drop the one line break written right after ``[for ...]`` and right before ``[/for]``.
+
+        Those line breaks only lay the loop out on its own lines in the editor; the
+        separator alone decides what goes between images.
+        """
+        nodes = list(body_nodes)
+        if nodes and nodes[0][0] == "text":
+            text = nodes[0][1]
+            for line_break in ("\r\n", "\n"):
+                if text.startswith(line_break):
+                    nodes[0] = ("text", text[len(line_break) :])
+                    break
+        if nodes and nodes[-1][0] == "text":
+            text = nodes[-1][1]
+            for line_break in ("\r\n", "\n"):
+                if text.endswith(line_break):
+                    nodes[-1] = ("text", text[: -len(line_break)])
+                    break
+        return nodes
 
     def _replace_placeholders(
         self,
@@ -697,6 +928,40 @@ class TemplateManager:
                 continue
             content = content.replace(f"#{key}#", str(value))
         return content
+
+    def _format_image(
+        self, image_format: str, data: Dict[str, Any], viewer: str, thumb: str, direct: str
+    ) -> str:
+        image_data = dict(data)
+        image_data["image_url"] = viewer
+        image_data["thumb_url"] = thumb
+        image_data["direct_url"] = direct
+        return self._replace_placeholders(image_format, image_data)
+
+    def _image_list_values(
+        self,
+        data: Dict[str, Any],
+        image_format: str,
+        full_image_format: str,
+        covers: List[Tuple[str, str, str]],
+        images: List[Tuple[str, str, str]],
+    ) -> Dict[str, Any]:
+        """Return ``data`` plus #all_images#, #all_full_images#, #cover_count#, #cover_images#."""
+        values = dict(data)
+        values["all_images"] = " ".join(
+            self._format_image(image_format, values, viewer, thumb, direct)
+            for viewer, thumb, direct in images
+        )
+        values["all_full_images"] = " ".join(
+            self._format_image(full_image_format, values, direct, thumb, direct)
+            for _viewer, thumb, direct in images
+        )
+        values["cover_count"] = len(covers)
+        values["cover_images"] = " ".join(
+            self._format_image(image_format, values, viewer, thumb, direct)
+            for viewer, thumb, direct in covers
+        )
+        return values
 
     @staticmethod
     def _safe_nonnegative_int(value: Any, default: int = 0) -> int:
@@ -737,8 +1002,11 @@ class TemplateManager:
         data: Dict[str, Any],
         images: List[Tuple[str, str, str]],
         cover_images: Optional[List[Tuple[str, str, str]]] = None,
+        conditions: Optional[Dict[str, Any]] = None,
     ) -> str:
+        """Render ``nodes``; ``[if]`` tests read ``conditions`` (default: ``data``)."""
         cover_images = cover_images or []
+        conditions = data if conditions is None else conditions
         rendered: List[str] = []
         for node in nodes:
             kind = node[0]
@@ -747,23 +1015,25 @@ class TemplateManager:
             elif kind == "if":
                 _kind, name, expected, true_nodes, false_nodes = node
                 selected_nodes = (
-                    true_nodes if self._condition_matches(name, expected, data) else false_nodes
+                    true_nodes
+                    if self._condition_matches(name, expected, conditions)
+                    else false_nodes
                 )
-                rendered.append(self._render_nodes(selected_nodes, data, images, cover_images))
-            elif kind == "for_image":
+                rendered.append(
+                    self._render_nodes(selected_nodes, data, images, cover_images, conditions)
+                )
+            elif kind in {"for_image", "for_cover"}:
                 _kind, separator, body_nodes = node
                 blocks = []
-                for image in images:
+                for image in images if kind == "for_image" else cover_images:
                     image_data = self._image_context(data, image)
-                    block = self._render_nodes(body_nodes, image_data, images, cover_images)
-                    blocks.append(self._replace_placeholders(block, image_data))
-                rendered.append(separator.join(blocks))
-            elif kind == "for_cover":
-                _kind, separator, body_nodes = node
-                blocks = []
-                for image in cover_images:
-                    image_data = self._image_context(data, image)
-                    block = self._render_nodes(body_nodes, image_data, images, cover_images)
+                    block = self._render_nodes(
+                        body_nodes,
+                        image_data,
+                        images,
+                        cover_images,
+                        self._image_context(conditions, image),
+                    )
                     blocks.append(self._replace_placeholders(block, image_data))
                 rendered.append(separator.join(blocks))
         return "".join(rendered)
@@ -793,7 +1063,7 @@ class TemplateManager:
         self, format_mode: str, data: Dict[str, Any], images: List[Tuple[str, str, str]]
     ) -> str:
         template = self.get_template(format_mode)
-        output_format = self.resolve_output_format(format_mode)
+        output_format = self.resolve_output_format(format_mode, template)
         nodes = self._parse_template_nodes(template)
         data = dict(data)
         if images:
@@ -811,60 +1081,50 @@ class TemplateManager:
         data.setdefault("image_count", len(images))
         data.setdefault("folder_size", "")
 
-        temp_data = data.copy()
-        temp_data.setdefault("all_images", "dummy")
-        temp_data.setdefault("all_full_images", "dummy")
-        temp_data.setdefault("cover_image", "dummy")
-        temp_data.setdefault("cover_images", "dummy")
-        temp_data.setdefault("cover_url", "dummy")
-        cover_slots, uses_auto_covers = self._cover_requirements_from_nodes(nodes, temp_data)
-        selected_cover_count = self._safe_nonnegative_int(data.get("cover_count"), 0)
-        cover_count = max(cover_slots, selected_cover_count if uses_auto_covers else 0)
-        cover_count = min(cover_count, len(images))
-
-        covers_extracted = [self._image_values(img) for img in images[:cover_count]]
-        remaining_images = images[cover_count:] if cover_count > 0 else images
-
-        filtered_images = []
-        for img in remaining_images:
-            filtered_images.append(self._image_values(img))
-
+        image_values = [self._image_values(img) for img in images]
         img_fmt = self.image_formats.get(output_format, self.image_formats["BBCode"])
-        processed_images = []
-        for v_url, t_url, d_url in filtered_images:
-            item_str = img_fmt
-            image_data = dict(data)
-            image_data["image_url"] = v_url
-            image_data["thumb_url"] = t_url
-            image_data["direct_url"] = d_url
-            processed_images.append(self._replace_placeholders(item_str, image_data))
-        data["all_images"] = " ".join(processed_images)
-
         full_fmt = self.full_image_formats.get(output_format, self.full_image_formats["BBCode"])
-        processed_full = []
-        for _, t_url, d_url in filtered_images:
-            item_str = full_fmt
-            image_data = dict(data)
-            image_data["image_url"] = d_url
-            image_data["thumb_url"] = t_url
-            image_data["direct_url"] = d_url
-            processed_full.append(self._replace_placeholders(item_str, image_data))
-        data["all_full_images"] = " ".join(processed_full)
-        data["cover_count"] = len(covers_extracted)
-        data["cover_images"] = " ".join(
-            self._replace_placeholders(
-                img_fmt,
-                {
-                    **data,
-                    "image_url": viewer_url,
-                    "thumb_url": thumb_url,
-                    "direct_url": direct_url,
-                },
-            )
-            for viewer_url, thumb_url, direct_url in covers_extracted
-        )
+        selected_cover_count = self._safe_nonnegative_int(data.get("cover_count"), 0)
 
-        content = self._render_nodes(nodes, data, filtered_images, covers_extracted)
+        def condition_values(cover_total: int) -> Dict[str, Any]:
+            values = self._image_list_values(
+                data,
+                img_fmt,
+                full_fmt,
+                image_values[:cover_total],
+                image_values[cover_total:],
+            )
+            # #cover_image# and #cover_url# start with the first image whether or not
+            # it was selected as a cover.
+            first = image_values[0] if image_values else None
+            values["cover_image"] = self._format_image(img_fmt, values, *first) if first else ""
+            values["cover_url"] = (
+                first[1] if first else str(data.get("cover_url") or data.get("thumb_url") or "")
+            )
+            return values
+
+        def covers_used(conditions: Dict[str, Any]) -> int:
+            cover_slots, uses_auto_covers = self._cover_requirements_from_nodes(nodes, conditions)
+            cover_total = max(cover_slots, selected_cover_count if uses_auto_covers else 0)
+            return min(cover_total, len(images))
+
+        # [if] tests may read the cover and image lists, and those lists depend on how
+        # many covers the chosen branches use. Pick one set of values for every test, so
+        # the branches that decide the covers are exactly the branches that are rendered
+        # and no image is set aside as a cover without being output.
+        guess = min(selected_cover_count, len(images))
+        conditions = condition_values(guess)
+        cover_count = covers_used(conditions)
+        if cover_count != guess:
+            settled = condition_values(cover_count)
+            if covers_used(settled) == cover_count:
+                conditions = settled
+
+        covers_extracted = image_values[:cover_count]
+        filtered_images = image_values[cover_count:]
+        data = self._image_list_values(data, img_fmt, full_fmt, covers_extracted, filtered_images)
+
+        content = self._render_nodes(nodes, data, filtered_images, covers_extracted, conditions)
 
         covers_to_use = covers_extracted.copy()
 
@@ -1100,7 +1360,7 @@ class TemplateEditor(ctk.CTkToplevel):
         self.load_curr()
 
     def get_tags(self, mode, value=None):
-        fmt = self.mgr.resolve_output_format(self.fmt.get())
+        fmt = self.mgr.resolve_output_format(self.current_template_name, self._editor_content())
         if mode == "Bold":
             return (
                 ("[b]", "[/b]")
@@ -1237,11 +1497,28 @@ class TemplateEditor(ctk.CTkToplevel):
         self.cb_fmt.configure(values=keys)
         self.cb_category.configure(values=self.mgr.get_category_names())
         self.template_empty_label.configure(text="No matching templates." if not keys else "")
-        if selected in keys:
+        if selected:
+            # Always show the template being edited, even when a filter hides it from
+            # the dropdown list, so the selector never names a different template.
             self.cb_fmt.set(selected)
             self.cb_saved.set(selected)
             self.fmt.set(selected)
             self.saved_tmpl_var.set(selected)
+
+    def _show_template_in_lists(self, name: str) -> None:
+        """Relax the Category, then the Search filter, when they hide ``name``."""
+
+        def visible() -> bool:
+            return name in self.mgr.filter_template_names(
+                self.template_search_var.get(),
+                self.template_category_var.get(),
+            )
+
+        if visible():
+            return
+        self.template_category_var.set(self.mgr.CATEGORY_ALL)
+        if not visible():
+            self.template_search_var.set("")
 
     def _show_validation_errors(self, title: str, exc: Exception) -> None:
         if isinstance(exc, TemplateValidationError):
@@ -1264,6 +1541,7 @@ class TemplateEditor(ctk.CTkToplevel):
         self.txt.insert("0.0", content)
         self.current_template_name = name
         self.loaded_content = content.strip()
+        self._show_template_in_lists(name)
         self._refresh_template_lists(name)
 
     def load_curr(self, name=None):
@@ -1282,7 +1560,10 @@ class TemplateEditor(ctk.CTkToplevel):
         self.load_curr(sel)
 
     def save(self, show_success: bool = True) -> bool:
-        name = self.fmt.get().strip()
+        # The template whose text is in the editor. Not self.fmt: the Edit Format
+        # combobox writes its variable before its command runs, so while switching
+        # templates fmt already names the next template.
+        name = self.current_template_name
         content = self._editor_content()
         if not self._confirm_template_warnings(name, content):
             return False
@@ -1354,6 +1635,13 @@ class TemplateEditor(ctk.CTkToplevel):
 
     def rename_current(self):
         old_name = self.current_template_name
+        if self.mgr.is_builtin_template(old_name):
+            messagebox.showinfo(
+                "Built-in Template",
+                f"'{old_name}' is a built-in template and can't be renamed.\n\n"
+                "Use Duplicate to copy it under a new name.",
+            )
+            return
         dialog = ctk.CTkInputDialog(text=f"Rename '{old_name}' to:", title="Rename Template")
         new_name = dialog.get_input()
         if not new_name:
@@ -1381,8 +1669,36 @@ class TemplateEditor(ctk.CTkToplevel):
         if self.update_callback:
             self.update_callback(clean_name)
 
+    def _reset_builtin_template(self, name: str) -> None:
+        original = self.mgr.defaults[name]
+        if self.mgr.get_template(name) == original and not self.is_dirty():
+            messagebox.showinfo(
+                "Built-in Template",
+                f"'{name}' is a built-in template and can't be deleted.\n\n"
+                "Use Duplicate to make a copy you can rename or delete.",
+            )
+            return
+        if not messagebox.askyesno(
+            "Built-in Template",
+            f"'{name}' is a built-in template and can't be deleted.\n\n"
+            "Reset it to its original text instead? Your changes to it will be lost.",
+        ):
+            return
+        try:
+            self.mgr.set_template(name, original)
+        except (TemplateValidationError, OSError) as exc:
+            self._show_validation_errors("Reset Failed", exc)
+            return
+        self._load_template_content(name)
+        messagebox.showinfo("Template Reset", f"Reset '{name}' to its original text.")
+        if self.update_callback:
+            self.update_callback(name)
+
     def delete_current(self):
         name = self.current_template_name
+        if self.mgr.is_builtin_template(name):
+            self._reset_builtin_template(name)
+            return
         if not messagebox.askyesno("Delete Template", f"Delete template '{name}'?"):
             return
         try:
@@ -1411,17 +1727,9 @@ class TemplateEditor(ctk.CTkToplevel):
 
         overwrite = True
         try:
-            with open(filepath, "r", encoding="utf-8") as f:
-                raw_data = json.load(f)
-            raw_templates = (
-                raw_data.get("templates", raw_data) if isinstance(raw_data, dict) else {}
-            )
-            duplicates = [
-                str(name).strip()
-                for name in raw_templates
-                if str(name).strip() in self.mgr.templates
-            ]
+            duplicates = self.mgr.import_name_conflicts(filepath)
         except Exception:
+            # import_templates_file() below reports why the file cannot be imported.
             duplicates = []
 
         if duplicates:
@@ -1434,7 +1742,7 @@ class TemplateEditor(ctk.CTkToplevel):
             imported, skipped, errors = self.mgr.import_templates_file(
                 filepath, overwrite=overwrite
             )
-        except (OSError, json.JSONDecodeError, TemplateValidationError) as exc:
+        except (OSError, ValueError) as exc:  # bad JSON or text encoding, or wrong shape
             self._show_validation_errors("Import Failed", exc)
             return
 
@@ -1559,8 +1867,8 @@ class TemplateEditor(ctk.CTkToplevel):
             path_url = f"file:///{urllib.parse.quote(file_path.replace(os.sep, '/'))}"
             mock.append((path_url, path_url, path_url))
 
-        curr_fmt = self.fmt.get()
-        output_fmt = self.mgr.resolve_output_format(curr_fmt)
+        curr_fmt = self.current_template_name
+        output_fmt = self.mgr.resolve_output_format(curr_fmt, content)
         existed = curr_fmt in self.mgr.templates
         orig = self.mgr.templates.get(curr_fmt)
         self.mgr.templates[curr_fmt] = content

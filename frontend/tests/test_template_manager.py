@@ -131,7 +131,7 @@ class TestTemplateOperations:
             templates_file = Path(temp_dir) / "templates.json"
             tm = TemplateManager(str(templates_file))
 
-            template_content = "[url={viewer}][img]{thumb}[/img][/url]"
+            template_content = "[url=#image_url#][img]#thumb_url#[/img][/url]"
             tm.add_template("Test Template", template_content)
 
             templates = tm.get_all_templates()
@@ -144,7 +144,7 @@ class TestTemplateOperations:
             templates_file = Path(temp_dir) / "templates.json"
             tm = TemplateManager(str(templates_file))
 
-            template_content = "[img]{direct}[/img]"
+            template_content = "[img]#direct_url#[/img]"
             tm.add_template("Direct Link", template_content)
 
             retrieved = tm.get_template("Direct Link")
@@ -165,7 +165,7 @@ class TestTemplateOperations:
             templates_file = Path(temp_dir) / "templates.json"
             tm = TemplateManager(str(templates_file))
 
-            tm.add_template("To Delete", "[url]{viewer}[/url]")
+            tm.add_template("To Delete", "[url]#image_url#[/url]")
             assert "To Delete" in tm.get_all_templates()
 
             tm.delete_template("To Delete")
@@ -177,8 +177,8 @@ class TestTemplateOperations:
             templates_file = Path(temp_dir) / "templates.json"
             tm = TemplateManager(str(templates_file))
 
-            original = "[img]{thumb}[/img]"
-            updated = "[url={viewer}][img]{thumb}[/img][/url]"
+            original = "[img]#thumb_url#[/img]"
+            updated = "[url=#image_url#][img]#thumb_url#[/img][/url]"
 
             tm.add_template("MyTemplate", original)
             assert tm.get_template("MyTemplate") == original
@@ -347,7 +347,7 @@ class TestTemplatePersistence:
             templates_file = Path(temp_dir) / "templates.json"
             tm = TemplateManager(str(templates_file))
 
-            tm.add_template("Test", "[img]{thumb}[/img]")
+            tm.add_template("Test", "[img]#thumb_url#[/img]")
             tm.save()  # Assuming save method exists
 
             # Read file directly
@@ -375,7 +375,7 @@ class TestTemplatePersistence:
 
             # First instance
             tm1 = TemplateManager(str(templates_file))
-            tm1.add_template("Persistent", "[url]{viewer}[/url]")
+            tm1.add_template("Persistent", "[url]#image_url#[/url]")
 
             # Second instance
             tm2 = TemplateManager(str(templates_file))
@@ -568,7 +568,7 @@ class TestTemplateValidation:
             templates_file = Path(temp_dir) / "templates.json"
             tm = TemplateManager(str(templates_file))
 
-            long_template = "[img]{thumb}[/img]" * 1000
+            long_template = "[img]#thumb_url#[/img]" * 1000
             tm.add_template("Long", long_template)
 
             retrieved = tm.get_template("Long")
@@ -581,7 +581,7 @@ class TestTemplateValidation:
             tm = TemplateManager(str(templates_file))
 
             template_with_special = (
-                '<a href="{viewer}" title="View & Download">[img]{thumb}[/img]</a>'
+                '<a href="#image_url#" title="View & Download">[img]#thumb_url#[/img]</a>'
             )
             tm.add_template("Special", template_with_special)
 
@@ -645,17 +645,18 @@ class TestTemplateManagerIntegration:
 
             # Create manager and add template
             tm = TemplateManager(str(templates_file))
-            tm.add_template("Workflow", "[url={viewer}]{thumb}[/url]")
+            tm.add_template("Workflow", "[url=#image_url#]#thumb_url#[/url]")
 
             # Retrieve and use template
-            template = tm.get_template("Workflow")
-            result = template.format(
-                viewer="http://example.com", thumb="http://example.com/thumb.jpg"
+            result = tm.apply(
+                "Workflow",
+                {},
+                [("http://example.com", "http://example.com/thumb.jpg", "")],
             )
             assert result == "[url=http://example.com]http://example.com/thumb.jpg[/url]"
 
             # Update template
-            tm.add_template("Workflow", "[img]{thumb}[/img]")
+            tm.add_template("Workflow", "[img]#thumb_url#[/img]")
             updated = tm.get_template("Workflow")
             assert "[img]" in updated
 
@@ -1060,6 +1061,8 @@ class TestTemplateManagerAdvanced:
             editor = TemplateEditor.__new__(TemplateEditor)
             editor.mgr = mgr
             editor.fmt = FakeVar("ViperGirls Gallery Post")
+            editor.current_template_name = "ViperGirls Gallery Post"
+            editor.txt = _FakeText(mgr.get_template("ViperGirls Gallery Post"))
 
             assert TemplateEditor.get_tags(editor, "Bold") == ("[b]", "[/b]")
             assert TemplateEditor.get_tags(editor, "Color", "#ff0000") == (
@@ -1068,6 +1071,8 @@ class TestTemplateManagerAdvanced:
             )
 
             editor.fmt = FakeVar("HTML")
+            editor.current_template_name = "HTML"
+            editor.txt = _FakeText(mgr.get_template("HTML"))
             assert TemplateEditor.get_tags(editor, "Bold") == ("<b>", "</b>")
 
     def test_template_warnings_flag_html_in_bbcode_forum_templates(self):
@@ -1171,6 +1176,7 @@ class TestTemplateManagerAdvanced:
             )
         )
         editor.fmt = FakeVar("Preview Custom")
+        editor.current_template_name = "Preview Custom"
         editor.data_callback = lambda: (
             [str(image_one), str(image_two)],
             "Preview Batch",
@@ -1216,6 +1222,7 @@ class TestTemplateManagerAdvanced:
         editor.mgr = mgr
         editor.txt = FakeText("#cover_images#\n--\n#all_images#")
         editor.fmt = FakeVar("Preview Custom")
+        editor.current_template_name = "Preview Custom"
         editor.data_callback = lambda: (
             [str(image_one), str(image_two)],
             "Preview Batch",
@@ -1245,3 +1252,667 @@ class TestTemplateManagerAdvanced:
         assert TemplateEditor._build_preview_output(editor) is None
         assert warnings
         assert "Preview needs files" in warnings[0][1]
+
+
+THREE_IMAGES = [
+    ("viewer1", "thumb1", "direct1"),
+    ("viewer2", "thumb2", "direct2"),
+    ("viewer3", "thumb3", "direct3"),
+]
+
+
+@pytest.mark.unit
+class TestTemplateLoopLayout:
+    def test_line_breaks_next_to_loop_tags_are_layout_not_content(self, tmp_path):
+        mgr = TemplateManager(str(tmp_path / "templates.json"))
+        snippets = dict(TemplateEditor.PLACEHOLDER_CATEGORIES["Images"])
+        block = "[url=viewer{0}][img]thumb{0}[/img][/url]"
+        blocks = [block.format(index) for index in range(1, 4)]
+
+        mgr.templates["Newline"] = snippets["Loop: Newline"]
+        mgr.templates["Blank"] = snippets["Loop: Blank Line"]
+        mgr.templates["Space"] = (
+            "[for image separator=space]\n[url=#image_url#][img]#thumb_url#[/img][/url]\n[/for]"
+        )
+
+        assert mgr.apply("Newline", {}, THREE_IMAGES) == "\n".join(blocks)
+        assert mgr.apply("Blank", {}, THREE_IMAGES) == "\n\n".join(blocks)
+        assert mgr.apply("Space", {}, THREE_IMAGES) == " ".join(blocks)
+
+    def test_only_one_layout_line_break_is_removed_on_each_side(self, tmp_path):
+        mgr = TemplateManager(str(tmp_path / "templates.json"))
+        mgr.templates["Padded"] = "[for image separator=none]\n\n#thumb_url#\n\n[/for]"
+        mgr.templates["Windows"] = "[for image separator=comma]\r\n#thumb_url#\r\n[/for]"
+
+        assert mgr.apply("Padded", {}, THREE_IMAGES[:2]) == "\nthumb1\n\nthumb2\n"
+        assert mgr.apply("Windows", {}, THREE_IMAGES[:2]) == "thumb1, thumb2"
+
+    def test_documented_covers_and_grid_example_renders_rows(self, tmp_path):
+        mgr = TemplateManager(str(tmp_path / "templates.json"))
+        mgr.set_template(
+            "Example C",
+            "[center]\n[b]Covers:[/b]\n[for cover separator=space]\n"
+            "[url=#image_url#][img]#thumb_url#[/img][/url]\n[/for]\n\n"
+            "[b]Gallery Set:[/b]\n[for image separator=space]\n"
+            "[url=#image_url#][img]#thumb_url#[/img][/url]\n[/for]\n[/center]",
+        )
+        images = THREE_IMAGES + [("viewer4", "thumb4", "direct4")]
+
+        result = mgr.apply("Example C", {"cover_count": 2}, images)
+
+        assert result == (
+            "[center]\n[b]Covers:[/b]\n"
+            "[url=viewer1][img]thumb1[/img][/url] [url=viewer2][img]thumb2[/img][/url]\n\n"
+            "[b]Gallery Set:[/b]\n"
+            "[url=viewer3][img]thumb3[/img][/url] [url=viewer4][img]thumb4[/img][/url]\n"
+            "[/center]"
+        )
+
+    def test_quoted_separator_may_contain_closing_bracket(self, tmp_path):
+        mgr = TemplateManager(str(tmp_path / "templates.json"))
+        template = '[for image separator="[hr]"][img]#thumb_url#[/img][/for]'
+
+        assert mgr.validate_template(template) == []
+        mgr.set_template("Rule Between", template)
+
+        assert mgr.apply("Rule Between", {}, THREE_IMAGES[:2]) == (
+            "[img]thumb1[/img][hr][img]thumb2[/img]"
+        )
+
+    def test_quoted_condition_value_may_contain_closing_bracket(self, tmp_path):
+        mgr = TemplateManager(str(tmp_path / "templates.json"))
+        mgr.set_template("Bracket Name", '[if gallery_name="[HD] Set"]HD [/if]#all_images#')
+
+        result = mgr.apply("Bracket Name", {"gallery_name": "[HD] Set"}, [])
+
+        assert result == "HD "
+
+    def test_unquoted_values_still_end_at_the_first_closing_bracket(self, tmp_path):
+        mgr = TemplateManager(str(tmp_path / "templates.json"))
+        mgr.set_template("Apostrophe", "[if gallery_name=it's]Match[/if] #all_images# it's")
+
+        result = mgr.apply("Apostrophe", {"gallery_name": "it's"}, [])
+
+        assert result == "Match  it's"
+
+
+FOUR_IMAGES = THREE_IMAGES + [("viewer4", "thumb4", "direct4")]
+
+
+def _thumb_block(index):
+    return f"[url=viewer{index}][img]thumb{index}[/img][/url]"
+
+
+@pytest.mark.unit
+class TestTemplateConditionsMatchRender:
+    def test_conditional_cover_image_keeps_every_image(self, tmp_path):
+        mgr = TemplateManager(str(tmp_path / "templates.json"))
+        mgr.set_template("Optional Cover", "[if cover_image]#cover_image#\n[/if]#all_images#")
+
+        for cover_count in (0, 1):
+            result = mgr.apply("Optional Cover", {"cover_count": cover_count}, FOUR_IMAGES)
+
+            assert result == _thumb_block(1) + "\n" + " ".join(
+                _thumb_block(index) for index in range(2, 5)
+            )
+
+    def test_conditions_on_image_lists_never_drop_an_image(self, tmp_path):
+        mgr = TemplateManager(str(tmp_path / "templates.json"))
+        mgr.set_template("Cover If Rest", "[if all_images]#cover_image#[/if]")
+        mgr.set_template("Optional Covers", "[if cover_images]#cover_images#\n[/if]#all_images#")
+
+        assert mgr.apply("Cover If Rest", {}, THREE_IMAGES[:1]) == _thumb_block(1)
+        assert mgr.apply("Optional Covers", {"cover_count": 0}, THREE_IMAGES) == " ".join(
+            _thumb_block(index) for index in range(1, 4)
+        )
+        assert mgr.apply("Optional Covers", {"cover_count": 2}, THREE_IMAGES) == (
+            f"{_thumb_block(1)} {_thumb_block(2)}\n{_thumb_block(3)}"
+        )
+
+    def test_numeric_zero_is_false_in_conditions(self, tmp_path):
+        mgr = TemplateManager(str(tmp_path / "templates.json"))
+        mgr.set_template("Count", "[if cover_count]Covers: #cover_images#\n[/if]#all_images#")
+
+        without_covers = mgr.apply("Count", {"cover_count": 0}, FOUR_IMAGES)
+        with_covers = mgr.apply("Count", {"cover_count": 2}, FOUR_IMAGES)
+
+        assert without_covers == " ".join(_thumb_block(index) for index in range(1, 5))
+        assert with_covers == (
+            f"Covers: {_thumb_block(1)} {_thumb_block(2)}\n{_thumb_block(3)} {_thumb_block(4)}"
+        )
+        assert mgr.process_conditionals(
+            "[if image_count]Some[else]None[/if]", {"image_count": 0}
+        ) == ("None")
+        assert mgr.process_conditionals("[if thread_id]T[else]None[/if]", {"thread_id": "0"}) == (
+            "None"
+        )
+        assert mgr.process_conditionals("[if image_count]Some[/if]", {"image_count": 3}) == "Some"
+        assert mgr.process_conditionals("[if cover_count=0]Zero[/if]", {"cover_count": 0}) == (
+            "Zero"
+        )
+
+    def test_cover_count_condition_sees_the_rendered_cover_count(self, tmp_path):
+        mgr = TemplateManager(str(tmp_path / "templates.json"))
+        mgr.set_template(
+            "Two Slots",
+            "[if cover_count=2]Two covers: [/if]#cover_image# #cover_image#\n"
+            "#cover_count# #all_images#",
+        )
+
+        result = mgr.apply("Two Slots", {"cover_count": 0}, THREE_IMAGES)
+
+        assert result == f"Two covers: {_thumb_block(1)} {_thumb_block(2)}\n2 {_thumb_block(3)}"
+
+    def test_brace_placeholders_are_rejected_with_a_hint(self, tmp_path):
+        mgr = TemplateManager(str(tmp_path / "templates.json"))
+
+        errors = mgr.validate_template("[url={viewer}][img]{thumb}[/img][/url]")
+        direct_errors = mgr.validate_template("#all_images# [img]{direct}[/img]")
+
+        assert any(
+            "{viewer}" in error and "{thumb}" in error and "#image_url#" in error
+            for error in errors
+        )
+        assert any("image output placeholder" in error for error in errors)
+        assert len(direct_errors) == 1
+        assert "{direct}" in direct_errors[0] and "#direct_url#" in direct_errors[0]
+        with pytest.raises(TemplateValidationError):
+            mgr.set_template("Legacy", "[url={viewer}][img]{thumb}[/img][/url]")
+
+
+class _FakeVar:
+    def __init__(self, value=""):
+        self.value = value
+
+    def get(self):
+        return self.value
+
+    def set(self, value):
+        self.value = value
+
+
+class _FakeText:
+    def __init__(self, content=""):
+        self.content = content
+
+    def get(self, *_args):
+        return self.content + "\n"
+
+    def delete(self, *_args):
+        self.content = ""
+
+    def insert(self, _index, value):
+        self.content = value + self.content
+
+
+class _FakeCombo:
+    def __init__(self):
+        self.values = []
+        self.value = ""
+
+    def configure(self, **kwargs):
+        self.values = kwargs.get("values", self.values)
+
+    def set(self, value):
+        self.value = value
+
+
+IMAGE_BLOCKS = {
+    "BBCode": "[url=viewer1][img]thumb1[/img][/url]",
+    "Markdown": "[![Image](thumb1)](viewer1)",
+    "HTML": '<a href="viewer1"><img src="thumb1"></a>',
+}
+
+
+@pytest.mark.unit
+class TestCustomTemplateOutputFormat:
+    @pytest.mark.parametrize(
+        "source, expected",
+        [
+            ("HTML", "HTML"),
+            ("HTML Page Wrapper", "HTML"),
+            ("Markdown", "Markdown"),
+            ("Reddit Markdown", "Markdown"),
+            ("BBCode", "BBCode"),
+            ("Basic List", "BBCode"),
+            ("ViperGirls Gallery Post", "BBCode"),
+        ],
+    )
+    def test_duplicate_of_a_builtin_keeps_its_output_format(self, tmp_path, source, expected):
+        mgr = TemplateManager(str(tmp_path / "templates.json"))
+        mgr.duplicate_template(source, "My copy")
+
+        result = mgr.apply("My copy", {"gallery_link": "https://gallery"}, THREE_IMAGES[:1])
+
+        assert mgr.resolve_output_format("My copy") == expected
+        assert IMAGE_BLOCKS[expected] in result
+        for other_format, block in IMAGE_BLOCKS.items():
+            if other_format != expected:
+                assert block not in result
+
+    @pytest.mark.parametrize(
+        "name, content, expected",
+        [
+            ("My Markdown", "# #batch_name#\n\n#all_images#", "Markdown"),
+            ("Reddit post", "**#batch_name#**\n\n#all_images#", "Markdown"),
+            ("Blog", "<p>#batch_name#</p>\n#all_images#", "HTML"),
+            ("Forum post", "[b]#batch_name#[/b]\n#all_images#", "BBCode"),
+            ("Markdown for forums", "[b]#batch_name#[/b]\n#all_images#", "BBCode"),
+            ("my markdown list", "#all_images#", "Markdown"),
+            ("Gallery HTML", "#batch_name#\n#all_images#", "HTML"),
+            ("Plain list", "#batch_name#\n#all_images#", "BBCode"),
+        ],
+    )
+    def test_custom_template_format_follows_content_then_name(
+        self, tmp_path, name, content, expected
+    ):
+        mgr = TemplateManager(str(tmp_path / "templates.json"))
+        mgr.set_template(name, content)
+
+        assert mgr.resolve_output_format(name) == expected
+        assert mgr.resolve_output_format(name, content) == expected
+        assert IMAGE_BLOCKS[expected] in mgr.apply(name, {}, THREE_IMAGES[:1])
+
+    def test_preview_and_toolbar_use_the_detected_format(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(template_manager.messagebox, "showerror", lambda *_args: None)
+        monkeypatch.setattr(template_manager.messagebox, "showwarning", lambda *_args: None)
+        image = tmp_path / "a.jpg"
+        image.write_bytes(b"a")
+        mgr = TemplateManager(str(tmp_path / "templates.json"))
+        mgr.duplicate_template("HTML", "Web copy")
+        editor = TemplateEditor.__new__(TemplateEditor)
+        editor.mgr = mgr
+        editor.txt = _FakeText(mgr.get_template("Web copy"))
+        editor.fmt = _FakeVar("Web copy")
+        editor.current_template_name = "Web copy"
+        editor.data_callback = lambda: ([str(image)], "Batch", "180", 0)
+
+        raw, output_format, size = TemplateEditor._build_preview_output(editor)
+        page = TemplateEditor.build_preview_html(raw, output_format, size)
+
+        assert output_format == "HTML"
+        assert '<a href="file:///' in raw
+        assert "[url=" not in raw
+        assert '<a href="http://localhost/preview">Click here for Gallery</a>' in page
+        assert TemplateEditor.get_tags(editor, "Bold") == ("<b>", "</b>")
+
+        editor.txt = _FakeText("[Gallery](#gallery_link#)\n#all_images#")
+        assert TemplateEditor.get_tags(editor, "Bold") == ("**", "**")
+        _raw, output_format, _size = TemplateEditor._build_preview_output(editor)
+        assert output_format == "Markdown"
+
+
+def _read_json(path):
+    return json.loads(Path(path).read_text(encoding="utf-8"))
+
+
+@pytest.mark.unit
+class TestTemplateFileRobustness:
+    def test_saves_from_two_windows_merge_instead_of_overwriting(self, tmp_path):
+        path = tmp_path / "templates.json"
+        first = TemplateManager(str(path))
+        second = TemplateManager(str(path))
+
+        first.set_template("From A", "A #all_images#")
+        second.set_template("From B", "B #all_images#")
+        second.set_template("BBCode", "edited #all_images#")
+
+        on_disk = _read_json(path)
+        assert on_disk["From A"] == "A #all_images#"
+        assert on_disk["From B"] == "B #all_images#"
+        assert on_disk["BBCode"] == "edited #all_images#"
+        assert second.get_template("From A") == "A #all_images#"
+        assert TemplateManager(str(path)).get_template("From A") == "A #all_images#"
+
+    def test_merge_keeps_other_windows_deletions_renames_and_edits(self, tmp_path):
+        path = tmp_path / "templates.json"
+        first = TemplateManager(str(path))
+        first.set_template("Shared", "shared #all_images#")
+        first.set_template("Old Name", "old #all_images#")
+        first.set_template("Edited", "v1 #all_images#")
+        second = TemplateManager(str(path))
+
+        first.delete_template("Shared")
+        first.rename_template("Old Name", "New Name")
+        first.set_template("Edited", "v2 #all_images#")
+        second.set_template("Other", "other #all_images#")
+
+        on_disk = _read_json(path)
+        assert "Shared" not in on_disk
+        assert "Old Name" not in on_disk
+        assert on_disk["New Name"] == "old #all_images#"
+        assert on_disk["Edited"] == "v2 #all_images#"
+        assert on_disk["Other"] == "other #all_images#"
+
+    def test_restore_defaults_replaces_the_whole_file(self, tmp_path):
+        path = tmp_path / "templates.json"
+        first = TemplateManager(str(path))
+        second = TemplateManager(str(path))
+        first.set_template("Mine", "mine #all_images#")
+
+        second.restore_defaults()
+
+        assert _read_json(path) == second.defaults
+        assert "Mine" not in second.get_all_templates()
+
+    def test_templates_file_with_utf8_bom_loads(self, tmp_path):
+        path = tmp_path / "templates.json"
+        path.write_text(json.dumps({"Mine": "X #all_images#"}), encoding="utf-8-sig")
+
+        tm = TemplateManager(str(path))
+
+        assert tm.get_recovery_issue() is None
+        assert tm.get_template("Mine") == "X #all_images#"
+        assert not list(tmp_path.glob("*.bak"))
+        assert _read_json(path)["Mine"] == "X #all_images#"
+
+    def test_import_accepts_utf8_bom(self, tmp_path):
+        import_path = tmp_path / "export.json"
+        import_path.write_text(
+            json.dumps({"version": 1, "templates": {"Mine": "X #all_images#"}}),
+            encoding="utf-8-sig",
+        )
+        tm = TemplateManager(str(tmp_path / "templates.json"))
+
+        assert tm.import_templates_file(str(import_path)) == (1, 0, [])
+        assert tm.get_template("Mine") == "X #all_images#"
+        assert tm.import_name_conflicts(str(import_path)) == ["Mine"]
+
+    def test_non_text_entries_are_dropped_and_reported(self, tmp_path):
+        path = tmp_path / "templates.json"
+        original = {"BBCode": None, "Mine": 5, "L": ["#all_images#"], "Good": "G #all_images#"}
+        path.write_text(json.dumps(original), encoding="utf-8")
+
+        tm = TemplateManager(str(path))
+
+        issue = tm.get_recovery_issue()
+        assert issue is not None
+        for name in ("BBCode", "Mine", "L"):
+            assert name in issue["error"]
+        assert "Good" not in issue["error"]
+        assert _read_json(issue["backup_path"]) == original
+        assert tm.get_template("BBCode") == tm.defaults["BBCode"]
+        assert "Mine" not in tm.get_all_templates()
+        assert "L" not in tm.get_all_templates()
+        assert tm.get_template("Good") == "G #all_images#"
+        assert IMAGE_BLOCKS["BBCode"] in tm.apply("BBCode", {}, THREE_IMAGES[:1])
+        assert all(isinstance(value, str) for value in _read_json(path).values())
+        assert TemplateManager(str(path)).get_recovery_issue() is None
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {"version": 1, "templates": []},
+            {"templates": "#all_images#"},
+            {"version": 1, "exported_at": "x", "templates": None},
+            {"BBCode": "new #all_images#", "version": "#all_images#"},
+            [1],
+            "#all_images#",
+        ],
+    )
+    def test_import_rejects_files_that_are_not_template_exports(self, tmp_path, payload):
+        import_path = tmp_path / "import.json"
+        import_path.write_text(json.dumps(payload), encoding="utf-8")
+        tm = TemplateManager(str(tmp_path / "templates.json"))
+        before = tm.get_all_templates()
+
+        with pytest.raises(TemplateValidationError):
+            tm.import_templates_file(str(import_path))
+
+        assert tm.get_all_templates() == before
+
+    def test_import_skips_entries_whose_content_is_not_text(self, tmp_path):
+        import_path = tmp_path / "import.json"
+        plain_path = tmp_path / "plain.json"
+        import_path.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "templates": {
+                        "A": ["#all_images#"],
+                        "B": {"content": "#all_images#"},
+                        "C": None,
+                        "D": "#all_images#",
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        plain_path.write_text(json.dumps({"E": {"content": "#all_images#"}}), encoding="utf-8")
+        tm = TemplateManager(str(tmp_path / "templates.json"))
+
+        imported, skipped, errors = tm.import_templates_file(str(import_path))
+        plain_result = tm.import_templates_file(str(plain_path))
+
+        assert (imported, skipped) == (1, 3)
+        for name in ("A", "B", "C"):
+            assert any(error.startswith(f"{name}:") for error in errors)
+            assert name not in tm.get_all_templates()
+        assert tm.get_template("D") == "#all_images#"
+        assert plain_result[:2] == (0, 1)
+        assert "E" not in tm.get_all_templates()
+
+    def test_import_reports_names_that_collide_after_trimming(self, tmp_path):
+        import_path = tmp_path / "import.json"
+        import_path.write_text(
+            json.dumps({"templates": {"A": "first #all_images#", " A ": "second #all_images#"}}),
+            encoding="utf-8",
+        )
+        tm = TemplateManager(str(tmp_path / "templates.json"))
+
+        imported, skipped, errors = tm.import_templates_file(str(import_path))
+
+        assert (imported, skipped) == (1, 1)
+        assert len(errors) == 1 and "A" in errors[0]
+        assert tm.get_template("A") == "first #all_images#"
+
+
+def _make_editor(mgr, name="BBCode", category=None):
+    """A TemplateEditor wired to fake widgets, in the state __init__ leaves it in."""
+    editor = TemplateEditor.__new__(TemplateEditor)
+    editor.mgr = mgr
+    editor.data_callback = None
+    editor.update_callback = None
+    editor.initial_mode = name
+    editor.current_template_name = ""
+    editor.loaded_content = ""
+    editor.last_preview_output = ""
+    editor.fmt = _FakeVar(name)
+    editor.saved_tmpl_var = _FakeVar(name)
+    editor.template_search_var = _FakeVar("")
+    editor.template_category_var = _FakeVar(category or mgr.CATEGORY_ALL)
+    editor.cb_fmt = _FakeCombo()
+    editor.cb_saved = _FakeCombo()
+    editor.cb_category = _FakeCombo()
+    editor.template_empty_label = _FakeCombo()
+    editor.txt = _FakeText()
+    editor._load_template_content(name)
+    return editor
+
+
+@pytest.mark.unit
+class TestBuiltinTemplatesStay:
+    def test_builtin_templates_cannot_be_deleted_or_renamed(self, tmp_path):
+        path = tmp_path / "templates.json"
+        tm = TemplateManager(str(path))
+
+        with pytest.raises(TemplateValidationError) as deleted:
+            tm.delete_template("Reddit Markdown")
+        with pytest.raises(TemplateValidationError) as renamed:
+            tm.rename_template("BBCode", "Mine")
+
+        assert "built-in" in str(deleted.value)
+        assert "Duplicate" in str(renamed.value)
+        assert "Reddit Markdown" in _read_json(path)
+        assert "BBCode" in tm.get_all_templates()
+        assert "Mine" not in tm.get_all_templates()
+        tm.rename_template("BBCode", "BBCode", "edited #all_images#")
+        assert tm.get_template("BBCode") == "edited #all_images#"
+
+    def test_custom_templates_can_still_be_deleted_and_renamed(self, tmp_path):
+        path = tmp_path / "templates.json"
+        tm = TemplateManager(str(path))
+        tm.set_template("Mine", "#all_images#")
+
+        tm.rename_template("Mine", "Yours")
+        tm.delete_template("Yours")
+
+        restarted = TemplateManager(str(path)).get_all_templates()
+        assert "Mine" not in restarted
+        assert "Yours" not in restarted
+
+    def test_editor_delete_offers_to_reset_an_edited_builtin(self, tmp_path, monkeypatch):
+        path = tmp_path / "templates.json"
+        mgr = TemplateManager(str(path))
+        mgr.set_template("BBCode", "edited #all_images#")
+        editor = _make_editor(mgr, "BBCode")
+        questions = []
+        monkeypatch.setattr(
+            template_manager.messagebox,
+            "askyesno",
+            lambda _title, message: questions.append(message) or True,
+        )
+        monkeypatch.setattr(template_manager.messagebox, "showinfo", lambda *_args: None)
+
+        editor.delete_current()
+
+        assert len(questions) == 1 and "built-in" in questions[0]
+        assert mgr.get_template("BBCode") == mgr.defaults["BBCode"]
+        assert _read_json(path)["BBCode"] == mgr.defaults["BBCode"]
+        assert editor.current_template_name == "BBCode"
+        assert editor._editor_content() == mgr.defaults["BBCode"]
+
+    def test_editor_delete_or_rename_of_an_unchanged_builtin_only_explains(
+        self, tmp_path, monkeypatch
+    ):
+        mgr = TemplateManager(str(tmp_path / "templates.json"))
+        editor = _make_editor(mgr, "Reddit Markdown")
+        infos = []
+
+        def unexpected(*_args, **_kwargs):
+            raise AssertionError("should not ask")
+
+        monkeypatch.setattr(template_manager.messagebox, "askyesno", unexpected)
+        monkeypatch.setattr(template_manager.ctk, "CTkInputDialog", unexpected)
+        monkeypatch.setattr(
+            template_manager.messagebox,
+            "showinfo",
+            lambda _title, message: infos.append(message),
+        )
+
+        editor.delete_current()
+        editor.rename_current()
+
+        assert len(infos) == 2
+        assert all("built-in" in message and "Duplicate" in message for message in infos)
+        assert mgr.get_template("Reddit Markdown") == mgr.defaults["Reddit Markdown"]
+
+
+class _FakeInputDialog:
+    answer = ""
+
+    def __init__(self, **_kwargs):
+        pass
+
+    def get_input(self):
+        return self.answer
+
+
+@pytest.mark.unit
+class TestTemplateEditorSavesTheEditedTemplate:
+    def _two_templates(self, tmp_path):
+        path = tmp_path / "templates.json"
+        mgr = TemplateManager(str(path))
+        mgr.set_template("Mine A", "[b]A original[/b] #all_images#")
+        mgr.set_template("Mine B", "[i]B original[/i] #all_images#")
+        return path, mgr
+
+    def test_switch_prompt_saves_the_previous_template(self, tmp_path, monkeypatch):
+        path, mgr = self._two_templates(tmp_path)
+        editor = _make_editor(mgr, "Mine A")
+        monkeypatch.setattr(template_manager.messagebox, "askyesnocancel", lambda *_args: True)
+        monkeypatch.setattr(template_manager.messagebox, "showinfo", lambda *_args: None)
+        editor.txt.content = "[b]A EDITED[/b] #all_images#"
+
+        # CTkComboBox's dropdown and the mouse-wheel handler write the bound
+        # variable before they call the command.
+        editor.fmt.set("Mine B")
+        editor._handle_template_change("Mine B")
+
+        on_disk = _read_json(path)
+        assert on_disk["Mine A"] == "[b]A EDITED[/b] #all_images#"
+        assert on_disk["Mine B"] == "[i]B original[/i] #all_images#"
+        assert editor.current_template_name == "Mine B"
+        assert editor.fmt.get() == "Mine B"
+        assert editor._editor_content() == "[i]B original[/i] #all_images#"
+
+    def test_cancelled_switch_keeps_editing_and_saving_the_same_template(
+        self, tmp_path, monkeypatch
+    ):
+        path, mgr = self._two_templates(tmp_path)
+        editor = _make_editor(mgr, "Mine A")
+        monkeypatch.setattr(template_manager.messagebox, "askyesnocancel", lambda *_args: None)
+        monkeypatch.setattr(template_manager.messagebox, "showinfo", lambda *_args: None)
+        editor.txt.content = "[b]A EDITED[/b] #all_images#"
+
+        editor.fmt.set("Mine B")
+        editor._handle_template_change("Mine B")
+        assert editor.current_template_name == "Mine A"
+        assert editor.fmt.get() == "Mine A"
+        assert _read_json(path)["Mine A"] == "[b]A original[/b] #all_images#"
+
+        editor.fmt.set("Mine B")  # a stale selection must not redirect the save
+        assert editor.save() is True
+
+        on_disk = _read_json(path)
+        assert on_disk["Mine A"] == "[b]A EDITED[/b] #all_images#"
+        assert on_disk["Mine B"] == "[i]B original[/i] #all_images#"
+
+    def test_duplicate_under_a_category_filter_edits_and_saves_the_copy(
+        self, tmp_path, monkeypatch
+    ):
+        path = tmp_path / "templates.json"
+        mgr = TemplateManager(str(path))
+        editor = _make_editor(mgr, "BBCode")
+        infos = []
+        monkeypatch.setattr(template_manager.messagebox, "askyesno", lambda *_args: True)
+        monkeypatch.setattr(
+            template_manager.messagebox,
+            "showinfo",
+            lambda _title, message: infos.append(message),
+        )
+        _FakeInputDialog.answer = "My Post"
+        monkeypatch.setattr(template_manager.ctk, "CTkInputDialog", _FakeInputDialog)
+
+        editor.template_category_var.set("ViperGirls")
+        editor.fmt.set("ViperGirls Gallery Post")
+        editor._handle_template_change("ViperGirls Gallery Post")
+        original = mgr.get_template("ViperGirls Gallery Post")
+        editor.duplicate_current()
+
+        assert editor.current_template_name == "My Post"
+        assert editor.fmt.get() == "My Post"
+        assert "My Post" in editor.cb_fmt.values
+
+        editor.txt.content = "[b]MY EXPERIMENT[/b] #all_images#"
+        assert editor.save() is True
+
+        assert mgr.get_template("ViperGirls Gallery Post") == original
+        assert _read_json(path)["ViperGirls Gallery Post"] == original
+        assert _read_json(path)["My Post"] == "[b]MY EXPERIMENT[/b] #all_images#"
+        assert infos[-1] == "Template 'My Post' updated."
+
+    def test_loading_a_template_hidden_by_the_search_clears_the_filters(self, tmp_path):
+        mgr = TemplateManager(str(tmp_path / "templates.json"))
+        mgr.set_template("Zebra", "zebra #all_images#")
+        editor = _make_editor(mgr, "BBCode")
+        editor.template_search_var.set("gallery")
+        editor.template_category_var.set("Forum")
+
+        editor._load_template_content("Zebra")
+
+        assert editor.template_category_var.get() == mgr.CATEGORY_ALL
+        assert editor.template_search_var.get() == ""
+        assert "Zebra" in editor.cb_fmt.values
+        assert editor.fmt.get() == "Zebra"
+        assert editor.saved_tmpl_var.get() == "Zebra"
