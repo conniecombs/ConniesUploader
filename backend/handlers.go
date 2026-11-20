@@ -278,6 +278,10 @@ func processFileGenericCtx(parent context.Context, fp string, job *JobRequest) {
 
 	select {
 	case res := <-resultChan:
+		if res.err == nil && strings.TrimSpace(res.url) == "" {
+			// A file is only Done when it has a link to show.
+			res.err = fmt.Errorf("upload finished without an image link")
+		}
 		if res.err != nil {
 			if parent.Err() == context.Canceled {
 				emitCancelledFiles(job, []string{fp})

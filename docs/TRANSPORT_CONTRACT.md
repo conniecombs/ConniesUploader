@@ -122,6 +122,14 @@ that carries a job `id` but no file applies to every file of that job that has
 not finished. After `batch_complete`, any file of that job without a terminal
 event is failed by Python.
 
+An upload is `Done` only when it produced a viewer link. A non-2xx upload
+response, a failed `status_path` check, a body the parser cannot read, or a
+response (after any resolution) without a link ends as `Failed`. The error
+names the HTTP status and the host's own message (a JSON `error`, `message`,
+`msg`, or similar field) or else a short plain-text snippet of the response,
+with job credentials redacted. Go does not re-send such an upload: the host
+already answered.
+
 ## Deprecated Compatibility Hooks
 
 These Go-side fields remain only for existing upload compatibility:

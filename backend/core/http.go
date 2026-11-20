@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -166,7 +167,12 @@ func ExecuteHttpUploadWithData(ctx context.Context, client *http.Client, fp stri
 	type uploadResult struct {
 		URL   string
 		Thumb string
+		// Failure is the host's definitive answer that this file has no
+		// usable result. It ends the upload without a retry: the host has
+		// already seen the file, so sending it again cannot help.
+		Failure error
 	}
+	secrets := uploadSecrets(job)
 
 	res, err := RetryWithBackoff(ctx, retryConfig, func() (uploadResult, int, error) {
 		pr, pw := io.Pipe()
@@ -263,12 +269,36 @@ func ExecuteHttpUploadWithData(ctx context.Context, client *http.Client, fp stri
 			}
 		}
 
-		urlStr, thumbStr, err := ParseHttpResponseWithClient(ctx, useClient, resp, &spec.ResponseParser, fp)
-		return uploadResult{URL: urlStr, Thumb: thumbStr}, resp.StatusCode, err
+		bodyBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return uploadResult{}, resp.StatusCode, err
+		}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			failure := uploadFailure("upload rejected", resp.StatusCode, bodyBytes, secrets)
+			return uploadResult{Failure: failure}, resp.StatusCode, nil
+		}
+
+		parsed, err := parseUploadResponse(ctx, useClient, resp, bodyBytes, &spec.ResponseParser, fp)
+		if err != nil {
+			var problem *responseProblem
+			if errors.As(err, &problem) {
+				failure := uploadFailure(problem.reason, resp.StatusCode, problem.body, secrets)
+				return uploadResult{Failure: failure}, resp.StatusCode, nil
+			}
+			return uploadResult{}, resp.StatusCode, err
+		}
+		if strings.TrimSpace(parsed.URL) == "" {
+			failure := uploadFailure("upload response had no image link", resp.StatusCode, parsed.Body, secrets)
+			return uploadResult{Failure: failure}, resp.StatusCode, nil
+		}
+		return uploadResult{URL: parsed.URL, Thumb: parsed.Thumb}, resp.StatusCode, nil
 	}, logger)
 
 	if err != nil {
 		return HTTPUploadResult{}, err
+	}
+	if res.Failure != nil {
+		return HTTPUploadResult{}, res.Failure
 	}
 	if job != nil && job.ResolveSpec != nil && strings.TrimSpace(res.URL) != "" && strings.TrimSpace(res.Thumb) == "" {
 		resolveSpec := *job.ResolveSpec
@@ -522,13 +552,42 @@ func ParseHttpResponseWithClient(ctx context.Context, client *http.Client, resp 
 	if err != nil {
 		return "", "", err
 	}
+	parsed, err := parseUploadResponse(ctx, client, resp, bodyBytes, parser, fp)
+	return parsed.URL, parsed.Thumb, err
+}
+
+// parsedUpload is what an upload response parser found, plus the body it read
+// (after any follow-up request) so a missing link can be explained.
+type parsedUpload struct {
+	URL   string
+	Thumb string
+	Body  []byte
+}
+
+func parseUploadResponse(ctx context.Context, client *http.Client, resp *http.Response, bodyBytes []byte, parser *ResponseParserSpec, fp string) (parsedUpload, error) {
 	if parser != nil && parser.FollowUpRequest != nil {
+		var err error
 		bodyBytes, err = executeResponseFollowUp(ctx, client, resp, bodyBytes, parser.FollowUpRequest)
 		if err != nil {
-			return "", "", err
+			return parsedUpload{}, err
 		}
 	}
-	return parseHttpResponseBody(bodyBytes, parser, fp)
+	urlStr, thumbStr, err := parseHttpResponseBody(bodyBytes, parser, fp)
+	return parsedUpload{URL: urlStr, Thumb: thumbStr, Body: bodyBytes}, err
+}
+
+// responseProblem marks an upload response the host sent on purpose that has
+// no usable result (a failed status check, or a body the parser cannot read).
+type responseProblem struct {
+	reason string
+	body   []byte
+}
+
+func (p *responseProblem) Error() string {
+	if detail := hostMessage(p.body); detail != "" {
+		return p.reason + ": " + detail
+	}
+	return p.reason
 }
 
 func parseHttpResponseBody(bodyBytes []byte, parser *ResponseParserSpec, fp string) (string, string, error) {
@@ -536,10 +595,10 @@ func parseHttpResponseBody(bodyBytes []byte, parser *ResponseParserSpec, fp stri
 	case "", "json":
 		var data map[string]interface{}
 		if err := json.Unmarshal(bodyBytes, &data); err != nil {
-			return "", "", err
+			return "", "", &responseProblem{reason: "upload response was not valid JSON", body: bodyBytes}
 		}
 		if parser.StatusPath != "" && GetJSONValue(data, parser.StatusPath) != parser.SuccessValue {
-			return "", "", fmt.Errorf("upload failed: status check did not match")
+			return "", "", &responseProblem{reason: "upload failed: status check did not match", body: bodyBytes}
 		}
 
 		urlStr := GetJSONValue(data, parser.URLPath)

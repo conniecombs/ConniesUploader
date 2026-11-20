@@ -174,7 +174,9 @@ class PixhostPlugin(ImageHostPlugin):
                 "type": "json",
                 "url_path": "show_url",
                 "thumb_path": "th_url",
-                # Pixhost returns empty show_url on error, no explicit status field
+                # Pixhost has no explicit status field. The sidecar fails a
+                # non-2xx response, or one without show_url, with the host's
+                # error message.
             },
         }
 
