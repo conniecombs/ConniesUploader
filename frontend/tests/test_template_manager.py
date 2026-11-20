@@ -1538,3 +1538,168 @@ class TestCustomTemplateOutputFormat:
         assert TemplateEditor.get_tags(editor, "Bold") == ("**", "**")
         _raw, output_format, _size = TemplateEditor._build_preview_output(editor)
         assert output_format == "Markdown"
+
+
+def _read_json(path):
+    return json.loads(Path(path).read_text(encoding="utf-8"))
+
+
+@pytest.mark.unit
+class TestTemplateFileRobustness:
+    def test_saves_from_two_windows_merge_instead_of_overwriting(self, tmp_path):
+        path = tmp_path / "templates.json"
+        first = TemplateManager(str(path))
+        second = TemplateManager(str(path))
+
+        first.set_template("From A", "A #all_images#")
+        second.set_template("From B", "B #all_images#")
+        second.set_template("BBCode", "edited #all_images#")
+
+        on_disk = _read_json(path)
+        assert on_disk["From A"] == "A #all_images#"
+        assert on_disk["From B"] == "B #all_images#"
+        assert on_disk["BBCode"] == "edited #all_images#"
+        assert second.get_template("From A") == "A #all_images#"
+        assert TemplateManager(str(path)).get_template("From A") == "A #all_images#"
+
+    def test_merge_keeps_other_windows_deletions_renames_and_edits(self, tmp_path):
+        path = tmp_path / "templates.json"
+        first = TemplateManager(str(path))
+        first.set_template("Shared", "shared #all_images#")
+        first.set_template("Old Name", "old #all_images#")
+        first.set_template("Edited", "v1 #all_images#")
+        second = TemplateManager(str(path))
+
+        first.delete_template("Shared")
+        first.rename_template("Old Name", "New Name")
+        first.set_template("Edited", "v2 #all_images#")
+        second.set_template("Other", "other #all_images#")
+
+        on_disk = _read_json(path)
+        assert "Shared" not in on_disk
+        assert "Old Name" not in on_disk
+        assert on_disk["New Name"] == "old #all_images#"
+        assert on_disk["Edited"] == "v2 #all_images#"
+        assert on_disk["Other"] == "other #all_images#"
+
+    def test_restore_defaults_replaces_the_whole_file(self, tmp_path):
+        path = tmp_path / "templates.json"
+        first = TemplateManager(str(path))
+        second = TemplateManager(str(path))
+        first.set_template("Mine", "mine #all_images#")
+
+        second.restore_defaults()
+
+        assert _read_json(path) == second.defaults
+        assert "Mine" not in second.get_all_templates()
+
+    def test_templates_file_with_utf8_bom_loads(self, tmp_path):
+        path = tmp_path / "templates.json"
+        path.write_text(json.dumps({"Mine": "X #all_images#"}), encoding="utf-8-sig")
+
+        tm = TemplateManager(str(path))
+
+        assert tm.get_recovery_issue() is None
+        assert tm.get_template("Mine") == "X #all_images#"
+        assert not list(tmp_path.glob("*.bak"))
+        assert _read_json(path)["Mine"] == "X #all_images#"
+
+    def test_import_accepts_utf8_bom(self, tmp_path):
+        import_path = tmp_path / "export.json"
+        import_path.write_text(
+            json.dumps({"version": 1, "templates": {"Mine": "X #all_images#"}}),
+            encoding="utf-8-sig",
+        )
+        tm = TemplateManager(str(tmp_path / "templates.json"))
+
+        assert tm.import_templates_file(str(import_path)) == (1, 0, [])
+        assert tm.get_template("Mine") == "X #all_images#"
+        assert tm.import_name_conflicts(str(import_path)) == ["Mine"]
+
+    def test_non_text_entries_are_dropped_and_reported(self, tmp_path):
+        path = tmp_path / "templates.json"
+        original = {"BBCode": None, "Mine": 5, "L": ["#all_images#"], "Good": "G #all_images#"}
+        path.write_text(json.dumps(original), encoding="utf-8")
+
+        tm = TemplateManager(str(path))
+
+        issue = tm.get_recovery_issue()
+        assert issue is not None
+        for name in ("BBCode", "Mine", "L"):
+            assert name in issue["error"]
+        assert "Good" not in issue["error"]
+        assert _read_json(issue["backup_path"]) == original
+        assert tm.get_template("BBCode") == tm.defaults["BBCode"]
+        assert "Mine" not in tm.get_all_templates()
+        assert "L" not in tm.get_all_templates()
+        assert tm.get_template("Good") == "G #all_images#"
+        assert IMAGE_BLOCKS["BBCode"] in tm.apply("BBCode", {}, THREE_IMAGES[:1])
+        assert all(isinstance(value, str) for value in _read_json(path).values())
+        assert TemplateManager(str(path)).get_recovery_issue() is None
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {"version": 1, "templates": []},
+            {"templates": "#all_images#"},
+            {"version": 1, "exported_at": "x", "templates": None},
+            {"BBCode": "new #all_images#", "version": "#all_images#"},
+            [1],
+            "#all_images#",
+        ],
+    )
+    def test_import_rejects_files_that_are_not_template_exports(self, tmp_path, payload):
+        import_path = tmp_path / "import.json"
+        import_path.write_text(json.dumps(payload), encoding="utf-8")
+        tm = TemplateManager(str(tmp_path / "templates.json"))
+        before = tm.get_all_templates()
+
+        with pytest.raises(TemplateValidationError):
+            tm.import_templates_file(str(import_path))
+
+        assert tm.get_all_templates() == before
+
+    def test_import_skips_entries_whose_content_is_not_text(self, tmp_path):
+        import_path = tmp_path / "import.json"
+        plain_path = tmp_path / "plain.json"
+        import_path.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "templates": {
+                        "A": ["#all_images#"],
+                        "B": {"content": "#all_images#"},
+                        "C": None,
+                        "D": "#all_images#",
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        plain_path.write_text(json.dumps({"E": {"content": "#all_images#"}}), encoding="utf-8")
+        tm = TemplateManager(str(tmp_path / "templates.json"))
+
+        imported, skipped, errors = tm.import_templates_file(str(import_path))
+        plain_result = tm.import_templates_file(str(plain_path))
+
+        assert (imported, skipped) == (1, 3)
+        for name in ("A", "B", "C"):
+            assert any(error.startswith(f"{name}:") for error in errors)
+            assert name not in tm.get_all_templates()
+        assert tm.get_template("D") == "#all_images#"
+        assert plain_result[:2] == (0, 1)
+        assert "E" not in tm.get_all_templates()
+
+    def test_import_reports_names_that_collide_after_trimming(self, tmp_path):
+        import_path = tmp_path / "import.json"
+        import_path.write_text(
+            json.dumps({"templates": {"A": "first #all_images#", " A ": "second #all_images#"}}),
+            encoding="utf-8",
+        )
+        tm = TemplateManager(str(tmp_path / "templates.json"))
+
+        imported, skipped, errors = tm.import_templates_file(str(import_path))
+
+        assert (imported, skipped) == (1, 1)
+        assert len(errors) == 1 and "A" in errors[0]
+        assert tm.get_template("A") == "first #all_images#"

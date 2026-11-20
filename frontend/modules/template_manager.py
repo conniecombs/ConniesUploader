@@ -24,6 +24,10 @@ from tkinter import colorchooser, filedialog, messagebox
 from .widgets import MouseWheelComboBox
 from . import file_handler
 
+# The shared lock and unique-temp-file writer for JSON files in the user data
+# directory, so template saves follow the same rules as the other stores there.
+from .viper_storage import _STORAGE_LOCK, _atomic_write_json
+
 _USER_DATA_DIR = os.path.join(os.path.expanduser("~"), ".conniesuploader")
 DEFAULT_TEMPLATE_FILE = os.path.join(_USER_DATA_DIR, "templates.json")
 LEGACY_TEMPLATE_FILE = os.path.abspath("user_templates.json")
@@ -119,6 +123,8 @@ class TemplateManager:
         "#thumb_url#",
         "#direct_url#",
     )
+    # Keys of the export_templates_file() format; a file with any of them is an export.
+    EXPORT_METADATA_KEYS = ("version", "exported_at", "templates")
     CATEGORY_ALL = "All"
     CUSTOM_CATEGORY = "Custom"
     BUILTIN_TEMPLATE_CATEGORY_ORDER = [
@@ -184,6 +190,7 @@ class TemplateManager:
         if self.uses_default_path:
             self._migrate_legacy_templates()
         self.recovery_issue: Optional[Dict[str, Any]] = None
+        self._saved_state: Dict[str, str] = {}
         self.load()
         self.save(validate=False)
 
@@ -203,44 +210,127 @@ class TemplateManager:
         except OSError as exc:
             logger.error(f"Could not migrate legacy templates: {exc}")
 
-    def load(self) -> None:
-        if os.path.exists(self.filepath):
-            try:
-                with open(self.filepath, "r", encoding="utf-8") as f:
-                    saved = json.load(f)
-                if not isinstance(saved, dict):
-                    raise ValueError("Template file must contain a JSON object.")
-                self.templates.update(saved)
-                self.recovery_issue = None
-            except Exception as e:
-                backup_path = self._backup_unreadable_file()
-                self.recovery_issue = {
-                    "filepath": os.path.abspath(self.filepath),
-                    "backup_path": backup_path,
-                    "error": str(e),
-                    "message": (
-                        "Saved templates could not be loaded. Defaults were restored "
-                        "and the broken file was preserved."
-                    ),
-                }
-                logger.error(f"Error loading templates: {e}")
+    @staticmethod
+    def _read_json_file(filepath: str) -> Any:
+        # utf-8-sig also reads files that an editor such as Notepad saved with a BOM.
+        with open(filepath, "r", encoding="utf-8-sig") as f:
+            return json.load(f)
 
-    def save(self, validate: bool = True) -> None:
+    @staticmethod
+    def _split_text_entries(saved: Dict[Any, Any]) -> Tuple[Dict[str, str], List[str]]:
+        """Return the entries whose content is text, and the names of the others."""
+        kept = {
+            name: content
+            for name, content in saved.items()
+            if isinstance(name, str) and isinstance(content, str)
+        }
+        dropped = [str(name) for name in saved if name not in kept]
+        return kept, dropped
+
+    def load(self) -> None:
+        with _STORAGE_LOCK:
+            self._load()
+
+    def _load(self) -> None:
+        # What the file held when this window last read or wrote it; save() applies
+        # only the differences from it, so other windows' saves are kept.
+        self._saved_state = {}
+        if not os.path.exists(self.filepath):
+            return
+        try:
+            saved = self._read_json_file(self.filepath)
+            if not isinstance(saved, dict):
+                raise ValueError("Template file must contain a JSON object.")
+        except Exception as e:
+            backup_path = self._backup_unreadable_file()
+            self.recovery_issue = {
+                "filepath": os.path.abspath(self.filepath),
+                "backup_path": backup_path,
+                "error": str(e),
+                "message": (
+                    "Saved templates could not be loaded. Defaults were restored "
+                    "and the broken file was preserved."
+                ),
+            }
+            logger.error(f"Error loading templates: {e}")
+            return
+
+        kept, dropped = self._split_text_entries(saved)
+        self.templates.update(kept)
+        self._saved_state = dict(kept)
+        self.recovery_issue = None
+        if dropped:
+            self.recovery_issue = {
+                "filepath": os.path.abspath(self.filepath),
+                "backup_path": self._backup_unreadable_file(),
+                "error": self._dropped_entries_message(dropped),
+                "message": (
+                    "Some saved templates could not be loaded and were skipped. "
+                    "The other templates were kept and the original file was preserved."
+                ),
+            }
+            logger.warning(f"Skipped template entries that are not text: {', '.join(dropped)}")
+
+    def _dropped_entries_message(self, dropped: List[str]) -> str:
+        message = (
+            f"Skipped {len(dropped)} saved template(s) whose content is not text: "
+            f"{', '.join(dropped)}. The other templates were kept."
+        )
+        if any(name in self.defaults for name in dropped):
+            message += " Built-in templates among them use their default text."
+        return message
+
+    def save(self, validate: bool = True, *, replace: bool = False) -> None:
+        """Write the templates to disk.
+
+        By default only this window's changes since it last read or wrote the file
+        (added, edited, deleted names) are applied to the file's current contents,
+        so templates saved meanwhile by another window are kept. ``replace=True``
+        writes exactly ``self.templates``.
+        """
         if validate:
             self.validate_all_templates(raise_on_error=True)
 
         try:
-            folder = os.path.dirname(os.path.abspath(self.filepath))
-            if folder:
-                os.makedirs(folder, exist_ok=True)
-            tmp_path = f"{self.filepath}.tmp"
-            with open(tmp_path, "w", encoding="utf-8") as f:
-                json.dump(self.templates, f, indent=4)
-                f.write("\n")
-            os.replace(tmp_path, self.filepath)
+            with _STORAGE_LOCK:
+                merged = dict(self.templates) if replace else self._merge_with_file()
+                _atomic_write_json(self.filepath, merged)
         except OSError as e:
             logger.error(f"Error saving templates: {e}")
             raise
+        self._saved_state = dict(merged)
+        self.templates = {**self.defaults, **merged}
+
+    def _merge_with_file(self) -> Dict[str, str]:
+        on_disk = self._read_saved_templates()
+        if on_disk is None:
+            return dict(self.templates)
+        merged = dict(on_disk)
+        names = list(self._saved_state) + [
+            name for name in self.templates if name not in self._saved_state
+        ]
+        for name in names:
+            ours = self.templates.get(name)
+            if ours == self._saved_state.get(name):
+                continue
+            if ours is None:
+                merged.pop(name, None)
+            else:
+                merged[name] = ours
+        return merged
+
+    def _read_saved_templates(self) -> Optional[Dict[str, str]]:
+        """Return the file's text templates, or None when it is missing or unreadable."""
+        if not os.path.exists(self.filepath):
+            return None
+        try:
+            saved = self._read_json_file(self.filepath)
+        except (OSError, ValueError) as e:
+            logger.warning(f"Replacing unreadable template file {self.filepath}: {e}")
+            return None
+        if not isinstance(saved, dict):
+            return None
+        return self._split_text_entries(saved)[0]
 
     def _backup_unreadable_file(self) -> Optional[str]:
         try:
@@ -262,7 +352,7 @@ class TemplateManager:
     def restore_defaults(self) -> None:
         self.templates = self.defaults.copy()
         self.recovery_issue = None
-        self.save()
+        self.save(replace=True)
 
     def get_template(self, fmt: str) -> str:
         return self.templates.get(fmt, self.defaults.get(fmt, ""))
@@ -415,32 +505,61 @@ class TemplateManager:
             f.write("\n")
         return len(templates)
 
+    def _read_import_templates(self, filepath: str) -> Dict[str, Any]:
+        """Return the name -> content entries of an export file or a plain template map."""
+        raw_data = self._read_json_file(filepath)
+        if not isinstance(raw_data, dict):
+            raise TemplateValidationError(["Import file must contain a template object."])
+        if any(key in raw_data for key in self.EXPORT_METADATA_KEYS):
+            raw_templates = raw_data.get("templates")
+            if not isinstance(raw_templates, dict):
+                raise TemplateValidationError(
+                    [
+                        'This file is not a template export: its "templates" entry must map '
+                        "template names to template text."
+                    ]
+                )
+            return raw_templates
+        return raw_data
+
+    def import_name_conflicts(self, filepath: str) -> List[str]:
+        """Names in the import file that already exist, as the import would see them."""
+        names = dict.fromkeys(
+            str(raw_name or "").strip() for raw_name in self._read_import_templates(filepath)
+        )
+        return [name for name in names if name in self.templates]
+
     def import_templates_file(
         self,
         filepath: str,
         overwrite: bool = True,
     ) -> Tuple[int, int, List[str]]:
-        with open(filepath, "r", encoding="utf-8") as f:
-            raw_data = json.load(f)
-
-        if isinstance(raw_data, dict) and isinstance(raw_data.get("templates"), dict):
-            raw_templates = raw_data["templates"]
-        elif isinstance(raw_data, dict):
-            raw_templates = raw_data
-        else:
-            raise TemplateValidationError(["Import file must contain a template object."])
+        raw_templates = self._read_import_templates(filepath)
 
         imported = 0
         skipped = 0
         errors = []
         updated = dict(self.templates)
+        seen_names = set()
         for raw_name, raw_content in raw_templates.items():
             name = str(raw_name or "").strip()
-            content = str(raw_content or "")
             if not name:
                 skipped += 1
                 errors.append("Skipped a template with no name.")
                 continue
+            if name in seen_names:
+                skipped += 1
+                errors.append(
+                    f'{name}: skipped "{raw_name}" because the file already has a template '
+                    "with this name (spaces around names are ignored)."
+                )
+                continue
+            seen_names.add(name)
+            if not isinstance(raw_content, str):
+                skipped += 1
+                errors.append(f"{name}: skipped because its content is not text.")
+                continue
+            content = raw_content
             if name in updated and not overwrite:
                 skipped += 1
                 continue
@@ -1533,17 +1652,9 @@ class TemplateEditor(ctk.CTkToplevel):
 
         overwrite = True
         try:
-            with open(filepath, "r", encoding="utf-8") as f:
-                raw_data = json.load(f)
-            raw_templates = (
-                raw_data.get("templates", raw_data) if isinstance(raw_data, dict) else {}
-            )
-            duplicates = [
-                str(name).strip()
-                for name in raw_templates
-                if str(name).strip() in self.mgr.templates
-            ]
+            duplicates = self.mgr.import_name_conflicts(filepath)
         except Exception:
+            # import_templates_file() below reports why the file cannot be imported.
             duplicates = []
 
         if duplicates:
@@ -1556,7 +1667,7 @@ class TemplateEditor(ctk.CTkToplevel):
             imported, skipped, errors = self.mgr.import_templates_file(
                 filepath, overwrite=overwrite
             )
-        except (OSError, json.JSONDecodeError, TemplateValidationError) as exc:
+        except (OSError, ValueError) as exc:  # bad JSON or text encoding, or wrong shape
             self._show_validation_errors("Import Failed", exc)
             return
 

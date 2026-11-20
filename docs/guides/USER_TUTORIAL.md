@@ -623,6 +623,10 @@ The ViperGirls templates are designed for forum posting:
 
 Custom templates are saved in `~/.conniesuploader/templates.json`. Existing `user_templates.json` files are migrated into that location the first time the updated app runs.
 
+When two app windows are open, each save writes only the templates that window added, changed, or deleted, so templates saved from the other window are kept. `Restore Defaults` is the exception: it replaces the whole file with the built-in templates. A `templates.json` saved by an editor that adds a UTF-8 byte order mark (such as Notepad) loads normally. If an entry in the file is not text (for example `null`, a number, or a list), that entry is skipped, the other templates are kept, a copy of the original file is saved next to it as `templates.json.broken-<date>.bak`, and the app shows the Template Recovery notice listing the skipped names.
+
+`Import` accepts a file made by `Export` (with `version`, `exported_at`, and `templates`) or a plain JSON object that maps template names to template text. A file that has export fields but no `templates` object is refused. Entries whose content is not text, and names that repeat once surrounding spaces are removed, are skipped and listed in the import summary.
+
 ### Template Placeholders
 
 | Placeholder | Meaning |
