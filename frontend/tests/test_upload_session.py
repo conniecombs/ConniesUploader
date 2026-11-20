@@ -596,6 +596,56 @@ def test_removing_an_image_whose_retry_never_started_gives_the_batch_its_output(
 
 
 @pytest.mark.unit
+def test_output_written_after_removing_a_failed_image_can_be_scheduled_and_copied(tmp_path):
+    app = _ui_app(tmp_path)
+    app.progress_queue, app.result_queue = queue.Queue(), queue.Queue()
+    app.image_refs = set()
+    app._clear_highlights = lambda *args: None
+    group = _real_group("Set", ["/s/1.jpg", "/s/2.jpg", "/s/bad.jpg"])
+    group.selected_thread = "T"
+    app.groups = [group]
+    for fp in group.files:
+        app.file_widgets[fp] = _row(group)
+    _upload(
+        app,
+        list(group.files),
+        {
+            "/s/1.jpg": ("http://v/1", "http://t/1", "Done"),
+            "/s/2.jpg": ("http://v/2", "http://t/2", "Done"),
+            "/s/bad.jpg": ("", "", "error: file rejected by host"),
+        },
+    )
+    # What _on_upload_complete() shows in the completion panel (auto-copy off).
+    summary = UploaderApp._build_completion_summary(app)
+    app.current_completion_summary = summary
+
+    assert UploaderApp._delete_files(app, ["/s/bad.jpg"]) is True
+
+    assert any("Use Schedule Post" in message for message, _ in app.activity)
+    new_output = [p for p in app.current_output_files if not p.endswith("_FAILED.txt")][0]
+    # Schedule for Later and Copy Output read exactly this text.
+    text = UploaderApp._completion_output_text(app, app.current_completion_summary)
+    assert text == Path(new_output).read_text(encoding="utf-8") == "http://v/1\nhttp://v/2"
+    assert app.current_completion_summary["generated_count"] == 2
+    assert app.current_completion_summary["has_copy_text"] is True
+    app._set_completion_summary.assert_called_with(app.current_completion_summary)
+
+
+@pytest.mark.unit
+def test_output_written_after_an_aborted_retry_shows_the_completion_panel(tmp_path):
+    app, group = _set_with_one_failed_upload(tmp_path)
+    # start_upload() hides the panel before its preflight stops the Retry.
+    app.start_upload = lambda: app._set_completion_summary(None)
+    UploaderApp._retry_file(app, "/s/bad.jpg")
+
+    UploaderApp._delete_files(app, ["/s/bad.jpg"])
+
+    summary = app._set_completion_summary.call_args.args[0]
+    assert summary is not None
+    assert UploaderApp._completion_output_text(app, summary) == "http://v/1"
+
+
+@pytest.mark.unit
 def test_removing_a_successful_image_keeps_the_existing_output(tmp_path):
     app = _ui_app(tmp_path)
     app.progress_queue, app.result_queue = queue.Queue(), queue.Queue()

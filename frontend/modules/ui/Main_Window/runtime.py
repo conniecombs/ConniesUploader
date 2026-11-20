@@ -824,8 +824,28 @@ class RuntimeMixin:
             states = [self.file_widgets.get(fp, {}).get("state") for fp in group.files]
         if any(state != "success" for state in states):
             return
+        outputs_before = len(self.copyable_output_files)
         self._reset_group_completion(group)
         self._update_group_progress(group.files[0])
+        if len(self.copyable_output_files) > outputs_before:
+            self._show_outputs_in_completion_summary()
+
+    def _show_outputs_in_completion_summary(self) -> None:
+        """Make output written after the upload finished reachable from the panel.
+
+        Schedule for Later and Copy Output read the summary's output files, so
+        the summary must list output a later re-check wrote. When no summary is
+        shown (Start hid it before a Retry stopped), a new one is shown.
+        """
+        summary = self.current_completion_summary
+        if not summary:
+            self._set_completion_summary(self._build_completion_summary())
+            return
+        summary["output_files"] = list(self.current_output_files)
+        summary["generated_count"] = len(summary["output_files"])
+        summary["copyable_output_files"] = list(self.copyable_output_files)
+        summary["has_copy_text"] = bool(self.clipboard_buffer or self.copyable_output_files)
+        self._set_completion_summary(summary)
 
     def finish_upload(self) -> None:
         if not self.is_uploading or self._finalizing:
