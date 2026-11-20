@@ -134,15 +134,16 @@ func TestSessionActionsKeepCookiesApart(t *testing.T) {
 func TestCancelClosesTheBatchSessions(t *testing.T) {
 	useSharedClient(t)
 	host := cookieHost(t)
-	sessionID := openSessionAction(t, "b-sess-cancel")
+	batchID := uniqueBatchID("b-sess-cancel")
+	sessionID := openSessionAction(t, batchID)
 
-	runAction(t, JobRequest{Action: "cancel", BatchID: "b-sess-cancel"})
+	runAction(t, JobRequest{Action: "cancel", BatchID: batchID})
 
 	event := sessionRequest(t, "after-cancel", sessionID, host.URL+"/get")
 	if event.Status != "failed" || !strings.Contains(event.Msg, "unknown transport session") {
 		t.Fatalf("request after cancel = %+v, want unknown transport session", event)
 	}
-	reopen := resultFor(t, runAction(t, JobRequest{ID: "reopen", Action: "session_open", BatchID: "b-sess-cancel"}), "reopen")
+	reopen := resultFor(t, runAction(t, JobRequest{ID: "reopen", Action: "session_open", BatchID: batchID}), "reopen")
 	if reopen.Status != "failed" {
 		t.Fatalf("session_open for a cancelled batch = %+v, want failed", reopen)
 	}

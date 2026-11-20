@@ -238,9 +238,10 @@ func TestCancelAbortsAnInFlightRawUpload(t *testing.T) {
 	defer close(release)
 	useSharedClient(t)
 
-	sessionID := openSessionAction(t, "b-raw-cancel")
+	batchID := uniqueBatchID("b-raw-cancel")
+	sessionID := openSessionAction(t, batchID)
 	files := writeNamedFiles(t, "a.jpg")
-	job := asRawJob(JobRequest{ID: "raw-cancel", BatchID: "b-raw-cancel", Action: "http_upload",
+	job := asRawJob(JobRequest{ID: "raw-cancel", BatchID: batchID, Action: "http_upload",
 		Service: "raw-cancel.test", Files: files}, server.URL)
 	job.SessionID = sessionID
 
@@ -256,7 +257,7 @@ func TestCancelAbortsAnInFlightRawUpload(t *testing.T) {
 			t.Error("upload never reached the host")
 			return
 		}
-		handleJob(JobRequest{Action: "cancel", BatchID: "b-raw-cancel"})
+		handleJob(JobRequest{Action: "cancel", BatchID: batchID})
 		select {
 		case <-done:
 		case <-time.After(5 * time.Second):
