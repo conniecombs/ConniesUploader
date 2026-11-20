@@ -251,3 +251,14 @@ def test_request_sync_still_ignores_uncorrelated_events():
 
     assert reply["status"] == "success"
     assert "msg" not in reply
+
+
+def test_upload_transport_pause_ends_early_when_cancelled():
+    cancel = threading.Event()
+    transport = UploadTransport("s-1", bridge=RecordingBridge(), cancel_event=cancel)
+    assert transport.pause(0.01) is True
+
+    threading.Timer(0.05, cancel.set).start()
+    start = time.monotonic()
+    assert transport.pause(10) is False
+    assert time.monotonic() - start < 3

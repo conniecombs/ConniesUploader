@@ -13,6 +13,7 @@ from dataclasses import dataclass
 import json
 import math
 import threading
+import time
 import uuid
 from typing import Any, Dict, Mapping, Optional
 
@@ -315,6 +316,14 @@ class UploadTransport:
     def cancelled(self) -> bool:
         """Whether the batch this transport belongs to was cancelled."""
         return self._cancel_event is not None and self._cancel_event.is_set()
+
+    def pause(self, seconds: float) -> bool:
+        """Wait ``seconds`` between polls; returns False at once when the batch is cancelled."""
+        seconds = max(0.0, float(seconds))
+        if self._cancel_event is None:
+            time.sleep(seconds)
+            return True
+        return not self._cancel_event.wait(seconds)
 
     def request(
         self,
