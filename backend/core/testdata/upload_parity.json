@@ -1,0 +1,366 @@
+{
+  "_comment": "Shared parity fixtures. backend/core/upload_parity_test.go checks that the legacy Go path produces each 'want'; frontend/tests/test_upload_parity.py checks that the Python port and the migrated host plugins produce the same. Change both sides together.",
+  "failure_messages": [
+    {
+      "name": "json error field",
+      "reason": "upload rejected",
+      "status": 400,
+      "body": "{\"error\":\"image too large\"}",
+      "want": "upload rejected (HTTP 400): image too large"
+    },
+    {
+      "name": "json message field",
+      "reason": "upload rejected",
+      "status": 422,
+      "body": "{\"message\":\"File type not allowed\",\"errors\":{}}",
+      "want": "upload rejected (HTTP 422): File type not allowed"
+    },
+    {
+      "name": "nested error object",
+      "reason": "upload rejected",
+      "status": 403,
+      "body": "{\"error\":{\"code\":7,\"message\":\"quota exceeded\"}}",
+      "want": "upload rejected (HTTP 403): quota exceeded"
+    },
+    {
+      "name": "errors array",
+      "reason": "upload rejected",
+      "status": 400,
+      "body": "{\"errors\":[{\"message\":\"bad dimensions\"}]}",
+      "want": "upload rejected (HTTP 400): bad dimensions"
+    },
+    {
+      "name": "data error on a status check",
+      "reason": "upload failed: status check did not match",
+      "status": 200,
+      "body": "{\"success\":false,\"status\":400,\"data\":{\"error\":\"File is over the size limit\"}}",
+      "want": "upload failed: status check did not match (HTTP 200): File is over the size limit"
+    },
+    {
+      "name": "json without a message field is quoted whole",
+      "reason": "upload response had no image link",
+      "status": 200,
+      "body": "{\"show_url\":\"\",\"th_url\":\"\"}",
+      "want": "upload response had no image link (HTTP 200): {\"show_url\":\"\",\"th_url\":\"\"}"
+    },
+    {
+      "name": "non-string error field is skipped",
+      "reason": "upload rejected",
+      "status": 500,
+      "body": "{\"error\":true,\"msg\":\"  try   again\\nlater \"}",
+      "want": "upload rejected (HTTP 500): try again later"
+    },
+    {
+      "name": "html page without scripts",
+      "reason": "upload rejected",
+      "status": 404,
+      "body": "<html><head><title>x</title><script>var a = 1;</script></head><body><h1>Not   Found</h1></body></html>",
+      "want": "upload rejected (HTTP 404): Not Found"
+    },
+    {
+      "name": "nginx error page",
+      "reason": "upload rejected",
+      "status": 413,
+      "body": "<html>\r\n<head><title>413 Request Entity Too Large</title></head>\r\n<body>\r\n<center><h1>413 Request Entity Too Large</h1></center>\r\n<hr><center>nginx</center>\r\n</body>\r\n</html>\r\n",
+      "want": "upload rejected (HTTP 413): 413 Request Entity Too Large nginx"
+    },
+    {
+      "name": "html body scripts styles and comments are not text",
+      "reason": "upload rejected",
+      "status": 500,
+      "body": "<html><body><style>.a{color:red}</style><script>alert('x')</script><!-- hidden --><noscript>enable js</noscript><p>Server &amp; database <b>busy</b>.</p></body></html>",
+      "want": "upload rejected (HTTP 500): Server & database busy ."
+    },
+    {
+      "name": "html with only a title",
+      "reason": "upload rejected",
+      "status": 503,
+      "body": "<html><head><title>Service Unavailable</title></head><body><script>x()</script></body></html>",
+      "want": "upload rejected (HTTP 503): Service Unavailable"
+    },
+    {
+      "name": "html fragment",
+      "reason": "upload response had no image link",
+      "status": 200,
+      "body": "<html><body><b>Upload failed: File type not allowed</b></body></html>",
+      "want": "upload response had no image link (HTTP 200): Upload failed: File type not allowed"
+    },
+    {
+      "name": "not json",
+      "reason": "upload response was not valid JSON",
+      "status": 200,
+      "body": "<html><body>Service Unavailable</body></html>",
+      "want": "upload response was not valid JSON (HTTP 200): Service Unavailable"
+    },
+    {
+      "name": "plain text with a credential",
+      "reason": "upload rejected",
+      "status": 401,
+      "body": "Bad key s3cr3t-api-key for user",
+      "secrets": ["s3cr3t-api-key", "abc"],
+      "want": "upload rejected (HTTP 401): Bad key [redacted] for user"
+    },
+    {
+      "name": "a secret inside another is redacted whole",
+      "reason": "upload rejected",
+      "status": 403,
+      "body": "{\"message\":\"token tok-1234-extra rejected; tok-1234 too\"}",
+      "secrets": ["tok-1234", "tok-1234-extra"],
+      "want": "upload rejected (HTTP 403): token [redacted] rejected; [redacted] too"
+    },
+    {
+      "name": "empty body",
+      "reason": "upload rejected",
+      "status": 502,
+      "body": "   ",
+      "want": "upload rejected (HTTP 502)"
+    },
+    {
+      "name": "json array",
+      "reason": "upload rejected",
+      "status": 400,
+      "body": "[\"bad\", \"request\"]",
+      "want": "upload rejected (HTTP 400): [\"bad\", \"request\"]"
+    },
+    {
+      "name": "long text is cut at 200 characters",
+      "reason": "upload rejected",
+      "status": 400,
+      "body": "ÄÖÜ 0123456789 0123456789 0123456789 0123456789 0123456789 0123456789 0123456789 0123456789 0123456789 0123456789 0123456789 0123456789 0123456789 0123456789 0123456789 0123456789 0123456789 0123456789 0123456789",
+      "want": "upload rejected (HTTP 400): ÄÖÜ 0123456789 0123456789 0123456789 0123456789 0123456789 0123456789 0123456789 0123456789 0123456789 0123456789 0123456789 0123456789 0123456789 0123456789 0123456789 0123456789 0123456789 012345678…"
+    },
+    {
+      "name": "control characters become spaces",
+      "reason": "upload rejected",
+      "status": 400,
+      "body": "line one\u0000line\ttwo\u0007end",
+      "want": "upload rejected (HTTP 400): line one line two end"
+    }
+  ],
+  "json_uploads": [
+    {
+      "name": "imx success",
+      "host": "imx.to",
+      "config": {"thumbnail_size": "180"},
+      "parser": {"type": "json", "url_path": "data.image_url", "thumb_path": "data.thumbnail_url", "status_path": "status", "success_value": "success"},
+      "file": "/in/photo.jpg",
+      "status": 200,
+      "body": "{\"status\":\"success\",\"data\":{\"image_url\":\"https://imx.to/i/6ut8ec\",\"thumbnail_url\":\"https://i.imx.to/t/2026/06/19/6ut8ec.jpg\"}}",
+      "want": {"url": "https://imx.to/i/6ut8ec", "thumb": "https://i.imx.to/t/2026/06/19/6ut8ec.jpg", "error": ""},
+      "want_plugin_thumb": "https://image.imx.to/u/t/2026/06/19/6ut8ec.jpg"
+    },
+    {
+      "name": "imx success with a durable thumbnail and a query",
+      "host": "imx.to",
+      "config": {},
+      "parser": {"type": "json", "url_path": "data.image_url", "thumb_path": "data.thumbnail_url", "status_path": "status", "success_value": "success"},
+      "file": "/in/photo.jpg",
+      "status": 200,
+      "body": "{\"status\":\"success\",\"data\":{\"image_url\":\"https://imx.to/i/abc\",\"thumbnail_url\":\"http://i.imx.to/t/2026/06/19/abc.jpg?token=x#view\",\"gallery_id\":\"g1\"}}",
+      "want": {"url": "https://imx.to/i/abc", "thumb": "http://i.imx.to/t/2026/06/19/abc.jpg?token=x#view", "error": ""},
+      "want_plugin_thumb": "https://image.imx.to/u/t/2026/06/19/abc.jpg?token=x#view"
+    },
+    {
+      "name": "imx generic api fixture",
+      "host": "imx.to",
+      "config": {},
+      "parser": {"type": "json", "url_path": "data.image_url", "thumb_path": "data.thumbnail_url", "status_path": "status", "success_value": "success"},
+      "file": "/in/photo.jpg",
+      "status": 200,
+      "body": "{\"status\":\"success\",\"data\":{\"image_url\":\"https://img.test/u\",\"thumbnail_url\":\"https://img.test/t\"}}",
+      "want": {"url": "https://img.test/u", "thumb": "https://img.test/t", "error": ""}
+    },
+    {
+      "name": "imx refused on a 200",
+      "host": "imx.to",
+      "config": {},
+      "parser": {"type": "json", "url_path": "data.image_url", "thumb_path": "data.thumbnail_url", "status_path": "status", "success_value": "success"},
+      "file": "/in/photo.jpg",
+      "status": 200,
+      "body": "{\"status\":\"error\",\"message\":\"Invalid API key apikey-123\"}",
+      "secrets": ["apikey-123", "imx-user", "imx-password"],
+      "want": {"url": "", "thumb": "", "error": "upload failed: status check did not match (HTTP 200): Invalid API key [redacted]"}
+    },
+    {
+      "name": "imx rejected",
+      "host": "imx.to",
+      "config": {},
+      "parser": {"type": "json", "url_path": "data.image_url", "thumb_path": "data.thumbnail_url", "status_path": "status", "success_value": "success"},
+      "file": "/in/photo.jpg",
+      "status": 401,
+      "body": "{\"status\":\"error\",\"message\":\"Unauthorized\"}",
+      "want": {"url": "", "thumb": "", "error": "upload rejected (HTTP 401): Unauthorized"}
+    },
+    {
+      "name": "imx success without a link",
+      "host": "imx.to",
+      "config": {},
+      "parser": {"type": "json", "url_path": "data.image_url", "thumb_path": "data.thumbnail_url", "status_path": "status", "success_value": "success"},
+      "file": "/in/photo.jpg",
+      "status": 200,
+      "body": "{\"status\":\"success\",\"data\":{\"image_url\":\"  \",\"thumbnail_url\":\"\"}}",
+      "want": {"url": "", "thumb": "", "error": "upload response had no image link (HTTP 200): {\"status\":\"success\",\"data\":{\"image_url\":\" \",\"thumbnail_url\":\"\"}}"}
+    },
+    {
+      "name": "imx html error page",
+      "host": "imx.to",
+      "config": {},
+      "parser": {"type": "json", "url_path": "data.image_url", "thumb_path": "data.thumbnail_url", "status_path": "status", "success_value": "success"},
+      "file": "/in/photo.jpg",
+      "status": 200,
+      "body": "<html><body>Service Unavailable</body></html>",
+      "want": {"url": "", "thumb": "", "error": "upload response was not valid JSON (HTTP 200): Service Unavailable"}
+    },
+    {
+      "name": "pixhost success",
+      "host": "pixhost.cc",
+      "config": {},
+      "parser": {"type": "json", "url_path": "show_url", "thumb_path": "th_url"},
+      "file": "/in/a.jpg",
+      "status": 200,
+      "body": "{\"name\":\"a.jpg\",\"show_url\":\"https://pixhost.to/show/1/2_a.jpg\",\"th_url\":\"https://t1.pixhost.to/thumbs/1/2_a.jpg\"}",
+      "want": {"url": "https://pixhost.to/show/1/2_a.jpg", "thumb": "https://t1.pixhost.to/thumbs/1/2_a.jpg", "error": ""}
+    },
+    {
+      "name": "pixhost empty show_url",
+      "host": "pixhost.cc",
+      "config": {},
+      "parser": {"type": "json", "url_path": "show_url", "thumb_path": "th_url"},
+      "file": "/in/a.jpg",
+      "status": 200,
+      "body": "{\"show_url\":\"\",\"th_url\":\"\"}",
+      "want": {"url": "", "thumb": "", "error": "upload response had no image link (HTTP 200): {\"show_url\":\"\",\"th_url\":\"\"}"}
+    },
+    {
+      "name": "pixhost error on a 200",
+      "host": "pixhost.cc",
+      "config": {},
+      "parser": {"type": "json", "url_path": "show_url", "thumb_path": "th_url"},
+      "file": "/in/a.jpg",
+      "status": 200,
+      "body": "{\"error\":\"daily limit reached\"}",
+      "want": {"url": "", "thumb": "", "error": "upload response had no image link (HTTP 200): daily limit reached"}
+    },
+    {
+      "name": "pixhost rejected",
+      "host": "pixhost.cc",
+      "config": {},
+      "parser": {"type": "json", "url_path": "show_url", "thumb_path": "th_url"},
+      "file": "/in/a.jpg",
+      "status": 400,
+      "body": "{\"error\":\"image too large\"}",
+      "want": {"url": "", "thumb": "", "error": "upload rejected (HTTP 400): image too large"}
+    },
+    {
+      "name": "pixhost null body",
+      "host": "pixhost.cc",
+      "config": {},
+      "parser": {"type": "json", "url_path": "show_url", "thumb_path": "th_url"},
+      "file": "/in/a.jpg",
+      "status": 200,
+      "body": "null",
+      "want": {"url": "", "thumb": "", "error": "upload response had no image link (HTTP 200): null"}
+    },
+    {
+      "name": "pixhost entity too large",
+      "host": "pixhost.cc",
+      "config": {},
+      "parser": {"type": "json", "url_path": "show_url", "thumb_path": "th_url"},
+      "file": "/in/a.jpg",
+      "status": 413,
+      "body": "<html>\r\n<head><title>413 Request Entity Too Large</title></head>\r\n<body>\r\n<center><h1>413 Request Entity Too Large</h1></center>\r\n<hr><center>nginx</center>\r\n</body>\r\n</html>\r\n",
+      "want": {"url": "", "thumb": "", "error": "upload rejected (HTTP 413): 413 Request Entity Too Large nginx"}
+    },
+    {
+      "name": "imgur medium thumbnail",
+      "host": "imgur.com",
+      "config": {"thumbnail_size": "m"},
+      "parser": {"type": "json", "url_path": "data.link", "thumb_path": "", "thumb_template": "{url_no_ext}m{url_dot_ext}", "status_path": "success", "success_value": "true"},
+      "file": "/in/photo.jpeg",
+      "status": 200,
+      "body": "{\"success\":true,\"data\":{\"id\":\"AbCd123\",\"link\":\"https://i.example/AbCd123.jpg\"}}",
+      "want": {"url": "https://i.example/AbCd123.jpg", "thumb": "https://i.example/AbCd123m.jpg", "error": ""}
+    },
+    {
+      "name": "imgur small thumbnail drops query and fragment",
+      "host": "imgur.com",
+      "config": {"thumbnail_size": "Small (160 px)"},
+      "parser": {"type": "json", "url_path": "data.link", "thumb_path": "", "thumb_template": "{url_no_ext}t{url_dot_ext}", "status_path": "success", "success_value": "true"},
+      "file": "/in/photo.jpeg",
+      "status": 200,
+      "body": "{\"success\":true,\"data\":{\"id\":\"AbCd123\",\"link\":\"https://i.example/a/AbCd123.png?x=1#f\"}}",
+      "want": {"url": "https://i.example/a/AbCd123.png?x=1#f", "thumb": "https://i.example/a/AbCd123t.png", "error": ""}
+    },
+    {
+      "name": "imgur link without an extension",
+      "host": "imgur.com",
+      "config": {"imgur_thumb": "h"},
+      "parser": {"type": "json", "url_path": "data.link", "thumb_path": "", "thumb_template": "{url_no_ext}h{url_dot_ext}", "status_path": "success", "success_value": "true"},
+      "file": "/in/photo.jpeg",
+      "status": 200,
+      "body": "{\"success\":true,\"data\":{\"id\":\"AbCd123\",\"link\":\"https://i.example/AbCd123\"}}",
+      "want": {"url": "https://i.example/AbCd123", "thumb": "https://i.example/AbCd123h", "error": ""}
+    },
+    {
+      "name": "imgur real link",
+      "host": "imgur.com",
+      "config": {},
+      "parser": {"type": "json", "url_path": "data.link", "thumb_path": "", "thumb_template": "{url_no_ext}m{url_dot_ext}", "status_path": "success", "success_value": "true"},
+      "file": "/in/photo.gif",
+      "status": 200,
+      "body": "{\"data\":{\"id\":\"orunSTu\",\"deletehash\":\"x31vL\",\"type\":\"image/gif\",\"width\":500,\"height\":375,\"size\":42808,\"link\":\"https://i.imgur.com/orunSTu.gif\"},\"success\":true,\"status\":200}",
+      "want": {"url": "https://i.imgur.com/orunSTu.gif", "thumb": "https://i.imgur.com/orunSTum.gif", "error": ""}
+    },
+    {
+      "name": "imgur refused on a 200",
+      "host": "imgur.com",
+      "config": {},
+      "parser": {"type": "json", "url_path": "data.link", "thumb_path": "", "thumb_template": "{url_no_ext}m{url_dot_ext}", "status_path": "success", "success_value": "true"},
+      "file": "/in/photo.jpeg",
+      "status": 200,
+      "body": "{\"success\":false,\"status\":400,\"data\":{\"error\":\"File is over the size limit\"}}",
+      "want": {"url": "", "thumb": "", "error": "upload failed: status check did not match (HTTP 200): File is over the size limit"}
+    },
+    {
+      "name": "imgur rejected client id",
+      "host": "imgur.com",
+      "config": {},
+      "parser": {"type": "json", "url_path": "data.link", "thumb_path": "", "thumb_template": "{url_no_ext}m{url_dot_ext}", "status_path": "success", "success_value": "true"},
+      "file": "/in/photo.jpeg",
+      "status": 403,
+      "body": "{\"data\":{\"error\":\"Invalid client_id cid-9876\",\"request\":\"/3/image\",\"method\":\"POST\"},\"success\":false,\"status\":403}",
+      "secrets": ["cid-9876"],
+      "want": {"url": "", "thumb": "", "error": "upload rejected (HTTP 403): Invalid client_id [redacted]"}
+    },
+    {
+      "name": "imgur success without a link",
+      "host": "imgur.com",
+      "config": {},
+      "parser": {"type": "json", "url_path": "data.link", "thumb_path": "", "thumb_template": "{url_no_ext}m{url_dot_ext}", "status_path": "success", "success_value": "true"},
+      "file": "/in/photo.jpeg",
+      "status": 200,
+      "body": "{\"success\":true,\"data\":{\"id\":\"x\"}}",
+      "want": {"url": "", "thumb": "", "error": "upload response had no image link (HTTP 200): {\"success\":true,\"data\":{\"id\":\"x\"}}"}
+    },
+    {
+      "name": "url template from json values and the file name",
+      "host": "",
+      "config": {},
+      "parser": {"type": "json", "url_path": "newUrl", "thumb_path": "", "status_path": "success", "success_value": "true", "url_template": "https://example.com/p/{id}/{filename}.html"},
+      "file": "/in/my image.jpg",
+      "status": 200,
+      "body": "{\"success\":true,\"id\":\"abc123\"}",
+      "want": {"url": "https://example.com/p/abc123/my image.jpg.html", "thumb": "", "error": ""}
+    },
+    {
+      "name": "numbers and nested arrays",
+      "host": "",
+      "config": {},
+      "parser": {"type": "json", "url_path": "files.0.sourceUrl", "thumb_path": "files.1.thumb", "status_path": "code", "success_value": "200"},
+      "file": "/in/a.jpg",
+      "status": 200,
+      "body": "{\"code\":200,\"files\":[{\"sourceUrl\":\"https://cdn.example/source.jpg\"},{\"thumb\":12.5}]}",
+      "want": {"url": "https://cdn.example/source.jpg", "thumb": "12.5", "error": ""}
+    }
+  ]
+}
