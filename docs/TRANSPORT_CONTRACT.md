@@ -129,7 +129,9 @@ request run on it.
   reply arrives, so no session is left for the idle reaper.
 - `session_close` of a session that is not open answers `"closed": "false"`.
   It answers only a request that carries an `id`; without one it logs.
-- Both actions run on the request pool, never behind queued uploads.
+- Both actions, and every `http_request` that names a `session_id`, run on
+  the session request pool (see "Batches, Cancellation, and Per-File
+  Validation"), never behind queued uploads or other requests.
 - Sessions die with the sidecar process: after a restart Python never
   closes, or uses, a session of the dead process. Python writes everything
   that names a session (its upload jobs, the requests on it, its close) only
@@ -248,10 +250,18 @@ Every `http_upload` job of one Start carries the same `batch_id` and its own
 {"action": "cancel", "batch_id": "<batch id>"}
 ```
 
-`http_upload` jobs run on the `--workers` pool. Every other action
-(`http_request`, `session_open`, `session_close` and the rest) runs on a
-separate small pool, so a login, forum post or gallery call never waits
-behind queued uploads. Go reads stdin without blocking on busy workers,
+`http_upload` jobs run on the `--workers` pool. The Python upload path's
+requests (`session_open`, `session_close` and every `http_request` on a
+transport session: a host's login, a parser's follow-ups and result-page
+polls) run on a session request pool of 8 workers. Every other action
+(`http_request` without a session, `http_batch_resolve`, `generate_thumb`)
+runs on a request pool of 4. So a login, forum post or gallery call never
+waits behind queued uploads, and a request on a session never waits behind
+forum posts, gallery calls or thumbnails: a request's deadline counts from
+when it was queued, so a parser's follow-up stuck there would expire and
+fail an upload the host had stored. Python has at most 5 session requests
+waiting at a time (4 parser threads and the dispatch thread), so none
+waits for a worker. Go reads stdin without blocking on busy workers,
 however many jobs are queued.
 
 `cancel` is handled as soon as it is read from stdin, even while every worker
@@ -443,7 +453,8 @@ when their lookups run at the same time.
 - Backend tests cover per-file validation, `cancel`, `literal_values`, braces
   in user values, `timeout_seconds` clamping, site-scoped `reset_cookies`,
   retry classification, lost upload responses, upload stall and response
-  limits, per-job Thread Limits, and the separate request pool; Python tests
+  limits, per-job Thread Limits, and the separate request and session
+  request pools; Python tests
   cover event scoping by batch, stragglers after `batch_complete`, and the
   single-count rule for terminal events.
 - Backend tests cover transport sessions (cookie isolation between sessions

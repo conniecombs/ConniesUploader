@@ -12,6 +12,7 @@ Pixhost plugin's API base URL is pointed at the local fake host.
 import json
 import os
 import queue
+import re
 import shutil
 import subprocess
 import threading
@@ -263,6 +264,151 @@ def test_the_escape_hatch_uploads_the_same_files_through_the_legacy_go_parser(
     ]
     assert um._open_session_jobs == []
     um.shutdown()
+
+
+# --- Requests on transport sessions never wait behind other requests -------------------
+
+
+class PacedHost:
+    """GET /slow answers after ``delay`` seconds, anything else at once."""
+
+    def __init__(self, delay):
+        self.delay = delay
+        self.paths = []
+
+        host = self
+
+        class Handler(BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1"
+
+            def log_message(self, *args):
+                pass
+
+            def do_GET(self):
+                host.paths.append(self.path)
+                if self.path.startswith("/slow"):
+                    time.sleep(host.delay)
+                payload = b"ok"
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.server.daemon_threads = True
+        self.url = f"http://127.0.0.1:{self.server.server_address[1]}"
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def close(self):
+        self.server.shutdown()
+        self.server.server_close()
+
+
+def _in_background(count, call):
+    threads = [threading.Thread(target=call, args=(i,), daemon=True) for i in range(count)]
+    for thread in threads:
+        thread.start()
+    return threads
+
+
+def test_parser_follow_ups_and_logins_never_expire_queued_behind_other_requests(bridge):
+    from modules.transport import (
+        UploadTransport,
+        build_transport_spec,
+        close_transport_session,
+        execute_transport_request,
+        open_transport_session,
+    )
+
+    host = PacedHost(delay=3.0)
+    others = []
+    try:
+        session = open_transport_session(bridge, "b-pool", timeout=5)
+        transport = UploadTransport(
+            session.session_id,
+            service="pool.test",
+            bridge=bridge,
+            generation=session.generation,
+            timeout=1,  # a parser's follow-up with a short deadline
+        )
+        # Forum posts, gallery calls and the like fill the request workers.
+        others = _in_background(
+            8,
+            lambda i: execute_transport_request(
+                build_transport_spec(f"{host.url}/slow/other{i}"),
+                bridge=bridge,
+                timeout=10,
+                service="forum.test",
+            ),
+        )
+        time.sleep(0.5)
+        # Meanwhile the four parsers poll a slow result page...
+        polls = _in_background(4, lambda i: transport.get(f"{host.url}/slow/poll{i}", timeout=10))
+        time.sleep(0.2)
+
+        # ...and one more follow-up, and the next group's session open, must
+        # still run at once.
+        started = time.monotonic()
+        page = transport.get(f"{host.url}/fast")
+        assert page.ok, f"a parser's follow-up expired in the queue: {page.message}"
+        assert time.monotonic() - started < 1.5
+        next_group = open_transport_session(bridge, "b-pool", timeout=1)
+        assert time.monotonic() - started < 2.5
+        for thread in others + polls:
+            thread.join(15)
+        close_transport_session(bridge, next_group)
+        close_transport_session(bridge, session)
+    finally:
+        for thread in others:
+            thread.join(15)
+        host.close()
+
+
+def test_a_session_open_queued_past_its_deadline_opens_nothing(bridge):
+    from modules.transport import (
+        TransportSessionError,
+        UploadTransport,
+        close_transport_session,
+        open_transport_session,
+    )
+
+    host = PacedHost(delay=3.0)
+    events = queue.Queue()
+    bridge.add_listener(events)
+    polls = []
+    try:
+        session = open_transport_session(bridge, "b-late-open", timeout=5)
+        transport = UploadTransport(
+            session.session_id, service="pool.test", bridge=bridge, generation=session.generation
+        )
+        # More slow session requests than the session pool has workers.
+        main_go = (BACKEND / "main.go").read_text(encoding="utf-8")
+        workers = int(re.search(r"const sessionRequestWorkerCount = (\d+)", main_go).group(1))
+        polls = _in_background(
+            workers + 4, lambda i: transport.get(f"{host.url}/slow/poll{i}", timeout=10)
+        )
+        time.sleep(0.5)
+
+        with pytest.raises(TransportSessionError, match="deadline passed while queued"):
+            open_transport_session(bridge, "b-late-open", timeout=1)
+        for thread in polls:
+            thread.join(15)
+        time.sleep(0.5)
+        opened = []
+        while not events.empty():
+            event = events.get_nowait()
+            if (
+                str(event.get("id", "")).startswith("session-open:")
+                and event.get("status") == "success"
+            ):
+                opened.append(event)
+        assert len(opened) == 1, f"a session opened after its caller gave up: {opened}"
+        close_transport_session(bridge, session)
+    finally:
+        for thread in polls:
+            thread.join(15)
+        bridge.remove_listener(events)
+        host.close()
 
 
 # --- A sidecar crash in the middle of a job ------------------------------------------

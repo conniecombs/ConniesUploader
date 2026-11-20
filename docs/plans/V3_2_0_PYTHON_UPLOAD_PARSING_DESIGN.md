@@ -310,6 +310,12 @@ the implementation differs from the text above:
   parse and report nothing more. The non-terminal `Uploaded` status may be
   dropped by the sidecar bridge under load; the raw `result` is the terminal
   event it always delivers.
+- Requests on a session (logins, parser follow-ups, result-page polls) and
+  `session_open`/`session_close` run on their own sidecar pool of 8 workers,
+  sized for the 4 parser threads plus the dispatch thread, so they never
+  wait behind forum posts, gallery calls or thumbnails; on the shared pool a
+  follow-up's deadline could pass in the queue and fail an upload the host
+  had stored.
 - A session lives in one sidecar process. Its uploads, its requests
   (`UploadTransport` knows the session's process) and its close are written
   only to that process; after a crash a parser still running gets

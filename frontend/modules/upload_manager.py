@@ -40,7 +40,10 @@ TERMINAL_FILE_STATUSES = frozenset({"Done", "Failed", "Cancelled"})
 # the upload and the plugin's parser is reading the answer.
 UPLOADED_STATUS = "Uploaded"
 
-# Threads that run plugin parsers (and their follow-up requests).
+# Threads that run plugin parsers (and their follow-up requests). The
+# sidecar's session request pool (sessionRequestWorkerCount in
+# backend/main.go) covers these plus the dispatch thread, so no follow-up
+# waits for a worker (tests/test_build_contract.py).
 POST_PROCESS_WORKERS = 4
 
 # Answers with which a host refuses an upload without taking it ("too many
