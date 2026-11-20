@@ -59,6 +59,21 @@ func ExtractStatusCode(err error) int {
 	return 0
 }
 
+// noRetryError marks a failure that must not be retried automatically, such
+// as an upload whose body reached the host but whose response was lost.
+type noRetryError struct{ err error }
+
+func (e *noRetryError) Error() string { return e.err.Error() }
+func (e *noRetryError) Unwrap() error { return e.err }
+
+// NoRetry wraps err so IsRetryableError reports false for it.
+func NoRetry(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &noRetryError{err: err}
+}
+
 // IsRetryableError reports whether a failed attempt may be repeated.
 //
 // statusCode is the status of the response the attempt received, or 0 when
@@ -68,7 +83,8 @@ func ExtractStatusCode(err error) int {
 // response the error is classified by type. Error text, which can quote a
 // response body, is never inspected.
 func IsRetryableError(err error, statusCode int, config *RetryConfig) bool {
-	if err == nil {
+	var noRetry *noRetryError
+	if err == nil || errors.As(err, &noRetry) {
 		return false
 	}
 	if statusCode == 0 {

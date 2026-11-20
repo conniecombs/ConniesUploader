@@ -168,7 +168,7 @@ func ExecuteHttpUploadWithData(ctx context.Context, client *http.Client, fp stri
 		Thumb string
 	}
 
-	res, err := RetryWithBackoff(ctx, retryConfig, func() (uploadResult, int, error) {
+	res, err := RetryWithBackoff(ctx, retryConfig, func() (_ uploadResult, _ int, attemptErr error) {
 		pr, pw := io.Pipe()
 		defer pr.Close()
 		writer := multipart.NewWriter(pw)
@@ -231,7 +231,13 @@ func ExecuteHttpUploadWithData(ctx context.Context, client *http.Client, fp stri
 			method = http.MethodPost
 		}
 
-		req, err := http.NewRequestWithContext(ctx, method, uploadURL, pr)
+		// No wall-clock limit on the transfer: the attempt fails when the body
+		// stalls or the host stops answering, and a failure after the body was
+		// sent is never retried because the host may have stored the file.
+		attempt := newUploadAttempt(ctx)
+		defer func() { attemptErr = attempt.finish(attemptErr) }()
+
+		req, err := http.NewRequestWithContext(attempt.ctx, method, uploadURL, attempt.body(pr))
 		if err != nil {
 			return uploadResult{}, 0, err
 		}
@@ -251,7 +257,7 @@ func ExecuteHttpUploadWithData(ctx context.Context, client *http.Client, fp stri
 		}
 		emitUploadStatus(job, fp, "Uploading")
 		emitUploadLog(job, fp, fmt.Sprintf("HTTP upload request started: %s", filepath.Base(fp)))
-		resp, err := useClient.Do(req)
+		resp, err := attempt.do(useClient, req)
 		if err != nil {
 			return uploadResult{}, 0, err
 		}
