@@ -202,6 +202,43 @@ def test_html_field_picks_the_element_goquery_picks(page, selector, want):
     assert html_field(page, selector) == want
 
 
+# What Go's RE2 finds: \s is [\t\n\f\r ] (no NBSP or vertical tab), \d and \w
+# are ASCII, and \b is an ASCII word boundary.
+@pytest.mark.parametrize(
+    ("page", "selector", "want"),
+    [
+        ("<script>endpoint:\t'/up.tu'</script>", r"regex:endpoint:\s*'([^']+)'", "/up.tu"),
+        ("<script>endpoint: 'nbsp.tu'</script>", r"regex:endpoint:\s*'([^']+)'", ""),
+        ("<script>endpoint:\x0b'vt.tu'</script>", r"regex:endpoint:\s*'([^']+)'", ""),
+        (
+            "[URL=https://vipr.im/abc x][IMG]https://i1.vipr.im/th/a.jpg[/IMG]",
+            r"regex:(?is)\[URL=(https?://vipr\.im/[^\]\s]+)\]\s*\[IMG\]",
+            "https://vipr.im/abc x",
+        ),
+        ("id=٤٥ id=12", r"regex:id=(\d+)", "12"),
+        ("x=été x=ab_9", r"regex:x=(\w+)", "ab_9"),
+        ("cafés", r"regex:\bs", "s"),
+        (r"a\sb", r"regex:a\\s(b)", "b"),
+        ("tab\there", r"regex:tab[\s]here", "tab\there"),
+        ("nb sp", r"regex:nb[\s]sp", ""),
+    ],
+    ids=[
+        "tab is space",
+        "nbsp is not",
+        "vertical tab is not",
+        "nbsp inside a negated class",
+        "arabic digits are not digits",
+        "accented letters are not word characters",
+        "ascii word boundary",
+        "escaped backslash",
+        "class with tab",
+        "class without nbsp",
+    ],
+)
+def test_html_field_regexes_match_like_re2(page, selector, want):
+    assert html_field(page, selector) == want
+
+
 def test_host_message_and_redaction():
     assert host_message('{"error":"nope"}') == "nope"
     assert host_message("x" * 300).endswith("…")

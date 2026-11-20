@@ -385,8 +385,15 @@ until M5.
 | `file_match_mode: upload_order` | `upload_job_options -> {"sequential": True}` and `result_matcher("upload_order")` |
 
 Values are literal on the Python path: nothing substitutes `{name}` for you.
-Python `re` replaces RE2; avoid backtracking-only constructs. BeautifulSoup's
-`html.parser` replaces goquery's HTML5 parser; test selectors on recorded pages.
+Python `re` replaces RE2; avoid backtracking-only constructs. `html_field`'s
+`regex:` and the result-page extractors compile your pattern with
+`upload_results.compile_re2_pattern`, so `\s` is RE2's `[\t\n\f\r ]` (no NBSP,
+no vertical tab) and `\d`, `\w`, `\b` are ASCII; compile any other pattern
+that reads a page with it too. BeautifulSoup's `html.parser` replaces goquery's
+HTML5 parser; `html_field` skips what is inside `<noscript>` and keeps the first
+of a repeated attribute, as goquery does, and the quoted text of a failure reads
+the page's body as an HTML5 parser builds it (text before `<html>` or after
+`</html>` included). Test selectors on recorded pages.
 
 ### 8.3 Rules the framework enforces, and what is left to the plugin
 

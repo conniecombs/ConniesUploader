@@ -53,7 +53,7 @@ from typing import Set, Tuple, Union
 from urllib.parse import unquote, urlsplit
 
 from .sidecar import REQUEST_CANCELLED_MSG
-from .upload_results import UploadResult, html_field, request_failure
+from .upload_results import UploadResult, compile_re2_pattern, html_field, request_failure
 
 MODE_FILENAME = "filename"
 MODE_CONTAINS = "contains"
@@ -77,7 +77,8 @@ class ResultEntry:
 
 
 def _compile(pattern: Pattern) -> "re.Pattern[str]":
-    return pattern if isinstance(pattern, re.Pattern) else re.compile(pattern)
+    """A pattern given as text matches as the legacy RE2 pattern did (compile_re2_pattern)."""
+    return pattern if isinstance(pattern, re.Pattern) else compile_re2_pattern(pattern)
 
 
 def _group(match: "re.Match[str]", name: str) -> str:

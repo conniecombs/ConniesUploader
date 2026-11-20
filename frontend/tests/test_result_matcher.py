@@ -279,6 +279,31 @@ def test_extract_entries_keeps_page_order_and_merges_duplicates():
     ]
 
 
+def test_link_extractors_use_re2_character_classes_as_on_the_legacy_path():
+    # Go's RE2: \s is [\t\n\f\r ] (no NBSP, no vertical tab), \d is [0-9].
+    from modules.plugins import imagebam, turbo
+
+    turbo_page = (
+        "[url=https://www.turboimagehost.com/p/1001/a.jpg.html][img]https://s1d.t.com/t/1001.jpg"
+        "[/img][/url]\n"
+        "[url=https://www.turboimagehost.com/p/1004/z.jpg.html] [img]https://s1d.t.com/t/1004.jpg"
+        "[/img][/url]\n"
+        "[url=https://www.turboimagehost.com/p/1005/v.jpg.html]\x0b[img]https://s1d.t.com/t/1005.jpg"
+        "[/img][/url]"
+    )
+    assert [entry.name for entry in extract_result_entries(turbo.LINK_EXTRACTOR, turbo_page)] == [
+        "a.jpg"
+    ]
+    imagebam_page = (
+        "[URL=https://www.imagebam.com/view/ME1A][IMG]https://thumbs4.imagebam.com/aa/ME1A_t.jpg"
+        "[/IMG][/URL] "
+        "[URL=https://www.imagebam.com/view/ME1B][IMG]https://thumbs٤.imagebam.com/aa/ME1B_t.jpg"
+        "[/IMG][/URL]"
+    )
+    entries = extract_result_entries(imagebam.LINK_EXTRACTOR, imagebam_page)
+    assert [entry.image_url for entry in entries] == ["https://www.imagebam.com/view/ME1A"]
+
+
 def test_separate_thumbnail_extractor_fills_missing_thumbs_by_name():
     matcher = ResultPageMatcher(["/in/a.jpg", "/in/b.jpg"])
     for fp in matcher.files:

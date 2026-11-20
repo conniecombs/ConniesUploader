@@ -19,13 +19,16 @@ the same results for the same responses (see tests/test_upload_parity.py):
   ``html_field``: the legacy response_parser primitives.
 
 Known flavour differences from Go: CSS selection uses BeautifulSoup's
-``html.parser`` instead of an HTML5 parser, and regular expressions use
-Python ``re`` instead of RE2 (avoid backtracking-only constructs).
+``html.parser`` instead of an HTML5 parser (``html_field`` and
+``html_visible_text`` make up for what tells them apart on host pages), and
+regular expressions use Python ``re`` instead of RE2: compile them with
+``compile_re2_pattern`` and avoid backtracking-only constructs.
 """
 
 from __future__ import annotations
 
 import bisect
+import functools
 import html
 import json
 import os
@@ -577,6 +580,58 @@ def apply_response_template(template: str, data: Any, file_path: str, result_url
     return _TEMPLATE_TOKEN.sub(fill, str(template or ""))
 
 
+# RE2's \s: no vertical tab, no Unicode spaces.
+_RE2_SPACE = "\\t\\n\\f\\r "
+
+
+@functools.lru_cache(maxsize=256)
+def compile_re2_pattern(pattern: str) -> "re.Pattern[str]":
+    """Compile a legacy spec's regular expression so it matches what Go's RE2 matched.
+
+    RE2's ``\\d``, ``\\w`` and ``\\b`` are ASCII (``re.ASCII``), and its
+    ``\\s`` is ``[\\t\\n\\f\\r ]``: no vertical tab, no NBSP. Remaining
+    differences, unused by the host patterns: under ``(?i)`` Python's ASCII
+    mode does not fold the Kelvin sign and long s to k and s as RE2 does,
+    ``\\S`` inside a class still excludes the vertical tab, ``$`` also
+    matches before a final newline, and POSIX classes (``[[:digit:]]``)
+    are RE2 only.
+    """
+    return re.compile(_re2_classes(pattern), re.ASCII)
+
+
+def _re2_classes(pattern: str) -> str:
+    """``pattern`` with ``\\s`` and ``\\S`` spelled out as RE2 means them."""
+    out: List[str] = []
+    in_class = False
+    index = 0
+    while index < len(pattern):
+        char = pattern[index]
+        if char == "\\" and index + 1 < len(pattern):
+            pair = pattern[index : index + 2]
+            if pair == "\\s":
+                out.append(_RE2_SPACE if in_class else f"[{_RE2_SPACE}]")
+            elif pair == "\\S" and not in_class:
+                out.append(f"[^{_RE2_SPACE}]")
+            else:
+                out.append(pair)
+            index += 2
+            continue
+        if not in_class and char == "[":
+            start = index + 1
+            if pattern[start : start + 1] == "^":
+                start += 1
+            if pattern[start : start + 1] == "]":
+                start += 1  # a "]" first in a class is literal
+            out.append(pattern[index:start])
+            index, in_class = start, True
+            continue
+        if in_class and char == "]":
+            in_class = False
+        out.append(char)
+        index += 1
+    return "".join(out)
+
+
 _SELECTION_ATTRIBUTES = ("value", "content", "action", "href", "src", "data-url")
 
 
@@ -595,7 +650,7 @@ def html_field(body: str, selector: str) -> str:
     if not selector:
         return ""
     if selector.startswith("regex:"):
-        match = re.search(selector[len("regex:") :], str(body or ""))
+        match = compile_re2_pattern(selector[len("regex:") :]).search(str(body or ""))
         if not match:
             return ""
         value = match.group(1) if match.re.groups >= 1 else match.group(0)
