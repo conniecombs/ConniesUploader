@@ -656,6 +656,8 @@ If a template contains `#cover_images#`, `[for cover]`, `#cover_image#`, or `#co
 
 ViperGirls and forum templates are treated as BBCode templates by the editor toolbar, even when their saved template names are not literally `BBCode`. HTML templates still insert HTML tags.
 
+Custom templates get their output format from their text: HTML tags make them HTML, BBCode tags make them BBCode, and Markdown links, images, headings, or bold text make them Markdown. A template with none of these is Markdown or HTML when its name contains `Markdown` or `HTML`, and BBCode otherwise. That format controls how `#all_images#` and the other image placeholders are written, the toolbar tags, and the browser preview, so a duplicate of a built-in HTML or Markdown template keeps producing HTML or Markdown. See [How Format Resolution Works](TEMPLATE_EDITOR_TUTORIAL.md#how-format-resolution-works) for the exact order.
+
 ### Template Conditionals
 
 Use a conditional when a line, link, label, or whole section should appear only when certain upload data exists.

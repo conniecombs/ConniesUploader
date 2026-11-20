@@ -74,6 +74,19 @@ class TemplateManager:
         r"<\s*/?\s*(?:a|b|body|br|center|div|em|font|h[1-6]|html|i|img|p|span|strong|table|td|tr|u)\b[^>]*>",
         re.IGNORECASE,
     )
+    # A tag name followed directly by "]" or "=": [b], [/url], [size=2]. A Markdown
+    # link such as [I love this](...) is not a BBCode tag.
+    BBCODE_TAG_PATTERN = re.compile(
+        r"\[/?(?:b|i|u|s|url|img|center|left|right|size|color|font|quote|code|list"
+        r"|spoiler|hr|indent|align|table|tr|td|sup|sub|email)(?:=[^\]\n]*)?\]",
+        re.IGNORECASE,
+    )
+    MARKDOWN_SYNTAX_PATTERN = re.compile(
+        r"!?\[[^\[\]\n]*\]\([^()\s]+\)"  # [text](url) and ![alt](url)
+        r"|^[ \t]{0,3}#{1,6}[ \t]+\S"  # "# Heading" (not "#batch_name#")
+        r"|\*\*[^*\n]+\*\*",  # **bold**
+        re.MULTILINE,
+    )
     ALLOWED_PLACEHOLDERS = {
         "all_images",
         "all_full_images",
@@ -136,7 +149,6 @@ class TemplateManager:
         "ViperGirls": "BBCode",
         "Markdown": "Markdown",
         "HTML": "HTML",
-        CUSTOM_CATEGORY: "BBCode",
     }
 
     def __init__(self, filepath: Optional[str] = None) -> None:
@@ -298,9 +310,39 @@ class TemplateManager:
     def get_template_category(self, name: str) -> str:
         return self.BUILTIN_TEMPLATE_CATEGORIES.get(name, self.CUSTOM_CATEGORY)
 
-    def resolve_output_format(self, name: str) -> str:
-        category = self.get_template_category(name)
-        return self.OUTPUT_FORMAT_BY_CATEGORY.get(category, "BBCode")
+    def resolve_output_format(self, name: str, content: Optional[str] = None) -> str:
+        """Return "BBCode", "Markdown" or "HTML" for the template ``name``.
+
+        Built-in templates use their category's format. A custom template's format
+        comes from ``content`` (default: its saved text), so a duplicate of a
+        built-in keeps that built-in's format; see ``detect_output_format``.
+        """
+        category = self.BUILTIN_TEMPLATE_CATEGORIES.get(name)
+        if category is not None:
+            return self.OUTPUT_FORMAT_BY_CATEGORY.get(category, "BBCode")
+        text = self.templates.get(name, "") if content is None else content
+        return self.detect_output_format(name, text)
+
+    def detect_output_format(self, name: str, content: str) -> str:
+        """Guess a custom template's format from its text, then from its name.
+
+        HTML tags mean HTML, BBCode tags mean BBCode, Markdown links, images,
+        headings or bold text mean Markdown. Text with none of those follows a
+        name containing "Markdown" or "HTML", and is BBCode otherwise.
+        """
+        text = str(content or "")
+        if self.HTML_TAG_PATTERN.search(text):
+            return "HTML"
+        if self.BBCODE_TAG_PATTERN.search(text):
+            return "BBCode"
+        if self.MARKDOWN_SYNTAX_PATTERN.search(text):
+            return "Markdown"
+        lowered_name = str(name or "").lower()
+        if "markdown" in lowered_name:
+            return "Markdown"
+        if "html" in lowered_name:
+            return "HTML"
+        return "BBCode"
 
     def template_warnings(self, name: str, content: str) -> List[str]:
         warnings: List[str] = []
@@ -883,7 +925,7 @@ class TemplateManager:
         self, format_mode: str, data: Dict[str, Any], images: List[Tuple[str, str, str]]
     ) -> str:
         template = self.get_template(format_mode)
-        output_format = self.resolve_output_format(format_mode)
+        output_format = self.resolve_output_format(format_mode, template)
         nodes = self._parse_template_nodes(template)
         data = dict(data)
         if images:
@@ -1180,7 +1222,7 @@ class TemplateEditor(ctk.CTkToplevel):
         self.load_curr()
 
     def get_tags(self, mode, value=None):
-        fmt = self.mgr.resolve_output_format(self.fmt.get())
+        fmt = self.mgr.resolve_output_format(self.fmt.get(), self._editor_content())
         if mode == "Bold":
             return (
                 ("[b]", "[/b]")
@@ -1640,7 +1682,7 @@ class TemplateEditor(ctk.CTkToplevel):
             mock.append((path_url, path_url, path_url))
 
         curr_fmt = self.fmt.get()
-        output_fmt = self.mgr.resolve_output_format(curr_fmt)
+        output_fmt = self.mgr.resolve_output_format(curr_fmt, content)
         existed = curr_fmt in self.mgr.templates
         orig = self.mgr.templates.get(curr_fmt)
         self.mgr.templates[curr_fmt] = content

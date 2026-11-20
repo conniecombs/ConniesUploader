@@ -1061,6 +1061,8 @@ class TestTemplateManagerAdvanced:
             editor = TemplateEditor.__new__(TemplateEditor)
             editor.mgr = mgr
             editor.fmt = FakeVar("ViperGirls Gallery Post")
+            editor.current_template_name = "ViperGirls Gallery Post"
+            editor.txt = _FakeText(mgr.get_template("ViperGirls Gallery Post"))
 
             assert TemplateEditor.get_tags(editor, "Bold") == ("[b]", "[/b]")
             assert TemplateEditor.get_tags(editor, "Color", "#ff0000") == (
@@ -1069,6 +1071,8 @@ class TestTemplateManagerAdvanced:
             )
 
             editor.fmt = FakeVar("HTML")
+            editor.current_template_name = "HTML"
+            editor.txt = _FakeText(mgr.get_template("HTML"))
             assert TemplateEditor.get_tags(editor, "Bold") == ("<b>", "</b>")
 
     def test_template_warnings_flag_html_in_bbcode_forum_templates(self):
@@ -1412,3 +1416,125 @@ class TestTemplateConditionsMatchRender:
         assert "{direct}" in direct_errors[0] and "#direct_url#" in direct_errors[0]
         with pytest.raises(TemplateValidationError):
             mgr.set_template("Legacy", "[url={viewer}][img]{thumb}[/img][/url]")
+
+
+class _FakeVar:
+    def __init__(self, value=""):
+        self.value = value
+
+    def get(self):
+        return self.value
+
+    def set(self, value):
+        self.value = value
+
+
+class _FakeText:
+    def __init__(self, content=""):
+        self.content = content
+
+    def get(self, *_args):
+        return self.content + "\n"
+
+    def delete(self, *_args):
+        self.content = ""
+
+    def insert(self, _index, value):
+        self.content = value + self.content
+
+
+class _FakeCombo:
+    def __init__(self):
+        self.values = []
+        self.value = ""
+
+    def configure(self, **kwargs):
+        self.values = kwargs.get("values", self.values)
+
+    def set(self, value):
+        self.value = value
+
+
+IMAGE_BLOCKS = {
+    "BBCode": "[url=viewer1][img]thumb1[/img][/url]",
+    "Markdown": "[![Image](thumb1)](viewer1)",
+    "HTML": '<a href="viewer1"><img src="thumb1"></a>',
+}
+
+
+@pytest.mark.unit
+class TestCustomTemplateOutputFormat:
+    @pytest.mark.parametrize(
+        "source, expected",
+        [
+            ("HTML", "HTML"),
+            ("HTML Page Wrapper", "HTML"),
+            ("Markdown", "Markdown"),
+            ("Reddit Markdown", "Markdown"),
+            ("BBCode", "BBCode"),
+            ("Basic List", "BBCode"),
+            ("ViperGirls Gallery Post", "BBCode"),
+        ],
+    )
+    def test_duplicate_of_a_builtin_keeps_its_output_format(self, tmp_path, source, expected):
+        mgr = TemplateManager(str(tmp_path / "templates.json"))
+        mgr.duplicate_template(source, "My copy")
+
+        result = mgr.apply("My copy", {"gallery_link": "https://gallery"}, THREE_IMAGES[:1])
+
+        assert mgr.resolve_output_format("My copy") == expected
+        assert IMAGE_BLOCKS[expected] in result
+        for other_format, block in IMAGE_BLOCKS.items():
+            if other_format != expected:
+                assert block not in result
+
+    @pytest.mark.parametrize(
+        "name, content, expected",
+        [
+            ("My Markdown", "# #batch_name#\n\n#all_images#", "Markdown"),
+            ("Reddit post", "**#batch_name#**\n\n#all_images#", "Markdown"),
+            ("Blog", "<p>#batch_name#</p>\n#all_images#", "HTML"),
+            ("Forum post", "[b]#batch_name#[/b]\n#all_images#", "BBCode"),
+            ("Markdown for forums", "[b]#batch_name#[/b]\n#all_images#", "BBCode"),
+            ("my markdown list", "#all_images#", "Markdown"),
+            ("Gallery HTML", "#batch_name#\n#all_images#", "HTML"),
+            ("Plain list", "#batch_name#\n#all_images#", "BBCode"),
+        ],
+    )
+    def test_custom_template_format_follows_content_then_name(
+        self, tmp_path, name, content, expected
+    ):
+        mgr = TemplateManager(str(tmp_path / "templates.json"))
+        mgr.set_template(name, content)
+
+        assert mgr.resolve_output_format(name) == expected
+        assert mgr.resolve_output_format(name, content) == expected
+        assert IMAGE_BLOCKS[expected] in mgr.apply(name, {}, THREE_IMAGES[:1])
+
+    def test_preview_and_toolbar_use_the_detected_format(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(template_manager.messagebox, "showerror", lambda *_args: None)
+        monkeypatch.setattr(template_manager.messagebox, "showwarning", lambda *_args: None)
+        image = tmp_path / "a.jpg"
+        image.write_bytes(b"a")
+        mgr = TemplateManager(str(tmp_path / "templates.json"))
+        mgr.duplicate_template("HTML", "Web copy")
+        editor = TemplateEditor.__new__(TemplateEditor)
+        editor.mgr = mgr
+        editor.txt = _FakeText(mgr.get_template("Web copy"))
+        editor.fmt = _FakeVar("Web copy")
+        editor.current_template_name = "Web copy"
+        editor.data_callback = lambda: ([str(image)], "Batch", "180", 0)
+
+        raw, output_format, size = TemplateEditor._build_preview_output(editor)
+        page = TemplateEditor.build_preview_html(raw, output_format, size)
+
+        assert output_format == "HTML"
+        assert '<a href="file:///' in raw
+        assert "[url=" not in raw
+        assert '<a href="http://localhost/preview">Click here for Gallery</a>' in page
+        assert TemplateEditor.get_tags(editor, "Bold") == ("<b>", "</b>")
+
+        editor.txt = _FakeText("[Gallery](#gallery_link#)\n#all_images#")
+        assert TemplateEditor.get_tags(editor, "Bold") == ("**", "**")
+        _raw, output_format, _size = TemplateEditor._build_preview_output(editor)
+        assert output_format == "Markdown"

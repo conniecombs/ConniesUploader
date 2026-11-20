@@ -104,11 +104,18 @@ Connie's Uploader supports three major syntax families: **BBCode**, **Markdown**
 
 ### How Format Resolution Works
 
-Connie's Uploader knows which format to use based on the template's category:
-* **BBCode, Forum, ViperGirls** &rarr; Output engine generates BBCode.
-* **Markdown** &rarr; Output engine generates Markdown.
-* **HTML** &rarr; Output engine generates HTML.
-* **Custom Templates** &rarr; If the template contains HTML tags like `<html>` or `<a href`, it resolves to HTML. If the name contains `Markdown`, it resolves to Markdown. Otherwise, it defaults to BBCode.
+The format decides how `#all_images#`, `#all_full_images#`, `#cover_images#`, and `#cover_image#` are written, which tags the toolbar inserts, and how **Preview in Browser** renders the output. Connie's Uploader picks it like this:
+* **Built-in BBCode, Forum, ViperGirls templates** &rarr; BBCode.
+* **Built-in Markdown templates** &rarr; Markdown.
+* **Built-in HTML templates** &rarr; HTML.
+* **Custom Templates** &rarr; decided from the template text, checked in this order:
+  1. HTML tags such as `<a href`, `<img>`, `<p>`, `<center>`, or `<html>` &rarr; HTML.
+  2. BBCode tags such as `[b]`, `[url=...]`, `[img]`, or `[center]` &rarr; BBCode.
+  3. Markdown links or images (`[text](url)`, `![alt](url)`), headings (`# Title`), or bold text (`**text**`) &rarr; Markdown.
+  4. Text with none of these follows the name: a name containing `Markdown` &rarr; Markdown, a name containing `HTML` &rarr; HTML.
+  5. Otherwise &rarr; BBCode.
+
+Because the text is checked first, a template you **Duplicate** from a built-in keeps that built-in's format under any new name (a copy of `HTML` stays HTML, a copy of `Reddit Markdown` stays Markdown). If you rewrite a copy in another syntax, its format follows the new text.
 
 ---
 
