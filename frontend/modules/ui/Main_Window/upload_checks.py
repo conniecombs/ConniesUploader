@@ -77,8 +77,10 @@ class UploadChecksMixin:
 
         self._set_completion_summary(None)
         try:
+            # Credentials never go into cfg: it is saved to user_settings.json
+            # and sent to the sidecar as job config. Plugins read keys from
+            # self.creds, which start_batch passes separately.
             cfg = self._gather_settings()
-            cfg["api_key"] = self.creds.get("imx_api", "")
 
             # Apply worker count setting (will restart sidecar if changed)
             from modules.sidecar import SidecarBridge
