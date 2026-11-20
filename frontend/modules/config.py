@@ -145,7 +145,13 @@ logger.add(
 
 
 def natural_sort_key(s: str):
-    return [int(text) if text.isdigit() else text.lower() for text in re.split(r"(\d+)", s)]
+    # Only ASCII 0-9 runs are numbers: str.isdigit() also accepts characters
+    # such as "²" that int() cannot parse. re.split with one capture group puts
+    # the captured digit runs at the odd indexes.
+    return [
+        int(text) if index % 2 else text.lower()
+        for index, text in enumerate(re.split(r"([0-9]+)", s))
+    ]
 
 
 def resource_path(relative_path):

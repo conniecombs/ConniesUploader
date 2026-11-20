@@ -187,7 +187,13 @@ class FileQueueMixin:
         show_previews: bool,
         separate_batches: bool,
     ) -> None:
-        result = self._scan_import_inputs(inputs)
+        try:
+            result = self._scan_import_inputs(inputs)
+        except Exception as e:
+            # Still report back so the import is finished instead of left pending.
+            logger.error(f"✗ Import scan failed: {e}", exc_info=True)
+            result = self._empty_import_result()
+            result["rejected_details"].append(f"Import failed: {e}")
         if not self._is_import_epoch_current(epoch):
             return
         try:
@@ -207,8 +213,9 @@ class FileQueueMixin:
             self._finish_import(import_id, epoch)
             logger.warning("UI queue full, dropping completed import scan.")
 
-    def _scan_import_inputs(self, inputs: List[str]) -> Dict[str, Any]:
-        result = {
+    @staticmethod
+    def _empty_import_result() -> Dict[str, Any]:
+        return {
             "folder_batches": [],
             "misc_files": [],
             "folder_count": 0,
@@ -216,6 +223,9 @@ class FileQueueMixin:
             "rejected_details": [],
             "empty_folders": [],
         }
+
+    def _scan_import_inputs(self, inputs: List[str]) -> Dict[str, Any]:
+        result = self._empty_import_result()
 
         for path in inputs:
             logger.debug(f"   Processing: {path}")

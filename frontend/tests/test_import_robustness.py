@@ -69,3 +69,55 @@ def _drain_rows(app):
 )
 def test_format_file_size_promotes_unit_when_rounding_reaches_1024(size, expected):
     assert file_handler.format_file_size(size) == expected
+
+
+# --- E6: natural sort ------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("name", ["x1²2.jpg", "1²2.jpg", "³.jpg", "a①b.jpg"])
+def test_natural_sort_key_tolerates_non_ascii_digit_characters(name):
+    config.natural_sort_key(name)
+
+
+@pytest.mark.unit
+def test_natural_sort_key_orders_ascii_numbers_numerically():
+    names = ["img10.jpg", "img2.jpg", "x1²2.jpg", "img1.jpg"]
+    assert sorted(names, key=config.natural_sort_key) == [
+        "img1.jpg",
+        "img2.jpg",
+        "img10.jpg",
+        "x1²2.jpg",
+    ]
+
+
+@pytest.mark.unit
+def test_folder_with_superscript_digit_name_imports(tmp_path):
+    folder = tmp_path / "Set"
+    for name in ("1.jpg", "2.jpg", "x1²2.jpg"):
+        _touch(str(folder / name))
+
+    result = _import_app()._scan_import_inputs([str(folder)])
+
+    assert result["file_count"] == 3
+    assert result["rejected_details"] == []
+
+
+@pytest.mark.unit
+def test_import_worker_failure_still_completes_the_import():
+    app = _import_app()
+    app.ui_queue = queue.Queue()
+    import_id, epoch = app._register_import()
+
+    def explode(_inputs):
+        raise RuntimeError("scan blew up")
+
+    app._scan_import_inputs = explode
+
+    UploaderApp._scan_import_worker(app, import_id, epoch, ["/x"], None, False, False)
+
+    item = app.ui_queue.get_nowait()
+    assert item[0] == "import_complete"
+    UploaderApp._handle_import_complete(app, *item[1:])
+    assert app.active_import_ids == set()
+    assert any("scan blew up" in issue for issue in app.import_checks[-1])
