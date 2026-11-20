@@ -73,7 +73,7 @@ func DoRequest(ctx context.Context, client *http.Client, method, urlStr string, 
 		for _, code := range retryConfig.RetryableHTTPCodes {
 			if resp.StatusCode == code {
 				_ = resp.Body.Close()
-				return nil, resp.StatusCode, fmt.Errorf("HTTP %d", resp.StatusCode)
+				return nil, resp.StatusCode, &HTTPStatusError{StatusCode: resp.StatusCode}
 			}
 		}
 
@@ -259,7 +259,7 @@ func ExecuteHttpUploadWithData(ctx context.Context, client *http.Client, fp stri
 
 		for _, code := range retryConfig.RetryableHTTPCodes {
 			if resp.StatusCode == code {
-				return uploadResult{}, resp.StatusCode, fmt.Errorf("HTTP %d", resp.StatusCode)
+				return uploadResult{}, resp.StatusCode, &HTTPStatusError{StatusCode: resp.StatusCode}
 			}
 		}
 
@@ -479,7 +479,7 @@ func executePreRequest(
 
 		for _, code := range retryConfig.RetryableHTTPCodes {
 			if resp.StatusCode == code {
-				return preReqResult{}, resp.StatusCode, fmt.Errorf("HTTP %d", resp.StatusCode)
+				return preReqResult{}, resp.StatusCode, &HTTPStatusError{StatusCode: resp.StatusCode}
 			}
 		}
 
@@ -653,7 +653,11 @@ func executeResponseFollowUp(ctx context.Context, client *http.Client, resp *htt
 		return nil, err
 	}
 	if nextResp.StatusCode < 200 || nextResp.StatusCode >= 300 {
-		return nil, fmt.Errorf("response follow-up HTTP %d: %s", nextResp.StatusCode, strings.TrimSpace(string(nextBody)))
+		return nil, &HTTPStatusError{
+			Context:    "response follow-up",
+			StatusCode: nextResp.StatusCode,
+			Body:       strings.TrimSpace(string(nextBody)),
+		}
 	}
 	return nextBody, nil
 }
@@ -1147,13 +1151,16 @@ func ExecuteGenericRequest(ctx context.Context, client *http.Client, spec *Gener
 
 		for _, code := range retryConfig.RetryableHTTPCodes {
 			if resp.StatusCode == code {
-				return reqResult{}, resp.StatusCode, fmt.Errorf("HTTP %d", resp.StatusCode)
+				return reqResult{}, resp.StatusCode, &HTTPStatusError{StatusCode: resp.StatusCode}
 			}
 		}
 
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			rawBody, _ := io.ReadAll(resp.Body)
-			return reqResult{}, resp.StatusCode, fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(rawBody)))
+			return reqResult{}, resp.StatusCode, &HTTPStatusError{
+				StatusCode: resp.StatusCode,
+				Body:       strings.TrimSpace(string(rawBody)),
+			}
 		}
 
 		bodyBytes, err := io.ReadAll(resp.Body)
