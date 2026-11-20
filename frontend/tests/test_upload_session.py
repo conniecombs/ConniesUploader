@@ -591,6 +591,70 @@ def test_removing_a_finished_row_mid_upload_keeps_the_total(tmp_path):
     assert app.upload_total == 3
 
 
+@pytest.fixture
+def inline_finalization(monkeypatch):
+    finalized = []
+    monkeypatch.setattr(
+        "modules.ui.Main_Window.runtime.threading.Thread",
+        lambda target=None, **kwargs: SimpleNamespace(start=target),
+    )
+    monkeypatch.setattr(
+        "modules.ui.Main_Window.runtime.api.finalize_pixhost_gallery",
+        lambda upload_hash, gallery_hash: finalized.append((upload_hash, gallery_hash)) or True,
+    )
+    return finalized
+
+
+@pytest.mark.unit
+def test_clear_list_during_upload_cancels_like_stop(tmp_path, inline_finalization):
+    app, _first, _second = _two_batch_upload(tmp_path)
+    app.upload_manager = SimpleNamespace(cancel_batch=Mock())
+    app.cancel_event = Event()
+    app.pix_galleries_to_finalize = [
+        {"gallery_hash": "h", "gallery_upload_hash": "u", "gallery_name": "Set"}
+    ]
+    app.callbacks = []
+    app.after = lambda delay, callback: app.callbacks.append((delay, callback))
+    app._on_upload_complete = Mock()
+
+    UploaderApp.clear_list(app)
+    _run_after_zero(app)
+
+    app.upload_manager.cancel_batch.assert_called_once_with()
+    assert app.cancel_event.is_set()
+    assert inline_finalization == [("u", "h")]
+    assert ("Pixhost gallery finalized: Set (h).", "success") in app.activity
+    app._on_upload_complete.assert_not_called()
+    assert app.is_uploading is False
+    assert app.file_widgets == {}
+    assert app.pix_galleries_to_finalize == []
+
+
+@pytest.mark.unit
+def test_finalization_finishing_after_clear_list_does_not_complete_the_cleared_upload(
+    tmp_path, inline_finalization
+):
+    app, _first, _second = _two_batch_upload(tmp_path)
+    app.upload_manager = SimpleNamespace(cancel_batch=Mock())
+    app.pix_galleries_to_finalize = [
+        {"gallery_hash": "h", "gallery_upload_hash": "u", "gallery_name": "Set"}
+    ]
+    app.callbacks = []
+    app.after = lambda delay, callback: app.callbacks.append((delay, callback))
+    app._on_upload_complete = Mock()
+    del app.finish_upload  # use the real one
+
+    UploaderApp.finish_upload(app)  # finalization is running...
+    UploaderApp.clear_list(app)  # ...when the user clears the list
+    _run_after_zero(app)
+
+    app.upload_manager.cancel_batch.assert_not_called()  # all rows had finished
+    assert inline_finalization == [("u", "h")]
+    assert ("Pixhost gallery finalized: Set (h).", "success") in app.activity
+    app._on_upload_complete.assert_not_called()
+    assert app.is_uploading is False
+
+
 def _finishing_app(tmp_path, monkeypatch, files, auto_copy=False):
     """Upload in progress; finalization runs inline and after() callbacks are captured."""
     monkeypatch.setattr(

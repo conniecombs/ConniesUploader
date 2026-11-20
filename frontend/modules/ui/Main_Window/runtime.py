@@ -804,43 +804,71 @@ class RuntimeMixin:
         # re-enter while galleries are finalized on the worker thread.
         self._finalizing = True
         self.lbl_eta.configure(text="Finalizing...")
+        galleries = list(self.pix_galleries_to_finalize)
+        generation = self._upload_generation
 
         def _fin():
-            finalization_events = []
-            if self.pix_galleries_to_finalize:
-                for gal in self.pix_galleries_to_finalize:
-                    gallery_hash = str(gal.get("gallery_hash", "") or "")
-                    gallery_name = str(gal.get("gallery_name", "") or gallery_hash)
-                    try:
-                        ok = api.finalize_pixhost_gallery(
-                            gal.get("gallery_upload_hash", ""),
-                            gal.get("gallery_hash", ""),
-                        )
-                        if ok:
-                            finalization_events.append(
-                                (
-                                    f"Pixhost gallery finalized: {gallery_name} ({gallery_hash}).",
-                                    "success",
-                                )
-                            )
-                        else:
-                            finalization_events.append(
-                                (
-                                    f"Pixhost gallery finalization failed: {gallery_name} ({gallery_hash}).",
-                                    "error",
-                                )
-                            )
-                    except Exception as e:
-                        logger.error(f"Pixhost finalize error: {e}")
-                        finalization_events.append(
-                            (
-                                f"Pixhost gallery finalization error for {gallery_name} ({gallery_hash}): {e}",
-                                "error",
-                            )
-                        )
-            self.after(0, lambda: self._finish_pixhost_finalization(finalization_events))
+            events = self._finalize_pixhost_galleries(galleries)
+            self.after(0, lambda: self._after_upload_finalization(events, generation))
 
         threading.Thread(target=_fin, daemon=True).start()
+
+    def _after_upload_finalization(self, events: List[Tuple[str, str]], generation: int) -> None:
+        if generation == self._upload_generation:
+            self._finish_pixhost_finalization(events)
+        else:
+            # The list was cleared meanwhile: report the galleries, complete nothing.
+            self._report_activity_events(events)
+
+    def _report_activity_events(self, events: List[Tuple[str, str]]) -> None:
+        for message, level in events:
+            self.add_activity(message, level)
+
+    def _finalize_pixhost_galleries_in_background(self, galleries: List[Dict[str, Any]]) -> None:
+        if not galleries:
+            return
+
+        def _fin():
+            events = self._finalize_pixhost_galleries(galleries)
+            self.after(0, lambda: self._report_activity_events(events))
+
+        threading.Thread(target=_fin, daemon=True).start()
+
+    @staticmethod
+    def _finalize_pixhost_galleries(galleries: List[Dict[str, Any]]) -> List[Tuple[str, str]]:
+        """Finalize registered Pixhost galleries (worker thread); returns activity lines."""
+        finalization_events = []
+        for gal in galleries:
+            gallery_hash = str(gal.get("gallery_hash", "") or "")
+            gallery_name = str(gal.get("gallery_name", "") or gallery_hash)
+            try:
+                ok = api.finalize_pixhost_gallery(
+                    gal.get("gallery_upload_hash", ""),
+                    gal.get("gallery_hash", ""),
+                )
+                if ok:
+                    finalization_events.append(
+                        (
+                            f"Pixhost gallery finalized: {gallery_name} ({gallery_hash}).",
+                            "success",
+                        )
+                    )
+                else:
+                    finalization_events.append(
+                        (
+                            f"Pixhost gallery finalization failed: {gallery_name} ({gallery_hash}).",
+                            "error",
+                        )
+                    )
+            except Exception as e:
+                logger.error(f"Pixhost finalize error: {e}")
+                finalization_events.append(
+                    (
+                        f"Pixhost gallery finalization error for {gallery_name} ({gallery_hash}): {e}",
+                        "error",
+                    )
+                )
+        return finalization_events
 
     def _on_upload_complete(self):
         self.is_uploading = False
@@ -1288,6 +1316,14 @@ class RuntimeMixin:
             self.add_activity("No failed files to retry.", "warning")
 
     def clear_list(self) -> None:
+        if self.is_uploading and not self._finalizing:
+            # Cancel exactly as Stop does: the sidecar aborts the batch and the
+            # auto-poster stops. finish_upload will never run for the cleared
+            # rows, so finalize the registered Pixhost galleries here.
+            self.stop_upload()
+            self._finalize_pixhost_galleries_in_background(list(self.pix_galleries_to_finalize))
+        self._upload_generation += 1
+        self.pix_galleries_to_finalize = []
         self.cancel_event.set()
         self._clear_import_work()
         self.is_uploading = False
