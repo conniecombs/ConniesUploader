@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"unicode"
+
+	"golang.org/x/text/unicode/norm"
 )
 
 // File match modes of a resolve_spec.
@@ -113,8 +115,10 @@ func pageNameForms(value string) nameForms {
 	return newNameForms(strings.TrimSuffix(strings.ToLower(value), ".html"))
 }
 
+// newNameForms compares names in Unicode NFC: macOS file names are often
+// decomposed ("e" + U+0301) while hosts list the composed "é".
 func newNameForms(name string) nameForms {
-	exact := strings.ToLower(strings.TrimSpace(name))
+	exact := norm.NFC.String(strings.ToLower(strings.TrimSpace(name)))
 	similar := strings.Join(strings.FieldsFunc(exact, func(r rune) bool {
 		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
 	}), " ")

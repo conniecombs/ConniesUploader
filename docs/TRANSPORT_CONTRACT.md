@@ -223,6 +223,8 @@ when their lookups run at the same time.
 
 - `filename` (default): the entry whose name (the `filename` group, else the
   last segment of `image_url`) equals the file's base name, ignoring case.
+  Both names are compared in Unicode NFC, so a decomposed macOS name
+  (`e` + U+0301) matches the composed `é` a host lists.
   Next, the same name once punctuation is ignored (a host that turned
   `Scan #1.jpg` into `Scan__1.jpg`). Only on the last poll, when neither is
   listed, a host name that contains the file's name as whole words
