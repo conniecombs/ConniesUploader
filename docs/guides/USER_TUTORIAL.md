@@ -558,10 +558,10 @@ Safe custom starter:
 | `Placeholders` | Switches between Images, Gallery, Batch, Service, and ViperGirls placeholder groups, including image-loop snippets. |
 | `Preview in Browser` | Opens a local browser preview using added local files and shows both rendered output and raw generated text. Add files to the queue before using this. |
 | `Copy Preview Output` | Copies the raw generated preview text without opening the browser. |
-| `Save Current` | Saves changes to the currently selected template name. |
+| `Save Current` | Saves changes to the template you are editing, the one named in `Edit Format`. |
 | `Save As New...` | Creates a new named template. |
 
-The editor warns before switching templates or closing if the current template has unsaved changes. Templates are validated before saving so empty templates, unknown `#placeholder#` values, duplicate or unmatched `[else]` tags, unclosed `[if]`, `[for image]`, or `[for cover]` blocks, and templates without image output placeholders are blocked.
+The editor warns before switching templates or closing if the current template has unsaved changes; answering `Yes` saves them to the template you were editing before the next one opens. A template you create with `Duplicate`, `Save As New...`, or `Rename` opens in the editor right away; if the `Category` or `Search` filter would hide it, the filter is cleared so the template shows in the list. Templates are validated before saving so empty templates, unknown `#placeholder#` values, duplicate or unmatched `[else]` tags, unclosed `[if]`, `[for image]`, or `[for cover]` blocks, and templates without image output placeholders are blocked.
 
 If preview data is not available, the editor explains what is missing instead of failing silently. Add at least one image to the upload queue before using browser preview or copying preview output.
 

@@ -1360,7 +1360,7 @@ class TemplateEditor(ctk.CTkToplevel):
         self.load_curr()
 
     def get_tags(self, mode, value=None):
-        fmt = self.mgr.resolve_output_format(self.fmt.get(), self._editor_content())
+        fmt = self.mgr.resolve_output_format(self.current_template_name, self._editor_content())
         if mode == "Bold":
             return (
                 ("[b]", "[/b]")
@@ -1497,11 +1497,28 @@ class TemplateEditor(ctk.CTkToplevel):
         self.cb_fmt.configure(values=keys)
         self.cb_category.configure(values=self.mgr.get_category_names())
         self.template_empty_label.configure(text="No matching templates." if not keys else "")
-        if selected in keys:
+        if selected:
+            # Always show the template being edited, even when a filter hides it from
+            # the dropdown list, so the selector never names a different template.
             self.cb_fmt.set(selected)
             self.cb_saved.set(selected)
             self.fmt.set(selected)
             self.saved_tmpl_var.set(selected)
+
+    def _show_template_in_lists(self, name: str) -> None:
+        """Relax the Category, then the Search filter, when they hide ``name``."""
+
+        def visible() -> bool:
+            return name in self.mgr.filter_template_names(
+                self.template_search_var.get(),
+                self.template_category_var.get(),
+            )
+
+        if visible():
+            return
+        self.template_category_var.set(self.mgr.CATEGORY_ALL)
+        if not visible():
+            self.template_search_var.set("")
 
     def _show_validation_errors(self, title: str, exc: Exception) -> None:
         if isinstance(exc, TemplateValidationError):
@@ -1524,6 +1541,7 @@ class TemplateEditor(ctk.CTkToplevel):
         self.txt.insert("0.0", content)
         self.current_template_name = name
         self.loaded_content = content.strip()
+        self._show_template_in_lists(name)
         self._refresh_template_lists(name)
 
     def load_curr(self, name=None):
@@ -1542,7 +1560,10 @@ class TemplateEditor(ctk.CTkToplevel):
         self.load_curr(sel)
 
     def save(self, show_success: bool = True) -> bool:
-        name = self.fmt.get().strip()
+        # The template whose text is in the editor. Not self.fmt: the Edit Format
+        # combobox writes its variable before its command runs, so while switching
+        # templates fmt already names the next template.
+        name = self.current_template_name
         content = self._editor_content()
         if not self._confirm_template_warnings(name, content):
             return False
@@ -1846,7 +1867,7 @@ class TemplateEditor(ctk.CTkToplevel):
             path_url = f"file:///{urllib.parse.quote(file_path.replace(os.sep, '/'))}"
             mock.append((path_url, path_url, path_url))
 
-        curr_fmt = self.fmt.get()
+        curr_fmt = self.current_template_name
         output_fmt = self.mgr.resolve_output_format(curr_fmt, content)
         existed = curr_fmt in self.mgr.templates
         orig = self.mgr.templates.get(curr_fmt)

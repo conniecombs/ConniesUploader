@@ -1176,6 +1176,7 @@ class TestTemplateManagerAdvanced:
             )
         )
         editor.fmt = FakeVar("Preview Custom")
+        editor.current_template_name = "Preview Custom"
         editor.data_callback = lambda: (
             [str(image_one), str(image_two)],
             "Preview Batch",
@@ -1221,6 +1222,7 @@ class TestTemplateManagerAdvanced:
         editor.mgr = mgr
         editor.txt = FakeText("#cover_images#\n--\n#all_images#")
         editor.fmt = FakeVar("Preview Custom")
+        editor.current_template_name = "Preview Custom"
         editor.data_callback = lambda: (
             [str(image_one), str(image_two)],
             "Preview Batch",
@@ -1804,3 +1806,113 @@ class TestBuiltinTemplatesStay:
         assert len(infos) == 2
         assert all("built-in" in message and "Duplicate" in message for message in infos)
         assert mgr.get_template("Reddit Markdown") == mgr.defaults["Reddit Markdown"]
+
+
+class _FakeInputDialog:
+    answer = ""
+
+    def __init__(self, **_kwargs):
+        pass
+
+    def get_input(self):
+        return self.answer
+
+
+@pytest.mark.unit
+class TestTemplateEditorSavesTheEditedTemplate:
+    def _two_templates(self, tmp_path):
+        path = tmp_path / "templates.json"
+        mgr = TemplateManager(str(path))
+        mgr.set_template("Mine A", "[b]A original[/b] #all_images#")
+        mgr.set_template("Mine B", "[i]B original[/i] #all_images#")
+        return path, mgr
+
+    def test_switch_prompt_saves_the_previous_template(self, tmp_path, monkeypatch):
+        path, mgr = self._two_templates(tmp_path)
+        editor = _make_editor(mgr, "Mine A")
+        monkeypatch.setattr(template_manager.messagebox, "askyesnocancel", lambda *_args: True)
+        monkeypatch.setattr(template_manager.messagebox, "showinfo", lambda *_args: None)
+        editor.txt.content = "[b]A EDITED[/b] #all_images#"
+
+        # CTkComboBox's dropdown and the mouse-wheel handler write the bound
+        # variable before they call the command.
+        editor.fmt.set("Mine B")
+        editor._handle_template_change("Mine B")
+
+        on_disk = _read_json(path)
+        assert on_disk["Mine A"] == "[b]A EDITED[/b] #all_images#"
+        assert on_disk["Mine B"] == "[i]B original[/i] #all_images#"
+        assert editor.current_template_name == "Mine B"
+        assert editor.fmt.get() == "Mine B"
+        assert editor._editor_content() == "[i]B original[/i] #all_images#"
+
+    def test_cancelled_switch_keeps_editing_and_saving_the_same_template(
+        self, tmp_path, monkeypatch
+    ):
+        path, mgr = self._two_templates(tmp_path)
+        editor = _make_editor(mgr, "Mine A")
+        monkeypatch.setattr(template_manager.messagebox, "askyesnocancel", lambda *_args: None)
+        monkeypatch.setattr(template_manager.messagebox, "showinfo", lambda *_args: None)
+        editor.txt.content = "[b]A EDITED[/b] #all_images#"
+
+        editor.fmt.set("Mine B")
+        editor._handle_template_change("Mine B")
+        assert editor.current_template_name == "Mine A"
+        assert editor.fmt.get() == "Mine A"
+        assert _read_json(path)["Mine A"] == "[b]A original[/b] #all_images#"
+
+        editor.fmt.set("Mine B")  # a stale selection must not redirect the save
+        assert editor.save() is True
+
+        on_disk = _read_json(path)
+        assert on_disk["Mine A"] == "[b]A EDITED[/b] #all_images#"
+        assert on_disk["Mine B"] == "[i]B original[/i] #all_images#"
+
+    def test_duplicate_under_a_category_filter_edits_and_saves_the_copy(
+        self, tmp_path, monkeypatch
+    ):
+        path = tmp_path / "templates.json"
+        mgr = TemplateManager(str(path))
+        editor = _make_editor(mgr, "BBCode")
+        infos = []
+        monkeypatch.setattr(template_manager.messagebox, "askyesno", lambda *_args: True)
+        monkeypatch.setattr(
+            template_manager.messagebox,
+            "showinfo",
+            lambda _title, message: infos.append(message),
+        )
+        _FakeInputDialog.answer = "My Post"
+        monkeypatch.setattr(template_manager.ctk, "CTkInputDialog", _FakeInputDialog)
+
+        editor.template_category_var.set("ViperGirls")
+        editor.fmt.set("ViperGirls Gallery Post")
+        editor._handle_template_change("ViperGirls Gallery Post")
+        original = mgr.get_template("ViperGirls Gallery Post")
+        editor.duplicate_current()
+
+        assert editor.current_template_name == "My Post"
+        assert editor.fmt.get() == "My Post"
+        assert "My Post" in editor.cb_fmt.values
+
+        editor.txt.content = "[b]MY EXPERIMENT[/b] #all_images#"
+        assert editor.save() is True
+
+        assert mgr.get_template("ViperGirls Gallery Post") == original
+        assert _read_json(path)["ViperGirls Gallery Post"] == original
+        assert _read_json(path)["My Post"] == "[b]MY EXPERIMENT[/b] #all_images#"
+        assert infos[-1] == "Template 'My Post' updated."
+
+    def test_loading_a_template_hidden_by_the_search_clears_the_filters(self, tmp_path):
+        mgr = TemplateManager(str(tmp_path / "templates.json"))
+        mgr.set_template("Zebra", "zebra #all_images#")
+        editor = _make_editor(mgr, "BBCode")
+        editor.template_search_var.set("gallery")
+        editor.template_category_var.set("Forum")
+
+        editor._load_template_content("Zebra")
+
+        assert editor.template_category_var.get() == mgr.CATEGORY_ALL
+        assert editor.template_search_var.get() == ""
+        assert "Zebra" in editor.cb_fmt.values
+        assert editor.fmt.get() == "Zebra"
+        assert editor.saved_tmpl_var.get() == "Zebra"
