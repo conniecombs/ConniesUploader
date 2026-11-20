@@ -18,6 +18,7 @@ from urllib.parse import urlsplit
 
 from bs4 import BeautifulSoup
 from .base import ImageHostPlugin
+from . import helpers
 from ..result_matcher import MODE_UPLOAD_ORDER, resolve_from_result_page
 from ..upload_results import (
     UploadResult,
@@ -174,9 +175,9 @@ class ImageBamPlugin(ImageHostPlugin):
             return
 
         title = str(getattr(group, "title", "") or "Gallery").strip() or "Gallery"
+        helpers.claim_group_gallery(group, self.id)
         group.imagebam_gallery_title = title
         group.gallery_name = title
-        group.gallery_service = self.id
         config["imagebam_gallery_title"] = title
         logger.info(f"ImageBam gallery will be created during upload: {title}")
 

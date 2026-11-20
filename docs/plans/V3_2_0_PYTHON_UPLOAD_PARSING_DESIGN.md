@@ -388,6 +388,13 @@ Python `re` replaces RE2; avoid backtracking-only constructs. BeautifulSoup's
 - Raise from `open_upload_session` to fail the whole group (for example a
   refused login: "Wrong password" must name the host's message, not a parse
   error). Raise from `build_raw_upload_request` to fail one file.
+- The upload manager sends a batch's gallery id only to the host the gallery
+  was picked for (`group.gallery_service`). A `prepare_group` that gives the
+  group a gallery of its own (an auto-gallery) calls
+  `helpers.claim_group_gallery(group, self.id)` before it fills the group's
+  gallery fields: that drops another host's gallery id, name and url, which
+  would otherwise reach this host as its gallery. One that gives the group no
+  gallery leaves `gallery_service` alone.
 
 ### 8.4 Result pages
 

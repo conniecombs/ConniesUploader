@@ -291,11 +291,11 @@ class TurboPlugin(ImageHostPlugin):
 
         gallery_name = self._safe_gallery_name(getattr(group, "title", "") or "Gallery")
         upload_id = self._upload_id()
+        helpers.claim_group_gallery(group, self.id)
         group.turbo_gallery_create = True
         group.turbo_gallery_name = gallery_name
         group.turbo_upload_id = upload_id
         group.gallery_name = gallery_name
-        group.gallery_service = self.id
 
     @staticmethod
     def _safe_gallery_name(title: str) -> str:
