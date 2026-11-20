@@ -76,7 +76,9 @@ def test_other_hosts_keep_a_separate_cover_job(manager):
     files = ["/set/cover.jpg", "/set/p1.jpg"]
     group = Group("Beach", files, covers=["/set/cover.jpg"])
 
-    um._dispatch_jobs({group: list(files)}, {"service": "turboimagehost", "auto_gallery": True}, {})
+    # The legacy path: this fake bridge opens no transport sessions.
+    cfg = {"service": "turboimagehost", "auto_gallery": True, "legacy_upload_parsing": True}
+    um._dispatch_jobs({group: list(files)}, cfg, {})
 
     assert _job_files(bridge) == [["cover.jpg"], ["p1.jpg"]]
     assert bridge.sent[0]["config"]["thumbnail_size"] == "600"

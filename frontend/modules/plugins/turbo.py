@@ -3,18 +3,131 @@
 
 # modules/plugins/turbo.py
 """
-TurboImageHost plugin - Schema-based implementation with Go sidecar uploads.
+TurboImageHost plugin - Schema-based implementation.
 
-Go-based upload plugin (upload handled by Go sidecar).
-Python side manages UI, configuration validation, and optional authentication.
+Uploads run through the Go sidecar's transport on the Python upload path:
+open_upload_session logs in (optional) and reads the upload endpoint from the
+home page, build_raw_upload_request builds each file's request, and
+parse_upload_response reads Turbo's JSON answer and then finds the file's
+link on Turbo's result page. build_http_request keeps the legacy Go spec for
+the ``legacy_upload_parsing`` fallback.
 """
 
 import re
 import secrets
 import string
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Iterable, List, Optional
+from urllib.parse import urljoin
+
+from bs4 import BeautifulSoup
+
 from .base import ImageHostPlugin
 from . import helpers
+from ..result_matcher import resolve_from_result_page
+from ..upload_results import (
+    UploadResult,
+    collapse_text,
+    html_field,
+    json_parser_options,
+    parse_json_upload,
+    redact_secrets,
+    request_failure,
+    truncate_text,
+)
+
+# Where TurboImageHost lives. Tests point it at a local fake host.
+BASE_URL = "https://www.turboimagehost.com"
+
+# The home page configures its uploader with the upload script: endpoint: '...'.
+ENDPOINT_PATTERN = r"endpoint:\s*'([^']+)'"
+
+# How the result page lists each image of the upload session:
+# [url=https://…/p/<id>/<file name>.html][img]<thumbnail>[/img][/url].
+LINK_EXTRACTOR = (
+    r"(?is)\[url=(?P<image_url>https?://[^\]]+?/p/[0-9]+/"
+    r"(?P<filename>[^/\]]+?)\.html)\]\s*"
+    r"\[img\](?P<thumb_url>https?://[^\]]+?)\[/img\]\s*\[/url\]"
+)
+
+# The result page's gallery link box.
+GALLERY_SELECTOR = "input#imgCodeGG"
+
+# How long to wait between looks at the result page (the legacy schedule).
+POLL_DELAYS_MS = (500, 1000, 2000, 3000, 5000, 5000)
+
+# Result-page entries are matched to files by name (ResultPageMatcher).
+FILE_MATCH_MODE = "filename"
+
+# Elements a login page shows its error in, most specific first.
+_LOGIN_MESSAGE_SELECTORS = (
+    ".error",
+    ".errors",
+    ".alert",
+    ".warning",
+    ".notice",
+    "#error",
+    "#message",
+    ".message",
+    "font[color]",
+)
+
+
+def _response_parser() -> Dict[str, str]:
+    """How Turbo answers an upload; shared by the legacy spec and the Python parser."""
+    return {
+        "type": "json",
+        "url_path": "newUrl",
+        "thumb_path": "",
+        "status_path": "success",
+        "success_value": "true",
+        "url_template": f"{BASE_URL}/p/{{id}}/{{filename}}.html",
+    }
+
+
+def _endpoint_discovery() -> Dict[str, Any]:
+    """The legacy pre_request step that reads the upload endpoint from the home page."""
+    return {
+        "action": "turbo_discover_endpoint",
+        "url": f"{BASE_URL}/",
+        "method": "GET",
+        "use_cookies": True,
+        "response_type": "html",
+        "extract_fields": {"endpoint": f"regex:{ENDPOINT_PATTERN}"},
+    }
+
+
+def _login_form(username: str, password: str) -> Dict[str, str]:
+    return {"username": username, "password": password, "remember": "y", "login": "Login"}
+
+
+def _upload_script_url(endpoint: str) -> str:
+    """The upload URL for an endpoint read from the home page, as the legacy path resolves it.
+
+    The endpoint may be absolute or relative to Turbo's default upload script;
+    one that is not a URL leaves the default script.
+    """
+    default = f"{BASE_URL}/upload_html5.tu"
+    try:
+        return urljoin(default, endpoint.strip())
+    except ValueError:
+        return default
+
+
+def _login_refusal(body: str, secrets_: Iterable[str]) -> Optional[str]:
+    """Why the host refused a login, when its answer shows the login form again; else None."""
+    soup = BeautifulSoup(str(body or ""), "html.parser")
+    if soup.select_one("input[type=password i]") is None:
+        return None
+    for selector in _LOGIN_MESSAGE_SELECTORS:
+        element = soup.select_one(selector)
+        text = collapse_text(element.get_text(" ")) if element is not None else ""
+        if text:
+            return truncate_text(redact_secrets(text, secrets_))
+    return "it showed its login form again; check the username and password"
+
+
+class TurboSessionError(RuntimeError):
+    """TurboImageHost refused the login, or its upload page could not be used."""
 
 
 class TurboPlugin(ImageHostPlugin):
@@ -54,7 +167,7 @@ class TurboPlugin(ImageHostPlugin):
             "author": "Connie's Uploader Team",
             "description": "Upload images to TurboImageHost with optional authentication, dynamic endpoint configuration, and cover image support",
             "website": "https://www.turboimagehost.com",
-            "implementation": "go",
+            "implementation": "python",  # Python upload path; the sidecar is its transport
             "features": {
                 "galleries": True,
                 "covers": True,
@@ -233,70 +346,126 @@ class TurboPlugin(ImageHostPlugin):
             # Step 2: GET homepage to discover upload endpoint
             pre_request = {
                 "action": "turbo_login",
-                "url": "https://www.turboimagehost.com/login.tu?",
+                "url": f"{BASE_URL}/login.tu?",
                 "method": "POST",
-                "form_fields": {
-                    "username": username,
-                    "password": creds.get("turbo_pass", ""),
-                    "remember": "y",
-                    "login": "Login",
-                },
+                "form_fields": _login_form(username, creds.get("turbo_pass", "")),
                 "use_cookies": True,
                 "response_type": "html",
                 "extract_fields": {},
-                "follow_up_request": {
-                    "action": "turbo_discover_endpoint",
-                    "url": "https://www.turboimagehost.com/",
-                    "method": "GET",
-                    "use_cookies": True,
-                    "response_type": "html",
-                    "extract_fields": {
-                        "endpoint": "regex:endpoint:\\s*'([^']+)'",
-                    },
-                },
+                "follow_up_request": _endpoint_discovery(),
             }
         else:
             # No login, just discover the upload endpoint.
-            pre_request = {
-                "action": "turbo_discover_endpoint",
-                "url": "https://www.turboimagehost.com/",
-                "method": "GET",
-                "use_cookies": True,
-                "response_type": "html",
-                "extract_fields": {
-                    "endpoint": "regex:endpoint:\\s*'([^']+)'",
-                },
-            }
+            pre_request = _endpoint_discovery()
 
         return {
-            "url": "https://www.turboimagehost.com/upload_html5.tu",
+            "url": f"{BASE_URL}/upload_html5.tu",
             "method": "POST",
             "headers": {
                 "Accept": "application/json, text/html;q=0.9, */*;q=0.8",
-                "Referer": "https://www.turboimagehost.com/",
+                "Referer": f"{BASE_URL}/",
             },
             "multipart_fields": multipart_fields,
             "pre_request": pre_request,
-            "response_parser": {
-                "type": "json",
-                "url_path": "newUrl",
-                "thumb_path": "",
-                "status_path": "success",
-                "success_value": "true",
-                "url_template": "https://www.turboimagehost.com/p/{id}/{filename}.html",
-            },
+            "response_parser": _response_parser(),
             "resolve_spec": {
                 "result_url": "{url}",
-                "poll_delays_ms": [500, 1000, 2000, 3000, 5000, 5000],
-                "link_extractor": (
-                    r"(?is)\[url=(?P<image_url>https?://[^\]]+?/p/[0-9]+/"
-                    r"(?P<filename>[^/\]]+?)\.html)\]\s*"
-                    r"\[img\](?P<thumb_url>https?://[^\]]+?)\[/img\]\s*\[/url\]"
-                ),
-                "gallery_extractor": "input#imgCodeGG",
-                "file_match_mode": "filename",
+                "poll_delays_ms": list(POLL_DELAYS_MS),
+                "link_extractor": LINK_EXTRACTOR,
+                "gallery_extractor": GALLERY_SELECTOR,
+                "file_match_mode": FILE_MATCH_MODE,
             },
         }
+
+    # --- Python upload path ---
+
+    def open_upload_session(
+        self, transport, config: Dict[str, Any], creds: Dict[str, Any]
+    ) -> Dict[str, str]:
+        """Log in when a username is set, then read the upload endpoint from the home page.
+
+        The steps of the legacy pre_request chain, on the job's session. A
+        refused login and an upload page without an endpoint fail the job's
+        files with the host's message. Returns the upload URL and the job's
+        upload_id (the group's gallery id, else a new one, as the legacy spec).
+        """
+        username = (creds.get("turbo_user") or "").strip()
+        password = str(creds.get("turbo_pass") or "")
+        hidden = [password, username]
+        if username:
+            login = transport.post(f"{BASE_URL}/login.tu?", _login_form(username, password))
+            if not login.ok:
+                raise TurboSessionError(
+                    request_failure("TurboImageHost login failed", login, hidden)
+                )
+            refusal = _login_refusal(login.body, hidden)
+            if refusal is not None:
+                raise TurboSessionError(f"TurboImageHost refused the login: {refusal}")
+
+        home = transport.get(f"{BASE_URL}/")
+        if not home.ok:
+            raise TurboSessionError(
+                request_failure("could not open TurboImageHost's upload page", home, hidden)
+            )
+        endpoint = html_field(home.body, f"regex:{ENDPOINT_PATTERN}")
+        if not endpoint:
+            raise TurboSessionError(
+                "TurboImageHost's upload page names no upload endpoint (the page may have changed)"
+            )
+        upload_id = config.get("turbo_upload_id") or config.get("upload_id") or self._upload_id()
+        return {"upload_url": _upload_script_url(endpoint), "upload_id": str(upload_id)}
+
+    def build_raw_upload_request(
+        self,
+        file_path: str,
+        config: Dict[str, Any],
+        session_values: Dict[str, str],
+        creds: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """The legacy request, sent to the session's endpoint with this file's own values.
+
+        The legacy spec's per-file tokens ({upload_id}, {filename},
+        {file_size}) become this file's values; everything is sent literally,
+        so braces in a file name stay braces.
+        """
+        spec = self.build_http_request(file_path, config, {})
+        values = helpers.per_file_upload_values(file_path)
+        fields = {name: dict(field) for name, field in spec["multipart_fields"].items()}
+        fields["upload_id"]["value"] = (
+            session_values.get("upload_id") or fields["upload_id"]["value"]
+        )
+        fields["qquuid"]["value"] = values["upload_id"]
+        fields["qqfilename"]["value"] = values["filename"]
+        fields["qqtotalfilesize"]["value"] = values["file_size"]
+        return {
+            "url": session_values.get("upload_url") or spec["url"],
+            "method": spec["method"],
+            "headers": dict(spec["headers"]),
+            "multipart_fields": fields,
+        }
+
+    def parse_upload_response(
+        self, file_path, response, transport, session_values, session_state
+    ) -> UploadResult:
+        """Read Turbo's JSON answer, then find this file's link on the result page it names."""
+        upload = parse_json_upload(
+            response,
+            file_path=file_path,
+            secrets=session_state.secrets,
+            **json_parser_options(_response_parser()),
+        )
+        if not upload.ok or upload.thumb.strip():
+            return upload
+        return resolve_from_result_page(
+            transport,
+            upload.url,
+            file_path,
+            session_state.result_matcher(FILE_MATCH_MODE),
+            link_extractor=LINK_EXTRACTOR,
+            poll_delays_ms=POLL_DELAYS_MS,
+            gallery_extractor=GALLERY_SELECTOR,
+            secrets=session_state.secrets,
+        )
 
     # --- Upload Implementation (Go sidecar handles uploads) ---
 
