@@ -5,6 +5,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -57,6 +58,10 @@ func TestCancelActionAbortsInFlightUpload(t *testing.T) {
 	received := make(chan struct{})
 	release := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Read the whole body first: the upload's body writer then has sent
+		// its last progress event before the test cancels and stops
+		// capturing stdout, which would otherwise race with that event.
+		_, _ = io.Copy(io.Discard, r.Body)
 		close(received)
 		<-release
 		_, _ = w.Write([]byte(`{"data":{"image_url":"u","thumbnail_url":"t"}}`))
