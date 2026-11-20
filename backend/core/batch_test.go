@@ -5,18 +5,30 @@ package core
 
 import (
 	"context"
+	"fmt"
+	"sync/atomic"
 	"testing"
 	"time"
 )
 
+// batchTestSeq numbers the batch ids the tests use. Cancelled ids are global
+// state that outlives a test, so a fixed id would make the next run of the
+// same test (go test -count=N) start with its batch already cancelled.
+var batchTestSeq atomic.Int64
+
+func uniqueBatchID(prefix string) string {
+	return fmt.Sprintf("%s-%d", prefix, batchTestSeq.Add(1))
+}
+
 func TestCancelBatchCancelsRegisteredContext(t *testing.T) {
-	ctx, release := RegisterBatch("b1")
+	id := uniqueBatchID("b1")
+	ctx, release := RegisterBatch(id)
 	defer release()
 	if ctx.Err() != nil {
 		t.Fatalf("fresh batch context already done: %v", ctx.Err())
 	}
-	if !CancelBatch("b1") {
-		t.Fatalf("CancelBatch(b1) = false, want true for a live batch")
+	if !CancelBatch(id) {
+		t.Fatalf("CancelBatch(%s) = false, want true for a live batch", id)
 	}
 	if ctx.Err() != context.Canceled {
 		t.Fatalf("ctx.Err() = %v, want context.Canceled", ctx.Err())
@@ -24,13 +36,14 @@ func TestCancelBatchCancelsRegisteredContext(t *testing.T) {
 }
 
 func TestBatchCancelledPersistsForLaterJobs(t *testing.T) {
-	if CancelBatch("b2") {
-		t.Fatalf("CancelBatch(b2) = true, want false when no job is live")
+	id := uniqueBatchID("b2")
+	if CancelBatch(id) {
+		t.Fatalf("CancelBatch(%s) = true, want false when no job is live", id)
 	}
-	if !BatchCancelled("b2") {
-		t.Fatalf("BatchCancelled(b2) = false, want true after cancel")
+	if !BatchCancelled(id) {
+		t.Fatalf("BatchCancelled(%s) = false, want true after cancel", id)
 	}
-	ctx, release := RegisterBatch("b2")
+	ctx, release := RegisterBatch(id)
 	defer release()
 	if ctx.Err() != context.Canceled {
 		t.Fatalf("a job registered after cancel must start cancelled; got %v", ctx.Err())
@@ -41,8 +54,8 @@ func TestCancelUnknownBatchIsNoop(t *testing.T) {
 	if CancelBatch("") {
 		t.Fatalf("CancelBatch(\"\") = true, want false")
 	}
-	if CancelBatch("nope") {
-		t.Fatalf("CancelBatch(nope) = true, want false")
+	if id := uniqueBatchID("nope"); CancelBatch(id) {
+		t.Fatalf("CancelBatch(%s) = true, want false", id)
 	}
 	ctx, release := RegisterBatch("")
 	defer release()

@@ -4,6 +4,7 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -14,6 +15,15 @@ import (
 
 	"github.com/conniecombs/GolangVersion/core"
 )
+
+// cancelTestSeq numbers the batch ids of the cancel tests. Cancelled ids are
+// global state that outlives a test, so a fixed id would make the next run of
+// the same test (go test -count=N) start with its batch already cancelled.
+var cancelTestSeq atomic.Int64
+
+func uniqueBatchID(prefix string) string {
+	return fmt.Sprintf("%s-%d", prefix, cancelTestSeq.Add(1))
+}
 
 func uploadJobForServer(t *testing.T, serverURL, batchID string) JobRequest {
 	t.Helper()
@@ -57,7 +67,8 @@ func TestCancelActionAbortsInFlightUpload(t *testing.T) {
 	client = server.Client()
 	defer func() { client = oldClient }()
 
-	job := uploadJobForServer(t, server.URL, "b-live")
+	batchID := uniqueBatchID("b-live")
+	job := uploadJobForServer(t, server.URL, batchID)
 
 	events := captureSidecarEvents(t, func() {
 		done := make(chan struct{})
@@ -71,7 +82,7 @@ func TestCancelActionAbortsInFlightUpload(t *testing.T) {
 			t.Error("server never received the upload request")
 			return
 		}
-		handleJob(JobRequest{Action: "cancel", BatchID: "b-live"})
+		handleJob(JobRequest{Action: "cancel", BatchID: batchID})
 		select {
 		case <-done:
 		case <-time.After(5 * time.Second):
@@ -105,9 +116,10 @@ func TestQueuedJobForCancelledBatchIsSkipped(t *testing.T) {
 	client = server.Client()
 	defer func() { client = oldClient }()
 
-	job := uploadJobForServer(t, server.URL, "b-queued")
+	batchID := uniqueBatchID("b-queued")
+	job := uploadJobForServer(t, server.URL, batchID)
 	events := captureSidecarEvents(t, func() {
-		handleJob(JobRequest{Action: "cancel", BatchID: "b-queued"})
+		handleJob(JobRequest{Action: "cancel", BatchID: batchID})
 		handleJob(job)
 	})
 
