@@ -968,14 +968,23 @@ class UploadManager:
         Called whenever a sidecar job of it completes or a parse ends; it does
         something only when neither is outstanding. Finishing ends files that
         were never sent and closes the session if its process is alive.
+
+        Choosing the next files and reserving their sidecar job happen in one
+        ``_jobs_lock`` section: two advances (a parse's and batch_complete's)
+        can run at once, and the second must find the first one's job
+        outstanding, or a sequential job would send two files at once, or
+        finish and close its session while its last file is being sent.
         """
         send: List[str] = []
+        job_id = ""
         leftovers: List[str] = []
         end_status = ""
         close = False
         with self._jobs_lock:
             if job.finished or job.sidecar_jobs or job.post_pending:
                 return
+            if not job.dead and not self._session_alive(job.session):
+                self._mark_session_dead(job, f"error: {PROCESS_RESTARTED_MSG}")
             superseded = self._token_superseded(job.cancel)
             cancelled = self._token_cancelled(job.cancel)
             if job.queued and not (job.dead or cancelled or superseded):
@@ -983,6 +992,7 @@ class UploadManager:
                     send = [job.queued.pop(0)]
                 else:
                     send, job.queued = job.queued, []
+                job_id = self._reserve_session_sidecar_job(job, send)
             else:
                 leftovers, job.queued = job.queued, []
                 job.finished = True
@@ -992,35 +1002,25 @@ class UploadManager:
                     leftovers = []  # a cleared batch's rows are gone
                 end_status = "Cancelled" if cancelled else (job.end_status or "Cancelled")
                 close = not job.dead and self._session_alive(job.session)
-        if send:
-            self._send_session_sidecar_job(job, send)
+        if job_id:
+            self._send_session_sidecar_job(job, job_id, send)
             return
         self._finish_files(leftovers, end_status)
         if close:
             self._close_session(job.session)
 
-    def _send_session_sidecar_job(self, job: _SessionJob, files: List[str]) -> None:
-        with self._jobs_lock:
-            job.sent_jobs += 1
-            job_id = job.id_base if job.sent_jobs == 1 else f"{job.id_base}.{job.sent_jobs}"
-            superseded = self._token_superseded(job.cancel)
-            if not self._session_alive(job.session):
-                self._mark_session_dead(job, f"error: {PROCESS_RESTARTED_MSG}")
-            if superseded:
-                status_text = ""  # cleared meanwhile: send and report nothing
-            elif job.dead:
-                status_text = job.end_status
-            else:
-                status_text = ""
-                job.sidecar_jobs.add(job_id)
-                self._session_jobs[job_id] = job
-                self.active_files.update(files)
-                self._register_job(job_id, files)
-        if superseded or status_text:
-            self._finish_files(files if status_text else [], status_text)
-            self._advance_session_job(job)
-            return
+    def _reserve_session_sidecar_job(self, job: _SessionJob, files: List[str]) -> str:
+        """Register the next sidecar job of ``job`` for ``files``; call with ``_jobs_lock`` held."""
+        job.sent_jobs += 1
+        job_id = job.id_base if job.sent_jobs == 1 else f"{job.id_base}.{job.sent_jobs}"
+        job.sidecar_jobs.add(job_id)
+        self._session_jobs[job_id] = job
+        self.active_files.update(files)
+        self._register_job(job_id, files)
+        return job_id
 
+    def _send_session_sidecar_job(self, job: _SessionJob, job_id: str, files: List[str]) -> None:
+        """Write a reserved sidecar job; never call with ``_jobs_lock`` held."""
         payload: Dict[str, Any] = {
             "id": job_id,
             "batch_id": job.batch_id,
@@ -1040,13 +1040,16 @@ class UploadManager:
         if self._submit_job(job_id, payload):
             return
         with self._jobs_lock:
-            self._job_files.pop(job_id, None)
+            # A Clear List or a crash report may have ended the job meanwhile;
+            # its files are then no longer this job's to report.
+            owned = self._job_files.pop(job_id, None) is not None
             self._session_jobs.pop(job_id, None)
             job.sidecar_jobs.discard(job_id)
             self._mark_session_dead(job, "error: sidecar unavailable")
             for fp in files:
                 self.active_files.discard(fp)
-        self._finish_files(files, "error: sidecar unavailable")
+        if owned:
+            self._finish_files(files, "error: sidecar unavailable")
         self._advance_session_job(job)
 
     def _mark_session_dead(self, job: _SessionJob, status_text: str) -> None:

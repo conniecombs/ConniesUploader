@@ -600,6 +600,63 @@ def test_a_sequential_host_uploads_the_next_file_only_after_the_last_was_parsed(
     assert len(env.bridge.requests) == 1, "one session serves the whole sequential job"
 
 
+def _race_two_advances(env, first):
+    """Run a second advance while the first is between choosing a file and sending it.
+
+    The parse's own advance and the one batch_complete hands to the pool can
+    both find nothing outstanding; here the second always runs in that window.
+    """
+    job = env.um._session_jobs[first["id"]]
+    original = env.um._send_session_sidecar_job
+    raced = []
+
+    def send_after_another_advance(*args):
+        if not raced:
+            raced.append(True)
+            other = threading.Thread(target=env.um._advance_session_job, args=(job,))
+            other.start()
+            other.join(2)
+        return original(*args)
+
+    env.um._send_session_sidecar_job = send_after_another_advance
+    finish_raw(env, first, first["files"])
+    wait_for(env, lambda: raced and len(env.bridge.jobs()) >= 2)
+    time.sleep(0.2)
+
+
+def test_two_advances_never_send_two_files_of_a_sequential_job_at_once(env):
+    env.plugin.options = {"sequential": True}
+    env.um._send_job(["/s/a.jpg", "/s/b.jpg", "/s/c.jpg", "/s/d.jpg"], CFG, CREDS)
+    [first] = env.bridge.jobs()
+
+    _race_two_advances(env, first)
+
+    sent = [job["files"] for job in env.bridge.jobs()]
+    assert sent == [
+        [os.path.normpath("/s/a.jpg")],
+        [os.path.normpath("/s/b.jpg")],
+    ], f"a sequential job has more than one file in flight: {sent}"
+    second = env.bridge.jobs()[1]
+    finish_raw(env, second, second["files"])
+    wait_for(env, lambda: len(env.bridge.jobs()) == 3)
+
+
+def test_the_session_never_closes_while_the_last_file_is_being_sent(env):
+    env.plugin.options = {"sequential": True}
+    env.um._send_job(["/s/a.jpg", "/s/b.jpg"], CFG, CREDS)
+    [first] = env.bridge.jobs()
+
+    _race_two_advances(env, first)
+
+    assert len(env.bridge.jobs()) == 2
+    assert env.bridge.closes() == [], "the session closed while its last file was sent"
+    assert env.um._open_session_jobs, "the job finished with a file still uploading"
+    last = env.bridge.jobs()[1]
+    finish_raw(env, last, last["files"])
+    wait_for(env, lambda: len(env.bridge.closes()) == 1)
+    assert status_of(env, os.path.normpath("/s/b.jpg"))[-1] == "Done"
+
+
 def test_stop_during_a_sequential_job_cancels_the_files_not_sent(env):
     env.plugin.options = {"sequential": True}
     env.um._send_job(["/s/1.jpg", "/s/2.jpg", "/s/3.jpg"], CFG, CREDS)
