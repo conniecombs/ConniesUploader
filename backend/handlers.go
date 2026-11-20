@@ -329,7 +329,7 @@ func handleHttpRequest(job JobRequest) {
 		timeout -= waited
 	}
 	if spec.ResetCookies {
-		core.ResetCookieJar(client)
+		core.ResetSiteCookies(client, spec.URL)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()

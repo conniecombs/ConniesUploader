@@ -74,8 +74,11 @@ Optional request flags (all off by default):
 - `timeout_seconds`: the deadline for this request. Values above the client
   ceiling (180 s) clamp to it. Python waits this long plus a small margin so
   Go always gives up first.
-- `reset_cookies`: discard the shared cookie jar before the request, so a
-  login attempt cannot ride an older session.
+- `reset_cookies`: discard the cookies of the request URL's site (its
+  registrable domain, e.g. every `*.example.com` host for
+  `https://www.example.com/login`) before the request, so a login attempt
+  cannot ride an older session. Cookies of every other site are kept, so a
+  forum login does not end an image host's session.
 
 Python disables transport retries for a request that must not be repeated
 (for example a forum reply) by sending `"retry_config": {"max_retries": 0}`.
