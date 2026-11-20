@@ -544,6 +544,57 @@ def test_removing_the_failed_image_gives_the_batch_its_output(tmp_path):
     assert any("not posted" in message for message, _level in app.activity)
 
 
+def _set_with_one_failed_upload(tmp_path):
+    app = _ui_app(tmp_path)
+    app.progress_queue, app.result_queue = queue.Queue(), queue.Queue()
+    app.image_refs = set()
+    app._clear_highlights = lambda *args: None
+    group = _real_group("Set", ["/s/1.jpg", "/s/bad.jpg"])
+    app.groups = [group]
+    for fp in group.files:
+        app.file_widgets[fp] = _row(group)
+    _upload(
+        app,
+        list(group.files),
+        {
+            "/s/1.jpg": ("http://v/1", "http://t/1", "Done"),
+            "/s/bad.jpg": ("", "", "error: file rejected by host"),
+        },
+    )
+    assert group.is_completed is True
+    assert group.completed_with_failures is True
+    return app, group
+
+
+@pytest.mark.unit
+def test_retry_clears_the_batchs_completed_header(tmp_path):
+    app, group = _set_with_one_failed_upload(tmp_path)
+    app.start_upload = lambda: None
+
+    UploaderApp._retry_file(app, "/s/bad.jpg")
+
+    assert group.is_completed is False
+    assert group.completed_with_failures is False
+    assert group.lbl_counts.text != "(Completed)"
+
+
+@pytest.mark.unit
+def test_removing_an_image_whose_retry_never_started_gives_the_batch_its_output(tmp_path):
+    app, group = _set_with_one_failed_upload(tmp_path)
+    # Retry Image resets the row, then Start stops at a preflight issue.
+    app.start_upload = lambda: app.add_activity("preflight issue", "warning")
+    UploaderApp._retry_file(app, "/s/bad.jpg")
+    assert app.file_widgets["/s/bad.jpg"]["state"] == "pending"
+
+    # The user gives up on that image and removes it.
+    assert UploaderApp._delete_files(app, ["/s/bad.jpg"]) is True
+
+    outputs = [p for p in app.current_output_files if not p.endswith("_FAILED.txt")]
+    assert len(outputs) == 1, "a batch with only uploaded images left never got its output"
+    assert Path(outputs[0]).read_text(encoding="utf-8") == "http://v/1"
+    assert group.is_completed is True
+
+
 @pytest.mark.unit
 def test_removing_a_successful_image_keeps_the_existing_output(tmp_path):
     app = _ui_app(tmp_path)

@@ -624,12 +624,22 @@ class RuntimeMixin:
             fallback = color[-1] if isinstance(color, (list, tuple)) else color
             progress.configure(progress_color=fallback)
 
+    @staticmethod
+    def _reset_group_completion(group) -> None:
+        """Forget a batch's finished upload, including its "(Completed)" header."""
+        reset_completion = getattr(group, "reset_completion", None)
+        if callable(reset_completion):
+            reset_completion()
+        else:
+            group.is_completed = False
+            group.completed_with_failures = False
+
     def _reset_row_for_retry(self, row_data: Dict[str, Any]) -> None:
         row_data["state"] = "pending"
         row_data.pop("upload_result", None)
         group = row_data.get("group")
-        if group is not None and hasattr(group, "is_completed"):
-            group.is_completed = False
+        if group is not None:
+            self._reset_group_completion(group)
         self._set_row_error(row_data, "")
         row_data["status"].configure(text="Retry")
         row_data["prog"].set(0)
@@ -797,25 +807,24 @@ class RuntimeMixin:
     def _recheck_group_output(self, group) -> None:
         """Give a batch its output once removing rows left only successful uploads.
 
-        A batch that finished with failures got only a FAILED report. When the
-        failed or cancelled rows are removed, the rest of the batch is complete
-        and successful, so it now produces its normal output. A batch that
-        already has its normal output keeps it.
+        A batch that finished with failures got only a FAILED report, and a
+        batch whose Retry never started (preflight issue, or No at the posting
+        confirmation) has no output at all. When the failed, cancelled or
+        pending rows are removed and every remaining row uploaded, the batch
+        produces its normal output. A batch that already has it keeps it.
         """
-        if not (group.files and group.is_completed):
+        if not group.files:
             return
-        if not getattr(group, "completed_with_failures", False):
+        has_normal_output = group.is_completed and not getattr(
+            group, "completed_with_failures", False
+        )
+        if has_normal_output:
             return
         with self.lock:
             states = [self.file_widgets.get(fp, {}).get("state") for fp in group.files]
         if any(state != "success" for state in states):
             return
-        reset_completion = getattr(group, "reset_completion", None)
-        if callable(reset_completion):
-            reset_completion()
-        else:
-            group.is_completed = False
-            group.completed_with_failures = False
+        self._reset_group_completion(group)
         self._update_group_progress(group.files[0])
 
     def finish_upload(self) -> None:
