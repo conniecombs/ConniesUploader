@@ -35,32 +35,54 @@ def page(body, status=200, url="https://www.turboimagehost.com/"):
     return TransportResponse(True, "success", body, status, url, {}, {})
 
 
-def refused(status, body, url="https://www.turboimagehost.com/"):
-    """A non-2xx answer as UploadTransport reports it."""
-    return TransportResponse(False, "failed", "", 0, url, {}, {}, f"HTTP {status}: {body}")
+# Statuses the sidecar retries for a request sent with retry=True.
+RETRIED_STATUSES = (408, 429, 500, 502, 503, 504)
+
+
+class refused:  # noqa: N801 (reads like the TransportResponse helpers above)
+    """A non-2xx answer; FakeTransport reports it as the real sidecar does.
+
+    With retry=True the sidecar retries a 408/429/5xx three times and then
+    reports "max retries (3) exhausted, last error: HTTP 503", without the
+    body; any other status, or any status with retry=False, comes back as
+    "HTTP <code>: <body>".
+    """
+
+    def __init__(self, status, body, url="https://www.turboimagehost.com/"):
+        self.status, self.body, self.url = status, body, url
+
+    def response(self, retry):
+        if retry and self.status in RETRIED_STATUSES:
+            message = f"max retries (3) exhausted, last error: HTTP {self.status}"
+        else:
+            message = f"HTTP {self.status}: {self.body.strip()}"
+        return TransportResponse(False, "failed", "", 0, self.url, {}, {}, message)
 
 
 class FakeTransport:
-    """Answers GET/POST by URL from a dict; records every call."""
+    """Answers GET/POST by URL from a dict; records every call and its retry flag."""
 
     def __init__(self, answers=None, cancelled=False):
         self.answers = dict(answers or {})
         self.calls = []
+        self.retries = []
         self.cancelled = cancelled
 
-    def _answer(self, url):
+    def _answer(self, url, retry):
+        self.retries.append(retry)
         if self.cancelled:
             return TransportResponse(False, "cancelled", "", 0, url, {}, {}, "Upload cancelled")
         answer = self.answers[url]
-        return answer.pop(0) if isinstance(answer, list) else answer
+        answer = answer.pop(0) if isinstance(answer, list) else answer
+        return answer.response(retry) if isinstance(answer, refused) else answer
 
-    def get(self, url, **_):
+    def get(self, url, *, retry=True, **_):
         self.calls.append(("GET", url, None))
-        return self._answer(url)
+        return self._answer(url, retry)
 
-    def post(self, url, form_fields=None, **_):
+    def post(self, url, form_fields=None, *, retry=True, **_):
         self.calls.append(("POST", url, dict(form_fields or {})))
-        return self._answer(url)
+        return self._answer(url, retry)
 
     def pause(self, seconds):
         return not self.cancelled
@@ -244,12 +266,96 @@ def test_a_refused_login_fails_the_group_with_the_hosts_message():
     assert [call[0] for call in transport.calls] == ["POST"], "no upload page after a refusal"
 
 
-def test_a_refused_login_without_a_message_still_says_what_happened():
-    form = '<form><input name="username"><input type="PASSWORD" name="password"></form>'
-    transport = FakeTransport({"https://www.turboimagehost.com/login.tu?": page(form)})
+LOGIN_URL = "https://www.turboimagehost.com/login.tu?"
+
+
+@pytest.mark.parametrize(
+    ("body", "url"),
+    [
+        (
+            '<form action="/LOGIN.tu"><input name="username"><input type="PASSWORD" name="p"></form>',
+            "https://www.turboimagehost.com/",
+        ),
+        # A form without an action posts back to the page it is on: the login page.
+        ('<form><input name="username"><input type="password" name="p"></form>', LOGIN_URL),
+    ],
+    ids=["action names login", "no action on the login page"],
+)
+def test_a_refused_login_without_a_message_still_says_what_happened(body, url):
+    transport = FakeTransport({LOGIN_URL: page(body, url=url)})
 
     with pytest.raises(RuntimeError, match="showed its login form again"):
         TurboPlugin().open_upload_session(transport, {}, CREDS)
+
+
+@pytest.mark.parametrize(
+    ("body", "url"),
+    [
+        # Logged in, with the header's login box still on the page.
+        (
+            '<div id="top"><form action="login.tu" method="post"><input name="username">'
+            '<input type="password" name="password"></form></div>'
+            '<a href="/LogOut.tu">Sign out</a><p>Welcome back, connie</p>',
+            LOGIN_URL,
+        ),
+        # A logout form counts as well as a logout link.
+        (
+            '<form action="https://www.turboimagehost.com/logout.tu" method="post">'
+            "<button>Logout</button></form>"
+            '<form action="login.tu"><input type="password" name="password"></form>',
+            LOGIN_URL,
+        ),
+        # An account page with a password field that is not the login form.
+        (
+            '<h1>My account</h1><form action="account.tu?change=pass">'
+            '<input type="password" name="new_password"></form>',
+            "https://www.turboimagehost.com/account.tu",
+        ),
+        # A password field in a form without an action, on a page that is not the login page.
+        (
+            '<form><input type="password" name="new_password"></form>',
+            "https://www.turboimagehost.com/account.tu",
+        ),
+    ],
+    ids=["header login box", "logout form", "account page", "account page without action"],
+)
+def test_a_logged_in_page_with_a_password_field_is_not_a_refusal(body, url):
+    transport = FakeTransport(
+        {LOGIN_URL: page(body, url=url), "https://www.turboimagehost.com/": page(HOME)}
+    )
+
+    values = TurboPlugin().open_upload_session(transport, {}, CREDS)
+
+    assert [call[0] for call in transport.calls] == ["POST", "GET"]
+    assert values["upload_url"] == "https://s8d8.turboimagehost.com/upload_html5.tu"
+
+
+@pytest.mark.parametrize(
+    "creds",
+    [
+        {"turbo_user": "connie", "turbo_pass": ""},
+        {"turbo_user": "", "turbo_pass": "hunter2-secret"},
+    ],
+    ids=["username only", "password only"],
+)
+def test_half_saved_credentials_upload_anonymously_with_a_warning(monkeypatch, creds):
+    # The legacy path posted the half login and ignored Turbo's answer (the
+    # login form again), so the files uploaded anonymously; so does this one.
+    warnings = []
+    monkeypatch.setattr(turbo.logger, "warning", warnings.append)
+    transport = FakeTransport(
+        {
+            "https://www.turboimagehost.com/login.tu?": page(LOGIN_FORM_AGAIN),
+            "https://www.turboimagehost.com/": page(HOME),
+        }
+    )
+
+    values = TurboPlugin().open_upload_session(transport, {}, creds)
+
+    assert transport.calls == [("GET", "https://www.turboimagehost.com/", None)]
+    assert values["upload_url"] == "https://s8d8.turboimagehost.com/upload_html5.tu"
+    assert len(warnings) == 1 and "anonymously" in warnings[0]
+    assert "hunter2-secret" not in warnings[0]
 
 
 def test_a_login_the_host_answers_with_an_error_status_fails_the_group():
@@ -275,15 +381,38 @@ def test_an_upload_page_without_an_endpoint_fails_the_group():
         TurboPlugin().open_upload_session(transport, {}, {})
 
 
-def test_an_upload_page_error_fails_the_group_with_the_hosts_message():
+def test_an_upload_page_the_host_keeps_refusing_fails_the_group_after_the_retries():
+    # Like the legacy pre_request, the upload page is retried on a 503; the
+    # sidecar then reports the status without the page.
     transport = FakeTransport(
         {"https://www.turboimagehost.com/": refused(503, "<p>Down for maintenance</p>")}
     )
     with pytest.raises(RuntimeError) as excinfo:
         TurboPlugin().open_upload_session(transport, {}, {})
-    assert str(excinfo.value) == (
-        "could not open TurboImageHost's upload page (HTTP 503): Down for maintenance"
+    assert str(excinfo.value) == "could not open TurboImageHost's upload page (HTTP 503)"
+    assert transport.retries == [True]
+
+
+def test_an_upload_page_error_that_is_not_retried_quotes_the_hosts_message():
+    transport = FakeTransport(
+        {"https://www.turboimagehost.com/": refused(403, "<p>Your IP is banned</p>")}
     )
+    with pytest.raises(RuntimeError) as excinfo:
+        TurboPlugin().open_upload_session(transport, {}, {})
+    assert str(excinfo.value) == (
+        "could not open TurboImageHost's upload page (HTTP 403): Your IP is banned"
+    )
+
+
+def test_the_login_and_the_upload_page_are_retried_like_the_legacy_pre_request():
+    transport = FakeTransport(
+        {
+            "https://www.turboimagehost.com/login.tu?": page("<a href='/logout.tu'>Logout</a>"),
+            "https://www.turboimagehost.com/": page(HOME),
+        }
+    )
+    TurboPlugin().open_upload_session(transport, {}, CREDS)
+    assert transport.retries == [True, True]
 
 
 def test_a_stopped_batch_ends_the_session_step():
@@ -368,9 +497,11 @@ class PageTransport(FakeTransport):
         self.pages = list(pages)
         self.pauses = []
 
-    def get(self, url, **_):
+    def get(self, url, *, retry=True, **_):
         self.calls.append(("GET", url, None))
-        return page(self.pages[min(len(self.calls), len(self.pages)) - 1], url=url)
+        self.retries.append(retry)
+        answer = self.pages[min(len(self.calls), len(self.pages)) - 1]
+        return answer.response(retry) if isinstance(answer, refused) else page(answer, url=url)
 
     def pause(self, seconds):
         self.pauses.append(seconds)
@@ -414,6 +545,22 @@ def test_parse_polls_the_result_page_with_the_legacy_schedule_until_the_file_is_
         "https://www.turboimagehost.com/upload_done.tu?id=1"
     }
     assert transport.pauses == [0.5, 1.0]
+
+
+def test_a_result_page_error_waits_for_the_next_scheduled_look_not_the_sidecars_retries():
+    # The legacy resolver read the page once per look: a 503 moved on to the
+    # next look of the schedule, with no retry backoff of its own.
+    down = refused(503, "<p>Busy</p>", url="https://www.turboimagehost.com/upload_done.tu?id=1")
+    transport = PageTransport([down, entries((2, "a.jpg"))])
+    state = SessionState(["/in/a.jpg"])
+
+    result = TurboPlugin().parse_upload_response(
+        "/in/a.jpg", upload_answer(), transport, SESSION, state
+    )
+
+    assert result.ok and result.url == "https://www.turboimagehost.com/p/2/a.jpg.html"
+    assert transport.retries == [False, False]
+    assert transport.pauses == [0.5]
 
 
 def test_parse_gives_up_after_the_legacy_schedule_with_the_reason():
@@ -537,6 +684,57 @@ def test_concurrent_parses_of_one_job_never_share_an_entry(monkeypatch):
     galleries = [item for item in list(progress.queue) if item[0] == "gallery_url"]
     assert {item[2] for item in galleries} == {"https://www.turboimagehost.com/album/7/Beach"}
     um.shutdown()
+
+
+def test_a_full_parse_pool_never_starves_a_file_of_its_entry(monkeypatch):
+    # Turbo lists "Scan #N.jpg" and "Scan_N.jpg" both as Scan_N.jpg. All
+    # eight uploads answer at once; the pool's four workers poll for the
+    # "Scan #N.jpg" files while the "Scan_N.jpg" files wait in its queue. In
+    # Go every file resolved in its own goroutine and all eight got a link.
+    assert upload_manager.POST_PROCESS_WORKERS == 4
+    names = [f"Scan #{n}.jpg" for n in range(1, 5)] + [f"Scan_{n}.jpg" for n in range(1, 5)]
+    files = [os.path.normpath(f"/in/{name}") for name in names]
+    page_entries = [(100 + n, f"Scan_{n}.jpg") for n in range(1, 5)]
+    page_entries += [(200 + n, f"Scan_{n}.jpg") for n in range(1, 5)]
+    bridge = TurboSidecar(
+        {"https://www.turboimagehost.com/done.tu?u=1": lambda: entries(*page_entries)}
+    )
+    monkeypatch.setattr(upload_manager.SidecarBridge, "get", staticmethod(lambda: bridge))
+    monkeypatch.setattr(turbo, "POLL_DELAYS_MS", (5, 5, 5, 5))
+    progress, results = queue.Queue(), queue.Queue()
+    um = upload_manager.UploadManager(progress, results, threading.Event())
+    um.current_batch_id = "b1"
+    um._send_job(files, {"service": "turboimagehost"}, {})
+    [job] = bridge.jobs()
+    answer = '{"success":true,"newUrl":"https://www.turboimagehost.com/done.tu?u=1"}'
+    for fp in files:
+        um._handle_event(
+            {
+                "id": job["id"],
+                "type": "result",
+                "file": fp,
+                "data": {"response_body": answer, "status_code": "200", "final_url": "x"},
+            }
+        )
+    um._handle_event({"id": job["id"], "type": "batch_complete", "status": "done"})
+
+    got = {}
+    deadline = time.monotonic() + 10
+    while len(got) < len(files) and time.monotonic() < deadline:
+        try:
+            fp, url, _ = results.get(timeout=0.1)
+        except queue.Empty:
+            continue
+        got[fp] = url
+    um.shutdown()
+
+    failed = [item for item in list(progress.queue) if str(item[2]).startswith("error")]
+    assert failed == [] and all(got.get(fp) for fp in files), failed
+    ids = {fp: int(url.split("/p/")[1].split("/")[0]) for fp, url in got.items()}
+    assert len(set(ids.values())) == len(files)
+    for n, (hashed, underscored) in enumerate(zip(files[:4], files[4:]), start=1):
+        # The two names are the same on the page: each takes one of the two entries.
+        assert {ids[hashed], ids[underscored]} == {100 + n, 200 + n}
 
 
 def test_covers_upload_in_their_own_job_into_the_same_gallery(monkeypatch):

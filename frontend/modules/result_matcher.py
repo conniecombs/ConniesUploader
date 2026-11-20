@@ -20,7 +20,10 @@ are ported in tests/test_result_matcher.py:
   NFC, so macOS (NFD) file names match. An entry that another file of the job
   matches more closely is held back only for a file whose upload finished
   and that is still being resolved, never for one not uploaded yet or
-  already finished. Files with the same name take entries in upload order.
+  already finished; a file whose parse has not started yet (it waits in the
+  parse pool's queue, where Go resolved every file in its own goroutine)
+  holds back only the one entry its first look would take. Files with the
+  same name take entries in upload order.
 - ``first`` / ``single``: the first entry no other file holds.
 - ``upload_order``: each file takes the newest entry after the last one the
   job holds, its own upload. The page also lists images of uploads that
@@ -53,7 +56,7 @@ from typing import Set, Tuple, Union
 from urllib.parse import unquote, urlsplit
 
 from .sidecar import REQUEST_CANCELLED_MSG
-from .upload_results import UploadResult, html_field, request_failure
+from .upload_results import UploadResult, compile_re2_pattern, html_field, request_failure
 
 MODE_FILENAME = "filename"
 MODE_CONTAINS = "contains"
@@ -77,7 +80,8 @@ class ResultEntry:
 
 
 def _compile(pattern: Pattern) -> "re.Pattern[str]":
-    return pattern if isinstance(pattern, re.Pattern) else re.compile(pattern)
+    """A pattern given as text matches as the legacy RE2 pattern did (compile_re2_pattern)."""
+    return pattern if isinstance(pattern, re.Pattern) else compile_re2_pattern(pattern)
 
 
 def _group(match: "re.Match[str]", name: str) -> str:
@@ -254,6 +258,7 @@ class ResultPageMatcher:
         self._uploaded: Dict[str, int] = {}  # file -> position among finished uploads
         self._settled: Set[str] = set()
         self._resolved: Set[str] = set()
+        self._looking: Set[str] = set()  # files that looked at the page at least once
         self._claimed: Dict[str, str] = {}  # entry image URL -> file
         self._claimed_thumbs: Dict[str, str] = {}
         # upload_order: attempts that reached the host since the last claim,
@@ -320,6 +325,7 @@ class ResultPageMatcher:
     ) -> Dict[str, ResultEntry]:
         """Pick and claim an entry for each pending file, in upload order."""
         with self._lock:
+            self._looking.update(pending)
             assigned = {}
             for fp in self._by_position(pending):
                 entry = self._choose(fp, list(entries), final)
@@ -427,6 +433,7 @@ class ResultPageMatcher:
         local = self._names.get(fp)
         if local is None:
             return None
+        first_picks: Dict[str, Optional[ResultEntry]] = {}
         best = _NO_MATCH
         candidates: List[ResultEntry] = []
         for entry in entries:
@@ -435,7 +442,7 @@ class ResultPageMatcher:
             tier = _entry_match(entry, local)
             if tier == _NO_MATCH or (tier == _LOOSE and not self._allow_loose(final)):
                 continue
-            if self._reserved_for_another(entry, fp, tier):
+            if self._reserved_for_another(entry, fp, tier, entries, first_picks):
                 continue
             if best == _NO_MATCH or tier < best:
                 best, candidates = tier, [entry]
@@ -450,14 +457,57 @@ class ResultPageMatcher:
             return candidates[ahead]
         return candidates[-1] if final else None
 
-    def _reserved_for_another(self, entry: ResultEntry, fp: str, tier: int) -> bool:
+    def _reserved_for_another(
+        self,
+        entry: ResultEntry,
+        fp: str,
+        tier: int,
+        entries: List[ResultEntry],
+        first_picks: Dict[str, Optional[ResultEntry]],
+    ) -> bool:
+        """Whether another file still being resolved matches ``entry`` more closely.
+
+        A file that has looked at the page holds back every entry it matches
+        more closely than ``fp``, as in Go. A file whose upload finished but
+        whose parse has not started (it waits in the parse pool's queue)
+        holds back only the entry its first look would take: in Go it would
+        be resolving in its own goroutine and take that entry at once, so a
+        pool busy with other files never starves ``fp`` of the rest.
+        """
         for other, forms in self._names.items():
             if other == fp or not self._holds(other):
                 continue
             other_tier = _entry_match(entry, forms)
-            if other_tier != _NO_MATCH and other_tier < tier:
+            if other_tier == _NO_MATCH or other_tier >= tier:
+                continue
+            if other in self._looking:
+                return True
+            if other not in first_picks:
+                first_picks[other] = self._first_pick(other, entries)
+            pick = first_picks[other]
+            if pick is not None and pick.image_url == entry.image_url:
                 return True
         return False
+
+    def _first_pick(self, fp: str, entries: List[ResultEntry]) -> Optional[ResultEntry]:
+        """The entry ``fp``'s first look at ``entries`` would take, others' reservations aside."""
+        local = self._names.get(fp)
+        best = _NO_MATCH
+        candidates: List[ResultEntry] = []
+        for entry in entries:
+            if entry.image_url in self._claimed:
+                continue
+            tier = _entry_match(entry, local)
+            if tier == _NO_MATCH or (tier == _LOOSE and not self._allow_loose(False)):
+                continue
+            if best == _NO_MATCH or tier < best:
+                best, candidates = tier, [entry]
+            elif tier == best:
+                candidates.append(entry)
+        if not candidates:
+            return None
+        ahead = self._same_name_files_ahead(fp, candidates[0], best)
+        return candidates[ahead] if ahead < len(candidates) else None
 
     def _same_name_files_ahead(self, fp: str, entry: ResultEntry, tier: int) -> int:
         mine = self._position(fp)
@@ -489,7 +539,9 @@ def resolve_from_result_page(
     """Poll ``result_url`` on the job's transport until ``file_path`` is listed.
 
     The page is read once, then again after each delay of ``poll_delays_ms``;
-    the last look also accepts loose matches. ``gallery_extractor`` (a CSS
+    the last look also accepts loose matches. Each look is one request
+    without the sidecar's retries, as in the legacy resolver: a look that
+    fails (a 503, a timeout) waits for the next one of the schedule. ``gallery_extractor`` (a CSS
     selector, ``regex:<pattern>``, or a function of the page) gives the
     result's gallery_url. A file without both an image and a thumbnail link
     by the last look fails with the reason.
@@ -503,7 +555,7 @@ def resolve_from_result_page(
         if attempt:
             if not transport.pause(poll_delays_ms[attempt - 1] / 1000.0):
                 return UploadResult.failed(REQUEST_CANCELLED_MSG)
-        response = transport.get(result_url)
+        response = transport.get(result_url, retry=False)
         if getattr(response, "status", "") == "cancelled":
             return UploadResult.failed(REQUEST_CANCELLED_MSG)
         if not response.ok:

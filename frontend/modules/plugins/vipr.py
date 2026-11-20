@@ -14,7 +14,6 @@ Includes custom gallery refresh button functionality.
 import re
 import threading
 from typing import Dict, Any, List
-from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import customtkinter as ctk
 from bs4 import BeautifulSoup
@@ -28,6 +27,7 @@ from ..upload_results import (
     html_field,
     redact_secrets,
     request_failure,
+    resolve_upload_url,
     truncate_text,
     upload_failure,
 )
@@ -72,14 +72,9 @@ def resolved_upload_url(upload_id: str, endpoint: str = "") -> str:
     Resolves the endpoint against the default upload URL and keeps that
     URL's query when the endpoint has none, as the legacy sidecar did.
     """
-    default = f"{BASE_URL}cgi-bin/upload.cgi?upload_id={upload_id}&{UPLOAD_QUERY}"
-    endpoint = str(endpoint or "").strip()
-    if not endpoint:
-        return default
-    resolved = urlsplit(urljoin(default, endpoint))
-    if not resolved.query:
-        resolved = resolved._replace(query=urlsplit(default).query)
-    return urlunsplit(resolved)
+    return resolve_upload_url(
+        f"{BASE_URL}cgi-bin/upload.cgi?upload_id={upload_id}&{UPLOAD_QUERY}", endpoint
+    )
 
 
 def login_refusal(body: str) -> str:

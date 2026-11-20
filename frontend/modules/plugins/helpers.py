@@ -486,6 +486,33 @@ def get_gallery_id(config: Dict[str, Any], group=None) -> Optional[str]:
     return config.get("gallery_id") or None
 
 
+# A batch's gallery, as Gallery Manager assigns it to the group.
+_GROUP_GALLERY_FIELDS = ("gallery_id", "gallery_name", "gallery_url", "gallery_upload_hash")
+
+
+def claim_group_gallery(group, service_id: str) -> None:
+    """Mark ``group``'s gallery as ``service_id``'s, dropping one picked for another host.
+
+    A gallery assigned in Gallery Manager records its host
+    (``group.gallery_service``), and the upload manager sends the group's
+    gallery id only to that host. A prepare_group that gives the group a
+    gallery of its own calls this first: a gallery that belongs to another
+    host loses its id, name, url and upload hash, so none of them reaches
+    this host as its gallery.
+    """
+    from .. import config as app_config
+
+    current = app_config.normalize_service_id(str(getattr(group, "gallery_service", "") or ""))
+    if current and current != app_config.normalize_service_id(service_id):
+        for field in _GROUP_GALLERY_FIELDS:
+            if hasattr(group, field):
+                setattr(group, field, "")
+        if isinstance(getattr(group, "pix_data", None), dict):
+            group.pix_data = None
+        logger.info(f"Batch gallery picked for {current} is not used for {service_id}")
+    group.gallery_service = service_id
+
+
 # ============================================================================
 # Python Upload Path Helpers
 # ============================================================================

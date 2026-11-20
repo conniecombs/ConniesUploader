@@ -28,6 +28,21 @@ type parityFixture struct {
 		Secrets []string `json:"secrets"`
 		Want    string   `json:"want"`
 	} `json:"failure_messages"`
+	Redactions []struct {
+		Name    string   `json:"name"`
+		Text    string   `json:"text"`
+		Secrets []string `json:"secrets"`
+		Want    string   `json:"want"`
+	} `json:"redactions"`
+	URLSplits []struct {
+		Link string    `json:"link"`
+		Want [2]string `json:"want"`
+	} `json:"url_splits"`
+	UploadURLs []struct {
+		URL      string `json:"url"`
+		Endpoint string `json:"endpoint"`
+		Want     string `json:"want"`
+	} `json:"upload_urls"`
 	JSONUploads []struct {
 		Name    string             `json:"name"`
 		Parser  ResponseParserSpec `json:"parser"`
@@ -67,6 +82,40 @@ func secretsJob(secrets []string) *JobRequest {
 func TestParityFailureMessages(t *testing.T) {
 	for _, tc := range loadParityFixture(t).FailureMessages {
 		got := uploadFailure(tc.Reason, tc.Status, []byte(tc.Body), uploadSecrets(secretsJob(tc.Secrets), nil)).Error()
+		if got != tc.Want {
+			t.Errorf("%s:\n got %q\nwant %q", tc.Name, got, tc.Want)
+		}
+	}
+}
+
+// Link splits feed thumbnail templates ({url_no_ext}); upload URLs are where
+// an endpoint read from a host page sends the upload.
+func TestParityURLs(t *testing.T) {
+	fixture := loadParityFixture(t)
+	if len(fixture.URLSplits) == 0 || len(fixture.UploadURLs) == 0 {
+		t.Fatal("the fixture has no URL cases")
+	}
+	for _, tc := range fixture.URLSplits {
+		stem, ext := splitURLExtension(tc.Link)
+		if [2]string{stem, ext} != tc.Want {
+			t.Errorf("split %q:\n got %q\nwant %q", tc.Link, [2]string{stem, ext}, tc.Want)
+		}
+	}
+	for _, tc := range fixture.UploadURLs {
+		got, err := resolveUploadURL(tc.URL, map[string]string{"endpoint": tc.Endpoint})
+		if err != nil || got != tc.Want {
+			t.Errorf("resolve %q against %q:\n got %q (%v)\nwant %q", tc.Endpoint, tc.URL, got, err, tc.Want)
+		}
+	}
+}
+
+func TestParityRedactions(t *testing.T) {
+	cases := loadParityFixture(t).Redactions
+	if len(cases) == 0 {
+		t.Fatal("the fixture has no redaction cases")
+	}
+	for _, tc := range cases {
+		got := redactSecrets(tc.Text, uploadSecrets(secretsJob(tc.Secrets), nil))
 		if got != tc.Want {
 			t.Errorf("%s:\n got %q\nwant %q", tc.Name, got, tc.Want)
 		}

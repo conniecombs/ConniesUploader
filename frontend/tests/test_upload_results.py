@@ -148,6 +148,97 @@ def test_html_field_follows_the_go_selection_rules():
     assert html_field(page, "") == ""
 
 
+# What Go's extractHTMLField (goquery on an HTML5 parser) gives for each page.
+@pytest.mark.parametrize(
+    ("page", "selector", "want"),
+    [
+        # With scripting on, an HTML5 parser keeps <noscript> content as raw
+        # text: nothing inside it is an element a selector can match.
+        (
+            "<noscript><input name='sess_id' value='NS'></noscript>"
+            "<input name='sess_id' value='REAL'>",
+            "input[name='sess_id']",
+            "REAL",
+        ),
+        (
+            "<head><noscript><meta name='csrf-token' content='NS'></noscript>"
+            "<meta name='csrf-token' content='REAL'></head>",
+            "meta[name='csrf-token']",
+            "REAL",
+        ),
+        (
+            "<div><noscript><p><input name='t' value='deep'></p></noscript></div>"
+            "<input name='t' value='after'>",
+            "input[name='t']",
+            "after",
+        ),
+        ("<noscript><input name='x' value='only'></noscript>", "input[name='x']", ""),
+        (
+            "<body><noscript><form action='/ns'></form></noscript><form action='/real'></form>",
+            "form",
+            "/real",
+        ),
+        # An attribute given twice keeps its first value, whatever the case.
+        ("<input name='sess_id' value='' value='dup'>", "input[name='sess_id']", ""),
+        ("<input name='a' value='first' VALUE='second'>", "input[name='a']", "first"),
+        ("<a id='g' href='/one' href='/two'>x</a>", "a#g", "/one"),
+        ("<input name='sess_id' id='a' name='other' value='v'>", "input[name='sess_id']", "v"),
+        ("<input name='other' name='sess_id' value='v'>", "input[name='sess_id']", ""),
+    ],
+    ids=[
+        "noscript decoy",
+        "noscript decoy in head",
+        "deep noscript decoy",
+        "only inside noscript",
+        "noscript form",
+        "duplicate value",
+        "duplicate in another case",
+        "duplicate href",
+        "duplicate name, first matches",
+        "duplicate name, second would match",
+    ],
+)
+def test_html_field_picks_the_element_goquery_picks(page, selector, want):
+    assert html_field(page, selector) == want
+
+
+# What Go's RE2 finds: \s is [\t\n\f\r ] (no NBSP or vertical tab), \d and \w
+# are ASCII, and \b is an ASCII word boundary.
+@pytest.mark.parametrize(
+    ("page", "selector", "want"),
+    [
+        ("<script>endpoint:\t'/up.tu'</script>", r"regex:endpoint:\s*'([^']+)'", "/up.tu"),
+        ("<script>endpoint: 'nbsp.tu'</script>", r"regex:endpoint:\s*'([^']+)'", ""),
+        ("<script>endpoint:\x0b'vt.tu'</script>", r"regex:endpoint:\s*'([^']+)'", ""),
+        (
+            "[URL=https://vipr.im/abc x][IMG]https://i1.vipr.im/th/a.jpg[/IMG]",
+            r"regex:(?is)\[URL=(https?://vipr\.im/[^\]\s]+)\]\s*\[IMG\]",
+            "https://vipr.im/abc x",
+        ),
+        ("id=٤٥ id=12", r"regex:id=(\d+)", "12"),
+        ("x=été x=ab_9", r"regex:x=(\w+)", "ab_9"),
+        ("cafés", r"regex:\bs", "s"),
+        (r"a\sb", r"regex:a\\s(b)", "b"),
+        ("tab\there", r"regex:tab[\s]here", "tab\there"),
+        ("nb sp", r"regex:nb[\s]sp", ""),
+    ],
+    ids=[
+        "tab is space",
+        "nbsp is not",
+        "vertical tab is not",
+        "nbsp inside a negated class",
+        "arabic digits are not digits",
+        "accented letters are not word characters",
+        "ascii word boundary",
+        "escaped backslash",
+        "class with tab",
+        "class without nbsp",
+    ],
+)
+def test_html_field_regexes_match_like_re2(page, selector, want):
+    assert html_field(page, selector) == want
+
+
 def test_host_message_and_redaction():
     assert host_message('{"error":"nope"}') == "nope"
     assert host_message("x" * 300).endswith("…")

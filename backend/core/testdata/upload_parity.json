@@ -135,7 +135,274 @@
       "status": 400,
       "body": "line one\u0000line\ttwo\u0007end",
       "want": "upload rejected (HTTP 400): line one line two end"
+    },
+    {
+      "name": "a credential echoed url-encoded is redacted",
+      "reason": "login failed",
+      "status": 403,
+      "body": "<html><body><h1>Request blocked</h1><pre>op=login&login=connie&password=P%40ss%2Fw0rd%7B%C3%A9%7D</pre></body></html>",
+      "secrets": ["P@ss/w0rd{é}", "connie"],
+      "want": "login failed (HTTP 403): Request blocked op=login&login=[redacted]&password=[redacted]"
+    },
+    {
+      "name": "url-encoded with lowercase escapes and plus for space",
+      "reason": "login failed",
+      "status": 400,
+      "body": "rejected: pw=my+pass%20word&next=P%40ss%2fw0rd%7b%c3%a9%7d",
+      "secrets": ["P@ss/w0rd{é}", "my pass word"],
+      "want": "login failed (HTTP 400): rejected: pw=[redacted]&next=[redacted]"
+    },
+    {
+      "name": "a credential echoed json-escaped is redacted",
+      "reason": "login failed",
+      "status": 400,
+      "body": "{\"ok\":false,\"echo\":{\"password\":\"P@ss\\/w0rd{\\u00e9}\",\"user\":\"P@ss\\/w0rd{é}\",\"emoji\":\"pass\\ud83d\\ude00word\"}}",
+      "secrets": ["P@ss/w0rd{é}", "pass😀word"],
+      "want": "login failed (HTTP 400): {\"ok\":false,\"echo\":{\"password\":\"[redacted]\",\"user\":\"[redacted]\",\"emoji\":\"[redacted]\"}}"
+    },
+    {
+      "name": "a credential echoed with html entities is redacted",
+      "reason": "login failed",
+      "status": 401,
+      "body": "Invalid password P@ss/w0rd{&eacute;} or P&#64;ss&#x2F;w0rd&#123;&#233;&#X7d;",
+      "secrets": ["P@ss/w0rd{é}"],
+      "want": "login failed (HTTP 401): Invalid password [redacted] or [redacted]"
+    },
+    {
+      "name": "escapes inside a longer secret are redacted whole",
+      "reason": "upload rejected",
+      "status": 400,
+      "body": "session tok%2D1234%2Dextra expired",
+      "secrets": ["tok-1234", "tok-1234-extra"],
+      "want": "upload rejected (HTTP 400): session [redacted] expired"
+    },
+    {
+      "name": "half of an entity that stands for two characters is not redacted",
+      "reason": "upload rejected",
+      "status": 400,
+      "body": "code abc&NotEqualTilde; here",
+      "secrets": ["abc≂"],
+      "want": "upload rejected (HTTP 400): code abc&NotEqualTilde; here"
+    },
+    {
+      "name": "a secret under four characters is never redacted, escaped or not",
+      "reason": "login failed",
+      "status": 401,
+      "body": "Wrong PIN abc, a%62c or &#97;bc",
+      "secrets": ["abc"],
+      "want": "login failed (HTTP 401): Wrong PIN abc, a%62c or &#97;bc"
+    },
+    {
+      "name": "the minimum length counts characters, not bytes",
+      "reason": "login failed",
+      "status": 401,
+      "body": "Wrong PIN éé",
+      "secrets": ["éé"],
+      "want": "login failed (HTTP 401): Wrong PIN éé"
+    },
+    {
+      "name": "a php warning printed before the page",
+      "reason": "upload rejected",
+      "status": 500,
+      "body": "<br />\n<b>Warning</b>:  move_uploaded_file(): Unable to move '/tmp/phpX' in <b>/var/www/upload.php</b> on line <b>42</b><br />\n<html><head><title>Error</title></head><body><h1>Upload failed</h1></body></html>",
+      "want": "upload rejected (HTTP 500): Warning : move_uploaded_file(): Unable to move '/tmp/phpX' in /var/www/upload.php on line 42 Error Upload failed"
+    },
+    {
+      "name": "a fatal error printed after the page",
+      "reason": "upload rejected",
+      "status": 500,
+      "body": "<html><head><title>Error</title></head><body><h1>Upload failed</h1></body></html>\nFatal error: Allowed memory size exhausted",
+      "want": "upload rejected (HTTP 500): Upload failed Fatal error: Allowed memory size exhausted"
+    },
+    {
+      "name": "text before the html tag runs into the body's text",
+      "reason": "upload rejected",
+      "status": 400,
+      "body": "Error: file too large<html><body>Try again</body></html>",
+      "want": "upload rejected (HTTP 400): Error: file too largeTry again"
+    },
+    {
+      "name": "an element after the html end tag",
+      "reason": "upload rejected",
+      "status": 400,
+      "body": "<html><body>Body text</body></html><p>after html</p>",
+      "want": "upload rejected (HTTP 400): Body text after html"
+    },
+    {
+      "name": "text between head and body",
+      "reason": "upload rejected",
+      "status": 400,
+      "body": "<html><head><title>T</title></head>Stray text<body>Real</body></html>",
+      "want": "upload rejected (HTTP 400): Stray textReal"
+    },
+    {
+      "name": "a title after the body is text",
+      "reason": "upload rejected",
+      "status": 400,
+      "body": "<html><head><title>A</title></head><body>B</body><title>C</title></html>",
+      "want": "upload rejected (HTTP 400): B C"
+    },
+    {
+      "name": "a processing instruction before the text",
+      "reason": "upload rejected",
+      "status": 400,
+      "body": "<?php echo 1; ?>Notice: x<html><body>y</body></html>",
+      "want": "upload rejected (HTTP 400): Notice: xy"
+    },
+    {
+      "name": "a comment after the html end tag",
+      "reason": "upload rejected",
+      "status": 400,
+      "body": "<html><body><p>one</p></body></html><!-- trailing -->two",
+      "want": "upload rejected (HTTP 400): one two"
+    },
+    {
+      "name": "a frameset page has no body text",
+      "reason": "upload rejected",
+      "status": 400,
+      "body": "<frameset><frame src='a'></frameset>after",
+      "want": "upload rejected (HTTP 400): <frameset><frame src='a'></frameset>after"
+    },
+    {
+      "name": "a body with NaN is not JSON, so its message field does not count",
+      "reason": "upload rejected",
+      "status": 400,
+      "body": "{\"error\": NaN, \"message\": \"quota\"}",
+      "want": "upload rejected (HTTP 400): {\"error\": NaN, \"message\": \"quota\"}"
     }
+  ],
+  "redactions": [
+    {
+      "name": "upper-case unicode escapes",
+      "text": "{\"pw\":\"P@ss\\/w0rd{\\u00E9}\"}",
+      "secrets": ["P@ss/w0rd{é}"],
+      "want": "{\"pw\":\"[redacted]\"}"
+    },
+    {
+      "name": "an escaped backslash is no unicode escape",
+      "text": "name \\\\u00e9tienne",
+      "secrets": ["étienne"],
+      "want": "name \\\\u00e9tienne"
+    },
+    {
+      "name": "a lone surrogate escape stands for no character",
+      "text": "x\\ud83dword",
+      "secrets": ["�word"],
+      "want": "x\\ud83dword"
+    },
+    {
+      "name": "a percent sign without two hex digits stays",
+      "text": "100%zz off for P%40ss%2Fw0rd%7B%C3%A9%7D",
+      "secrets": ["P@ss/w0rd{é}"],
+      "want": "100%zz off for [redacted]"
+    },
+    {
+      "name": "html special characters in a secret",
+      "text": "user a&amp;b&lt;c&gt;d&quot; refused",
+      "secrets": ["a&b<c>d\""],
+      "want": "user [redacted] refused"
+    },
+    {
+      "name": "references to no character stay",
+      "text": "a&#0;bcd &#xD800;wxyz &#x110000;",
+      "secrets": ["abcd", "�wxyz"],
+      "want": "a&#0;bcd &#xD800;wxyz &#x110000;"
+    },
+    {
+      "name": "secrets of the same length go in a fixed order",
+      "text": "abc%64efghi",
+      "secrets": ["defghi", "abcdef"],
+      "want": "[redacted]ghi"
+    }
+  ],
+  "url_splits": [
+    {"link": "https://i.imgur.com/AbCd123.jpg", "want": ["https://i.imgur.com/AbCd123", ".jpg"]},
+    {"link": "https://i.imgur.com/AbCd123.jpeg?1#frag", "want": ["https://i.imgur.com/AbCd123", ".jpeg"]},
+    {"link": "https://i.imgur.com/AbCd123", "want": ["https://i.imgur.com/AbCd123", ""]},
+    {"link": "https://i.imgur.com/", "want": ["https://i.imgur.com/", ""]},
+    {"link": "https://i.imgur.com", "want": ["https://i.imgur.com", ""]},
+    {"link": "HTTPS://I.IMGUR.COM/A.JPG", "want": ["https://I.IMGUR.COM/A", ".JPG"]},
+    {"link": "https://i.imgur.com/a%2Fb.png", "want": ["https://i.imgur.com/a%2Fb", ".png"]},
+    {"link": "https://i.imgur.com/a(b).gif", "want": ["https://i.imgur.com/a(b)", ".gif"]},
+    {"link": "https://i.imgur.com/a b.png", "want": ["https://i.imgur.com/a%20b", ".png"]},
+    {"link": "https://i.imgur.com/café.png", "want": ["https://i.imgur.com/caf%C3%A9", ".png"]},
+    {"link": "https://i.imgur.com/a(b) c.png", "want": ["https://i.imgur.com/a%28b%29%20c", ".png"]},
+    {"link": "https://i.imgur.com/a%zz.png", "want": ["https://i.imgur.com/a%zz.png", ""]},
+    {"link": "https://i.imgur.com/a.b/c", "want": ["https://i.imgur.com/a.b/c", ""]},
+    {"link": "https://i.imgur.com/a.png?", "want": ["https://i.imgur.com/a", ".png"]},
+    {"link": "//i.imgur.com/a.png", "want": ["//i.imgur.com/a", ".png"]},
+    {"link": "https://user:pw@i.imgur.com:443/a.png", "want": ["https://user:pw@i.imgur.com:443/a", ".png"]},
+    {"link": "https://i.imgur.com:abc/a.png", "want": ["https://i.imgur.com:abc/a.png", ""]},
+    {"link": "https://i imgur.com/a.png", "want": ["https://i imgur.com/a.png", ""]},
+    {"link": "https://i.imgur.com/a\\b.png", "want": ["https://i.imgur.com/a%5Cb", ".png"]},
+    {"link": "https://i.imgur.com/%E2%80%8Bzero.png", "want": ["https://i.imgur.com/%E2%80%8Bzero", ".png"]},
+    {"link": "https://i.imgur.com/a%2fb.PNG", "want": ["https://i.imgur.com/a%2fb", ".PNG"]},
+    {"link": "https://i.imgur.com/a'b!.png", "want": ["https://i.imgur.com/a'b!", ".png"]},
+    {"link": "https://i.imgur.com/a{b}.png", "want": ["https://i.imgur.com/a%7Bb%7D", ".png"]},
+    {"link": "https://i.imgur.com/a|b.png", "want": ["https://i.imgur.com/a%7Cb", ".png"]},
+    {"link": "https://i.imgur.com/a b.png", "want": ["https://i.imgur.com/a%C2%A0b", ".png"]},
+    {"link": "1a:b/c.png", "want": ["1a:b/c.png", ""]},
+    {"link": "a.png", "want": ["a", ".png"]},
+    {"link": "/x/a.png", "want": ["/x/a", ".png"]},
+    {"link": "https://i.imgur.com/a.png#x y", "want": ["https://i.imgur.com/a", ".png"]},
+    {"link": "https://[::1]:8080/a.png", "want": ["https://[::1]:8080/a", ".png"]},
+    {"link": "https://i.imgur.com/a%41.png", "want": ["https://i.imgur.com/a%41", ".png"]}
+  ],
+  "upload_urls": [
+    {"url": "https://vipr.im/cgi-bin/upload.cgi?upload_id=UID&js_on=1&utype=reg&upload_type=file", "endpoint": "https://s1.vipr.im/cgi-bin/upload.cgi", "want": "https://s1.vipr.im/cgi-bin/upload.cgi?upload_id=UID&js_on=1&utype=reg&upload_type=file"},
+    {"url": "https://www.turboimagehost.com/upload_html5.tu", "endpoint": "https://s1.vipr.im/cgi-bin/upload.cgi", "want": "https://s1.vipr.im/cgi-bin/upload.cgi"},
+    {"url": "https://vipr.im/cgi-bin/upload.cgi?upload_id=UID&js_on=1&utype=reg&upload_type=file", "endpoint": "//s1.vipr.im/cgi-bin/upload.cgi", "want": "https://s1.vipr.im/cgi-bin/upload.cgi?upload_id=UID&js_on=1&utype=reg&upload_type=file"},
+    {"url": "https://www.turboimagehost.com/upload_html5.tu", "endpoint": "//s1.vipr.im/cgi-bin/upload.cgi", "want": "https://s1.vipr.im/cgi-bin/upload.cgi"},
+    {"url": "https://vipr.im/cgi-bin/upload.cgi?upload_id=UID&js_on=1&utype=reg&upload_type=file", "endpoint": "/cgi-bin/upload.cgi", "want": "https://vipr.im/cgi-bin/upload.cgi?upload_id=UID&js_on=1&utype=reg&upload_type=file"},
+    {"url": "https://www.turboimagehost.com/upload_html5.tu", "endpoint": "/cgi-bin/upload.cgi", "want": "https://www.turboimagehost.com/cgi-bin/upload.cgi"},
+    {"url": "https://vipr.im/cgi-bin/upload.cgi?upload_id=UID&js_on=1&utype=reg&upload_type=file", "endpoint": "https://s1.vipr.im/cgi-bin/upload.cgi?x=1", "want": "https://s1.vipr.im/cgi-bin/upload.cgi?x=1"},
+    {"url": "https://www.turboimagehost.com/upload_html5.tu", "endpoint": "https://s1.vipr.im/cgi-bin/upload.cgi?x=1", "want": "https://s1.vipr.im/cgi-bin/upload.cgi?x=1"},
+    {"url": "https://vipr.im/cgi-bin/upload.cgi?upload_id=UID&js_on=1&utype=reg&upload_type=file", "endpoint": "https://s1.vipr.im/a/../cgi-bin/upload.cgi", "want": "https://s1.vipr.im/cgi-bin/upload.cgi?upload_id=UID&js_on=1&utype=reg&upload_type=file"},
+    {"url": "https://www.turboimagehost.com/upload_html5.tu", "endpoint": "https://s1.vipr.im/a/../cgi-bin/upload.cgi", "want": "https://s1.vipr.im/cgi-bin/upload.cgi"},
+    {"url": "https://vipr.im/cgi-bin/upload.cgi?upload_id=UID&js_on=1&utype=reg&upload_type=file", "endpoint": "https://s1.vipr.im/./cgi-bin/./upload.cgi", "want": "https://s1.vipr.im/cgi-bin/upload.cgi?upload_id=UID&js_on=1&utype=reg&upload_type=file"},
+    {"url": "https://www.turboimagehost.com/upload_html5.tu", "endpoint": "https://s1.vipr.im/./cgi-bin/./upload.cgi", "want": "https://s1.vipr.im/cgi-bin/upload.cgi"},
+    {"url": "https://vipr.im/cgi-bin/upload.cgi?upload_id=UID&js_on=1&utype=reg&upload_type=file", "endpoint": "https://s1.vipr.im/a/b/../../cgi-bin/upload.cgi", "want": "https://s1.vipr.im/cgi-bin/upload.cgi?upload_id=UID&js_on=1&utype=reg&upload_type=file"},
+    {"url": "https://www.turboimagehost.com/upload_html5.tu", "endpoint": "https://s1.vipr.im/a/b/../../cgi-bin/upload.cgi", "want": "https://s1.vipr.im/cgi-bin/upload.cgi"},
+    {"url": "https://vipr.im/cgi-bin/upload.cgi?upload_id=UID&js_on=1&utype=reg&upload_type=file", "endpoint": "https://s1.vipr.im/../../cgi-bin/upload.cgi", "want": "https://s1.vipr.im/cgi-bin/upload.cgi?upload_id=UID&js_on=1&utype=reg&upload_type=file"},
+    {"url": "https://www.turboimagehost.com/upload_html5.tu", "endpoint": "https://s1.vipr.im/../../cgi-bin/upload.cgi", "want": "https://s1.vipr.im/cgi-bin/upload.cgi"},
+    {"url": "https://vipr.im/cgi-bin/upload.cgi?upload_id=UID&js_on=1&utype=reg&upload_type=file", "endpoint": "../cgi-bin/upload.cgi", "want": "https://vipr.im/cgi-bin/upload.cgi?upload_id=UID&js_on=1&utype=reg&upload_type=file"},
+    {"url": "https://www.turboimagehost.com/upload_html5.tu", "endpoint": "../cgi-bin/upload.cgi", "want": "https://www.turboimagehost.com/cgi-bin/upload.cgi"},
+    {"url": "https://vipr.im/cgi-bin/upload.cgi?upload_id=UID&js_on=1&utype=reg&upload_type=file", "endpoint": "cgi-bin/upload.cgi?", "want": "https://vipr.im/cgi-bin/cgi-bin/upload.cgi?upload_id=UID&js_on=1&utype=reg&upload_type=file"},
+    {"url": "https://www.turboimagehost.com/upload_html5.tu", "endpoint": "cgi-bin/upload.cgi?", "want": "https://www.turboimagehost.com/cgi-bin/upload.cgi?"},
+    {"url": "https://vipr.im/cgi-bin/upload.cgi?upload_id=UID&js_on=1&utype=reg&upload_type=file", "endpoint": "https://s1.vipr.im/cgi-bin/up load.cgi", "want": "https://s1.vipr.im/cgi-bin/up%20load.cgi?upload_id=UID&js_on=1&utype=reg&upload_type=file"},
+    {"url": "https://www.turboimagehost.com/upload_html5.tu", "endpoint": "https://s1.vipr.im/cgi-bin/up load.cgi", "want": "https://s1.vipr.im/cgi-bin/up%20load.cgi"},
+    {"url": "https://vipr.im/cgi-bin/upload.cgi?upload_id=UID&js_on=1&utype=reg&upload_type=file", "endpoint": "https://s1.vipr.im/cgi-bin/up%zzload.cgi", "want": "https://vipr.im/cgi-bin/upload.cgi?upload_id=UID&js_on=1&utype=reg&upload_type=file"},
+    {"url": "https://www.turboimagehost.com/upload_html5.tu", "endpoint": "https://s1.vipr.im/cgi-bin/up%zzload.cgi", "want": "https://www.turboimagehost.com/upload_html5.tu"},
+    {"url": "https://vipr.im/cgi-bin/upload.cgi?upload_id=UID&js_on=1&utype=reg&upload_type=file", "endpoint": "https://s1.vipr.im/cgi-bin/upload.cgi#frag", "want": "https://s1.vipr.im/cgi-bin/upload.cgi?upload_id=UID&js_on=1&utype=reg&upload_type=file#frag"},
+    {"url": "https://www.turboimagehost.com/upload_html5.tu", "endpoint": "https://s1.vipr.im/cgi-bin/upload.cgi#frag", "want": "https://s1.vipr.im/cgi-bin/upload.cgi#frag"},
+    {"url": "https://vipr.im/cgi-bin/upload.cgi?upload_id=UID&js_on=1&utype=reg&upload_type=file", "endpoint": "https://s1.vipr.im:abc/cgi-bin/upload.cgi", "want": "https://vipr.im/cgi-bin/upload.cgi?upload_id=UID&js_on=1&utype=reg&upload_type=file"},
+    {"url": "https://www.turboimagehost.com/upload_html5.tu", "endpoint": "https://s1.vipr.im:abc/cgi-bin/upload.cgi", "want": "https://www.turboimagehost.com/upload_html5.tu"},
+    {"url": "https://vipr.im/cgi-bin/upload.cgi?upload_id=UID&js_on=1&utype=reg&upload_type=file", "endpoint": "https://s1 vipr.im/cgi-bin/upload.cgi", "want": "https://vipr.im/cgi-bin/upload.cgi?upload_id=UID&js_on=1&utype=reg&upload_type=file"},
+    {"url": "https://www.turboimagehost.com/upload_html5.tu", "endpoint": "https://s1 vipr.im/cgi-bin/upload.cgi", "want": "https://www.turboimagehost.com/upload_html5.tu"},
+    {"url": "https://vipr.im/cgi-bin/upload.cgi?upload_id=UID&js_on=1&utype=reg&upload_type=file", "endpoint": "https://s1.vipr.im", "want": "https://s1.vipr.im?upload_id=UID&js_on=1&utype=reg&upload_type=file"},
+    {"url": "https://www.turboimagehost.com/upload_html5.tu", "endpoint": "https://s1.vipr.im", "want": "https://s1.vipr.im"},
+    {"url": "https://vipr.im/cgi-bin/upload.cgi?upload_id=UID&js_on=1&utype=reg&upload_type=file", "endpoint": "https://s1.vipr.im/", "want": "https://s1.vipr.im/?upload_id=UID&js_on=1&utype=reg&upload_type=file"},
+    {"url": "https://www.turboimagehost.com/upload_html5.tu", "endpoint": "https://s1.vipr.im/", "want": "https://s1.vipr.im/"},
+    {"url": "https://vipr.im/cgi-bin/upload.cgi?upload_id=UID&js_on=1&utype=reg&upload_type=file", "endpoint": "https://s1.vipr.im/a/..", "want": "https://s1.vipr.im/?upload_id=UID&js_on=1&utype=reg&upload_type=file"},
+    {"url": "https://www.turboimagehost.com/upload_html5.tu", "endpoint": "https://s1.vipr.im/a/..", "want": "https://s1.vipr.im/"},
+    {"url": "https://vipr.im/cgi-bin/upload.cgi?upload_id=UID&js_on=1&utype=reg&upload_type=file", "endpoint": "https://s1.vipr.im/café/upload.cgi", "want": "https://s1.vipr.im/caf%C3%A9/upload.cgi?upload_id=UID&js_on=1&utype=reg&upload_type=file"},
+    {"url": "https://www.turboimagehost.com/upload_html5.tu", "endpoint": "https://s1.vipr.im/café/upload.cgi", "want": "https://s1.vipr.im/caf%C3%A9/upload.cgi"},
+    {"url": "https://vipr.im/cgi-bin/upload.cgi?upload_id=UID&js_on=1&utype=reg&upload_type=file", "endpoint": "?only=query", "want": "https://vipr.im/cgi-bin/upload.cgi?only=query"},
+    {"url": "https://www.turboimagehost.com/upload_html5.tu", "endpoint": "?only=query", "want": "https://www.turboimagehost.com/upload_html5.tu?only=query"},
+    {"url": "https://vipr.im/cgi-bin/upload.cgi?upload_id=UID&js_on=1&utype=reg&upload_type=file", "endpoint": "#only-fragment", "want": "https://vipr.im/cgi-bin/upload.cgi?upload_id=UID&js_on=1&utype=reg&upload_type=file#only-fragment"},
+    {"url": "https://www.turboimagehost.com/upload_html5.tu", "endpoint": "#only-fragment", "want": "https://www.turboimagehost.com/upload_html5.tu#only-fragment"},
+    {"url": "https://vipr.im/cgi-bin/upload.cgi?upload_id=UID&js_on=1&utype=reg&upload_type=file", "endpoint": "https://s1.vipr.im/cgi-bin/upload.cgi?", "want": "https://s1.vipr.im/cgi-bin/upload.cgi?upload_id=UID&js_on=1&utype=reg&upload_type=file"},
+    {"url": "https://www.turboimagehost.com/upload_html5.tu", "endpoint": "https://s1.vipr.im/cgi-bin/upload.cgi?", "want": "https://s1.vipr.im/cgi-bin/upload.cgi?"},
+    {"url": "https://vipr.im/cgi-bin/upload.cgi?upload_id=UID&js_on=1&utype=reg&upload_type=file", "endpoint": "http://[broken/u.tu", "want": "https://vipr.im/cgi-bin/upload.cgi?upload_id=UID&js_on=1&utype=reg&upload_type=file"},
+    {"url": "https://www.turboimagehost.com/upload_html5.tu", "endpoint": "http://[broken/u.tu", "want": "https://www.turboimagehost.com/upload_html5.tu"},
+    {"url": "https://vipr.im/cgi-bin/upload.cgi?upload_id=UID&js_on=1&utype=reg&upload_type=file", "endpoint": "1a:b", "want": "https://vipr.im/cgi-bin/upload.cgi?upload_id=UID&js_on=1&utype=reg&upload_type=file"},
+    {"url": "https://www.turboimagehost.com/upload_html5.tu", "endpoint": "1a:b", "want": "https://www.turboimagehost.com/upload_html5.tu"},
+    {"url": "https://vipr.im/cgi-bin/upload.cgi?upload_id=UID&js_on=1&utype=reg&upload_type=file", "endpoint": "javascript:alert(1)", "want": "javascript:alert(1)?upload_id=UID&js_on=1&utype=reg&upload_type=file"},
+    {"url": "https://www.turboimagehost.com/upload_html5.tu", "endpoint": "javascript:alert(1)", "want": "javascript:alert(1)"},
+    {"url": "https://vipr.im/cgi-bin/upload.cgi?upload_id=UID&js_on=1&utype=reg&upload_type=file", "endpoint": "https://s1.vipr.im/a%2F../upload.cgi", "want": "https://s1.vipr.im/a%2F../upload.cgi?upload_id=UID&js_on=1&utype=reg&upload_type=file"},
+    {"url": "https://www.turboimagehost.com/upload_html5.tu", "endpoint": "https://s1.vipr.im/a%2F../upload.cgi", "want": "https://s1.vipr.im/a%2F../upload.cgi"},
+    {"url": "https://vipr.im/cgi-bin/upload.cgi?upload_id=UID&js_on=1&utype=reg&upload_type=file", "endpoint": "https://s1.vipr.im/a(b)/upload cgi", "want": "https://s1.vipr.im/a%28b%29/upload%20cgi?upload_id=UID&js_on=1&utype=reg&upload_type=file"},
+    {"url": "https://www.turboimagehost.com/upload_html5.tu", "endpoint": "https://s1.vipr.im/a(b)/upload cgi", "want": "https://s1.vipr.im/a%28b%29/upload%20cgi"}
   ],
   "json_uploads": [
     {
@@ -361,6 +628,66 @@
       "status": 200,
       "body": "{\"code\":200,\"files\":[{\"sourceUrl\":\"https://cdn.example/source.jpg\"},{\"thumb\":12.5}]}",
       "want": {"url": "https://cdn.example/source.jpg", "thumb": "12.5", "error": ""}
+    },
+    {
+      "name": "a big integer id rounds through a float, as in Go",
+      "host": "",
+      "config": {},
+      "parser": {"type": "json", "url_path": "newUrl", "thumb_path": "", "status_path": "success", "success_value": "true", "url_template": "https://example.com/p/{id}/{filename}.html"},
+      "file": "/in/a.jpg",
+      "status": 200,
+      "body": "{\"success\":true,\"id\":12345678901234567890}",
+      "want": {"url": "https://example.com/p/12345678901234567000/a.jpg.html", "thumb": "", "error": ""}
+    },
+    {
+      "name": "integers past 2^53 round to the nearest float",
+      "host": "",
+      "config": {},
+      "parser": {"type": "json", "url_path": "u", "thumb_path": "n"},
+      "file": "/in/a.jpg",
+      "status": 200,
+      "body": "{\"u\":\"https://cdn.example/a.jpg\",\"n\":9007199254740993}",
+      "want": {"url": "https://cdn.example/a.jpg", "thumb": "9007199254740992", "error": ""}
+    },
+    {
+      "name": "negative zero keeps its sign",
+      "host": "",
+      "config": {},
+      "parser": {"type": "json", "url_path": "u", "thumb_path": "n"},
+      "file": "/in/a.jpg",
+      "status": 200,
+      "body": "{\"u\":\"https://cdn.example/a.jpg\",\"n\":-0.0}",
+      "want": {"url": "https://cdn.example/a.jpg", "thumb": "-0", "error": ""}
+    },
+    {
+      "name": "NaN is not JSON",
+      "host": "",
+      "config": {},
+      "parser": {"type": "json", "url_path": "u", "thumb_path": "n"},
+      "file": "/in/a.jpg",
+      "status": 200,
+      "body": "{\"u\":\"https://cdn.example/a.jpg\",\"n\":NaN}",
+      "want": {"url": "", "thumb": "", "error": "upload response was not valid JSON (HTTP 200): {\"u\":\"https://cdn.example/a.jpg\",\"n\":NaN}"}
+    },
+    {
+      "name": "Infinity is not JSON",
+      "host": "",
+      "config": {},
+      "parser": {"type": "json", "url_path": "u", "thumb_path": "n"},
+      "file": "/in/a.jpg",
+      "status": 200,
+      "body": "{\"u\":\"https://cdn.example/a.jpg\",\"n\":-Infinity}",
+      "want": {"url": "", "thumb": "", "error": "upload response was not valid JSON (HTTP 200): {\"u\":\"https://cdn.example/a.jpg\",\"n\":-Infinity}"}
+    },
+    {
+      "name": "a number too large for a float is not JSON",
+      "host": "",
+      "config": {},
+      "parser": {"type": "json", "url_path": "u", "thumb_path": "n"},
+      "file": "/in/a.jpg",
+      "status": 200,
+      "body": "{\"u\":\"https://cdn.example/a.jpg\",\"n\":1e400}",
+      "want": {"url": "", "thumb": "", "error": "upload response was not valid JSON (HTTP 200): {\"u\":\"https://cdn.example/a.jpg\",\"n\":1e400}"}
     }
   ]
 }

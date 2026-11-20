@@ -17,9 +17,9 @@ import re
 import secrets
 import string
 from typing import Dict, Any, Iterable, List, Optional
-from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
+from loguru import logger
 
 from .base import ImageHostPlugin
 from . import helpers
@@ -32,6 +32,7 @@ from ..upload_results import (
     parse_json_upload,
     redact_secrets,
     request_failure,
+    resolve_upload_url,
     truncate_text,
 )
 
@@ -57,6 +58,10 @@ POLL_DELAYS_MS = (500, 1000, 2000, 3000, 5000, 5000)
 
 # Result-page entries are matched to files by name (ResultPageMatcher).
 FILE_MATCH_MODE = "filename"
+
+# A login answer with a logout link or form is logged in.
+_LOGGED_IN_SELECTOR = "a[href*='logout' i], form[action*='logout' i]"
+_PASSWORD_INPUT = "input[type=password i]"
 
 # Elements a login page shows its error in, most specific first.
 _LOGIN_MESSAGE_SELECTORS = (
@@ -104,19 +109,33 @@ def _upload_script_url(endpoint: str) -> str:
     """The upload URL for an endpoint read from the home page, as the legacy path resolves it.
 
     The endpoint may be absolute or relative to Turbo's default upload script;
-    one that is not a URL leaves the default script.
+    one that is not a URL leaves the default script (resolve_upload_url).
     """
-    default = f"{BASE_URL}/upload_html5.tu"
-    try:
-        return urljoin(default, endpoint.strip())
-    except ValueError:
-        return default
+    return resolve_upload_url(f"{BASE_URL}/upload_html5.tu", endpoint)
 
 
-def _login_refusal(body: str, secrets_: Iterable[str]) -> Optional[str]:
-    """Why the host refused a login, when its answer shows the login form again; else None."""
+def _is_login_form(form: Any, page_url: str) -> bool:
+    """Whether ``form`` is a login form: a password field, posted to the login page.
+
+    A form without an action posts back to the page it is on.
+    """
+    if form.select_one(_PASSWORD_INPUT) is None:
+        return False
+    action = str(form.get("action") or "").strip()
+    return "login" in (action or str(page_url or "")).lower()
+
+
+def _login_refusal(body: str, secrets_: Iterable[str], page_url: str = "") -> Optional[str]:
+    """Why the host refused a login, when its answer shows the login form again; else None.
+
+    An answer with a logout link or form is logged in, whatever else it
+    shows (a header login box, an account page's password field). Without
+    one, the login is refused only if the answer shows the login form again.
+    """
     soup = BeautifulSoup(str(body or ""), "html.parser")
-    if soup.select_one("input[type=password i]") is None:
+    if soup.select_one(_LOGGED_IN_SELECTOR) is not None:
+        return None
+    if not any(_is_login_form(form, page_url) for form in soup.select("form")):
         return None
     for selector in _LOGIN_MESSAGE_SELECTORS:
         element = soup.select_one(selector)
@@ -268,11 +287,11 @@ class TurboPlugin(ImageHostPlugin):
 
         gallery_name = self._safe_gallery_name(getattr(group, "title", "") or "Gallery")
         upload_id = self._upload_id()
+        helpers.claim_group_gallery(group, self.id)
         group.turbo_gallery_create = True
         group.turbo_gallery_name = gallery_name
         group.turbo_upload_id = upload_id
         group.gallery_name = gallery_name
-        group.gallery_service = self.id
 
     @staticmethod
     def _safe_gallery_name(title: str) -> str:
@@ -382,23 +401,32 @@ class TurboPlugin(ImageHostPlugin):
     def open_upload_session(
         self, transport, config: Dict[str, Any], creds: Dict[str, Any]
     ) -> Dict[str, str]:
-        """Log in when a username is set, then read the upload endpoint from the home page.
+        """Log in when a username and password are set, then read the upload endpoint.
 
         The steps of the legacy pre_request chain, on the job's session. A
         refused login and an upload page without an endpoint fail the job's
-        files with the host's message. Returns the upload URL and the job's
-        upload_id (the group's gallery id, else a new one, as the legacy spec).
+        files with the host's message. With only one of the two credentials
+        the files upload anonymously, as they did on the legacy path (which
+        posted the half login and ignored Turbo's answer). Returns the upload
+        URL and the job's upload_id (the group's gallery id, else a new one,
+        as the legacy spec).
         """
         username = (creds.get("turbo_user") or "").strip()
         password = str(creds.get("turbo_pass") or "")
         hidden = [password, username]
-        if username:
+        if bool(username) != bool(password):
+            missing = "password" if username else "username"
+            logger.warning(
+                f"TurboImageHost: no {missing} saved, so this upload goes anonymously; "
+                "save both to upload to your account"
+            )
+        if username and password:
             login = transport.post(f"{BASE_URL}/login.tu?", _login_form(username, password))
             if not login.ok:
                 raise TurboSessionError(
                     request_failure("TurboImageHost login failed", login, hidden)
                 )
-            refusal = _login_refusal(login.body, hidden)
+            refusal = _login_refusal(login.body, hidden, login.final_url)
             if refusal is not None:
                 raise TurboSessionError(f"TurboImageHost refused the login: {refusal}")
 

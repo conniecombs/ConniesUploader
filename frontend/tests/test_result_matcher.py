@@ -279,6 +279,31 @@ def test_extract_entries_keeps_page_order_and_merges_duplicates():
     ]
 
 
+def test_link_extractors_use_re2_character_classes_as_on_the_legacy_path():
+    # Go's RE2: \s is [\t\n\f\r ] (no NBSP, no vertical tab), \d is [0-9].
+    from modules.plugins import imagebam, turbo
+
+    turbo_page = (
+        "[url=https://www.turboimagehost.com/p/1001/a.jpg.html][img]https://s1d.t.com/t/1001.jpg"
+        "[/img][/url]\n"
+        "[url=https://www.turboimagehost.com/p/1004/z.jpg.html] [img]https://s1d.t.com/t/1004.jpg"
+        "[/img][/url]\n"
+        "[url=https://www.turboimagehost.com/p/1005/v.jpg.html]\x0b[img]https://s1d.t.com/t/1005.jpg"
+        "[/img][/url]"
+    )
+    assert [entry.name for entry in extract_result_entries(turbo.LINK_EXTRACTOR, turbo_page)] == [
+        "a.jpg"
+    ]
+    imagebam_page = (
+        "[URL=https://www.imagebam.com/view/ME1A][IMG]https://thumbs4.imagebam.com/aa/ME1A_t.jpg"
+        "[/IMG][/URL] "
+        "[URL=https://www.imagebam.com/view/ME1B][IMG]https://thumbs٤.imagebam.com/aa/ME1B_t.jpg"
+        "[/IMG][/URL]"
+    )
+    entries = extract_result_entries(imagebam.LINK_EXTRACTOR, imagebam_page)
+    assert [entry.image_url for entry in entries] == ["https://www.imagebam.com/view/ME1A"]
+
+
 def test_separate_thumbnail_extractor_fills_missing_thumbs_by_name():
     matcher = ResultPageMatcher(["/in/a.jpg", "/in/b.jpg"])
     for fp in matcher.files:
@@ -396,6 +421,48 @@ def test_an_uploaded_file_still_resolving_keeps_its_closer_entry():
     matcher.record_uploaded("/in/Scan 1.jpg")
     page = extract_result_entries(TURBO_LIKE, turbo_page([(7, "Scan_1.jpg")]))
     assert matcher.match("/in/Scan 1.jpg", page, final=False) is None
+
+
+def test_a_file_waiting_to_be_parsed_holds_back_only_the_entry_it_would_take():
+    # Turbo lists "Scan #1.jpg" and "Scan_1.jpg" both as Scan_1.jpg. In Go
+    # each uploaded file resolves in its own goroutine, so Scan_1.jpg takes
+    # its first exact entry at once and "Scan #1.jpg" the other. Here
+    # Scan_1.jpg may wait in the parse pool's queue: it must not hold back
+    # both entries until "Scan #1.jpg" runs out of looks.
+    files = ["/in/Scan #1.jpg", "/in/Scan_1.jpg"]
+    matcher = ResultPageMatcher(files)
+    matcher.record_uploaded("/in/Scan #1.jpg")
+    matcher.record_uploaded("/in/Scan_1.jpg")  # uploaded, its parse not started
+    page = extract_result_entries(TURBO_LIKE, turbo_page([(1, "Scan_1.jpg"), (2, "Scan_1.jpg")]))
+
+    assert entry_id(matcher.match("/in/Scan #1.jpg", page)) == 2
+    matcher.settle("/in/Scan #1.jpg")
+    assert entry_id(matcher.match("/in/Scan_1.jpg", page)) == 1
+
+
+def test_files_waiting_to_be_parsed_hold_back_one_entry_each_in_upload_order():
+    files = ["/in/Scan #1.jpg", "/a/Scan_1.jpg", "/b/Scan_1.jpg"]
+    matcher = ResultPageMatcher(files)
+    for fp in files:
+        matcher.record_uploaded(fp)
+    page = extract_result_entries(
+        TURBO_LIKE, turbo_page([(1, "Scan_1.jpg"), (2, "Scan_1.jpg"), (3, "Scan_1.jpg")])
+    )
+    assert entry_id(matcher.match("/in/Scan #1.jpg", page)) == 3
+    assert entry_id(matcher.match("/a/Scan_1.jpg", page)) == 1
+    assert entry_id(matcher.match("/b/Scan_1.jpg", page)) == 2
+
+
+def test_a_file_waiting_to_be_parsed_still_keeps_its_only_entry():
+    # "4411_beach.jpg" waits in the queue; "beach.jpg"'s own entry is not
+    # listed yet, and its last look must not take the other file's entry.
+    files = ["/in/beach.jpg", "/in/4411_beach.jpg"]
+    matcher = ResultPageMatcher(files)
+    matcher.record_uploaded("/in/beach.jpg")
+    matcher.record_uploaded("/in/4411_beach.jpg")
+    page = extract_result_entries(TURBO_LIKE, turbo_page([(5, "4411_beach.jpg")]))
+    assert matcher.match("/in/beach.jpg", page, final=True) is None
+    assert entry_id(matcher.match("/in/4411_beach.jpg", page)) == 5
 
 
 def test_a_settled_file_releases_its_reservations():
@@ -613,11 +680,13 @@ class PageTransport:
     def __init__(self, pages, cancel_after=None):
         self.pages = list(pages)
         self.gets = []
+        self.retries = []
         self.pauses = []
         self.cancel_after = cancel_after
 
-    def get(self, url, **_):
+    def get(self, url, *, retry=True, **_):
         self.gets.append(url)
+        self.retries.append(retry)
         page = self.pages[min(len(self.gets), len(self.pages)) - 1]
         if isinstance(page, int):
             return TransportResponse(
@@ -654,6 +723,9 @@ def test_resolve_from_result_page_polls_until_the_file_is_listed():
     assert result.thumb.endswith("2_a.jpg")
     assert result.gallery_url == "https://h/g/9"
     assert transport.pauses == [0.5, 1.0]
+    # Each look is one request, as in the legacy resolver: a failed look waits
+    # for the next one of the schedule, not for the sidecar's retry backoff.
+    assert transport.retries == [False, False, False]
 
 
 def test_resolve_from_result_page_reports_why_it_gave_up():

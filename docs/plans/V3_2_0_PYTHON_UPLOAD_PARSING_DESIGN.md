@@ -144,7 +144,7 @@ are produced in Python by `build_raw_upload_request`.
 | Pixhost | none | JSON: `show_url`, `th_url`; an empty `show_url` is a failure (no status field) |
 | Imgur | none | JSON: `success == true`; `data.link` for both viewer and thumbnail (as today) |
 | Vipr | POST login, GET home → `sess_id`, upload `endpoint`; no `sess_id` fails the group with Vipr's login message | POST the `fn/st/op/per_row` textareas back to `/` (one attempt), then regex `[URL=…][IMG]…[/IMG]`; an empty `fn` with a non-OK `st` fails with that reason; no gallery URL (as before) |
-| Turbo | optional POST login.tu? (an error status, or the login form shown again, fails the group with the host's message), GET home → endpoint resolved against /upload_html5.tu; one upload_id per job (the group's gallery id) | JSON success == true, newUrl (else /p/{id}/{filename}.html); poll that page (500 ms … 5 s, 7 looks) with result_matcher("filename") for [url=…/p/<id>/<name>.html][img]…[/img][/url]; input#imgCodeGG → gallery URL |
+| Turbo | optional POST login.tu?, only with both a username and a password (with one of them the files upload anonymously, as on the legacy path, and a warning is logged; an error status fails the group with the host's message, and so does an answer with no logout link or form (`a[href*='logout' i]`, `form[action*='logout' i]`) that shows the login form again: a form with a password field whose action, or the page it is on when it has none, names login), GET home → endpoint resolved against /upload_html5.tu; one upload_id per job (the group's gallery id) | JSON success == true, newUrl (else /p/{id}/{filename}.html); poll that page (500 ms … 5 s, 7 looks) with result_matcher("filename") for [url=…/p/<id>/<name>.html][img]…[/img][/url]; input#imgCodeGG → gallery URL |
 | ImageBam | optional login (GET /auth/login `_token`, POST; logged in when the answer has `form[action*='logout']`, else fail with the host's alert), GET / → `meta[name='csrf-token']`, POST /upload/session with the gallery fields (not retried when it creates a gallery) → `data` token | JSON `success` must be an http(s) link to the result page, else fail with the host's message; poll it (1/2/4 s) for `[URL=…/view/…][IMG]…` with `result_matcher("upload_order")` on a `sequential` job; `a#gallery-name` → gallery URL |
 
 ### 3.6 Parity
@@ -201,7 +201,7 @@ v3.2.x.
 Host notes from the M4 migrations (what the fixtures could not prove):
 
 - **Vipr:** 1 n/a (login required). 2 one Done with a vipr.im/<code> link and an i*.vipr.im/th thumbnail. 3 five files at Thread Limit 3 → one login, distinct links. 4 pick a folder in the dropdown (or auto-gallery) → files in that folder. 5 wrong password → every row "upload session setup failed: Vipr.im login failed: <Vipr's message>…"; if it says "no upload session after login", record the login page's error markup. 6 Stop. Also upload an unsupported type: the row quotes Vipr's reason. Repeat 2 with legacy_upload_parsing and compare. Unverified assumptions: login error markup selectors (XFileSharing-based), refusal reason in st, absolute endpoint, follow-up needs no Referer.
-- **TurboImageHost:** (1) home page still has endpoint: '…', newUrl absolute and its page lists BBCode. (2) after a correct login uploads succeed; a false "refused the login" (post-login page still showing a password field) would fail every logged-in upload, so check this first. (3) include names with spaces and #. (4) auto gallery with covers: two jobs share one upload_id; both land in one gallery and imgCodeGG opens. (5) wrong password: note Turbo's exact message. Unverified assumptions: wrong-password marker unknown; newUrl assumed absolute.
+- **TurboImageHost:** (1) home page still has endpoint: '…', newUrl absolute and its page lists BBCode; with only a username saved (no password) the upload goes anonymously and the log says so. (2) after a correct login uploads succeed; check that the post-login page has a logout link or form: without one, a header login box still on that page reads as a refused login and fails every logged-in upload. (3) include names with spaces and #, and a pair Turbo lists alike (Scan #1.jpg and Scan_1.jpg) in a batch of eight or more: every row gets a link. (4) auto gallery with covers: two jobs share one upload_id; both land in one gallery and imgCodeGG opens. (5) wrong password: note Turbo's exact message. Unverified assumptions: wrong-password marker unknown; newUrl assumed absolute.
 - **ImageBam:** 1 anonymous upload: only GET / and POST /upload/session before the upload. 2 log in and upload one file. 3 five files upload one at a time by design; open each link, own image. 4 auto-gallery with a cover: exactly one new gallery, cover first, gallery URL captured, {…} title kept. 5 wrong password: note ImageBam's message. 6 Stop mid-batch. 7 try an existing Gallery Token, and one batch with legacy_upload_parsing=true to compare. Unverified assumptions: refused-login markup; success absolute; result page lists stored-but-failed uploads in order.
 
 ## 6. Risks
@@ -286,7 +286,12 @@ the implementation differs from the text above:
   8.4: upload_order takes the newest entry after the last one the job holds,
   counting the uploads that reached the host since and failing a file whose
   entry is ambiguous; held-back entries are only those of files that finished
-  uploading and are still resolving; names are compared in NFC.
+  uploading and are still resolving; names are compared in NFC. Go resolved
+  each file in its own goroutine, while here an uploaded file may wait in the
+  four-worker parse pool's queue: until it first looks at the page it holds
+  back only the entry that look would take, not every entry it matches more
+  closely, so files whose names Turbo lists alike (`Scan #1.jpg` and
+  `Scan_1.jpg`) cannot starve a file that is polling.
 - For a `sequential` host the upload manager sends one file per raw job, each
   after the previous file was parsed (one session for all of them), so the
   result page changes by one upload between two resolutions. Go's own
@@ -377,7 +382,7 @@ until M5.
 | `extract_fields` CSS selector / `regex:` | `upload_results.html_field(body, selector)` (same attribute order: value, content, action, href, src, data-url, then text) or `json_value(data, path)` |
 | `dynamic` multipart field, `{token}` | the value from `session_values`, put into the request in `build_raw_upload_request` |
 | `{upload_id}`, `{file_size}`, `{filename}` | `helpers.per_file_upload_values(file_path)` |
-| `endpoint` value rewriting the upload URL | build the URL from the extracted endpoint yourself |
+| `endpoint` value rewriting the upload URL | `upload_results.resolve_upload_url(default_url, endpoint)`: resolved as Go did (dot segments removed, the path escaped, the default's query kept when the endpoint has none; an endpoint Go's url.Parse refuses leaves the default) |
 | `response_parser` (JSON) | `parse_json_upload(response, **json_parser_options(PARSER), file_path=…, secrets=session_state.secrets)` |
 | `response_parser` (HTML) | `html_field` on `response.body`; fail with `upload_failure(reason, response.status_code, response.body, session_state.secrets)` |
 | `response_parser.follow_up_request` | a `transport.post(...)` inside `parse_upload_response` |
@@ -385,8 +390,15 @@ until M5.
 | `file_match_mode: upload_order` | `upload_job_options -> {"sequential": True}` and `result_matcher("upload_order")` |
 
 Values are literal on the Python path: nothing substitutes `{name}` for you.
-Python `re` replaces RE2; avoid backtracking-only constructs. BeautifulSoup's
-`html.parser` replaces goquery's HTML5 parser; test selectors on recorded pages.
+Python `re` replaces RE2; avoid backtracking-only constructs. `html_field`'s
+`regex:` and the result-page extractors compile your pattern with
+`upload_results.compile_re2_pattern`, so `\s` is RE2's `[\t\n\f\r ]` (no NBSP,
+no vertical tab) and `\d`, `\w`, `\b` are ASCII; compile any other pattern
+that reads a page with it too. BeautifulSoup's `html.parser` replaces goquery's
+HTML5 parser; `html_field` skips what is inside `<noscript>` and keeps the first
+of a repeated attribute, as goquery does, and the quoted text of a failure reads
+the page's body as an HTML5 parser builds it (text before `<html>` or after
+`</html>` included). Test selectors on recorded pages.
 
 ### 8.3 Rules the framework enforces, and what is left to the plugin
 
@@ -401,8 +413,12 @@ Python `re` replaces RE2; avoid backtracking-only constructs. BeautifulSoup's
 - Every failure reason is redacted with `session_state.secrets` (the
   plugin's declared credentials and every `session_values` value of 4+
   characters): the parser's, and the transport errors the sidecar reports
-  for the job's uploads, which can quote the upload URL. Add tokens a parser
-  extracts with `session_state.add_secrets`.
+  for the job's uploads, which can quote the upload URL. They are redacted
+  as written and as a host may echo them escaped: URL-encoded (`%40`, `+`
+  for a space, either case of hex), JSON-escaped (`\/`, `\u00e9`,
+  surrogate pairs) or as HTML character references (`&eacute;`, `&#233;`).
+  Go's legacy path redacts the same forms (response_errors.go). Add tokens
+  a parser extracts with `session_state.add_secrets`.
   Build reasons with `upload_failure` / `request_failure`, which quote the
   host's JSON message or 200 characters of visible text, never a whole page.
 - A follow-up request that is not 2xx comes back with `ok == False` and
@@ -421,6 +437,13 @@ Python `re` replaces RE2; avoid backtracking-only constructs. BeautifulSoup's
 - Raise from `open_upload_session` to fail the whole group (for example a
   refused login: "Wrong password" must name the host's message, not a parse
   error). Raise from `build_raw_upload_request` to fail one file.
+- The upload manager sends a batch's gallery id only to the host the gallery
+  was picked for (`group.gallery_service`). A `prepare_group` that gives the
+  group a gallery of its own (an auto-gallery) calls
+  `helpers.claim_group_gallery(group, self.id)` before it fills the group's
+  gallery fields: that drops another host's gallery id, name and url, which
+  would otherwise reach this host as its gallery. One that gives the group no
+  gallery leaves `gallery_service` alone.
 
 ### 8.4 Result pages
 
@@ -436,6 +459,12 @@ with "cannot tell which result-page entry is this upload's"; needs
 `resolve_from_result_page` polls with your delays, extracts entries with your
 regex (named groups `image_url`, `thumb_url`, optional `filename`), matches,
 and returns `UploadResult(url, thumb, gallery_url)` or the reason it gave up.
+Each look is one request without the sidecar's retries (`retry=False`), as in
+the legacy resolver: a look that gets a 408, 429 or 5xx waits for the next
+look of your schedule, not for the retry backoff (about 14 s). Login and
+upload-page requests keep the default retries, as the legacy `pre_request`
+did; so a 503 there is reported as "HTTP 503" without the page, after the
+retries.
 
 ### 8.5 Tests a migration needs
 
