@@ -121,7 +121,12 @@ class UploadChecksMixin:
             self.upload_manager.result_queue = self.result_queue
 
             self.pix_galleries_to_finalize = []
+            # Copy, Open Output, Schedule Post and the summary describe this
+            # run only, not outputs of earlier runs in the session.
             self.clipboard_buffer = []
+            self.current_output_files = []
+            self.copyable_output_files = []
+            self.upload_run_files = {fp for files in pending_by_group.values() for fp in files}
             self._register_selected_pixhost_galleries_for_finalization(pending_by_group, upload_cfg)
 
             self._configure_start_button("Uploading...", "disabled")

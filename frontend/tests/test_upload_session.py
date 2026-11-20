@@ -118,6 +118,40 @@ def test_start_upload_keeps_imx_api_key_out_of_saved_settings(tmp_path, no_worke
     assert creds["imx_api"] == "SECRET-IMX-KEY"
 
 
+@pytest.mark.unit
+def test_second_upload_starts_with_fresh_output_and_counts_only_its_files(
+    tmp_path, no_worker_restart
+):
+    saved = []
+    app = _start_ready_app(tmp_path, saved)
+    earlier = FakeGroup("Alpha", ["/a/1.jpg"])
+    later = FakeGroup("Beta", ["/b/1.jpg"])
+    app.groups = [earlier, later]
+    app.file_widgets = {
+        "/a/1.jpg": _row(earlier, "success", upload_result=("http://v/a", "http://t/a")),
+        "/b/1.jpg": _row(later),
+    }
+    previous_output = str(tmp_path / "Alpha.txt")
+    app.current_output_files = [previous_output]
+    app.copyable_output_files = [previous_output]
+    app.clipboard_buffer = ["run one text"]
+
+    UploaderApp.start_upload(app)
+
+    assert app.current_output_files == []
+    assert app.copyable_output_files == []
+    assert app.clipboard_buffer == []
+    assert app.upload_total == 1
+
+    app.file_widgets["/b/1.jpg"]["state"] = "success"
+    summary = UploaderApp._build_completion_summary(app)
+
+    assert summary["uploaded_count"] == 1
+    assert summary["total_count"] == 1
+    assert summary["status_text"] == "Upload complete: 1 file uploaded."
+    assert summary["output_files"] == []
+
+
 def _finishing_app(tmp_path, monkeypatch, files, auto_copy=False):
     """Upload in progress; finalization runs inline and after() callbacks are captured."""
     monkeypatch.setattr(

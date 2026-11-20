@@ -764,8 +764,13 @@ class RuntimeMixin:
         self._set_completion_summary(summary)
 
     def _build_completion_summary(self) -> Dict[str, Any]:
+        run_files = self.upload_run_files
         with self.lock:
-            states = [data.get("state") for data in self.file_widgets.values()]
+            states = [
+                data.get("state")
+                for fp, data in self.file_widgets.items()
+                if not run_files or fp in run_files
+            ]
 
         uploaded_count = sum(1 for state in states if state == "success")
         failed_count = sum(1 for state in states if state == "failed")
@@ -1158,6 +1163,7 @@ class RuntimeMixin:
         self.current_output_files = []
         self.copyable_output_files = []
         self.clipboard_buffer = []
+        self.upload_run_files = set()
         for grp in self.groups:
             grp.destroy()
         self.groups.clear()

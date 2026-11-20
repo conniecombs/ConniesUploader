@@ -145,6 +145,9 @@ class UploaderApp(
         self._finalizing = False
         self.current_output_files = []
         self.copyable_output_files = []
+        # Files queued by the most recent Start; the completion summary counts
+        # only these.
+        self.upload_run_files = set()
         self.current_completion_summary = None
         self.pix_galleries_to_finalize = []
         self.output_dir = "Output"
