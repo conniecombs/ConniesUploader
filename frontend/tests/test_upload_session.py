@@ -670,10 +670,18 @@ def test_post_refused_by_the_poster_is_reported_instead_of_queued(tmp_path):
 
 @pytest.mark.unit
 def test_poster_notices_reach_the_activity_panel_through_the_ui_loop():
+    import threading
+
     app = _ui_app()
     app.progress_queue = queue.Queue()
 
-    UploaderApp._queue_activity_from_worker(app, "ViperGirls post was not sent.", "warning")
+    worker = threading.Thread(
+        target=UploaderApp._queue_activity_from_worker,
+        args=(app, "ViperGirls post was not sent.", "warning"),
+    )
+    worker.start()
+    worker.join(2)
+    assert app.activity == []  # only the Tk thread touches the activity panel
     UploaderApp._process_progress_queue(app)
 
     assert app.activity == [("ViperGirls post was not sent.", "warning")]

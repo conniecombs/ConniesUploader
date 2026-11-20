@@ -325,6 +325,10 @@ class RuntimeMixin:
 
     def _queue_activity_from_worker(self, message: str, level: str = "info") -> None:
         """Thread-safe add_activity: the UI loop shows it on the Tk thread."""
+        if threading.current_thread() is threading.main_thread():
+            # Already on the Tk thread, which must never block on its own queue.
+            self.add_activity(message, level)
+            return
         try:
             self.progress_queue.put(("activity", None, (str(message), str(level))), timeout=1.0)
         except queue.Full:
