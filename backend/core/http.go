@@ -181,6 +181,13 @@ func ExecuteHttpUploadWithData(ctx context.Context, client *http.Client, fp stri
 		Failure error
 	}
 	secrets := uploadSecrets(job, loginValues)
+	// The job's files share one resolve state: it records the order their
+	// uploads finished, how many attempts reached the host, and which
+	// result-page entries the files already hold.
+	var jobState *resolveState
+	if job != nil && job.ResolveSpec != nil {
+		jobState = jobResolveState(job)
+	}
 
 	res, err := RetryWithBackoff(ctx, retryConfig, func() (_ uploadResult, _ int, attemptErr error) {
 		pr, pw := io.Pipe()
@@ -249,7 +256,14 @@ func ExecuteHttpUploadWithData(ctx context.Context, client *http.Client, fp stri
 		// stalls or the host stops answering, and a failure after the body was
 		// sent is never retried because the host may have stored the file.
 		attempt := newUploadAttempt(ctx)
-		defer func() { attemptErr = attempt.finish(attemptErr) }()
+		defer func() {
+			attemptErr = attempt.finish(attemptErr)
+			// The host may have stored the image of any attempt it received,
+			// failed and retried ones included, and list it on the result page.
+			if jobState != nil && (attempt.bodySent.Load() || attempt.gotResponse.Load()) {
+				jobState.recordSent()
+			}
+		}()
 
 		req, err := http.NewRequestWithContext(attempt.ctx, method, uploadURL, attempt.body(pr))
 		if err != nil {
@@ -320,11 +334,7 @@ func ExecuteHttpUploadWithData(ctx context.Context, client *http.Client, fp stri
 	if res.Failure != nil {
 		return HTTPUploadResult{}, res.Failure
 	}
-	// The job's files share one resolve state: it records the order their
-	// uploads finished and which result-page entries they already hold.
-	var jobState *resolveState
-	if job != nil && job.ResolveSpec != nil {
-		jobState = jobResolveState(job)
+	if jobState != nil {
 		jobState.recordFinished(fp)
 	}
 	if jobState != nil && strings.TrimSpace(res.URL) != "" && strings.TrimSpace(res.Thumb) == "" {
@@ -1519,7 +1529,7 @@ func resolveFromResultPage(
 		}
 
 		if len(pending) > 0 {
-			lastErr = fmt.Errorf("result page missing %d link(s)", len(pending))
+			lastErr = matcher.missingError(len(pending))
 		}
 	}
 

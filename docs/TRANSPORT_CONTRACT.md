@@ -240,11 +240,23 @@ when their lookups run at the same time.
 - `first` / `single`: the first entry no other file of the job holds.
 - `upload_order`: for hosts whose result page lists every image of the
   job's shared upload session, in upload order, with links that carry no
-  file names. The n-th upload of the job to finish takes the n-th entry; a
-  page with exactly one entry belongs to that one upload (a session per
-  file). Order is only defined when the session's uploads do not overlap, so
-  Go runs such a job's files one at a time whatever `threads` says. The cost
-  is the job's upload parallelism: its files upload, and are resolved, one
+  file names. Order is only defined when the session's uploads do not
+  overlap, so Go runs such a job's files one at a time whatever `threads`
+  says, and each file takes the newest entry after the last one a file of
+  the job holds: its own last upload attempt. The page also lists the images
+  of attempts that failed after the host stored them (a lost answer, a 5xx
+  that was retried, a 2xx without a link), so the n-th successful upload is
+  not the n-th entry; a file never takes an earlier attempt's entry. Go
+  counts the attempts that reached the host since the last resolved file and
+  waits until the page lists that many new entries, since it may not list
+  the upload yet; on the last poll, fewer new entries mean failed attempts
+  the host did not keep, and the newest is taken. If the page lists more new
+  entries than attempts reached the host, the file fails with "cannot tell
+  which result-page entry is this upload's" and later files start after
+  those entries. A page with exactly one entry (a session per file) belongs
+  to that one upload. For `http_batch_resolve`, the files are taken to have
+  uploaded in the order given and the n-th takes the n-th entry. The cost is
+  the job's upload parallelism: its files upload, and are resolved, one
   after another.
 
 ## Guardrails
