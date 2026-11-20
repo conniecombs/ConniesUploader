@@ -66,6 +66,10 @@ type JobRequest struct {
 	SessionClient *http.Client      `json:"-"`
 	SessionValues map[string]string `json:"-"`
 
+	// resolveState is shared by the job's file workers while they match
+	// result-page entries (see resolve.go). Created on first use.
+	resolveState *resolveState
+
 	// EnqueuedAt is stamped when the job is read from stdin so a request's
 	// deadline counts the time it waited for a worker. Not serialized.
 	EnqueuedAt time.Time `json:"-"`
@@ -199,5 +203,5 @@ type BatchResolveSpec struct {
 	LinkExtractor    string `json:"link_extractor"`              // regex pattern with named groups: image_url, thumb_url, filename
 	ThumbExtractor   string `json:"thumb_extractor,omitempty"`   // optional separate regex for thumbnails
 	GalleryExtractor string `json:"gallery_extractor,omitempty"` // optional CSS selector or regex for album/gallery URL
-	FileMatchMode    string `json:"file_match_mode"`             // "filename", "contains"
+	FileMatchMode    string `json:"file_match_mode"`             // "filename" (default), "contains", "first"/"single", "upload_order"
 }

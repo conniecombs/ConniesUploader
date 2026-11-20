@@ -300,7 +300,14 @@ func ExecuteHttpUploadWithData(ctx context.Context, client *http.Client, fp stri
 	if res.Failure != nil {
 		return HTTPUploadResult{}, res.Failure
 	}
-	if job != nil && job.ResolveSpec != nil && strings.TrimSpace(res.URL) != "" && strings.TrimSpace(res.Thumb) == "" {
+	// The job's files share one resolve state: it records the order their
+	// uploads finished and which result-page entries they already hold.
+	var jobState *resolveState
+	if job != nil && job.ResolveSpec != nil {
+		jobState = jobResolveState(job)
+		jobState.recordFinished(fp)
+	}
+	if jobState != nil && strings.TrimSpace(res.URL) != "" && strings.TrimSpace(res.Thumb) == "" {
 		resolveSpec := *job.ResolveSpec
 		if strings.TrimSpace(resolveSpec.ResultURL) == "" {
 			resolveSpec.ResultURL = res.URL
@@ -323,8 +330,11 @@ func ExecuteHttpUploadWithData(ctx context.Context, client *http.Client, fp stri
 		if sessionClient != nil {
 			resolveClient = sessionClient
 		}
-		fileNames := map[string]string{fp: filepath.Base(fp)}
-		resolved, resolveData, resolveErr := ExecuteBatchResolveWithData(ctx, resolveClient, &resolveSpec, []string{fp}, fileNames)
+		// Match against every file of the job so this file never takes an
+		// entry that belongs to, or was already given to, another of them.
+		jobFiles := append([]string{fp}, job.Files...)
+		matcher := newResolveMatcher(resolveSpec.FileMatchMode, expectedFileNames(jobFiles, nil), jobState)
+		resolved, resolveData, resolveErr := resolveFromResultPage(ctx, resolveClient, &resolveSpec, []string{fp}, matcher)
 		if resolveErr != nil {
 			return HTTPUploadResult{}, fmt.Errorf("resolve upload result: %w", resolveErr)
 		}
@@ -1336,7 +1346,25 @@ func ExecuteBatchResolveWithData(
 	if spec == nil {
 		return nil, nil, fmt.Errorf("no resolve_spec")
 	}
+	// The files are taken to have finished uploading in the order given.
+	state := newResolveState()
+	for _, fp := range files {
+		state.recordFinished(fp)
+	}
+	matcher := newResolveMatcher(spec.FileMatchMode, expectedFileNames(files, fileNames), state)
+	return resolveFromResultPage(ctx, client, spec, files, matcher)
+}
 
+// resolveFromResultPage polls spec.ResultURL until every file has an entry
+// or the poll schedule ends. The matcher's claims keep two files from ever
+// taking the same entry.
+func resolveFromResultPage(
+	ctx context.Context,
+	client *http.Client,
+	spec *BatchResolveSpec,
+	files []string,
+	matcher *resolveMatcher,
+) (map[string][2]string, map[string]string, error) {
 	results := make(map[string][2]string, len(files))
 	metadata := make(map[string]string)
 	pending := make(map[string]struct{}, len(files))
@@ -1411,54 +1439,21 @@ func ExecuteBatchResolveWithData(
 			}
 		}
 
-		// Extract all links from the page.
-		matches := linkRe.FindAllStringSubmatch(bodyStr, -1)
-		for _, match := range matches {
-			imageURL := namedGroup(linkRe, match, "image_url")
-			thumbURL := namedGroup(linkRe, match, "thumb_url")
-			matchName := namedGroup(linkRe, match, "filename")
-
-			if imageURL == "" {
-				continue
-			}
-
-			// Match to pending files.
-			for fp := range pending {
-				expected := fileNames[fp]
-				if expected == "" {
-					expected = filepath.Base(fp)
-				}
-				if batchFileMatches(matchName, expected, imageURL, spec.FileMatchMode) {
-					results[fp] = [2]string{imageURL, thumbURL}
-					delete(pending, fp)
-					break
-				}
+		// Loose name matches wait for the last look, so a file whose own
+		// entry is not listed yet cannot take a similar name.
+		final := attempt == attempts-1
+		pendingFiles := make([]string, 0, len(pending))
+		for _, fp := range files {
+			if _, waiting := pending[fp]; waiting {
+				pendingFiles = append(pendingFiles, fp)
 			}
 		}
-
-		// Try thumb extractor separately if provided.
+		for fp, entry := range matcher.assign(extractResolveEntries(linkRe, bodyStr), pendingFiles, final) {
+			results[fp] = [2]string{entry.ImageURL, entry.ThumbURL}
+			delete(pending, fp)
+		}
 		if thumbRe != nil {
-			thumbMatches := thumbRe.FindAllStringSubmatch(bodyStr, -1)
-			for _, tm := range thumbMatches {
-				thumbURL := namedGroup(thumbRe, tm, "thumb_url")
-				matchName := namedGroup(thumbRe, tm, "filename")
-				if thumbURL == "" {
-					continue
-				}
-				for fp, result := range results {
-					if result[1] != "" {
-						continue
-					}
-					expected := fileNames[fp]
-					if expected == "" {
-						expected = filepath.Base(fp)
-					}
-					if batchFileMatches(matchName, expected, thumbURL, spec.FileMatchMode) {
-						results[fp] = [2]string{result[0], thumbURL}
-						break
-					}
-				}
-			}
+			matcher.assignThumbs(extractThumbEntries(thumbRe, bodyStr), results, final)
 		}
 
 		if len(pending) > 0 {
@@ -1486,83 +1481,4 @@ func namedGroup(re *regexp.Regexp, match []string, name string) string {
 		return strings.TrimSpace(match[2])
 	}
 	return ""
-}
-
-func batchFileMatches(matchName, expected, urlStr, mode string) bool {
-	expectedLower := normalizeBatchFileName(expected)
-	if expectedLower == "" {
-		return false
-	}
-	expectedComparable := comparableBatchFileName(expectedLower)
-
-	switch mode {
-	case "first", "single":
-		return true
-	case "contains":
-		if matchName != "" && batchFileNameContains(matchName, expectedLower, expectedComparable) {
-			return true
-		}
-		if urlStr != "" && batchFileNameContains(urlStr, expectedLower, expectedComparable) {
-			return true
-		}
-		return false
-	default: // "filename"
-		if matchName != "" {
-			normalized := normalizeBatchFileName(matchName)
-			if normalized == expectedLower || strings.HasSuffix(normalized, "_"+expectedLower) || strings.Contains(normalized, expectedLower) {
-				return true
-			}
-			comparable := comparableBatchFileName(normalized)
-			if comparable != "" && expectedComparable != "" && (comparable == expectedComparable || strings.Contains(comparable, expectedComparable)) {
-				return true
-			}
-		}
-		if urlStr != "" {
-			parsedURL, err := url.Parse(urlStr)
-			if err == nil {
-				baseName := normalizeBatchFileName(filepath.Base(parsedURL.Path))
-				if baseName == expectedLower || strings.Contains(baseName, expectedLower) {
-					return true
-				}
-				comparable := comparableBatchFileName(baseName)
-				if comparable != "" && expectedComparable != "" && (comparable == expectedComparable || strings.Contains(comparable, expectedComparable)) {
-					return true
-				}
-			}
-		}
-		return false
-	}
-}
-
-func normalizeBatchFileName(value string) string {
-	cleaned := strings.ToLower(strings.TrimSpace(value))
-	if cleaned == "" {
-		return ""
-	}
-	if parsedURL, err := url.Parse(cleaned); err == nil && parsedURL.Path != "" {
-		cleaned = filepath.Base(parsedURL.Path)
-	}
-	if unescaped, err := url.QueryUnescape(cleaned); err == nil {
-		cleaned = unescaped
-	}
-	cleaned = strings.TrimSuffix(cleaned, ".html")
-	return strings.TrimSpace(cleaned)
-}
-
-func batchFileNameContains(value, expectedLower, expectedComparable string) bool {
-	normalized := normalizeBatchFileName(value)
-	if strings.Contains(normalized, expectedLower) {
-		return true
-	}
-	comparable := comparableBatchFileName(normalized)
-	return comparable != "" && expectedComparable != "" && strings.Contains(comparable, expectedComparable)
-}
-
-func comparableBatchFileName(value string) string {
-	normalized := normalizeBatchFileName(value)
-	if normalized == "" {
-		return ""
-	}
-	normalized = strings.NewReplacer("_", " ", "-", " ").Replace(normalized)
-	return strings.Join(strings.Fields(normalized), " ")
 }
