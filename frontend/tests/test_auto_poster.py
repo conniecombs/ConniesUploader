@@ -325,3 +325,77 @@ def test_a_new_session_after_a_failed_login_queues_posts_again(monkeypatch):
 
     assert wait_until(lambda: not poster.is_running)
     assert FakeViperGirlsAPI.posted == [("123", "body")]
+
+
+def test_stop_records_and_reports_posts_queued_before_and_after_it():
+    poster = make_poster()
+    notices = []
+    poster.notify = lambda message, level: notices.append((message, level))
+    cancel = threading.Event()
+    poster.begin_session([0, 1])
+    poster.start_processing(lambda: True, cancel)
+    assert poster.queue_post(1, "post 1", "Thread", batch_name="Batch B") == ""
+
+    cancel.set()  # Stop (or Clear List)
+    assert wait_until(lambda: not poster.is_running)
+    # Batch 0 finishes right after Stop; nothing will ever post it.
+    refused = poster.queue_post(0, "post 0", "Thread", batch_name="Batch A")
+
+    assert refused == "cancelled before posting"
+    assert poster.post_queue == {}
+    assert poster.history == [
+        ("Batch B", "failure", "cancelled before posting"),
+        ("Batch A", "failure", "cancelled before posting"),
+    ]
+    assert notices == [
+        ('ViperGirls post for "Batch B" was not sent: cancelled before posting.', "warning")
+    ]
+    assert FakeViperGirlsAPI.posted == []
+
+
+def test_a_new_session_after_stop_queues_posts_again():
+    poster = make_poster()
+    cancel = threading.Event()
+    poster.begin_session([0])
+    poster.start_processing(lambda: True, cancel)
+    cancel.set()
+    assert wait_until(lambda: not poster.is_running)
+
+    uploading = [True]
+    poster.begin_session([0])
+    poster.start_processing(lambda: uploading[0], threading.Event())
+    assert poster.queue_post(0, "body", "Thread") == ""
+    uploading[0] = False
+
+    assert wait_until(lambda: not poster.is_running)
+    assert FakeViperGirlsAPI.posted == [("123", "body")]
+
+
+TARGET_SET_LATE = "the ViperGirls target was chosen after the upload started"
+
+
+def test_post_for_a_target_chosen_mid_upload_without_a_worker_is_recorded_and_reported():
+    poster = make_poster()
+    # No batch had a target at Start, so the app started no posting worker.
+    poster.begin_session([])
+
+    refused = poster.queue_post(0, "post 0", "Thread", batch_name="Batch A")
+
+    assert refused == TARGET_SET_LATE
+    assert poster.post_queue == {}
+    assert poster.history == [("Batch A", "failure", TARGET_SET_LATE)]
+
+
+def test_post_for_a_batch_not_registered_at_start_is_recorded_and_reported():
+    poster = make_poster()
+    uploading = [True]
+    poster.begin_session([1])
+    poster.start_processing(lambda: uploading[0], threading.Event())
+
+    refused = poster.queue_post(0, "post 0", "Thread", batch_name="Batch A")
+    uploading[0] = False
+
+    assert refused == TARGET_SET_LATE
+    assert ("Batch A", "failure", TARGET_SET_LATE) in poster.history
+    assert wait_until(lambda: not poster.is_running, timeout=5.0)
+    assert FakeViperGirlsAPI.posted == []
