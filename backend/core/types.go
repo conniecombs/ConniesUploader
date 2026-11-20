@@ -81,6 +81,18 @@ type JobRequest struct {
 	// session_close it is the session to close.
 	SessionID string `json:"session_id,omitempty"`
 
+	// RawResponse makes an http_upload job send FileRequests[file] for each
+	// file and report the host's answer as a raw result (see raw_upload.go)
+	// instead of running http_spec, response_parser and resolve_spec.
+	RawResponse  bool                         `json:"raw_response,omitempty"`
+	FileRequests map[string]*RawUploadRequest `json:"file_requests,omitempty"`
+	// Sequential uploads the job's files one at a time, in list order.
+	Sequential bool `json:"sequential,omitempty"`
+
+	// Session is the open transport session the job's uploads use, set while
+	// the job runs. Not serialized.
+	Session *TransportSession `json:"-"`
+
 	// SessionClient / SessionValues hold a once-per-job pre_request result so
 	// concurrent file uploads reuse login cookies and extracted tokens instead
 	// of re-authenticating on every file. Not serialized over JSON.

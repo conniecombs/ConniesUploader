@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"image"
 	_ "image/gif"
@@ -155,6 +156,10 @@ func handleJob(job JobRequest) {
 // ---------------------------------------------------------------------------
 
 func handleHttpUpload(job JobRequest) {
+	if job.RawResponse {
+		processUploadFiles(job, processRawFileCtx)
+		return
+	}
 	if job.HttpSpec == nil {
 		sendJobEvent(&job, OutputEvent{Type: "error", Msg: "http_upload requires http_spec field"})
 		return
@@ -235,14 +240,32 @@ func processUploadFiles(job JobRequest, processor func(context.Context, string, 
 		maxWorkers = n
 	}
 	// upload_order matches results by the order uploads finish, which is
-	// only defined when the job's uploads do not overlap.
-	if core.ResolveNeedsSequentialUploads(job.ResolveSpec) {
+	// only defined when the job's uploads do not overlap. A sequential job
+	// asks for that order itself; one worker takes the files in list order.
+	if job.Sequential || core.ResolveNeedsSequentialUploads(job.ResolveSpec) {
 		maxWorkers = 1
+	}
+
+	// A job on a transport session uploads with the session's client. The
+	// session stays in use (never reaped) until the job ends.
+	if job.SessionID != "" {
+		session, releaseSession, err := core.AcquireSession(job.SessionID)
+		if err != nil {
+			for _, fp := range job.Files {
+				sendJobEvent(&job, OutputEvent{Type: "status", FilePath: fp, Status: "Failed"})
+				sendJobEvent(&job, OutputEvent{Type: "error", FilePath: fp, Msg: err.Error()})
+			}
+			sendJobEvent(&job, OutputEvent{Type: "batch_complete", Status: "done"})
+			return
+		}
+		defer releaseSession()
+		job.Session = session
 	}
 
 	// Once-per-job session/login for hosts that declare pre_request (Vipr, Turbo, ImageBam).
 	// Concurrent files then share cookies/tokens instead of re-authenticating per file.
-	if len(job.Files) > 1 && job.HttpSpec != nil && job.HttpSpec.PreRequest != nil && !job.HttpSpec.PreRequest.OncePerFile {
+	// A raw job never runs pre_request: Python logs in on its transport session.
+	if !job.RawResponse && len(job.Files) > 1 && job.HttpSpec != nil && job.HttpSpec.PreRequest != nil && !job.HttpSpec.PreRequest.OncePerFile {
 		sendJobEvent(&job, OutputEvent{
 			Type: "log",
 			Msg:  fmt.Sprintf("Preparing shared upload session for %d files (service %s)", len(job.Files), job.Service),
@@ -372,6 +395,63 @@ func processFileGenericCtx(parent context.Context, fp string, job *JobRequest) {
 	case <-ctx.Done():
 		emitCancelledFiles(job, []string{fp})
 	}
+}
+
+// processRawFileCtx uploads one file of a raw job and reports the host's
+// answer as a result event with response_body, status_code and final_url,
+// then the non-terminal status "Uploaded". Python parses the answer and ends
+// the file with Done or Failed. Transport failures end it here with Failed,
+// a batch cancel with Cancelled.
+func processRawFileCtx(parent context.Context, fp string, job *JobRequest) {
+	ctx, cancel := context.WithCancel(parent)
+	defer cancel()
+	uploadClient := client
+	if job.Session != nil {
+		uploadClient = job.Session.Client
+		stop := context.AfterFunc(job.Session.Context(), cancel)
+		defer stop()
+	}
+
+	type rawResult struct {
+		result core.RawUploadResult
+		err    error
+	}
+	resultChan := make(chan rawResult, 1)
+	go func() {
+		result, err := core.ExecuteRawUpload(ctx, uploadClient, fp, job)
+		resultChan <- rawResult{result, err}
+	}()
+
+	var res rawResult
+	select {
+	case res = <-resultChan:
+	case <-ctx.Done():
+		res.err = ctx.Err()
+	}
+	if res.err != nil {
+		switch {
+		case errors.Is(parent.Err(), context.Canceled):
+			emitCancelledFiles(job, []string{fp})
+			return
+		case parent.Err() != nil:
+			res.err = fmt.Errorf("upload deadline passed: %w", res.err)
+		case job.Session != nil && job.Session.Closed():
+			res.err = core.ErrSessionClosed
+		}
+		sendJobEvent(job, OutputEvent{Type: "status", FilePath: fp, Status: "Failed"})
+		sendJobEvent(job, OutputEvent{Type: "error", FilePath: fp, Msg: res.err.Error()})
+		return
+	}
+	sendJobEvent(job, OutputEvent{
+		Type:     "result",
+		FilePath: fp,
+		Data: map[string]string{
+			"response_body": res.result.Body,
+			"status_code":   strconv.Itoa(res.result.StatusCode),
+			"final_url":     res.result.FinalURL,
+		},
+	})
+	sendJobEvent(job, OutputEvent{Type: "status", FilePath: fp, Status: "Uploaded"})
 }
 
 // ---------------------------------------------------------------------------
