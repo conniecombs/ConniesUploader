@@ -8,7 +8,6 @@ from __future__ import annotations
 import os
 import queue
 import threading
-import urllib.parse
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Mapping, Optional, Set, Tuple
@@ -20,6 +19,7 @@ from .gallery_cache import GalleryCache
 from .gallery_service import GalleryRecord, gallery_url_for_service
 from .plugin_manager import PluginManager
 from .plugins.base import uses_python_upload_parsing
+from .plugins.imx import canonical_thumbnail_url as canonical_imx_thumbnail_url
 from .sidecar import PROCESS_RESTARTED_MSG, SIDECAR_CRASHED_EVENT, SidecarBridge
 from .transport import (
     TransportCancelled,
@@ -523,16 +523,7 @@ class UploadManager:
     @staticmethod
     def _canonicalize_imx_thumbnail_url(thumb_url: str) -> str:
         """Return IMX thumbnail URLs in the durable image.imx.to/u/t form."""
-        thumb_url = str(thumb_url or "").strip()
-        if not thumb_url:
-            return ""
-
-        parsed = urllib.parse.urlsplit(thumb_url)
-        if parsed.hostname == "i.imx.to" and parsed.path.startswith("/t/"):
-            return urllib.parse.urlunsplit(
-                ("https", "image.imx.to", "/u" + parsed.path, parsed.query, parsed.fragment)
-            )
-        return thumb_url
+        return canonical_imx_thumbnail_url(thumb_url)
 
     @staticmethod
     def _remember_imx_gallery_use(group_obj: Any, cfg: Dict[str, Any]) -> None:

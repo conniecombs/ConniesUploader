@@ -31,7 +31,7 @@ import re
 import unicodedata
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Any, Iterable, List, Mapping, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 from urllib.parse import urlsplit, urlunsplit
 
 from bs4 import BeautifulSoup, NavigableString, Tag
@@ -409,6 +409,25 @@ def html_field(body: str, selector: str) -> str:
 
 
 # --- The common JSON upload parser ---------------------------------------------------
+
+_JSON_PARSER_KEYS = (
+    "url_path",
+    "thumb_path",
+    "status_path",
+    "success_value",
+    "url_template",
+    "thumb_template",
+)
+
+
+def json_parser_options(parser: Mapping[str, Any]) -> Dict[str, str]:
+    """``parse_json_upload`` options from a legacy JSON ``response_parser`` dict.
+
+    Lets a migrated plugin keep one parser definition for both paths.
+    """
+    if str(parser.get("type") or "json").lower() != "json":
+        raise ValueError(f"not a JSON response_parser: {parser.get('type')!r}")
+    return {key: str(parser.get(key) or "") for key in _JSON_PARSER_KEYS}
 
 
 def parse_json_upload(

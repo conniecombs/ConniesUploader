@@ -5,12 +5,15 @@
 """
 Imgur plugin - Schema-based implementation with Go sidecar uploads.
 
-Go-based upload plugin (upload handled by Go sidecar).
-Python side manages UI, configuration validation, and API key handling.
+Uploads run through the Go sidecar's transport; this plugin builds each
+upload request and reads Imgur's JSON answer (the Python upload path). It
+also manages UI, configuration validation, and API key handling.
 """
 
 from typing import Dict, Any, List
 from .base import ImageHostPlugin
+from . import helpers
+from ..upload_results import UploadResult, json_parser_options, parse_json_upload
 
 
 class ImgurPlugin(ImageHostPlugin):
@@ -205,15 +208,51 @@ class ImgurPlugin(ImageHostPlugin):
                 "Accept": "application/json",
             },
             "multipart_fields": multipart_fields,
-            "response_parser": {
-                "type": "json",
-                "url_path": "data.link",
-                "thumb_path": "",
-                "thumb_template": "{url_no_ext}" + size + "{url_dot_ext}",
-                "status_path": "success",
-                "success_value": "true",
-            },
+            "response_parser": self._response_parser(size),
         }
+
+    @staticmethod
+    def _response_parser(size: str) -> Dict[str, str]:
+        """How Imgur answers; shared by the legacy spec and the Python parser."""
+        return {
+            "type": "json",
+            "url_path": "data.link",
+            "thumb_path": "",
+            "thumb_template": "{url_no_ext}" + size + "{url_dot_ext}",
+            "status_path": "success",
+            "success_value": "true",
+        }
+
+    # --- Python upload path ---
+
+    def open_upload_session(self, transport, config: Dict[str, Any], creds: Dict[str, Any]):
+        """No login: carry the job's thumbnail size letter to the parser."""
+        return {
+            "thumbnail_size": self._thumbnail_suffix(
+                config.get("thumbnail_size") or config.get("imgur_thumb")
+            )
+        }
+
+    def build_raw_upload_request(
+        self,
+        file_path: str,
+        config: Dict[str, Any],
+        session_values: Dict[str, str],
+        creds: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """The same request as the legacy spec: Imgur's API needs no session."""
+        return helpers.raw_request_from_spec(self.build_http_request(file_path, config, creds))
+
+    def parse_upload_response(
+        self, file_path, response, transport, session_values, session_state
+    ) -> UploadResult:
+        size = self._thumbnail_suffix(session_values.get("thumbnail_size"))
+        return parse_json_upload(
+            response,
+            file_path=file_path,
+            secrets=session_state.secrets,
+            **json_parser_options(self._response_parser(size)),
+        )
 
     @classmethod
     def _thumbnail_suffix(cls, value: Any) -> str:

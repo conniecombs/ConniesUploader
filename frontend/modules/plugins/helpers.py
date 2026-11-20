@@ -481,3 +481,23 @@ def get_gallery_id(config: Dict[str, Any], group=None) -> Optional[str]:
 
     # Fall back to config
     return config.get("gallery_id") or None
+
+
+# ============================================================================
+# Python Upload Path Helpers
+# ============================================================================
+
+
+def raw_request_from_spec(spec: Dict[str, Any]) -> Dict[str, Any]:
+    """The raw upload request of a legacy ``build_http_request`` spec.
+
+    For hosts whose legacy spec is already fully resolved (only "file" and
+    "text" fields, no ``{token}``, no ``pre_request``): keeps the request and
+    drops the parser hooks the Python path does not use.
+    """
+    return {
+        "url": spec["url"],
+        "method": spec.get("method") or "POST",
+        "headers": dict(spec.get("headers") or {}),
+        "multipart_fields": dict(spec["multipart_fields"]),
+    }
