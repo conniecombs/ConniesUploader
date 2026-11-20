@@ -31,11 +31,14 @@ const (
 // Upload transfers have no wall-clock limit, so a large file on a slow uplink
 // takes as long as it needs. An upload attempt fails instead when no request
 // body bytes move for UploadStallTimeout, or when the host has not finished
-// answering UploadResponseTimeout after the body was sent. These are
-// variables so tests can shrink them.
+// answering UploadResponseTimeout after the body was handed to the network.
+// The response wait is long because the end of the body can still be queued
+// in OS and modem buffers at that point on a slow uplink (a host that drops
+// the connection is detected at once). These are variables so tests can
+// shrink them.
 var (
 	UploadStallTimeout    = 120 * time.Second
-	UploadResponseTimeout = 120 * time.Second
+	UploadResponseTimeout = 300 * time.Second
 )
 
 // RequestTimeout converts a per-request timeout in seconds into a duration,

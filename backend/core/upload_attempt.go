@@ -128,12 +128,14 @@ func (b *progressBody) Read(p []byte) (int, error) {
 	return n, err
 }
 
-// do sends req with client minus its whole-request Timeout; this attempt's
-// own limits apply instead.
+// do sends req with client minus its whole-request Timeout and its
+// transport's response-header timeout; this attempt's own limits apply
+// instead.
 func (a *uploadAttempt) do(client *http.Client, req *http.Request) (*http.Response, error) {
-	if client != nil && client.Timeout != 0 {
+	if client != nil {
 		transfer := *client
 		transfer.Timeout = 0
+		transfer.Transport = uploadTransport(client.Transport)
 		client = &transfer
 	}
 	resp, err := client.Do(req)
@@ -142,6 +144,29 @@ func (a *uploadAttempt) do(client *http.Client, req *http.Request) (*http.Respon
 		a.startResponseWait()
 	}
 	return resp, err
+}
+
+// uploadTransports caches, per shared transport, a clone without
+// ResponseHeaderTimeout, so uploads keep pooled connections of their own.
+var uploadTransports sync.Map // *http.Transport -> *http.Transport
+
+// uploadTransport returns rt for upload requests. When the transport has
+// finished writing the body, the last of it can still be queued in OS
+// buffers on a slow uplink, so a short header timeout counted from that
+// moment would fail uploads the host is still receiving. Uploads use
+// UploadResponseTimeout instead; other requests keep rt unchanged.
+func uploadTransport(rt http.RoundTripper) http.RoundTripper {
+	base, ok := rt.(*http.Transport)
+	if !ok || base.ResponseHeaderTimeout == 0 {
+		return rt
+	}
+	if cached, ok := uploadTransports.Load(base); ok {
+		return cached.(*http.Transport)
+	}
+	clone := base.Clone()
+	clone.ResponseHeaderTimeout = 0
+	cached, _ := uploadTransports.LoadOrStore(base, clone)
+	return cached.(*http.Transport)
 }
 
 // finish stops the timers, releases the attempt context and turns err into

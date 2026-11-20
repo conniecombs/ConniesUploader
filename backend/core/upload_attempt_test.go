@@ -200,6 +200,34 @@ func TestStalledUploadFailsAfterStallTimeout(t *testing.T) {
 	}
 }
 
+// The last body bytes can still sit in OS buffers on a slow uplink when the
+// transport finishes writing, so the transport's short response-header
+// timeout must not cut the upload's own response wait short.
+func TestUploadResponseWaitIgnoresTransportHeaderTimeout(t *testing.T) {
+	setUploadLimits(t, time.Second, 5*time.Second)
+	fp := writeUploadFile(t, 4096)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		time.Sleep(400 * time.Millisecond)
+		_, _ = w.Write([]byte(`{"url":"https://img.example/u","thumb":"https://img.example/t"}`))
+	}))
+	defer server.Close()
+
+	transport := &http.Transport{ResponseHeaderTimeout: 100 * time.Millisecond}
+	defer transport.CloseIdleConnections()
+	client := &http.Client{Transport: transport}
+	result, err := ExecuteHttpUploadWithData(context.Background(), client, fp, uploadJob(server.URL, fp, &RetryConfig{}))
+	if err != nil {
+		t.Fatalf("upload failed: %v", err)
+	}
+	if result.URL != "https://img.example/u" {
+		t.Fatalf("result url = %q", result.URL)
+	}
+	if transport.ResponseHeaderTimeout != 100*time.Millisecond {
+		t.Fatal("the shared transport's settings were changed")
+	}
+}
+
 // After the body is sent the wait for the host's answer is bounded, and the
 // upload is not sent again.
 func TestUploadResponseWaitIsBoundedAndNotRetried(t *testing.T) {

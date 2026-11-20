@@ -96,9 +96,11 @@ answer is then lost, the file fails with "no response from host after upload;
 check the host before retrying", because the host may already have stored it.
 
 Upload transfers have no wall-clock limit. An attempt fails when no body bytes
-move for 120 s (`upload stalled`), or when, after the body was sent, the
-host's response headers take longer than 60 s or the whole answer longer than
-120 s. Non-upload requests keep their own deadlines.
+move for 120 s (`upload stalled`), or when the host has not finished answering
+5 minutes after the whole body was handed to the network. That wait is long
+because on a slow uplink the end of the body can still be queued in OS and
+modem buffers at that point; a host that drops the connection is detected at
+once. Non-upload requests keep their own deadlines.
 
 ## Batches, Cancellation, and Per-File Validation
 
