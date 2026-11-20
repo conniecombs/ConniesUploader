@@ -24,6 +24,7 @@ class ImgurPlugin(ImageHostPlugin):
         "l": "Large (640 px)",
         "h": "Huge (1024 px)",
     }
+    DEFAULT_THUMBNAIL_SIZE = "m"
 
     @property
     def id(self) -> str:
@@ -91,9 +92,9 @@ class ImgurPlugin(ImageHostPlugin):
                 "type": "dropdown",
                 "key": "thumbnail_size",
                 "label": "Thumbnail Size",
-                "values": ["s", "b", "t", "m", "l", "h"],
+                "values": list(self.THUMBNAIL_SIZE_LABELS),
                 "value_labels": self.THUMBNAIL_SIZE_LABELS,
-                "default": "m",
+                "default": self.DEFAULT_THUMBNAIL_SIZE,
                 "required": True,
                 "help": "Controls the thumbnail size used in generated output.",
             },
@@ -192,6 +193,10 @@ class ImgurPlugin(ImageHostPlugin):
         if title:
             multipart_fields["title"] = {"type": "text", "value": title}
 
+        # Imgur serves thumbnails at the image link with a size letter appended
+        # to the image id, before the extension (AbCd123.jpg -> AbCd123m.jpg).
+        size = self._thumbnail_suffix(config.get("thumbnail_size") or config.get("imgur_thumb"))
+
         return {
             "url": "https://api.imgur.com/3/image",
             "method": "POST",
@@ -203,11 +208,23 @@ class ImgurPlugin(ImageHostPlugin):
             "response_parser": {
                 "type": "json",
                 "url_path": "data.link",
-                "thumb_path": "data.link",
+                "thumb_path": "",
+                "thumb_template": "{url_no_ext}" + size + "{url_dot_ext}",
                 "status_path": "success",
                 "success_value": "true",
             },
         }
+
+    @classmethod
+    def _thumbnail_suffix(cls, value: Any) -> str:
+        """Map a Thumbnail Size setting (letter or label) to Imgur's size letter."""
+        text = str(value or "").strip()
+        if text in cls.THUMBNAIL_SIZE_LABELS:
+            return text
+        for code, label in cls.THUMBNAIL_SIZE_LABELS.items():
+            if text == label:
+                return code
+        return cls.DEFAULT_THUMBNAIL_SIZE
 
     def initialize_session(self, config: Dict[str, Any], creds: Dict[str, Any]) -> Dict[str, Any]:
         """Stub - Go sidecar handles session initialization."""

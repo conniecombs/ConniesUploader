@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -14,6 +15,7 @@ import (
 	"net/http/cookiejar"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -127,9 +129,14 @@ func ExecuteHttpUploadWithData(ctx context.Context, client *http.Client, fp stri
 	for k, v := range job.SessionValues {
 		extractedValues[k] = v
 	}
+	// Per-file tokens. The job's spec is built once for all of its files, so
+	// anything that differs between files must be filled in here.
 	extractedValues["filename"] = filepath.Base(fp)
-	// Unique per-file token for hosts that embed {upload_id} in the URL.
+	// A random token unique to this file's upload.
 	extractedValues["upload_id"] = RandomString(12)
+	if info, statErr := os.Stat(fp); statErr == nil {
+		extractedValues["file_size"] = strconv.FormatInt(info.Size(), 10)
+	}
 
 	retryConfig := retryConfigForJob(job)
 
@@ -166,7 +173,12 @@ func ExecuteHttpUploadWithData(ctx context.Context, client *http.Client, fp stri
 	type uploadResult struct {
 		URL   string
 		Thumb string
+		// Failure is the host's definitive answer that this file has no
+		// usable result. It ends the upload without a retry: the host has
+		// already seen the file, so sending it again cannot help.
+		Failure error
 	}
+	secrets := uploadSecrets(job)
 
 	res, err := RetryWithBackoff(ctx, retryConfig, func() (uploadResult, int, error) {
 		pr, pw := io.Pipe()
@@ -263,14 +275,45 @@ func ExecuteHttpUploadWithData(ctx context.Context, client *http.Client, fp stri
 			}
 		}
 
-		urlStr, thumbStr, err := ParseHttpResponseWithClient(ctx, useClient, resp, &spec.ResponseParser, fp)
-		return uploadResult{URL: urlStr, Thumb: thumbStr}, resp.StatusCode, err
+		bodyBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return uploadResult{}, resp.StatusCode, err
+		}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			failure := uploadFailure("upload rejected", resp.StatusCode, bodyBytes, secrets)
+			return uploadResult{Failure: failure}, resp.StatusCode, nil
+		}
+
+		parsed, err := parseUploadResponse(ctx, useClient, resp, bodyBytes, &spec.ResponseParser, fp)
+		if err != nil {
+			var problem *responseProblem
+			if errors.As(err, &problem) {
+				failure := uploadFailure(problem.reason, resp.StatusCode, problem.body, secrets)
+				return uploadResult{Failure: failure}, resp.StatusCode, nil
+			}
+			return uploadResult{}, resp.StatusCode, err
+		}
+		if strings.TrimSpace(parsed.URL) == "" {
+			failure := uploadFailure("upload response had no image link", resp.StatusCode, parsed.Body, secrets)
+			return uploadResult{Failure: failure}, resp.StatusCode, nil
+		}
+		return uploadResult{URL: parsed.URL, Thumb: parsed.Thumb}, resp.StatusCode, nil
 	}, logger)
 
 	if err != nil {
 		return HTTPUploadResult{}, err
 	}
-	if job != nil && job.ResolveSpec != nil && strings.TrimSpace(res.URL) != "" && strings.TrimSpace(res.Thumb) == "" {
+	if res.Failure != nil {
+		return HTTPUploadResult{}, res.Failure
+	}
+	// The job's files share one resolve state: it records the order their
+	// uploads finished and which result-page entries they already hold.
+	var jobState *resolveState
+	if job != nil && job.ResolveSpec != nil {
+		jobState = jobResolveState(job)
+		jobState.recordFinished(fp)
+	}
+	if jobState != nil && strings.TrimSpace(res.URL) != "" && strings.TrimSpace(res.Thumb) == "" {
 		resolveSpec := *job.ResolveSpec
 		if strings.TrimSpace(resolveSpec.ResultURL) == "" {
 			resolveSpec.ResultURL = res.URL
@@ -293,8 +336,11 @@ func ExecuteHttpUploadWithData(ctx context.Context, client *http.Client, fp stri
 		if sessionClient != nil {
 			resolveClient = sessionClient
 		}
-		fileNames := map[string]string{fp: filepath.Base(fp)}
-		resolved, resolveData, resolveErr := ExecuteBatchResolveWithData(ctx, resolveClient, &resolveSpec, []string{fp}, fileNames)
+		// Match against every file of the job so this file never takes an
+		// entry that belongs to, or was already given to, another of them.
+		jobFiles := append([]string{fp}, job.Files...)
+		matcher := newResolveMatcher(resolveSpec.FileMatchMode, expectedFileNames(jobFiles, nil), jobState)
+		resolved, resolveData, resolveErr := resolveFromResultPage(ctx, resolveClient, &resolveSpec, []string{fp}, matcher)
 		if resolveErr != nil {
 			return HTTPUploadResult{}, fmt.Errorf("resolve upload result: %w", resolveErr)
 		}
@@ -522,13 +568,42 @@ func ParseHttpResponseWithClient(ctx context.Context, client *http.Client, resp 
 	if err != nil {
 		return "", "", err
 	}
+	parsed, err := parseUploadResponse(ctx, client, resp, bodyBytes, parser, fp)
+	return parsed.URL, parsed.Thumb, err
+}
+
+// parsedUpload is what an upload response parser found, plus the body it read
+// (after any follow-up request) so a missing link can be explained.
+type parsedUpload struct {
+	URL   string
+	Thumb string
+	Body  []byte
+}
+
+func parseUploadResponse(ctx context.Context, client *http.Client, resp *http.Response, bodyBytes []byte, parser *ResponseParserSpec, fp string) (parsedUpload, error) {
 	if parser != nil && parser.FollowUpRequest != nil {
+		var err error
 		bodyBytes, err = executeResponseFollowUp(ctx, client, resp, bodyBytes, parser.FollowUpRequest)
 		if err != nil {
-			return "", "", err
+			return parsedUpload{}, err
 		}
 	}
-	return parseHttpResponseBody(bodyBytes, parser, fp)
+	urlStr, thumbStr, err := parseHttpResponseBody(bodyBytes, parser, fp)
+	return parsedUpload{URL: urlStr, Thumb: thumbStr, Body: bodyBytes}, err
+}
+
+// responseProblem marks an upload response the host sent on purpose that has
+// no usable result (a failed status check, or a body the parser cannot read).
+type responseProblem struct {
+	reason string
+	body   []byte
+}
+
+func (p *responseProblem) Error() string {
+	if detail := hostMessage(p.body); detail != "" {
+		return p.reason + ": " + detail
+	}
+	return p.reason
 }
 
 func parseHttpResponseBody(bodyBytes []byte, parser *ResponseParserSpec, fp string) (string, string, error) {
@@ -536,19 +611,19 @@ func parseHttpResponseBody(bodyBytes []byte, parser *ResponseParserSpec, fp stri
 	case "", "json":
 		var data map[string]interface{}
 		if err := json.Unmarshal(bodyBytes, &data); err != nil {
-			return "", "", err
+			return "", "", &responseProblem{reason: "upload response was not valid JSON", body: bodyBytes}
 		}
 		if parser.StatusPath != "" && GetJSONValue(data, parser.StatusPath) != parser.SuccessValue {
-			return "", "", fmt.Errorf("upload failed: status check did not match")
+			return "", "", &responseProblem{reason: "upload failed: status check did not match", body: bodyBytes}
 		}
 
 		urlStr := GetJSONValue(data, parser.URLPath)
 		if urlStr == "" && parser.URLTemplate != "" {
-			urlStr = applyResponseTemplate(parser.URLTemplate, data, fp)
+			urlStr = applyResponseTemplate(parser.URLTemplate, data, fp, "")
 		}
 		thumbStr := GetJSONValue(data, parser.ThumbPath)
 		if thumbStr == "" && parser.ThumbTemplate != "" {
-			thumbStr = applyResponseTemplate(parser.ThumbTemplate, data, fp)
+			thumbStr = applyResponseTemplate(parser.ThumbTemplate, data, fp, urlStr)
 		}
 		return urlStr, thumbStr, nil
 	case "html":
@@ -561,10 +636,10 @@ func parseHttpResponseBody(bodyBytes []byte, parser *ResponseParserSpec, fp stri
 			return "", "", err
 		}
 		if urlStr == "" && parser.URLTemplate != "" {
-			urlStr = applyResponseTemplate(parser.URLTemplate, nil, fp)
+			urlStr = applyResponseTemplate(parser.URLTemplate, nil, fp, "")
 		}
 		if thumbStr == "" && parser.ThumbTemplate != "" {
-			thumbStr = applyResponseTemplate(parser.ThumbTemplate, nil, fp)
+			thumbStr = applyResponseTemplate(parser.ThumbTemplate, nil, fp, urlStr)
 		}
 		return urlStr, thumbStr, nil
 	default:
@@ -970,10 +1045,14 @@ func resolveUploadURL(specURL string, values map[string]string) (string, error) 
 
 var templateTokenPattern = regexp.MustCompile(`\{([^{}]+)\}`)
 
-func applyResponseTemplate(template string, data map[string]interface{}, fp string) string {
+// applyResponseTemplate fills a url_template or thumb_template. resultURL is
+// the parsed viewer link ("" while building the link itself); thumb templates
+// can reuse it through {url_no_ext} and {url_dot_ext}.
+func applyResponseTemplate(template string, data map[string]interface{}, fp string, resultURL string) string {
 	base := filepath.Base(fp)
 	ext := strings.TrimPrefix(filepath.Ext(base), ".")
 	stem := strings.TrimSuffix(base, filepath.Ext(base))
+	urlNoExt, urlDotExt := splitURLExtension(resultURL)
 
 	return templateTokenPattern.ReplaceAllStringFunc(template, func(token string) string {
 		key := strings.TrimSpace(strings.Trim(token, "{}"))
@@ -989,6 +1068,10 @@ func applyResponseTemplate(template string, data map[string]interface{}, fp stri
 				return ""
 			}
 			return "." + ext
+		case "url_no_ext":
+			return urlNoExt
+		case "url_dot_ext":
+			return urlDotExt
 		}
 		if data == nil {
 			return ""
@@ -998,6 +1081,28 @@ func applyResponseTemplate(template string, data map[string]interface{}, fp stri
 		}
 		return findJSONScalar(data, key)
 	})
+}
+
+// splitURLExtension splits a link into everything before the extension of its
+// path and the extension itself ("https://h/a/x.jpg" -> "https://h/a/x",
+// ".jpg"). The query and fragment are dropped.
+func splitURLExtension(link string) (string, string) {
+	link = strings.TrimSpace(link)
+	if link == "" {
+		return "", ""
+	}
+	parsed, err := url.Parse(link)
+	if err != nil {
+		return link, ""
+	}
+	parsed.RawQuery, parsed.ForceQuery, parsed.Fragment, parsed.RawFragment = "", false, "", ""
+	ext := path.Ext(parsed.Path)
+	if ext == "" {
+		return parsed.String(), ""
+	}
+	parsed.Path = strings.TrimSuffix(parsed.Path, ext)
+	parsed.RawPath = ""
+	return parsed.String(), ext
 }
 
 func findJSONScalar(value interface{}, key string) string {
@@ -1277,7 +1382,25 @@ func ExecuteBatchResolveWithData(
 	if spec == nil {
 		return nil, nil, fmt.Errorf("no resolve_spec")
 	}
+	// The files are taken to have finished uploading in the order given.
+	state := newResolveState()
+	for _, fp := range files {
+		state.recordFinished(fp)
+	}
+	matcher := newResolveMatcher(spec.FileMatchMode, expectedFileNames(files, fileNames), state)
+	return resolveFromResultPage(ctx, client, spec, files, matcher)
+}
 
+// resolveFromResultPage polls spec.ResultURL until every file has an entry
+// or the poll schedule ends. The matcher's claims keep two files from ever
+// taking the same entry.
+func resolveFromResultPage(
+	ctx context.Context,
+	client *http.Client,
+	spec *BatchResolveSpec,
+	files []string,
+	matcher *resolveMatcher,
+) (map[string][2]string, map[string]string, error) {
 	results := make(map[string][2]string, len(files))
 	metadata := make(map[string]string)
 	pending := make(map[string]struct{}, len(files))
@@ -1352,54 +1475,21 @@ func ExecuteBatchResolveWithData(
 			}
 		}
 
-		// Extract all links from the page.
-		matches := linkRe.FindAllStringSubmatch(bodyStr, -1)
-		for _, match := range matches {
-			imageURL := namedGroup(linkRe, match, "image_url")
-			thumbURL := namedGroup(linkRe, match, "thumb_url")
-			matchName := namedGroup(linkRe, match, "filename")
-
-			if imageURL == "" {
-				continue
-			}
-
-			// Match to pending files.
-			for fp := range pending {
-				expected := fileNames[fp]
-				if expected == "" {
-					expected = filepath.Base(fp)
-				}
-				if batchFileMatches(matchName, expected, imageURL, spec.FileMatchMode) {
-					results[fp] = [2]string{imageURL, thumbURL}
-					delete(pending, fp)
-					break
-				}
+		// Loose name matches wait for the last look, so a file whose own
+		// entry is not listed yet cannot take a similar name.
+		final := attempt == attempts-1
+		pendingFiles := make([]string, 0, len(pending))
+		for _, fp := range files {
+			if _, waiting := pending[fp]; waiting {
+				pendingFiles = append(pendingFiles, fp)
 			}
 		}
-
-		// Try thumb extractor separately if provided.
+		for fp, entry := range matcher.assign(extractResolveEntries(linkRe, bodyStr), pendingFiles, final) {
+			results[fp] = [2]string{entry.ImageURL, entry.ThumbURL}
+			delete(pending, fp)
+		}
 		if thumbRe != nil {
-			thumbMatches := thumbRe.FindAllStringSubmatch(bodyStr, -1)
-			for _, tm := range thumbMatches {
-				thumbURL := namedGroup(thumbRe, tm, "thumb_url")
-				matchName := namedGroup(thumbRe, tm, "filename")
-				if thumbURL == "" {
-					continue
-				}
-				for fp, result := range results {
-					if result[1] != "" {
-						continue
-					}
-					expected := fileNames[fp]
-					if expected == "" {
-						expected = filepath.Base(fp)
-					}
-					if batchFileMatches(matchName, expected, thumbURL, spec.FileMatchMode) {
-						results[fp] = [2]string{result[0], thumbURL}
-						break
-					}
-				}
-			}
+			matcher.assignThumbs(extractThumbEntries(thumbRe, bodyStr), results, final)
 		}
 
 		if len(pending) > 0 {
@@ -1427,83 +1517,4 @@ func namedGroup(re *regexp.Regexp, match []string, name string) string {
 		return strings.TrimSpace(match[2])
 	}
 	return ""
-}
-
-func batchFileMatches(matchName, expected, urlStr, mode string) bool {
-	expectedLower := normalizeBatchFileName(expected)
-	if expectedLower == "" {
-		return false
-	}
-	expectedComparable := comparableBatchFileName(expectedLower)
-
-	switch mode {
-	case "first", "single":
-		return true
-	case "contains":
-		if matchName != "" && batchFileNameContains(matchName, expectedLower, expectedComparable) {
-			return true
-		}
-		if urlStr != "" && batchFileNameContains(urlStr, expectedLower, expectedComparable) {
-			return true
-		}
-		return false
-	default: // "filename"
-		if matchName != "" {
-			normalized := normalizeBatchFileName(matchName)
-			if normalized == expectedLower || strings.HasSuffix(normalized, "_"+expectedLower) || strings.Contains(normalized, expectedLower) {
-				return true
-			}
-			comparable := comparableBatchFileName(normalized)
-			if comparable != "" && expectedComparable != "" && (comparable == expectedComparable || strings.Contains(comparable, expectedComparable)) {
-				return true
-			}
-		}
-		if urlStr != "" {
-			parsedURL, err := url.Parse(urlStr)
-			if err == nil {
-				baseName := normalizeBatchFileName(filepath.Base(parsedURL.Path))
-				if baseName == expectedLower || strings.Contains(baseName, expectedLower) {
-					return true
-				}
-				comparable := comparableBatchFileName(baseName)
-				if comparable != "" && expectedComparable != "" && (comparable == expectedComparable || strings.Contains(comparable, expectedComparable)) {
-					return true
-				}
-			}
-		}
-		return false
-	}
-}
-
-func normalizeBatchFileName(value string) string {
-	cleaned := strings.ToLower(strings.TrimSpace(value))
-	if cleaned == "" {
-		return ""
-	}
-	if parsedURL, err := url.Parse(cleaned); err == nil && parsedURL.Path != "" {
-		cleaned = filepath.Base(parsedURL.Path)
-	}
-	if unescaped, err := url.QueryUnescape(cleaned); err == nil {
-		cleaned = unescaped
-	}
-	cleaned = strings.TrimSuffix(cleaned, ".html")
-	return strings.TrimSpace(cleaned)
-}
-
-func batchFileNameContains(value, expectedLower, expectedComparable string) bool {
-	normalized := normalizeBatchFileName(value)
-	if strings.Contains(normalized, expectedLower) {
-		return true
-	}
-	comparable := comparableBatchFileName(normalized)
-	return comparable != "" && expectedComparable != "" && strings.Contains(comparable, expectedComparable)
-}
-
-func comparableBatchFileName(value string) string {
-	normalized := normalizeBatchFileName(value)
-	if normalized == "" {
-		return ""
-	}
-	normalized = strings.NewReplacer("_", " ", "-", " ").Replace(normalized)
-	return strings.Join(strings.Fields(normalized), " ")
 }

@@ -122,6 +122,14 @@ that carries a job `id` but no file applies to every file of that job that has
 not finished. After `batch_complete`, any file of that job without a terminal
 event is failed by Python.
 
+An upload is `Done` only when it produced a viewer link. A non-2xx upload
+response, a failed `status_path` check, a body the parser cannot read, or a
+response (after any resolution) without a link ends as `Failed`. The error
+names the HTTP status and the host's own message (a JSON `error`, `message`,
+`msg`, or similar field) or else a short plain-text snippet of the response,
+with job credentials redacted. Go does not re-send such an upload: the host
+already answered.
+
 ## Deprecated Compatibility Hooks
 
 These Go-side fields remain only for existing upload compatibility:
@@ -142,6 +150,63 @@ into the result events expected by the current upload manager. Those specs are
 host-defined in Python and Go remains host-name agnostic, but the execution of
 those parser specs is a legacy bridge to be retired when upload result parsing
 moves into Python.
+
+## Per-File Upload Tokens
+
+Python builds one `http_spec` for a whole upload job, from its first file, so
+a value that differs between files must not be baked into it. Go fills these
+tokens separately for each file, in the upload URL, headers, and multipart
+`text`/`dynamic` field values:
+
+| Token | Value |
+| --- | --- |
+| `{filename}` | the file's base name |
+| `{file_size}` | the file's size in bytes |
+| `{upload_id}` | a random 12-character token unique to this file's upload |
+
+Job credentials, config, context data, and shared session values are also
+available as `{key}`.
+
+A `response_parser`'s `url_template` and `thumb_template` take `{filename}`,
+`{basename}`, `{ext}`, `{dot_ext}` (all from the local file) and JSON response
+values by key or dotted path. A `thumb_template` can also build on the parsed
+link: `{url_no_ext}` is the link up to the extension of its path, without query
+or fragment, and `{url_dot_ext}` is that extension (`.jpg`), so
+`{url_no_ext}m{url_dot_ext}` turns `https://h/AbC.jpg` into `https://h/AbCm.jpg`.
+
+## Result Resolution (`resolve_spec`)
+
+When an upload job carries a `resolve_spec` and the upload response has a link
+but no thumbnail, Go fetches `result_url` (with `{url}` set to the parsed link)
+and matches the page's entries (`link_extractor` with named groups
+`image_url`, `thumb_url`, and optionally `filename`) to the file. Each file is
+resolved right after its own upload, but the files of one job share a claim
+set: an entry given to one file of the job is never given to another, even
+when their lookups run at the same time.
+
+`file_match_mode` decides which entry a file takes:
+
+- `filename` (default): the entry whose name (the `filename` group, else the
+  last segment of `image_url`) equals the file's base name, ignoring case.
+  Next, the same name once punctuation is ignored (a host that turned
+  `Scan #1.jpg` into `Scan__1.jpg`). Only on the last poll, when neither is
+  listed, a host name that contains the file's name as whole words
+  (`4411_beach.jpg` for `beach.jpg`). An entry that another file of the job
+  matches more closely is left for that file. Local file names are never
+  parsed as URLs; a page value is reduced to its last path segment only when
+  it is a link, and its percent-escapes are decoded. Files of the job with
+  the same name take the page's entries in the order their uploads finished.
+- `contains`: as `filename`, but the whole-word containment rule applies on
+  every poll.
+- `first` / `single`: the first entry no other file of the job holds.
+- `upload_order`: for hosts whose result page lists every image of the
+  job's shared upload session, in upload order, with links that carry no
+  file names. The n-th upload of the job to finish takes the n-th entry; a
+  page with exactly one entry belongs to that one upload (a session per
+  file). Order is only defined when the session's uploads do not overlap, so
+  Go runs such a job's files one at a time whatever `threads` says. The cost
+  is the job's upload parallelism: its files upload, and are resolved, one
+  after another.
 
 ## Guardrails
 

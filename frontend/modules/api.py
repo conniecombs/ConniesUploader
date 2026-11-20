@@ -184,6 +184,19 @@ def vipr_login(user: str, password: str, client: Any = None) -> Dict[str, str]:
     return {"vipr_user": user, "vipr_pass": password}
 
 
+def _vipr_gallery_service(creds: Dict[str, str]) -> Any:
+    """GalleryService owns the Vipr login check and folder parsing."""
+    from modules.gallery_service import GalleryService
+
+    return GalleryService(
+        bridge=SidecarBridge.get(),
+        creds={
+            "vipr_user": creds.get("vipr_user", ""),
+            "vipr_pass": creds.get("vipr_pass", ""),
+        },
+    )
+
+
 def get_vipr_metadata(creds: Dict[str, str]) -> Dict[str, Any]:
     """Get gallery metadata from Vipr service.
 
@@ -191,124 +204,45 @@ def get_vipr_metadata(creds: Dict[str, str]) -> Dict[str, Any]:
         creds: Credentials dictionary containing vipr_user and vipr_pass
 
     Returns:
-        Dictionary with "galleries" key containing list of gallery dicts
+        Dictionary with "galleries" key containing list of gallery dicts.
+        The list is empty when the login is not accepted.
     """
-    galleries = []
-    bridge = SidecarBridge.get()
-    if _login_vipr(creds, bridge=bridge, timeout=30):
-        resp = _fetch_vipr_file_manager(bridge=bridge, timeout=30)
-        body = resp.body if resp.ok else ""
-
-        from modules.gallery_service import parse_vipr_gallery_html
-
-        galleries = parse_vipr_gallery_html(body)
-
-    return {"galleries": galleries}
+    result = _vipr_gallery_service(creds).list_galleries("vipr.im")
+    if not result.ok:
+        logger.warning(f"Vipr gallery list: {result.message}")
+        return {"galleries": []}
+    return {"galleries": [dict(record.raw) for record in result.records]}
 
 
 def create_vipr_gallery(creds: Dict[str, str], name: str) -> Optional[Dict[str, str]]:
-    """Create a named Vipr gallery/folder through the File Manager form."""
+    """Create a named Vipr gallery/folder and return the folder it created."""
     name = (name or "").strip()
     if not name:
         return None
 
-    bridge = SidecarBridge.get()
-    if not _login_vipr(creds, bridge=bridge, timeout=30):
-        logger.warning("Failed to create Vipr gallery: login failed")
+    result = _vipr_gallery_service(creds).create_gallery("vipr.im", name)
+    if not result.ok or not result.record:
+        logger.warning(f"Failed to create Vipr gallery: {result.message}")
         return None
 
-    spec = build_transport_spec(
-        "https://vipr.im/",
-        method="POST",
-        use_cookies=True,
-        form_fields={
-            "op": "my_files",
-            "fld_id": "0",
-            "sort_field": "file_created",
-            "sort_order": "down",
-            "export_mode": "",
-            "domain": "vipr.im",
-            "create_new_folder": name,
-        },
-    )
-
-    resp = execute_transport_request(spec, timeout=30, service="vipr.im", bridge=bridge)
-    if not resp.ok:
-        logger.warning(f"Failed to create Vipr gallery: {resp.message or 'unknown error'}")
-        return None
-
-    from modules.gallery_service import parse_vipr_gallery_html
-
-    raw_records = parse_vipr_gallery_html(resp.body)
-    raw = next((record for record in raw_records if record.get("name") == name), None)
-    if not raw or not raw.get("id"):
-        logger.warning("Vipr gallery was created, but its folder ID could not be parsed")
-        return None
-
+    record = result.record
     return {
-        "id": str(raw.get("id") or ""),
-        "name": str(raw.get("name") or name),
-        "url": str(raw.get("url") or ""),
-        "gallery_id": str(raw.get("id") or ""),
-        "gallery_name": str(raw.get("name") or name),
-        "gallery_url": str(raw.get("url") or ""),
+        "id": record.id,
+        "name": record.name,
+        "url": record.url,
+        "gallery_id": record.id,
+        "gallery_name": record.name,
+        "gallery_url": record.url,
     }
 
 
 def delete_vipr_gallery(creds: Dict[str, str], gallery_id: str) -> bool:
-    """Delete a Vipr gallery/folder through the File Manager delete endpoint."""
+    """Delete a Vipr gallery/folder and confirm it is no longer listed."""
     gallery_id = (gallery_id or "").strip()
     if not gallery_id:
         return False
 
-    bridge = SidecarBridge.get()
-    if not _login_vipr(creds, bridge=bridge, timeout=30):
-        logger.warning("Failed to delete Vipr gallery: login failed")
-        return False
-
-    spec = build_transport_spec(
-        f"https://vipr.im/?op=my_files&fld_id=0&del_folder={gallery_id}",
-        method="GET",
-        use_cookies=True,
-    )
-
-    resp = execute_transport_request(spec, timeout=30, service="vipr.im", bridge=bridge)
-    if not resp.ok:
-        logger.warning(f"Failed to delete Vipr gallery: {resp.message or 'unknown error'}")
-        return False
-
-    from modules.gallery_service import parse_vipr_gallery_html
-
-    remaining = parse_vipr_gallery_html(resp.body)
-    return not any(str(record.get("id") or "") == gallery_id for record in remaining)
-
-
-def _login_vipr(
-    creds: Dict[str, str],
-    *,
-    bridge: Any,
-    timeout: float,
-) -> bool:
-    spec = build_transport_spec(
-        "https://vipr.im/",
-        method="POST",
-        form_fields={
-            "op": "login",
-            "login": creds.get("vipr_user", ""),
-            "password": creds.get("vipr_pass", ""),
-        },
-        use_cookies=True,
-    )
-    resp = execute_transport_request(spec, timeout=timeout, service="vipr.im", bridge=bridge)
-    if not resp.ok:
-        logger.warning(f"Vipr login failed: {resp.message or 'unknown error'}")
-    return resp.ok
-
-
-def _fetch_vipr_file_manager(*, bridge: Any, timeout: float):
-    spec = build_transport_spec(
-        "https://vipr.im/?op=my_files",
-        method="GET",
-        use_cookies=True,
-    )
-    return execute_transport_request(spec, timeout=timeout, service="vipr.im", bridge=bridge)
+    result = _vipr_gallery_service(creds).delete_gallery("vipr.im", gallery_id)
+    if not result.ok:
+        logger.warning(f"Failed to delete Vipr gallery {gallery_id}: {result.message}")
+    return result.ok

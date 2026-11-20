@@ -179,6 +179,11 @@ func processUploadFiles(job JobRequest, processor func(context.Context, string, 
 	if n := len(job.Files); n > 0 && maxWorkers > n {
 		maxWorkers = n
 	}
+	// upload_order matches results by the order uploads finish, which is
+	// only defined when the job's uploads do not overlap.
+	if core.ResolveNeedsSequentialUploads(job.ResolveSpec) {
+		maxWorkers = 1
+	}
 
 	// Once-per-job session/login for hosts that declare pre_request (Vipr, Turbo, ImageBam).
 	// Concurrent files then share cookies/tokens instead of re-authenticating per file.
@@ -278,6 +283,10 @@ func processFileGenericCtx(parent context.Context, fp string, job *JobRequest) {
 
 	select {
 	case res := <-resultChan:
+		if res.err == nil && strings.TrimSpace(res.url) == "" {
+			// A file is only Done when it has a link to show.
+			res.err = fmt.Errorf("upload finished without an image link")
+		}
 		if res.err != nil {
 			if parent.Err() == context.Canceled {
 				emitCancelledFiles(job, []string{fp})

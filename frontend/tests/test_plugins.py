@@ -648,6 +648,55 @@ class TestImxPlugin(unittest.TestCase):
         self.assertEqual(group.gallery_service, "imx.to")
         self.assertEqual(config["gallery_id"], "abc123")
 
+    def test_auto_gallery_seeds_with_the_first_image_the_gallery_api_accepts(self):
+        from modules.plugins import imx
+        from modules.imx_api import ImxGalleryUpload
+
+        plugin = imx.ImxPlugin()
+        self.assertIn(".webp", plugin.metadata["limits"]["allowed_formats"])
+        group = Mock()
+        group.title = "Beach"
+        group.gallery_id = ""
+        group.gallery_service = ""
+        context = {"pending_files": ["/set/01.webp", "/set/02.jpg", "/set/03.jpg"]}
+        upload = ImxGalleryUpload("g1", "Beach", "https://imx.to/i/2", "https://imx.to/t/2.jpg")
+
+        with patch.object(imx, "create_gallery_with_image", return_value=upload) as create:
+            plugin.prepare_group(
+                group,
+                {"auto_gallery": True},
+                context,
+                {"imx_api": "api-key", "imx_user": "user", "imx_pass": "secret"},
+            )
+
+        # The .webp file is not the gallery seed; it uploads into the gallery
+        # with the remaining files.
+        self.assertEqual(create.call_args.args[2], "/set/02.jpg")
+        self.assertEqual([item[0] for item in context["completed_uploads"]], ["/set/02.jpg"])
+        self.assertEqual(group.gallery_id, "g1")
+
+    def test_auto_gallery_without_a_seed_image_explains_why(self):
+        from modules.plugins import imx
+        from modules.imx_api import ImxApiError
+
+        plugin = imx.ImxPlugin()
+        group = Mock()
+        group.title = "Beach"
+        group.gallery_id = ""
+        group.gallery_service = ""
+
+        with patch.object(imx, "create_gallery_with_image") as create:
+            with self.assertRaises(ImxApiError) as raised:
+                plugin.prepare_group(
+                    group,
+                    {"auto_gallery": True},
+                    {"pending_files": ["/set/01.webp", "/set/02.webp"]},
+                    {"imx_api": "api-key", "imx_user": "user", "imx_pass": "secret"},
+                )
+
+        create.assert_not_called()
+        self.assertIn("JPG, PNG, or GIF", str(raised.exception))
+
     def test_build_http_request_uses_documented_api_header_and_selected_gallery(self):
         from modules.plugins import imx
 
@@ -687,6 +736,59 @@ class TestImxPlugin(unittest.TestCase):
         self.assertEqual(request["multipart_fields"]["gallery_id"]["value"], "group123")
 
 
+class TestTurboHttpSpec(unittest.TestCase):
+    """Turbo's spec is built once per job, from the job's first file."""
+
+    def test_per_file_fields_are_sidecar_tokens(self):
+        import os
+        import tempfile
+
+        from modules.plugins.turbo import TurboPlugin
+
+        with tempfile.TemporaryDirectory() as tmp:
+            first = os.path.join(tmp, "first.jpg")
+            with open(first, "wb") as handle:
+                handle.write(b"x" * 104)
+
+            fields = TurboPlugin().build_http_request(first, {}, {})["multipart_fields"]
+
+        # Values that differ per file are filled by the sidecar for each file;
+        # a literal taken from the first file would be sent for every file.
+        self.assertEqual(fields["qqtotalfilesize"]["value"], "{file_size}")
+        self.assertEqual(fields["qquuid"]["value"], "{upload_id}")
+        self.assertEqual(fields["qqfilename"]["value"], "{filename}")
+
+    def test_default_thumbnail_size_is_one_of_the_offered_values(self):
+        from modules.plugins.turbo import TurboPlugin
+
+        field = next(f for f in TurboPlugin().settings_schema if f.get("key") == "thumbnail_size")
+
+        self.assertIn(field["default"], field["values"])
+
+    def test_spec_without_thumbnail_setting_sends_the_schema_default(self):
+        from modules.plugins.turbo import TurboPlugin
+
+        plugin = TurboPlugin()
+        field = next(f for f in plugin.settings_schema if f.get("key") == "thumbnail_size")
+
+        fields = plugin.build_http_request("/tmp/image.jpg", {}, {})["multipart_fields"]
+
+        self.assertEqual(fields["thumb_size"]["value"], field["default"])
+
+    def test_saved_size_turbo_does_not_offer_is_sent_as_nearest_offered_size(self):
+        from modules.plugins.turbo import TurboPlugin
+
+        plugin = TurboPlugin()
+        sent = {
+            size: plugin.build_http_request("/tmp/i.jpg", {"thumbnail_size": size}, {})[
+                "multipart_fields"
+            ]["thumb_size"]["value"]
+            for size in ("180", "350", "999", "junk")
+        }
+
+        self.assertEqual(sent, {"180": "200", "350": "350", "999": "600", "junk": "200"})
+
+
 class TestImgurHttpSpec(unittest.TestCase):
     """Test Imgur generic HTTP runner specification."""
 
@@ -724,6 +826,35 @@ class TestImgurHttpSpec(unittest.TestCase):
         self.assertEqual(thumbnail_field["values"], ["s", "b", "t", "m", "l", "h"])
         self.assertEqual(thumbnail_field["value_labels"]["m"], "Medium (320 px)")
         self.assertNotIn("m", thumbnail_field["value_labels"].values())
+
+    def test_thumbnail_is_the_link_with_the_selected_size_suffix(self):
+        from modules.plugins.imgur import ImgurPlugin
+
+        plugin = ImgurPlugin()
+        field = next(f for f in plugin.settings_schema if f.get("key") == "thumbnail_size")
+        creds = {"imgur_client_id": "cid"}
+
+        for code in field["values"]:
+            for value in (code, field["value_labels"][code]):
+                parser = plugin.build_http_request("/tmp/i.jpg", {"thumbnail_size": value}, creds)[
+                    "response_parser"
+                ]
+                # Imgur serves a thumbnail at the image id plus a size letter,
+                # before the extension: https://i.imgur.com/AbCd123m.jpg
+                self.assertEqual(parser["thumb_path"], "", value)
+                self.assertEqual(
+                    parser["thumb_template"], "{url_no_ext}" + code + "{url_dot_ext}", value
+                )
+
+    def test_thumbnail_falls_back_to_medium_for_unknown_or_missing_size(self):
+        from modules.plugins.imgur import ImgurPlugin
+
+        plugin = ImgurPlugin()
+        creds = {"imgur_client_id": "cid"}
+        for config in ({}, {"thumbnail_size": "x"}, {"imgur_thumb": "l"}):
+            parser = plugin.build_http_request("/tmp/i.jpg", config, creds)["response_parser"]
+            expected = "l" if config.get("imgur_thumb") else "m"
+            self.assertEqual(parser["thumb_template"], "{url_no_ext}" + expected + "{url_dot_ext}")
 
     def test_imgur_validation_normalizes_readable_thumbnail_label(self):
         from modules.plugins.imgur import ImgurPlugin
@@ -957,7 +1088,9 @@ class TestImageBamPlugin(unittest.TestCase):
         self.assertEqual(request["response_parser"]["thumb_path"], "")
         self.assertEqual(request["resolve_spec"]["result_url"], "{url}")
         self.assertEqual(request["resolve_spec"]["gallery_extractor"], "a#gallery-name")
-        self.assertEqual(request["resolve_spec"]["file_match_mode"], "single")
+        # One upload session serves every file of the job and its page lists
+        # all of the session's images; view links carry no file names.
+        self.assertEqual(request["resolve_spec"]["file_match_mode"], "upload_order")
         self.assertIn("thumb_url", request["resolve_spec"]["link_extractor"])
 
     def test_build_http_request_can_create_gallery_during_session(self):

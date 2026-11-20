@@ -171,9 +171,23 @@ class ImageBamPlugin(ImageHostPlugin):
                     r"\[/IMG\]\[/URL\]"
                 ),
                 "gallery_extractor": "a#gallery-name",
-                "file_match_mode": "single",
+                # Every file of a job shares one upload session, whose result
+                # page lists all of the session's images, and view links carry
+                # no file names. The n-th upload to finish takes the n-th
+                # entry; the sidecar runs such a job's uploads one at a time.
+                "file_match_mode": "upload_order",
             },
         }
+
+    def upload_session_creates_gallery(self, config: Dict[str, Any]) -> bool:
+        """Whether each upload session built from ``config`` creates a new gallery.
+
+        ImageBam creates the gallery when the upload session opens with a
+        gallery title, so every job sent with this config makes its own.
+        """
+        return bool(
+            self._gallery_title_from_config(config) and not self._gallery_id_from_config(config)
+        )
 
     @staticmethod
     def _gallery_id_from_config(config: Dict[str, Any]) -> str:

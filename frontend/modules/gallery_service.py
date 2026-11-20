@@ -155,7 +155,7 @@ def parse_imx_gallery_html(html: str) -> Tuple[List[Dict[str, Any]], int]:
     """
     soup = BeautifulSoup(html or "", "html.parser")
     records: List[Dict[str, Any]] = []
-    seen = set()
+    by_id: Dict[str, Dict[str, Any]] = {}
     candidates = 0
 
     for link in soup.find_all("a", href=True):
@@ -168,18 +168,22 @@ def parse_imx_gallery_html(html: str) -> Tuple[List[Dict[str, Any]], int]:
         if not gallery_id:
             continue
 
-        if gallery_id in seen:
+        name = link.get_text(" ", strip=True)
+        record = by_id.get(gallery_id)
+        if record is not None:
+            # A gallery can have several links (a thumbnail, then its title);
+            # the first one with text names it.
+            if name and record["name"] == gallery_id:
+                record["name"] = name
             continue
 
-        name = link.get_text(" ", strip=True)
-        records.append(
-            {
-                "id": gallery_id,
-                "name": name or gallery_id,
-                "url": gallery_url_for_service("imx.to", gallery_id),
-            }
-        )
-        seen.add(gallery_id)
+        record = {
+            "id": gallery_id,
+            "name": name or gallery_id,
+            "url": gallery_url_for_service("imx.to", gallery_id),
+        }
+        records.append(record)
+        by_id[gallery_id] = record
 
     return records, candidates
 
@@ -234,6 +238,37 @@ def parse_vipr_gallery_html(html: str) -> List[Dict[str, Any]]:
             record["name"] = url_name
 
     return [records_by_id[gallery_id] for gallery_id in order if gallery_id != "0"]
+
+
+def vipr_session_id(html: str) -> str:
+    """Return the upload form's ``sess_id``; Vipr fills it only when logged in."""
+    field = BeautifulSoup(html or "", "html.parser").select_one("input[name='sess_id']")
+    return str(field.get("value") or "").strip() if field else ""
+
+
+def created_vipr_folder(
+    existing_ids: set, html: str, final_url: str, name: str
+) -> Optional[Dict[str, Any]]:
+    """Find the folder a create request added, given the folder ids listed before it.
+
+    A folder id named by the create response's URL wins. Otherwise the folder
+    must be new to the listing: the one with the requested name, or the only
+    new one. Returns None when no new folder is listed or the choice is
+    ambiguous; an older folder with the same name is never returned.
+    """
+    records = parse_vipr_gallery_html(html)
+    named_id = _extract_vipr_folder_id(final_url or "")
+    if named_id and named_id not in existing_ids:
+        listed = next((record for record in records if record.get("id") == named_id), None)
+        return listed or {"id": named_id, "name": name}
+
+    new_records = [record for record in records if record.get("id") not in existing_ids]
+    named = [record for record in new_records if record.get("name") == name]
+    if len(named) == 1:
+        return named[0]
+    if len(new_records) == 1:
+        return new_records[0]
+    return None
 
 
 def _extract_vipr_folder_id(href: str) -> str:
@@ -702,6 +737,14 @@ class GalleryService:
                     "Vipr.im login failed. Check the saved username and password.",
                     "vipr.im",
                 )
+            # Folder names need not be unique, so the new folder is the one
+            # that was not listed before the create request.
+            before = self._fetch_vipr_folders()
+            if not before.ok:
+                return self._failure_from_response("vipr.im", before.raw)
+            existing_ids = {
+                str(record.get("id") or "") for record in parse_vipr_gallery_html(before.body)
+            }
             response = self._transport_request(
                 "vipr.im",
                 "https://vipr.im/",
@@ -732,16 +775,22 @@ class GalleryService:
         if resp.get("status") != "success":
             return self._failure_from_response("vipr.im", resp)
 
-        data = resp.get("data")
-        body = str(data.get("response_body", "") or "") if isinstance(data, dict) else ""
-        raw_records = parse_vipr_gallery_html(body)
-        raw = next((record for record in raw_records if record.get("name") == name), None)
+        raw = created_vipr_folder(existing_ids, response.body, response.final_url, name)
+        if raw is None:
+            try:
+                after = self._fetch_vipr_folders()
+            except Exception as exc:
+                logger.error(f"Failed to list Vipr folders after creating one: {exc}")
+                after = None
+            if after is not None and after.ok:
+                raw = created_vipr_folder(existing_ids, after.body, "", name)
 
         record = normalize_gallery_record("vipr.im", raw or {})
         if not record:
             return self._result(
                 GalleryStatus.PARSE_FAILED,
-                "Vipr.im created the gallery, but its folder ID could not be parsed.",
+                f"Vipr.im did not list a new folder named '{name}' after the create "
+                "request. Refresh the gallery list to check.",
                 "vipr.im",
                 raw=resp,
             )
@@ -836,6 +885,12 @@ class GalleryService:
         )
 
     def _login_vipr(self) -> bool:
+        """Log in to Vipr and confirm the session is really logged in.
+
+        The login form answers HTTP 200 whether or not the password is right.
+        Like the upload's pre_request, success is judged by the home page's
+        upload form carrying a session id, which Vipr fills only when logged in.
+        """
         response = self._transport_request(
             "vipr.im",
             "https://vipr.im/",
@@ -847,7 +902,13 @@ class GalleryService:
             },
             timeout=20,
         )
-        return response.ok
+        if not response.ok:
+            return False
+        home = self._transport_request("vipr.im", "https://vipr.im/", timeout=20)
+        return home.ok and bool(vipr_session_id(home.body))
+
+    def _fetch_vipr_folders(self):
+        return self._transport_request("vipr.im", "https://vipr.im/?op=my_files", timeout=20)
 
     def _login_imagebam(self) -> bool:
         login_page = self._transport_request(
