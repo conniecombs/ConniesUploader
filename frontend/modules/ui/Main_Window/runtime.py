@@ -729,6 +729,7 @@ class RuntimeMixin:
             if done == total and not group.is_completed:
                 if failed:
                     group.mark_complete()
+                    group.completed_with_failures = True
                     self.log(
                         f"Warning: Output skipped for '{group.title}' because "
                         f"{failed} upload(s) failed."
@@ -740,6 +741,7 @@ class RuntimeMixin:
                     self.generate_failed_group_output(group, failed)
                 elif self._group_has_complete_results(group):
                     group.mark_complete()
+                    group.completed_with_failures = False
                     self.generate_group_output(group)
                 else:
                     logger.debug(
@@ -747,6 +749,30 @@ class RuntimeMixin:
                     )
         except Exception as e:
             logger.error(f"Group Update Error: {e}", exc_info=True)
+
+    def _recheck_group_output(self, group) -> None:
+        """Give a batch its output once removing rows left only successful uploads.
+
+        A batch that finished with failures got only a FAILED report. When the
+        failed or cancelled rows are removed, the rest of the batch is complete
+        and successful, so it now produces its normal output. A batch that
+        already has its normal output keeps it.
+        """
+        if not (group.files and group.is_completed):
+            return
+        if not getattr(group, "completed_with_failures", False):
+            return
+        with self.lock:
+            states = [self.file_widgets.get(fp, {}).get("state") for fp in group.files]
+        if any(state != "success" for state in states):
+            return
+        reset_completion = getattr(group, "reset_completion", None)
+        if callable(reset_completion):
+            reset_completion()
+        else:
+            group.is_completed = False
+            group.completed_with_failures = False
+        self._update_group_progress(group.files[0])
 
     def finish_upload(self) -> None:
         if not self.is_uploading or self._finalizing:
@@ -1044,14 +1070,24 @@ class RuntimeMixin:
             # Queue for auto-posting if needed
             tgt_thread = group.selected_thread
             if tgt_thread and tgt_thread != "Do Not Post":
-                self.auto_poster.queue_post(
-                    group.batch_index,
-                    text,
-                    tgt_thread,
-                    batch_name=self._batch_display_name(group),
-                )
-                message, level = self._vipergirls_queue_activity(group, tgt_thread)
-                self.add_activity(message, level)
+                if self._upload_in_progress():
+                    self.auto_poster.queue_post(
+                        group.batch_index,
+                        text,
+                        tgt_thread,
+                        batch_name=self._batch_display_name(group),
+                    )
+                    message, level = self._vipergirls_queue_activity(group, tgt_thread)
+                    self.add_activity(message, level)
+                else:
+                    # The poster runs only for an upload session; a post queued
+                    # now would wait unseen for the next one.
+                    self.add_activity(
+                        f'Output for "{self._batch_display_name(group)}" was not posted to '
+                        f'"{tgt_thread}": the upload had already finished. '
+                        "Use Schedule Post or post it manually.",
+                        "warning",
+                    )
 
             write_new_text_file(self.central_history_path, out_stem, ".txt", text)
 

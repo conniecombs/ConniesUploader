@@ -827,7 +827,10 @@ class DragDropMixin:
             else:
                 self.add_activity(f"Removed {len(removed)} images.", "warning")
         for group in touched_groups:
-            self._remove_empty_group_if_needed(group)
+            if not self._remove_empty_group_if_needed(group) and hasattr(
+                self, "_recheck_group_output"
+            ):
+                self._recheck_group_output(group)
         if hasattr(self, "_refresh_queue_state"):
             self._refresh_queue_state()
         if hasattr(self, "_refresh_selection_actions"):

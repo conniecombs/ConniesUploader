@@ -329,6 +329,7 @@ def test_output_for_a_deleted_template_falls_back_to_the_default(tmp_path):
     app, group = _template_app(tmp_path)
     app.template_mgr.set_template("Mine", "[b]#batch_name#[/b]\n#all_images#")
     app.template_mgr.rename_template("Mine", "Mine v2")
+    app.is_uploading = True
 
     UploaderApp.generate_group_output(app, group)
 
@@ -400,6 +401,129 @@ def test_template_editor_reports_changes_to_the_main_window(monkeypatch):
     UploaderApp.open_template_editor(app)
 
     assert captured["update_callback"] == app._on_templates_changed
+
+
+def _real_group(title, files=()):
+    """A CollapsibleGroupFrame with fake child widgets (no Tk interpreter)."""
+    from modules.widgets import CollapsibleGroupFrame
+
+    group = CollapsibleGroupFrame.__new__(CollapsibleGroupFrame)
+    group.title = title
+    group.files = list(files)
+    group.cover_files = []
+    group.cover_selection_manual = False
+    group.is_completed = False
+    group.completed_with_failures = False
+    group.selected_thread = "Do Not Post"
+    group.selected_template = "BBCode"
+    group.batch_index = 0
+    group.gallery_id = ""
+    group.gallery_url = ""
+    group.template_var = None
+    group.template_combo = None
+    group.lbl_title = FakeFrame()
+    group.lbl_counts = FakeLabel()
+    group.prog = FakeProgress()
+    group.winfo_exists = lambda: True
+    group.destroy = lambda: None
+    return group
+
+
+def _upload(app, files, results):
+    """Run one upload of ``files`` through the result/progress handling."""
+    app.is_uploading = True
+    app.upload_count = 0
+    app.upload_total = len(files)
+    for fp in files:
+        app.file_widgets[fp]["state"] = "queued"
+        viewer, thumb, status = results[fp]
+        app.result_queue.put((fp, viewer, thumb))
+        app.progress_queue.put(("status", fp, status))
+    UploaderApp._process_result_queue(app)
+    UploaderApp._process_progress_queue(app)
+    app.is_uploading = False
+
+
+@pytest.mark.unit
+def test_files_added_to_a_completed_batch_produce_output_again(tmp_path):
+    app = _ui_app(tmp_path)
+    app.progress_queue, app.result_queue = queue.Queue(), queue.Queue()
+    group = _real_group("Miscellaneous")
+    app.groups = [group]
+    group.add_file("/p/a.jpg")
+    app.file_widgets["/p/a.jpg"] = _row(group)
+    _upload(app, ["/p/a.jpg"], {"/p/a.jpg": ("http://v/a", "http://t/a", "Done")})
+    assert group.is_completed is True
+    assert len(app.current_output_files) == 1
+
+    # Later loose files reuse the existing "Miscellaneous" batch.
+    group.add_file("/p/b.jpg")
+    app.file_widgets["/p/b.jpg"] = _row(group)
+    assert group.is_completed is False
+    _upload(app, ["/p/b.jpg"], {"/p/b.jpg": ("http://v/b", "http://t/b", "Done")})
+
+    assert group.is_completed is True
+    assert len(app.current_output_files) == 2
+    assert Path(app.current_output_files[1]).read_text(encoding="utf-8") == (
+        "http://v/a\nhttp://v/b"
+    )
+
+
+@pytest.mark.unit
+def test_removing_the_failed_image_gives_the_batch_its_output(tmp_path):
+    app = _ui_app(tmp_path)
+    app.progress_queue, app.result_queue = queue.Queue(), queue.Queue()
+    app.image_refs = set()
+    app._clear_highlights = lambda *args: None
+    group = _real_group("Set", ["/s/1.jpg", "/s/2.jpg", "/s/bad.jpg"])
+    group.selected_thread = "T"
+    app.groups = [group]
+    for fp in group.files:
+        app.file_widgets[fp] = _row(group)
+    _upload(
+        app,
+        list(group.files),
+        {
+            "/s/1.jpg": ("http://v/1", "http://t/1", "Done"),
+            "/s/2.jpg": ("http://v/2", "http://t/2", "Done"),
+            "/s/bad.jpg": ("", "", "error: file rejected by host"),
+        },
+    )
+    assert [Path(p).name.endswith("_FAILED.txt") for p in app.current_output_files] == [True]
+
+    assert UploaderApp._delete_files(app, ["/s/bad.jpg"]) is True
+
+    assert group.is_completed is True
+    outputs = [p for p in app.current_output_files if not p.endswith("_FAILED.txt")]
+    assert len(outputs) == 1
+    assert Path(outputs[0]).read_text(encoding="utf-8") == "http://v/1\nhttp://v/2"
+    # The upload is over, so the output is not handed to a finished poster session.
+    app.auto_poster.queue_post.assert_not_called()
+    assert any("not posted" in message for message, _level in app.activity)
+
+
+@pytest.mark.unit
+def test_removing_a_successful_image_keeps_the_existing_output(tmp_path):
+    app = _ui_app(tmp_path)
+    app.progress_queue, app.result_queue = queue.Queue(), queue.Queue()
+    app.image_refs = set()
+    app._clear_highlights = lambda *args: None
+    group = _real_group("Set", ["/s/1.jpg", "/s/2.jpg"])
+    app.groups = [group]
+    for fp in group.files:
+        app.file_widgets[fp] = _row(group)
+    _upload(
+        app,
+        list(group.files),
+        {
+            "/s/1.jpg": ("http://v/1", "http://t/1", "Done"),
+            "/s/2.jpg": ("http://v/2", "http://t/2", "Done"),
+        },
+    )
+
+    UploaderApp._delete_files(app, ["/s/2.jpg"])
+
+    assert len(app.current_output_files) == 1
 
 
 def _finishing_app(tmp_path, monkeypatch, files, auto_copy=False):

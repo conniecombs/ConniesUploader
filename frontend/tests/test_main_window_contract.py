@@ -1854,6 +1854,7 @@ def test_generate_group_output_populates_supported_template_context(tmp_path):
     history_dir.mkdir()
 
     app = make_app()
+    app.is_uploading = True  # posts are queued only while the upload runs
     app.results = [(file_path, "https://img.test/view", "https://img.test/thumb")]
     app.settings = {"service": "pixhost.cc", "pix_thumb": "200"}
     app.template_mgr = FakeTemplateManager()
