@@ -400,7 +400,12 @@ Python `re` replaces RE2; avoid backtracking-only constructs. BeautifulSoup's
   `Cancelled`. Just return early.
 - `parse_upload_response` runs for several files of one job at once: keep
   shared state in `session_state` (use `session_state.lock` or
-  `get_or_create` for read-modify-write).
+  `get_or_create` for read-modify-write). Hold `session_state.lock` only
+  for such a step, never across a request or `transport.pause()`: the job's
+  other parsers wait for it. The framework's own bookkeeping (uploaded and
+  finished files, the result matchers, `secrets`) uses a separate internal
+  lock, so a plugin that holds `session_state.lock` too long slows only its
+  own job's parsers, never the event listener.
 - Raise from `open_upload_session` to fail the whole group (for example a
   refused login: "Wrong password" must name the host's message, not a parse
   error). Raise from `build_raw_upload_request` to fail one file.

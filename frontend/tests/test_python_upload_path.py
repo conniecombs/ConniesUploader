@@ -628,6 +628,57 @@ def test_a_final_refusal_is_not_counted_as_an_upload_that_reached_the_host(env, 
     assert job.state.uploaded_files == ("/r/b.jpg",)
 
 
+def test_a_parser_holding_the_session_state_lock_never_blocks_the_listener(env):
+    # A plugin that holds session_state.lock across a slow request (against
+    # the rules) must not stall the event listener, whose bookkeeping
+    # (record_uploaded, settle, and batch_complete under _jobs_lock) used to
+    # take the same lock.
+    held = threading.Event()
+    release = threading.Event()
+
+    def parse_holding_the_lock(fp, response):
+        state = env.plugin.calls[-1][-1]
+        with state.lock:
+            held.set()
+            release.wait(5)
+        return UploadResult(f"https://h/v/{os.path.basename(fp)}", "https://h/t")
+
+    env.plugin.parse = parse_holding_the_lock
+    files = ["/l/a.jpg", "/l/b.jpg", "/l/c.jpg"]
+    env.um._send_job(files, CFG, CREDS)
+    [job] = env.bridge.jobs()
+    state = env.um._session_jobs[job["id"]].state
+    env.um._handle_event(raw_result(job["id"], "/l/a.jpg"))
+    assert held.wait(2)
+
+    def listener():
+        env.um._handle_event(raw_result(job["id"], "/l/b.jpg"))
+        env.um._handle_event(
+            {
+                "id": job["id"],
+                "type": "status",
+                "file": "/l/c.jpg",
+                "status": "Failed",
+                "data": {"body_sent": "true"},
+            }
+        )
+        env.um._handle_event({"id": job["id"], "type": "error", "file": "/l/c.jpg", "msg": "lost"})
+        env.um._handle_event({"id": job["id"], "type": "batch_complete", "status": "done"})
+        state.result_matcher("upload_order")
+        assert "key-secret-99" in state.secrets
+
+    thread = threading.Thread(target=listener)
+    thread.start()
+    thread.join(2)
+    blocked = thread.is_alive()
+    release.set()
+    thread.join(5)
+    assert not blocked, "the listener waited for a lock the plugin held"
+    assert set(state.uploaded_files) == {"/l/a.jpg", "/l/b.jpg", "/l/c.jpg"}
+    wait_for(env, lambda: len(env.bridge.closes()) == 1)
+    assert status_of(env, "/l/a.jpg")[-1] == "Done"
+
+
 # --- Sequential jobs -----------------------------------------------------------------
 
 
