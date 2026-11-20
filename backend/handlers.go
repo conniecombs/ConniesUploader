@@ -114,6 +114,9 @@ func (l *serviceUploadLimiter) release() {
 }
 
 func handleJob(job JobRequest) {
+	if job.ReleaseQueueHold != nil {
+		defer job.ReleaseQueueHold()
+	}
 	ensureInitialized()
 	defer func() {
 		if r := recover(); r != nil {

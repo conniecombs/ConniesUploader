@@ -106,6 +106,11 @@ type JobRequest struct {
 	// EnqueuedAt is stamped when the job is read from stdin so a request's
 	// deadline counts the time it waited for a worker. Not serialized.
 	EnqueuedAt time.Time `json:"-"`
+
+	// ReleaseQueueHold ends the hold the stdin reader took on the job's
+	// transport session when it queued the job (see HoldSession); the job's
+	// handler calls it when the job ends. Not serialized.
+	ReleaseQueueHold func() `json:"-"`
 }
 
 type RateLimitConfig struct {

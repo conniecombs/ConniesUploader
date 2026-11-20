@@ -112,8 +112,12 @@ request run on it.
   requests running on them end at once (`transport session closed`). A
   `session_open` for a batch already cancelled fails with `batch cancelled`,
   also when the cancel races with the open.
-- Sessions unused for 30 minutes are reaped. A session is in use while an
-  upload job or request runs on it, and is never reaped then.
+- A session is reaped once it has been unused for 30 minutes, counted from
+  the end of its last use. It is in use, and never reaped, while a request
+  runs on it and from the moment Go reads an `http_upload` job that names it
+  until that job ends, including the time the job waits in the upload queue
+  behind other jobs. A `session_close` or a batch `cancel` still closes a
+  session in use.
 - `session_close` of a session that is not open answers `"closed": "false"`.
   It answers only a request that carries an `id`; without one it logs.
 - Both actions run on the request pool, never behind queued uploads.

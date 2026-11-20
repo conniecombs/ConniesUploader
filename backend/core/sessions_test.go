@@ -195,6 +195,46 @@ func TestIdleSessionsAreReapedButBusyOnesAreNot(t *testing.T) {
 	}
 }
 
+func TestAHeldSessionIsNotReapedUntilTheHoldEnds(t *testing.T) {
+	resetSessions(t)
+	old := SessionIdleTTL
+	SessionIdleTTL = 50 * time.Millisecond
+	t.Cleanup(func() { SessionIdleTTL = old })
+
+	held, _ := OpenSession(nil, "batch-hold")
+	release := HoldSession(held.ID)
+	time.Sleep(120 * time.Millisecond)
+	if n := ReapIdleSessions(); n != 0 || held.Closed() {
+		t.Fatalf("reaped %d sessions, want 0: a held session is in use", n)
+	}
+	session, releaseUse, err := AcquireSession(held.ID)
+	if err != nil || session != held {
+		t.Fatalf("acquire a held session: %v", err)
+	}
+	releaseUse()
+
+	// The idle time counts from the end of the last use.
+	release()
+	release() // a second release does nothing
+	if n := ReapIdleSessions(); n != 0 {
+		t.Fatalf("reaped %d sessions right after the hold ended, want 0", n)
+	}
+	time.Sleep(120 * time.Millisecond)
+	if n := ReapIdleSessions(); n != 1 || !held.Closed() {
+		t.Fatalf("reaped %d sessions after a full idle TTL, want 1", n)
+	}
+
+	// Holding a session that is not open holds nothing, and a close still
+	// closes a held session.
+	HoldSession("s-not-open")()
+	HoldSession("")()
+	closing, _ := OpenSession(nil, "batch-hold")
+	defer HoldSession(closing.ID)()
+	if !CloseSession(closing.ID) || !closing.Closed() {
+		t.Fatal("a held session was not closed by session_close")
+	}
+}
+
 func TestClosingASessionAbortsItsInFlightRequest(t *testing.T) {
 	resetSessions(t)
 	started := make(chan struct{})

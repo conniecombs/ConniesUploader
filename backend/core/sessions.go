@@ -28,7 +28,9 @@ var (
 	ErrBatchCancelled = errors.New("batch cancelled")
 )
 
-// SessionIdleTTL is how long a session may sit unused before it is reaped.
+// SessionIdleTTL is how long a session may sit unused before it is reaped:
+// counted from the end of its last use, and never while it is in use (an
+// upload job naming it is queued or running, or a request runs on it).
 // A variable so tests can shrink it.
 var SessionIdleTTL = 30 * time.Minute
 
@@ -128,10 +130,32 @@ func AcquireSession(id string) (*TransportSession, func(), error) {
 	if session == nil || session.closed {
 		return nil, func() {}, ErrUnknownSession
 	}
+	return session, useLocked(session), nil
+}
+
+// HoldSession marks session id in use until release is called, without
+// looking it up for use. The stdin reader holds the session of every queued
+// http_upload job that names one, so a job waiting behind other uploads for
+// longer than SessionIdleTTL still finds its session. Holding a session that
+// is not open holds nothing; the job then fails with ErrUnknownSession when
+// it starts. A close or a batch cancel still closes a held session.
+func HoldSession(id string) (release func()) {
+	sessionsMu.Lock()
+	defer sessionsMu.Unlock()
+	session := sessions[id]
+	if id == "" || session == nil || session.closed {
+		return func() {}
+	}
+	return useLocked(session)
+}
+
+// useLocked counts one use of session and returns the func that ends it.
+// Callers hold sessionsMu.
+func useLocked(session *TransportSession) func() {
 	session.active++
 	session.lastUsed = time.Now()
 	var once sync.Once
-	release := func() {
+	return func() {
 		once.Do(func() {
 			sessionsMu.Lock()
 			defer sessionsMu.Unlock()
@@ -139,7 +163,6 @@ func AcquireSession(id string) (*TransportSession, func(), error) {
 			session.lastUsed = time.Now()
 		})
 	}
-	return session, release, nil
 }
 
 // CloseSession closes one session and reports whether it was open.

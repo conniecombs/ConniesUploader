@@ -309,6 +309,11 @@ func runSidecar(input io.Reader, uploadWorkers int, shutdown <-chan struct{}) {
 			// Handled inline so a cancel is never stuck behind busy workers.
 			handleJob(job)
 		case "http_upload":
+			// The job's session stays in use while the job waits for an
+			// upload worker, so it is never reaped from under a queued job.
+			if job.SessionID != "" {
+				job.ReleaseQueueHold = core.HoldSession(job.SessionID)
+			}
 			uploads.push(job)
 		default:
 			requests.push(job)
