@@ -297,6 +297,12 @@ func ExecuteHttpUploadWithData(ctx context.Context, client *http.Client, fp stri
 				failure := uploadFailure(problem.reason, resp.StatusCode, problem.body, secrets)
 				return uploadResult{Failure: failure}, resp.StatusCode, nil
 			}
+			// A follow-up request the host refused: quote its message like
+			// any other refusal, never the whole page.
+			var statusErr *HTTPStatusError
+			if errors.As(err, &statusErr) {
+				return uploadResult{Failure: followUpFailure(statusErr, secrets)}, resp.StatusCode, nil
+			}
 			return uploadResult{}, resp.StatusCode, err
 		}
 		if strings.TrimSpace(parsed.URL) == "" {

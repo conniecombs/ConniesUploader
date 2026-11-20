@@ -39,11 +39,28 @@ var hostMessageKeys = []string{
 // status, and the host's own message, or else a short sanitized snippet of the
 // response. Secret values are redacted from the quoted text.
 func uploadFailure(reason string, status int, body []byte, secrets []string) error {
-	detail := truncateRunes(redactSecrets(hostMessageText(body), secrets), maxResponseSnippetRunes)
+	detail := uploadFailureDetail(body, secrets)
 	if detail == "" {
 		return fmt.Errorf("%s (HTTP %d)", reason, status)
 	}
 	return fmt.Errorf("%s (HTTP %d): %s", reason, status, detail)
+}
+
+// uploadFailureDetail is the part of a response an upload failure quotes: the
+// host's own message, else a short sanitized snippet, with secrets redacted.
+func uploadFailureDetail(body []byte, secrets []string) string {
+	return truncateRunes(redactSecrets(hostMessageText(body), secrets), maxResponseSnippetRunes)
+}
+
+// followUpFailure turns a failed response follow-up of an upload into an
+// upload failure. It stays an *HTTPStatusError with the follow-up's status,
+// but quotes only what uploadFailure would, never the whole page.
+func followUpFailure(statusErr *HTTPStatusError, secrets []string) error {
+	return &HTTPStatusError{
+		Context:    statusErr.Context,
+		StatusCode: statusErr.StatusCode,
+		Body:       uploadFailureDetail([]byte(statusErr.Body), secrets),
+	}
 }
 
 // hostMessage returns the host's error text from a JSON body, or a short plain
