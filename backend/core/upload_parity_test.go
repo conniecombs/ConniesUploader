@@ -66,7 +66,7 @@ func secretsJob(secrets []string) *JobRequest {
 
 func TestParityFailureMessages(t *testing.T) {
 	for _, tc := range loadParityFixture(t).FailureMessages {
-		got := uploadFailure(tc.Reason, tc.Status, []byte(tc.Body), uploadSecrets(secretsJob(tc.Secrets))).Error()
+		got := uploadFailure(tc.Reason, tc.Status, []byte(tc.Body), uploadSecrets(secretsJob(tc.Secrets), nil)).Error()
 		if got != tc.Want {
 			t.Errorf("%s:\n got %q\nwant %q", tc.Name, got, tc.Want)
 		}
