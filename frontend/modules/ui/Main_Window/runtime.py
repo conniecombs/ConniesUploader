@@ -706,6 +706,9 @@ class RuntimeMixin:
             return "Waiting"
         if "prepar" in normalized:
             return "Preparing"
+        if normalized == "uploaded":
+            # The host has the file; its answer is still being read.
+            return "Processing"
         if "upload" in normalized:
             return "Uploading"
         if "start" in normalized:
