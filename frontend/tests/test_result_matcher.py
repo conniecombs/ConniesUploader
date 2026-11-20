@@ -423,6 +423,48 @@ def test_an_uploaded_file_still_resolving_keeps_its_closer_entry():
     assert matcher.match("/in/Scan 1.jpg", page, final=False) is None
 
 
+def test_a_file_waiting_to_be_parsed_holds_back_only_the_entry_it_would_take():
+    # Turbo lists "Scan #1.jpg" and "Scan_1.jpg" both as Scan_1.jpg. In Go
+    # each uploaded file resolves in its own goroutine, so Scan_1.jpg takes
+    # its first exact entry at once and "Scan #1.jpg" the other. Here
+    # Scan_1.jpg may wait in the parse pool's queue: it must not hold back
+    # both entries until "Scan #1.jpg" runs out of looks.
+    files = ["/in/Scan #1.jpg", "/in/Scan_1.jpg"]
+    matcher = ResultPageMatcher(files)
+    matcher.record_uploaded("/in/Scan #1.jpg")
+    matcher.record_uploaded("/in/Scan_1.jpg")  # uploaded, its parse not started
+    page = extract_result_entries(TURBO_LIKE, turbo_page([(1, "Scan_1.jpg"), (2, "Scan_1.jpg")]))
+
+    assert entry_id(matcher.match("/in/Scan #1.jpg", page)) == 2
+    matcher.settle("/in/Scan #1.jpg")
+    assert entry_id(matcher.match("/in/Scan_1.jpg", page)) == 1
+
+
+def test_files_waiting_to_be_parsed_hold_back_one_entry_each_in_upload_order():
+    files = ["/in/Scan #1.jpg", "/a/Scan_1.jpg", "/b/Scan_1.jpg"]
+    matcher = ResultPageMatcher(files)
+    for fp in files:
+        matcher.record_uploaded(fp)
+    page = extract_result_entries(
+        TURBO_LIKE, turbo_page([(1, "Scan_1.jpg"), (2, "Scan_1.jpg"), (3, "Scan_1.jpg")])
+    )
+    assert entry_id(matcher.match("/in/Scan #1.jpg", page)) == 3
+    assert entry_id(matcher.match("/a/Scan_1.jpg", page)) == 1
+    assert entry_id(matcher.match("/b/Scan_1.jpg", page)) == 2
+
+
+def test_a_file_waiting_to_be_parsed_still_keeps_its_only_entry():
+    # "4411_beach.jpg" waits in the queue; "beach.jpg"'s own entry is not
+    # listed yet, and its last look must not take the other file's entry.
+    files = ["/in/beach.jpg", "/in/4411_beach.jpg"]
+    matcher = ResultPageMatcher(files)
+    matcher.record_uploaded("/in/beach.jpg")
+    matcher.record_uploaded("/in/4411_beach.jpg")
+    page = extract_result_entries(TURBO_LIKE, turbo_page([(5, "4411_beach.jpg")]))
+    assert matcher.match("/in/beach.jpg", page, final=True) is None
+    assert entry_id(matcher.match("/in/4411_beach.jpg", page)) == 5
+
+
 def test_a_settled_file_releases_its_reservations():
     files = ["/in/Scan 1.jpg", "/in/x/Scan_1.jpg"]
     matcher = ResultPageMatcher(files)

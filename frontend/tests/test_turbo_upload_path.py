@@ -683,6 +683,55 @@ def test_concurrent_parses_of_one_job_never_share_an_entry(monkeypatch):
     um.shutdown()
 
 
+def test_a_full_parse_pool_never_starves_a_file_of_its_entry(monkeypatch):
+    # Turbo lists "Scan #N.jpg" and "Scan_N.jpg" both as Scan_N.jpg. All
+    # eight uploads answer at once; the pool's four workers poll for the
+    # "Scan #N.jpg" files while the "Scan_N.jpg" files wait in its queue. In
+    # Go every file resolved in its own goroutine and all eight got a link.
+    assert upload_manager.POST_PROCESS_WORKERS == 4
+    names = [f"Scan #{n}.jpg" for n in range(1, 5)] + [f"Scan_{n}.jpg" for n in range(1, 5)]
+    files = [os.path.normpath(f"/in/{name}") for name in names]
+    page_entries = [(100 + n, f"Scan_{n}.jpg") for n in range(1, 5)]
+    page_entries += [(200 + n, f"Scan_{n}.jpg") for n in range(1, 5)]
+    bridge = TurboSidecar({"https://www.turboimagehost.com/done.tu?u=1": lambda: entries(*page_entries)})
+    monkeypatch.setattr(upload_manager.SidecarBridge, "get", staticmethod(lambda: bridge))
+    monkeypatch.setattr(turbo, "POLL_DELAYS_MS", (5, 5, 5, 5))
+    progress, results = queue.Queue(), queue.Queue()
+    um = upload_manager.UploadManager(progress, results, threading.Event())
+    um.current_batch_id = "b1"
+    um._send_job(files, {"service": "turboimagehost"}, {})
+    [job] = bridge.jobs()
+    answer = '{"success":true,"newUrl":"https://www.turboimagehost.com/done.tu?u=1"}'
+    for fp in files:
+        um._handle_event(
+            {
+                "id": job["id"],
+                "type": "result",
+                "file": fp,
+                "data": {"response_body": answer, "status_code": "200", "final_url": "x"},
+            }
+        )
+    um._handle_event({"id": job["id"], "type": "batch_complete", "status": "done"})
+
+    got = {}
+    deadline = time.monotonic() + 10
+    while len(got) < len(files) and time.monotonic() < deadline:
+        try:
+            fp, url, _ = results.get(timeout=0.1)
+        except queue.Empty:
+            continue
+        got[fp] = url
+    um.shutdown()
+
+    failed = [item for item in list(progress.queue) if str(item[2]).startswith("error")]
+    assert failed == [] and all(got.get(fp) for fp in files), failed
+    ids = {fp: int(url.split("/p/")[1].split("/")[0]) for fp, url in got.items()}
+    assert len(set(ids.values())) == len(files)
+    for n, (hashed, underscored) in enumerate(zip(files[:4], files[4:]), start=1):
+        # The two names are the same on the page: each takes one of the two entries.
+        assert {ids[hashed], ids[underscored]} == {100 + n, 200 + n}
+
+
 def test_covers_upload_in_their_own_job_into_the_same_gallery(monkeypatch):
     class Group:
         title = "Beach: Day #1"

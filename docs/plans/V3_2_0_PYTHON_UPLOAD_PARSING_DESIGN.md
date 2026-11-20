@@ -286,7 +286,12 @@ the implementation differs from the text above:
   8.4: upload_order takes the newest entry after the last one the job holds,
   counting the uploads that reached the host since and failing a file whose
   entry is ambiguous; held-back entries are only those of files that finished
-  uploading and are still resolving; names are compared in NFC.
+  uploading and are still resolving; names are compared in NFC. Go resolved
+  each file in its own goroutine, while here an uploaded file may wait in the
+  four-worker parse pool's queue: until it first looks at the page it holds
+  back only the entry that look would take, not every entry it matches more
+  closely, so files whose names Turbo lists alike (`Scan #1.jpg` and
+  `Scan_1.jpg`) cannot starve a file that is polling.
 - For a `sequential` host the upload manager sends one file per raw job, each
   after the previous file was parsed (one session for all of them), so the
   result page changes by one upload between two resolutions. Go's own
