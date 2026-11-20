@@ -1,0 +1,71 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 conniecombs
+
+"""Regression tests for folder/file import: bad files, limits, duplicates, sorting."""
+
+import os
+import queue
+from threading import Lock
+
+import pytest
+
+from modules import config
+from modules import file_handler
+from modules.exceptions import InvalidFileException
+from modules.ui.main_window import UploaderApp
+from tests.app_factory import make_app
+from tests.test_main_window_contract import FakeGroup, FakeLabel, FakeVar
+
+
+def _touch(path, data=b"x"):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as handle:
+        handle.write(data)
+    return path
+
+
+def _import_app(separate_batches=False):
+    app = make_app()
+    app.lock = Lock()
+    app.lbl_eta = FakeLabel()
+    app.var_show_previews = FakeVar(False)
+    app.var_separate_batches = FakeVar(separate_batches)
+    app.activity = []
+    app.import_checks = []
+    app.add_activity = lambda message, level="info": app.activity.append((level, message))
+    app._set_completion_summary = lambda summary: None
+    app._set_import_checks = lambda issues: app.import_checks.append(list(issues))
+    app._refresh_queue_state = lambda: None
+
+    def create_group(title, refresh=True):
+        group = FakeGroup(title)
+        app.groups.append(group)
+        return group
+
+    app._create_group = create_group
+    return app
+
+
+def _drain_rows(app):
+    while app.pending_ui_rows:
+        _epoch, filepath, group, _preview = app.pending_ui_rows.popleft()
+        group.add_file(filepath)
+        app.file_widgets[filepath] = {"group": group, "state": "pending"}
+        app.pending_filepaths.discard(filepath)
+
+
+# --- E10: size text --------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("size", "expected"),
+    [
+        (1048575, "1 MB"),
+        (1073741823, "1 GB"),
+        (1024 * 1024 - 5000, "1019.12 KB"),
+        (1048576, "1 MB"),
+    ],
+)
+def test_format_file_size_promotes_unit_when_rounding_reaches_1024(size, expected):
+    assert file_handler.format_file_size(size) == expected

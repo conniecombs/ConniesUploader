@@ -92,6 +92,10 @@ def format_file_size(size_bytes: Union[int, float]) -> str:
 
     if units[unit_index] == "B":
         return f"{size} B"
+    # 1048575 bytes is 1023.999 KB, which rounds to "1024.00": show "1 MB" instead.
+    if round(value, 2) >= 1024 and unit_index < len(units) - 1:
+        value /= 1024.0
+        unit_index += 1
     amount = f"{value:.2f}".rstrip("0").rstrip(".")
     return f"{amount} {units[unit_index]}"
 
