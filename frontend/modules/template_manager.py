@@ -1682,7 +1682,11 @@ class TemplateEditor(ctk.CTkToplevel):
         self._load_template_content(clean_name)
         messagebox.showinfo("Template Renamed", f"Renamed to: {clean_name}")
         if self.update_callback:
-            self.update_callback(clean_name)
+            if clean_name != old_name:
+                # Batches using the old name follow the rename.
+                self.update_callback(clean_name, renamed_from=old_name)
+            else:
+                self.update_callback(clean_name)
 
     def _reset_builtin_template(self, name: str) -> None:
         original = self.mgr.defaults[name]

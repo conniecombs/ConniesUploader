@@ -370,7 +370,7 @@ def _template_app(tmp_path):
 def test_output_for_a_deleted_template_falls_back_to_the_default(tmp_path):
     app, group = _template_app(tmp_path)
     app.template_mgr.set_template("Mine", "[b]#batch_name#[/b]\n#all_images#")
-    app.template_mgr.rename_template("Mine", "Mine v2")
+    app.template_mgr.delete_template("Mine")
     app.is_uploading = True
 
     UploaderApp.generate_group_output(app, group)
@@ -426,6 +426,45 @@ def test_template_changes_switch_batches_off_missing_templates(tmp_path):
     names = app.template_mgr.get_all_keys()
     stale.update_template_names.assert_called_once_with(names, "BBCode")
     current.update_template_names.assert_called_once_with(names, "BBCode")
+    assert [level for _message, level in app.activity] == ["warning"]
+
+
+@pytest.mark.unit
+def test_renaming_a_template_moves_its_batches_to_the_new_name(tmp_path):
+    from modules.template_manager import TemplateManager
+
+    app = _ui_app(tmp_path)
+    app.template_mgr = TemplateManager(str(tmp_path / "templates.json"))
+    app.template_mgr.set_template("Mine", "#all_images#")
+    renamed = _real_group("Old")
+    renamed.selected_template = "Mine"
+    other = _real_group("Other")
+    other.selected_template = "BBCode"
+    app.groups = [renamed, other]
+
+    app.template_mgr.rename_template("Mine", "Mine v2")
+    UploaderApp._on_templates_changed(app, "Mine v2", renamed_from="Mine")
+
+    assert renamed.selected_template == "Mine v2"
+    assert other.selected_template == "BBCode"
+    assert app.activity == []
+
+
+@pytest.mark.unit
+def test_deleting_a_template_moves_its_batches_to_the_default(tmp_path):
+    from modules.template_manager import TemplateManager
+
+    app = _ui_app(tmp_path)
+    app.template_mgr = TemplateManager(str(tmp_path / "templates.json"))
+    app.template_mgr.set_template("Mine", "#all_images#")
+    group = _real_group("Old")
+    group.selected_template = "Mine"
+    app.groups = [group]
+
+    app.template_mgr.delete_template("Mine")
+    UploaderApp._on_templates_changed(app, "BBCode")
+
+    assert group.selected_template == "BBCode"
     assert [level for _message, level in app.activity] == ["warning"]
 
 

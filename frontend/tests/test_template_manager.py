@@ -1902,6 +1902,20 @@ class TestTemplateEditorSavesTheEditedTemplate:
         assert _read_json(path)["My Post"] == "[b]MY EXPERIMENT[/b] #all_images#"
         assert infos[-1] == "Template 'My Post' updated."
 
+    def test_rename_tells_the_main_window_the_old_and_new_name(self, tmp_path, monkeypatch):
+        _path, mgr = self._two_templates(tmp_path)
+        editor = _make_editor(mgr, "Mine A")
+        reported = []
+        editor.update_callback = lambda name, **kwargs: reported.append((name, kwargs))
+        monkeypatch.setattr(template_manager.messagebox, "showinfo", lambda *_args: None)
+        _FakeInputDialog.answer = "Mine A2"
+        monkeypatch.setattr(template_manager.ctk, "CTkInputDialog", _FakeInputDialog)
+
+        editor.rename_current()
+
+        assert "Mine A2" in mgr.get_all_templates()
+        assert reported == [("Mine A2", {"renamed_from": "Mine A"})]
+
     def test_loading_a_template_hidden_by_the_search_clears_the_filters(self, tmp_path):
         mgr = TemplateManager(str(tmp_path / "templates.json"))
         mgr.set_template("Zebra", "zebra #all_images#")
