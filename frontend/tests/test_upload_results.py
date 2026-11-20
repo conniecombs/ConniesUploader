@@ -43,6 +43,22 @@ def test_upload_result_is_ok_only_with_a_link_and_no_error():
     assert UploadResult("https://h/v").failure_reason == ""
 
 
+def test_upload_result_fields_are_always_text():
+    # A parser that writes UploadResult(url=data.get("url")) may pass None,
+    # a number or bytes; every field reads as a string all the same.
+    empty = UploadResult(url=None, thumb=None, gallery_url=None, error=None)
+    assert (empty.url, empty.thumb, empty.gallery_url, empty.error) == ("", "", "", "")
+    assert empty.ok is False and empty.failure_reason == NO_LINK_ERROR
+
+    odd = UploadResult(url=b"https://h/v", thumb=12, gallery_url=["g"])
+    assert odd.url == "https://h/v" and odd.thumb == "12" and odd.gallery_url == "['g']"
+    assert odd.ok is True
+
+    assert UploadResult(url="https://h/v", error=0).ok is True, "a falsy error is no error"
+    assert UploadResult.failed(None).error == NO_LINK_ERROR
+    assert UploadResult.failed(ValueError("bad")).error == "bad"
+
+
 @pytest.mark.parametrize(
     ("path", "want"),
     [

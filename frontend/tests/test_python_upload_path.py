@@ -67,6 +67,19 @@ class FakeSidecar:
     def request_sync(self, payload, timeout=0, cancel_event=None):
         return self.request_with_generation(payload, timeout, cancel_event)[0]
 
+    # Like SidecarBridge: write only to process ``generation``. A test makes
+    # the sidecar restart by raising ``generation``.
+
+    def send_job_to(self, payload, generation):
+        if generation != self.generation:
+            return None
+        return self.send_job(payload)
+
+    def request_in_generation(self, payload, generation, timeout=0, cancel_event=None):
+        if generation != self.generation:
+            return {"id": payload.get("id"), "status": "error", "msg": PROCESS_RESTARTED_MSG}
+        return self.request_with_generation(payload, timeout, cancel_event)[0]
+
     def jobs(self):
         return [p for p in self.sent if p.get("action") == "http_upload"]
 
@@ -401,6 +414,47 @@ def test_a_parser_exception_fails_the_file(env):
     wait_for(env, lambda: len(env.bridge.closes()) == 1)
 
 
+def test_a_result_with_none_fields_still_ends_the_file(env):
+    # A parser that writes UploadResult(url=data.get("url"), ...) for an
+    # answer without those keys.
+    env.plugin.parse = lambda fp, r: UploadResult(url=None, thumb=None, gallery_url=None)
+    env.um._send_job(["/n/a.jpg"], CFG, CREDS)
+    finish_raw(env, env.bridge.jobs()[0], ["/n/a.jpg"])
+    wait_for(env, lambda: len(env.bridge.closes()) == 1)
+    assert status_of(env, "/n/a.jpg")[-1] == "error: Host returned no link"
+    assert env.result_items == [("/n/a.jpg", "", "")]
+    assert env.um._open_session_jobs == []
+
+
+def test_a_thumbnail_link_that_cannot_be_read_fails_the_file_instead_of_leaving_it(env):
+    # A host's page can hold a malformed link that a parser's pattern still
+    # captures; reading it (the thumbnail canonicalisation) raises ValueError.
+    env.plugin.parse = lambda fp, r: UploadResult("https://h/v/a", "https://i1.vipr.im]/th/a.jpg")
+    env.um._send_job(["/n/a.jpg", "/n/b.jpg"], CFG, CREDS)
+    finish_raw(env, env.bridge.jobs()[0], ["/n/a.jpg", "/n/b.jpg"])
+    wait_for(env, lambda: len(env.bridge.closes()) == 1)
+    for fp in ("/n/a.jpg", "/n/b.jpg"):
+        assert status_of(env, fp)[-1] == (
+            "error: could not read the host's answer: Invalid IPv6 URL"
+        ), status_of(env, fp)
+    assert sorted(env.result_items) == [("/n/a.jpg", "", ""), ("/n/b.jpg", "", "")]
+    assert env.um._open_session_jobs == []
+
+
+def test_a_failure_while_reporting_a_parsed_file_still_ends_it(env, monkeypatch):
+    def broken(thumb):
+        raise RuntimeError(f"cannot report {thumb} for key-secret-99")
+
+    monkeypatch.setattr(env.um, "_canonicalize_imx_thumbnail_url", broken)
+    env.um._send_job(["/n/a.jpg"], CFG, CREDS)
+    finish_raw(env, env.bridge.jobs()[0], ["/n/a.jpg"])
+    wait_for(env, lambda: len(env.bridge.closes()) == 1)
+    assert status_of(env, "/n/a.jpg")[-1] == (
+        "error: could not read the host's answer: cannot report https://h/t for [redacted]"
+    )
+    assert env.result_items == [("/n/a.jpg", "", "")]
+
+
 def test_session_open_failure_fails_the_group_with_the_reason(env):
     env.bridge.open_reply = {"status": "failed", "msg": "batch cancelled"}
     env.um._send_job(["/a.jpg", "/b.jpg"], CFG, CREDS)
@@ -451,6 +505,34 @@ def test_sidecar_failures_still_end_files(env):
     wait_for(env, lambda: len(env.bridge.closes()) == 1)
     assert status_of(env, "/a.jpg") == ["Failed", "error: upload stalled"]
     assert status_of(env, "/b.jpg") == ["error: no result received from sidecar"]
+
+
+def test_transport_errors_of_raw_uploads_are_redacted(env):
+    # Go quotes the upload URL in a transport error (a url.Error), and a
+    # plugin may have put a session value or a credential in it.
+    env.um._send_job(["/a.jpg", "/b.jpg"], CFG, CREDS)
+    [job] = env.bridge.jobs()
+    url = "https://h/upload?sess=sess-value-123&key=key-secret-99"
+    env.um._handle_event({"id": job["id"], "type": "status", "file": "/a.jpg", "status": "Failed"})
+    env.um._handle_event(
+        {
+            "id": job["id"],
+            "type": "error",
+            "file": "/a.jpg",
+            "msg": f'Post "{url}": dial tcp 127.0.0.1:1: connect: connection refused',
+        }
+    )
+    env.um._handle_event({"id": job["id"], "type": "error", "msg": f"Panic: bad request for {url}"})
+    wait_for(env, lambda: len(env.bridge.closes()) == 1)
+    redacted = "https://h/upload?sess=[redacted]&key=[redacted]"
+    assert status_of(env, "/a.jpg") == [
+        "Failed",
+        f'error: Post "{redacted}": dial tcp 127.0.0.1:1: connect: connection refused',
+    ]
+    assert status_of(env, "/b.jpg") == [f"error: Panic: bad request for {redacted}"]
+    assert not any(
+        "sess-value-123" in str(item) or "key-secret-99" in str(item) for item in env.statuses
+    )
 
 
 def test_a_job_level_error_ends_the_job_without_batch_complete(env):
@@ -512,6 +594,62 @@ def test_a_crash_of_an_older_process_leaves_the_session_alone(env):
     wait_for(env, lambda: "Done" in status_of(env, "/a.jpg") and len(env.bridge.closes()) == 1)
 
 
+# A restart can come before the upload manager has handled the crash report:
+# what Python sends for a session must still never reach the new process.
+
+
+def test_after_a_restart_a_parser_follow_up_never_reaches_the_new_process(env):
+    def parse_with_a_follow_up(fp, response):
+        transport = env.plugin.calls[-1][3]
+        page = transport.get("https://h/result")
+        if not page.ok:
+            return UploadResult.failed(f"result page: {page.message}")
+        return UploadResult("https://h/v", "https://h/t")
+
+    env.plugin.gate = threading.Event()
+    env.plugin.parse = parse_with_a_follow_up
+    env.um._send_job(["/a.jpg"], CFG, CREDS)
+    [job] = env.bridge.jobs()
+    env.um._handle_event(raw_result(job["id"], "/a.jpg"))  # its parser is running
+
+    env.bridge.generation = 2  # the sidecar died and a new process started
+    env.plugin.gate.set()
+    wait_for(env, lambda: any(s.startswith("error") for s in status_of(env, "/a.jpg")))
+    assert status_of(env, "/a.jpg")[-1] == f"error: result page: {PROCESS_RESTARTED_MSG}"
+    assert [r for r in env.bridge.requests if r["action"] == "http_request"] == []
+
+    env.um._handle_event({"type": "sidecar_crashed", "generation": 1, "msg": PROCESS_RESTARTED_MSG})
+    wait_for(env, lambda: env.um._open_session_jobs == [])
+    assert env.bridge.closes() == []
+
+
+def test_after_a_restart_a_sequential_job_never_sends_its_next_file_to_the_new_process(env):
+    env.plugin.options = {"sequential": True}
+    env.plugin.gate = threading.Event()
+    env.um._send_job(["/s/1.jpg", "/s/2.jpg"], CFG, CREDS)
+    [first] = env.bridge.jobs()
+    finish_raw(env, first, ["/s/1.jpg"])  # its parser is running
+
+    env.bridge.generation = 2  # the crash report has not been handled yet
+    env.plugin.gate.set()
+    wait_for(env, lambda: status_of(env, os.path.normpath("/s/2.jpg")))
+    assert status_of(env, os.path.normpath("/s/2.jpg")) == [INTERRUPTED]
+    assert status_of(env, os.path.normpath("/s/1.jpg"))[-1] == "Done"
+    assert len(env.bridge.jobs()) == 1, "the next file went to the new process"
+    wait_for(env, lambda: env.um._open_session_jobs == [])
+    assert env.bridge.closes() == []
+
+
+def test_after_a_restart_the_dead_session_is_never_closed_on_the_new_process(env):
+    env.um._send_job(["/a.jpg"], CFG, CREDS)
+    [job] = env.bridge.jobs()
+    env.bridge.generation = 2  # the job's last events were read before the crash
+    finish_raw(env, job, ["/a.jpg"])
+    wait_for(env, lambda: "Done" in status_of(env, "/a.jpg") and not env.um._open_session_jobs)
+    time.sleep(0.1)
+    assert env.bridge.closes() == [], "a close for a dead session reached the new process"
+
+
 def test_a_failed_upload_whose_body_reached_the_host_is_recorded(env):
     env.um._send_job(["/a.jpg", "/b.jpg"], CFG, CREDS)
     [job] = env.bridge.jobs()
@@ -529,6 +667,85 @@ def test_a_failed_upload_whose_body_reached_the_host_is_recorded(env):
     assert state.is_settled("/a.jpg")
     env.um._handle_event({"id": job["id"], "type": "status", "file": "/b.jpg", "status": "Failed"})
     assert state.uploaded_files == ("/a.jpg",)
+
+
+@pytest.mark.parametrize("status_code", ["429", "503"])
+def test_a_final_refusal_is_not_counted_as_an_upload_that_reached_the_host(env, status_code):
+    # The sidecar re-sends a refused (429/503) upload; once its attempts run
+    # out the last refusal arrives as the raw result. The host did not take
+    # that file, so result-page matching must not wait for it to be listed.
+    env.plugin.options = {"sequential": True}
+    env.plugin.parse = lambda fp, r: (
+        UploadResult.failed(f"HTTP {r.status_code}")
+        if r.status_code != 200
+        else UploadResult(f"https://h/v/{os.path.basename(fp)}", "https://h/t")
+    )
+    env.um._send_job(["/r/a.jpg", "/r/b.jpg"], CFG, CREDS)
+    [first] = env.bridge.jobs()
+    job = env.um._session_jobs[first["id"]]
+    matcher = job.state.result_matcher("upload_order")
+
+    env.um._handle_event(raw_result(first["id"], "/r/a.jpg", body="busy", status_code=status_code))
+    env.um._handle_event({"id": first["id"], "type": "batch_complete", "status": "done"})
+    wait_for(env, lambda: len(env.bridge.jobs()) == 2)
+    assert status_of(env, "/r/a.jpg")[-1] == f"error: HTTP {status_code}"
+    assert job.state.uploaded_files == ()
+    assert matcher._sent_since_claim == 0
+
+    second = env.bridge.jobs()[1]
+    env.um._handle_event(raw_result(second["id"], "/r/b.jpg", status_code="200"))
+    assert job.state.uploaded_files == ("/r/b.jpg",)
+
+
+def test_a_parser_holding_the_session_state_lock_never_blocks_the_listener(env):
+    # A plugin that holds session_state.lock across a slow request (against
+    # the rules) must not stall the event listener, whose bookkeeping
+    # (record_uploaded, settle, and batch_complete under _jobs_lock) used to
+    # take the same lock.
+    held = threading.Event()
+    release = threading.Event()
+
+    def parse_holding_the_lock(fp, response):
+        state = env.plugin.calls[-1][-1]
+        with state.lock:
+            held.set()
+            release.wait(5)
+        return UploadResult(f"https://h/v/{os.path.basename(fp)}", "https://h/t")
+
+    env.plugin.parse = parse_holding_the_lock
+    files = ["/l/a.jpg", "/l/b.jpg", "/l/c.jpg"]
+    env.um._send_job(files, CFG, CREDS)
+    [job] = env.bridge.jobs()
+    state = env.um._session_jobs[job["id"]].state
+    env.um._handle_event(raw_result(job["id"], "/l/a.jpg"))
+    assert held.wait(2)
+
+    def listener():
+        env.um._handle_event(raw_result(job["id"], "/l/b.jpg"))
+        env.um._handle_event(
+            {
+                "id": job["id"],
+                "type": "status",
+                "file": "/l/c.jpg",
+                "status": "Failed",
+                "data": {"body_sent": "true"},
+            }
+        )
+        env.um._handle_event({"id": job["id"], "type": "error", "file": "/l/c.jpg", "msg": "lost"})
+        env.um._handle_event({"id": job["id"], "type": "batch_complete", "status": "done"})
+        state.result_matcher("upload_order")
+        assert "key-secret-99" in state.secrets
+
+    thread = threading.Thread(target=listener)
+    thread.start()
+    thread.join(2)
+    blocked = thread.is_alive()
+    release.set()
+    thread.join(5)
+    assert not blocked, "the listener waited for a lock the plugin held"
+    assert set(state.uploaded_files) == {"/l/a.jpg", "/l/b.jpg", "/l/c.jpg"}
+    wait_for(env, lambda: len(env.bridge.closes()) == 1)
+    assert status_of(env, "/l/a.jpg")[-1] == "Done"
 
 
 # --- Sequential jobs -----------------------------------------------------------------
@@ -557,6 +774,63 @@ def test_a_sequential_host_uploads_the_next_file_only_after_the_last_was_parsed(
     wait_for(env, lambda: len(env.bridge.closes()) == 1)
     assert [status_of(env, os.path.normpath(f))[-1] for f in files] == ["Done"] * 3
     assert len(env.bridge.requests) == 1, "one session serves the whole sequential job"
+
+
+def _race_two_advances(env, first):
+    """Run a second advance while the first is between choosing a file and sending it.
+
+    The parse's own advance and the one batch_complete hands to the pool can
+    both find nothing outstanding; here the second always runs in that window.
+    """
+    job = env.um._session_jobs[first["id"]]
+    original = env.um._send_session_sidecar_job
+    raced = []
+
+    def send_after_another_advance(*args):
+        if not raced:
+            raced.append(True)
+            other = threading.Thread(target=env.um._advance_session_job, args=(job,))
+            other.start()
+            other.join(2)
+        return original(*args)
+
+    env.um._send_session_sidecar_job = send_after_another_advance
+    finish_raw(env, first, first["files"])
+    wait_for(env, lambda: raced and len(env.bridge.jobs()) >= 2)
+    time.sleep(0.2)
+
+
+def test_two_advances_never_send_two_files_of_a_sequential_job_at_once(env):
+    env.plugin.options = {"sequential": True}
+    env.um._send_job(["/s/a.jpg", "/s/b.jpg", "/s/c.jpg", "/s/d.jpg"], CFG, CREDS)
+    [first] = env.bridge.jobs()
+
+    _race_two_advances(env, first)
+
+    sent = [job["files"] for job in env.bridge.jobs()]
+    assert sent == [
+        [os.path.normpath("/s/a.jpg")],
+        [os.path.normpath("/s/b.jpg")],
+    ], f"a sequential job has more than one file in flight: {sent}"
+    second = env.bridge.jobs()[1]
+    finish_raw(env, second, second["files"])
+    wait_for(env, lambda: len(env.bridge.jobs()) == 3)
+
+
+def test_the_session_never_closes_while_the_last_file_is_being_sent(env):
+    env.plugin.options = {"sequential": True}
+    env.um._send_job(["/s/a.jpg", "/s/b.jpg"], CFG, CREDS)
+    [first] = env.bridge.jobs()
+
+    _race_two_advances(env, first)
+
+    assert len(env.bridge.jobs()) == 2
+    assert env.bridge.closes() == [], "the session closed while its last file was sent"
+    assert env.um._open_session_jobs, "the job finished with a file still uploading"
+    last = env.bridge.jobs()[1]
+    finish_raw(env, last, last["files"])
+    wait_for(env, lambda: len(env.bridge.closes()) == 1)
+    assert status_of(env, os.path.normpath("/s/b.jpg"))[-1] == "Done"
 
 
 def test_stop_during_a_sequential_job_cancels_the_files_not_sent(env):

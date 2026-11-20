@@ -73,12 +73,19 @@ class UploadResult:
     A result is a success only with a viewer ``url`` and no ``error``. A
     result with neither fails the file with "Host returned no link".
     ``gallery_url`` is the gallery the upload landed in, when the host says.
+    Every field is text: None (``data.get("url")`` of an answer without the
+    key) and other empty values become "", bytes are decoded, and anything
+    else is converted with ``str``.
     """
 
     url: str = ""
     thumb: str = ""
     gallery_url: str = ""
     error: str = ""
+
+    def __post_init__(self) -> None:
+        for name in ("url", "thumb", "gallery_url", "error"):
+            object.__setattr__(self, name, _as_text(getattr(self, name)))
 
     @property
     def ok(self) -> bool:
@@ -93,7 +100,18 @@ class UploadResult:
 
     @classmethod
     def failed(cls, error: str) -> "UploadResult":
-        return cls(error=str(error or NO_LINK_ERROR))
+        return cls(error=_as_text(error) or NO_LINK_ERROR)
+
+
+def _as_text(value: Any) -> str:
+    """An UploadResult field as text ("" for None and other empty values)."""
+    if isinstance(value, str):
+        return value
+    if not value:
+        return ""
+    if isinstance(value, (bytes, bytearray)):
+        return bytes(value).decode("utf-8", errors="replace")
+    return str(value)
 
 
 # --- Failure messages ----------------------------------------------------------------

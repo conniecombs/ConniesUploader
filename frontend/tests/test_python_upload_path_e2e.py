@@ -12,6 +12,7 @@ Pixhost plugin's API base URL is pointed at the local fake host.
 import json
 import os
 import queue
+import re
 import shutil
 import subprocess
 import threading
@@ -24,7 +25,8 @@ from pathlib import Path
 import pytest
 
 from modules import config, upload_manager
-from modules.sidecar import SidecarBridge
+from modules.sidecar import PROCESS_RESTARTED_MSG, SidecarBridge
+from modules.upload_results import UploadResult
 
 BACKEND = Path(__file__).resolve().parents[2] / "backend"
 
@@ -262,3 +264,323 @@ def test_the_escape_hatch_uploads_the_same_files_through_the_legacy_go_parser(
     ]
     assert um._open_session_jobs == []
     um.shutdown()
+
+
+# --- Requests on transport sessions never wait behind other requests -------------------
+
+
+class PacedHost:
+    """GET /slow answers after ``delay`` seconds, anything else at once."""
+
+    def __init__(self, delay):
+        self.delay = delay
+        self.paths = []
+
+        host = self
+
+        class Handler(BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1"
+
+            def log_message(self, *args):
+                pass
+
+            def do_GET(self):
+                host.paths.append(self.path)
+                if self.path.startswith("/slow"):
+                    time.sleep(host.delay)
+                payload = b"ok"
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.server.daemon_threads = True
+        self.url = f"http://127.0.0.1:{self.server.server_address[1]}"
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def close(self):
+        self.server.shutdown()
+        self.server.server_close()
+
+
+def _in_background(count, call):
+    threads = [threading.Thread(target=call, args=(i,), daemon=True) for i in range(count)]
+    for thread in threads:
+        thread.start()
+    return threads
+
+
+def test_parser_follow_ups_and_logins_never_expire_queued_behind_other_requests(bridge):
+    from modules.transport import (
+        UploadTransport,
+        build_transport_spec,
+        close_transport_session,
+        execute_transport_request,
+        open_transport_session,
+    )
+
+    host = PacedHost(delay=3.0)
+    others = []
+    try:
+        session = open_transport_session(bridge, "b-pool", timeout=5)
+        transport = UploadTransport(
+            session.session_id,
+            service="pool.test",
+            bridge=bridge,
+            generation=session.generation,
+            timeout=1,  # a parser's follow-up with a short deadline
+        )
+        # Forum posts, gallery calls and the like fill the request workers.
+        others = _in_background(
+            8,
+            lambda i: execute_transport_request(
+                build_transport_spec(f"{host.url}/slow/other{i}"),
+                bridge=bridge,
+                timeout=10,
+                service="forum.test",
+            ),
+        )
+        time.sleep(0.5)
+        # Meanwhile the four parsers poll a slow result page...
+        polls = _in_background(4, lambda i: transport.get(f"{host.url}/slow/poll{i}", timeout=10))
+        time.sleep(0.2)
+
+        # ...and one more follow-up, and the next group's session open, must
+        # still run at once.
+        started = time.monotonic()
+        page = transport.get(f"{host.url}/fast")
+        assert page.ok, f"a parser's follow-up expired in the queue: {page.message}"
+        assert time.monotonic() - started < 1.5
+        next_group = open_transport_session(bridge, "b-pool", timeout=1)
+        assert time.monotonic() - started < 2.5
+        for thread in others + polls:
+            thread.join(15)
+        close_transport_session(bridge, next_group)
+        close_transport_session(bridge, session)
+    finally:
+        for thread in others:
+            thread.join(15)
+        host.close()
+
+
+def test_a_session_open_queued_past_its_deadline_opens_nothing(bridge):
+    from modules.transport import (
+        TransportSessionError,
+        UploadTransport,
+        close_transport_session,
+        open_transport_session,
+    )
+
+    host = PacedHost(delay=3.0)
+    events = queue.Queue()
+    bridge.add_listener(events)
+    polls = []
+    try:
+        session = open_transport_session(bridge, "b-late-open", timeout=5)
+        transport = UploadTransport(
+            session.session_id, service="pool.test", bridge=bridge, generation=session.generation
+        )
+        # More slow session requests than the session pool has workers.
+        main_go = (BACKEND / "main.go").read_text(encoding="utf-8")
+        workers = int(re.search(r"const sessionRequestWorkerCount = (\d+)", main_go).group(1))
+        polls = _in_background(
+            workers + 4, lambda i: transport.get(f"{host.url}/slow/poll{i}", timeout=10)
+        )
+        time.sleep(0.5)
+
+        with pytest.raises(TransportSessionError, match="deadline passed while queued"):
+            open_transport_session(bridge, "b-late-open", timeout=1)
+        for thread in polls:
+            thread.join(15)
+        time.sleep(0.5)
+        opened = []
+        while not events.empty():
+            event = events.get_nowait()
+            if (
+                str(event.get("id", "")).startswith("session-open:")
+                and event.get("status") == "success"
+            ):
+                opened.append(event)
+        assert len(opened) == 1, f"a session opened after its caller gave up: {opened}"
+        close_transport_session(bridge, session)
+    finally:
+        for thread in polls:
+            thread.join(15)
+        bridge.remove_listener(events)
+        host.close()
+
+
+# --- A sidecar crash in the middle of a job ------------------------------------------
+
+
+class SlowHost:
+    """Logs in, answers uploads (a "hang" file only when released) and result pages."""
+
+    def __init__(self):
+        self.release = threading.Event()
+        self.paths = []
+        host = self
+
+        class Handler(BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1"
+
+            def log_message(self, *args):
+                pass
+
+            def answer(self, body):
+                payload = body.encode()
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+
+            def do_GET(self):
+                host.paths.append(self.path)
+                self.answer("ok")
+
+            def do_POST(self):
+                length = self.headers.get("Content-Length")
+                if length:
+                    self.rfile.read(int(length))
+                else:
+                    while True:  # Go streams the multipart body in chunks
+                        size = int(self.rfile.readline().strip() or b"0", 16)
+                        if size == 0:
+                            self.rfile.readline()
+                            break
+                        self.rfile.read(size)
+                        self.rfile.readline()
+                host.paths.append(self.path)
+                if "hang" in self.path:
+                    host.release.wait(30)
+                try:
+                    self.answer(json.dumps({"url": "https://h.example/v" + self.path}))
+                except OSError:
+                    pass  # the sidecar that sent it is gone
+
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.server.daemon_threads = True
+        self.url = f"http://127.0.0.1:{self.server.server_address[1]}"
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def close(self):
+        self.release.set()
+        self.server.shutdown()
+        self.server.server_close()
+
+
+class FollowUpPlugin:
+    """A Python-path host whose parser reads a result page for "a" files."""
+
+    id = "crash.test"
+    name = "Crash"
+    metadata = {"credentials": []}
+
+    def __init__(self, url):
+        self.url = url
+        self.parse_started = threading.Event()
+        self.parse_gate = threading.Event()
+        self.follow_ups = []
+
+    def upload_job_options(self, config):
+        return {}
+
+    def open_upload_session(self, transport, config, creds):
+        page = transport.get(self.url + "/login")
+        if not page.ok:
+            raise RuntimeError(page.message)
+        return {}
+
+    def build_raw_upload_request(self, file_path, config, session_values, creds):
+        return {
+            "url": f"{self.url}/upload/{os.path.basename(file_path)}",
+            "method": "POST",
+            "multipart_fields": {"file": {"type": "file", "value": file_path}},
+        }
+
+    def parse_upload_response(self, file_path, response, transport, session_values, session_state):
+        link = json.loads(response.body)["url"]
+        if os.path.basename(file_path).startswith("a"):
+            self.parse_started.set()
+            self.parse_gate.wait(20)
+            page = transport.get(self.url + "/result")
+            self.follow_ups.append(page)
+            if not page.ok:
+                return UploadResult.failed(f"result page: {page.message}")
+        return UploadResult(url=link, thumb=link + "/t")
+
+
+def _is_terminal(text):
+    return text in ("Done", "Failed", "Cancelled") or text.startswith("error")
+
+
+def test_after_a_crash_nothing_for_the_dead_session_reaches_the_new_process(
+    tmp_path, bridge, monkeypatch
+):
+    host = SlowHost()
+    plugin = FollowUpPlugin(host.url)
+    bridge.restart_delay = 0.2
+    # What the processes answer, to spot one told about a session it never had.
+    answers = queue.Queue()
+    bridge.add_listener(answers)
+    files = make_files(tmp_path, ["a.jpg", "hang.jpg"])
+    a, hang = files
+    progress, results, cancel = queue.Queue(), queue.Queue(), threading.Event()
+    um = upload_manager.UploadManager(progress, results, cancel)
+    monkeypatch.setattr(um.plugin_manager, "get_plugin", lambda service_id: plugin)
+    try:
+        um.start_batch(
+            {Group("Set", files): list(files)},
+            {"service": "crash.test", "global_thread_limit": 2},
+            {},
+        )
+        # a.jpg is being parsed and hang.jpg is still uploading when the
+        # sidecar dies.
+        assert plugin.parse_started.wait(20), "a.jpg was never parsed"
+        deadline = time.monotonic() + 10
+        while "/upload/hang.jpg" not in host.paths:
+            assert time.monotonic() < deadline, "hang.jpg never reached the host"
+            time.sleep(0.02)
+        first = bridge.generation
+        bridge.proc.kill()
+        deadline = time.monotonic() + 10
+        while not (bridge.generation > first and bridge.is_process_alive()):
+            assert time.monotonic() < deadline, "the sidecar did not restart"
+            time.sleep(0.02)
+        # The parser's follow-up comes after the restart.
+        plugin.parse_gate.set()
+
+        terminal = {}
+        deadline = time.monotonic() + 15
+        settle_until = None
+        while time.monotonic() < deadline and (
+            settle_until is None or time.monotonic() < settle_until
+        ):
+            if settle_until is None and len(terminal) == len(files):
+                settle_until = time.monotonic() + 1.0
+            try:
+                kind, fp, value = progress.get(timeout=0.2)
+            except queue.Empty:
+                continue
+            if kind == "status" and _is_terminal(str(value)):
+                terminal.setdefault(fp, []).append(str(value))
+
+        assert terminal == {
+            a: [f"error: result page: {PROCESS_RESTARTED_MSG}"],
+            hang: [f"error: {PROCESS_RESTARTED_MSG}"],
+        }, terminal
+        assert [page.message for page in plugin.follow_ups] == [PROCESS_RESTARTED_MSG]
+        assert "/result" not in host.paths, "the follow-up was sent"
+        told = []
+        while not answers.empty():
+            event = answers.get_nowait()
+            text = json.dumps(event)
+            if "unknown transport session" in text or '"closed": "false"' in text:
+                told.append(event)
+        assert told == [], "the new process got requests for the dead process's session"
+        assert um._open_session_jobs == []
+    finally:
+        bridge.remove_listener(answers)
+        um.shutdown()
+        host.close()

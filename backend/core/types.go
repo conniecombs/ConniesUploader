@@ -81,6 +81,11 @@ type JobRequest struct {
 	// session_close it is the session to close.
 	SessionID string `json:"session_id,omitempty"`
 
+	// TimeoutSeconds is a session_open's deadline, counted from when the job
+	// was queued (EnqueuedAt), as generic_spec.timeout_seconds is for an
+	// http_request; values above the client ceiling clamp to it.
+	TimeoutSeconds int `json:"timeout_seconds,omitempty"`
+
 	// RawResponse makes an http_upload job send FileRequests[file] for each
 	// file and report the host's answer as a raw result (see raw_upload.go)
 	// instead of running http_spec, response_parser and resolve_spec.
@@ -106,6 +111,11 @@ type JobRequest struct {
 	// EnqueuedAt is stamped when the job is read from stdin so a request's
 	// deadline counts the time it waited for a worker. Not serialized.
 	EnqueuedAt time.Time `json:"-"`
+
+	// ReleaseQueueHold ends the hold the stdin reader took on the job's
+	// transport session when it queued the job (see HoldSession); the job's
+	// handler calls it when the job ends. Not serialized.
+	ReleaseQueueHold func() `json:"-"`
 }
 
 type RateLimitConfig struct {
