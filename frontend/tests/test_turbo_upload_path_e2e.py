@@ -49,12 +49,15 @@ class FakeTurbo:
     Names are listed as Turbo sanitizes them (spaces and # become _).
     File names choose behaviour: "refused…" is answered 403, "missing…" is
     stored but never listed, and "hold…" gets no answer until release is set.
-    The first ``busy_result_pages`` reads of a result page are answered 503.
+    The first ``busy_result_pages`` reads of a result page, and the first
+    ``busy_home_pages`` reads of the home page, are answered 503.
     """
 
-    def __init__(self, listing_delay=None, busy_result_pages=0):
+    def __init__(self, listing_delay=None, busy_result_pages=0, busy_home_pages=0):
         self.lock = threading.Lock()
         self.busy_result_pages = busy_result_pages
+        self.busy_home_pages = busy_home_pages
+        self.home_reads = []
         self.listing_delay = dict(listing_delay or {})  # file name -> seconds
         self.sessions = {}  # session id -> logged-in user or None
         self.logins = []
@@ -113,7 +116,14 @@ class FakeTurbo:
                 sid, new = self.session()
                 url = urlsplit(self.path)
                 if url.path == "/":
-                    self.reply(200, host.home_page(sid), headers=self.cookie_headers(sid, new))
+                    with host.lock:
+                        host.home_reads.append(time.monotonic())
+                        busy = host.busy_home_pages > 0
+                        host.busy_home_pages -= busy
+                    if busy:
+                        self.reply(503, "<p>Down for maintenance</p>")
+                    else:
+                        self.reply(200, host.home_page(sid), headers=self.cookie_headers(sid, new))
                 elif url.path == "/upload_complete.tu":
                     upload_id = parse_qs(url.query).get("upload_id", [""])[0]
                     with host.lock:
@@ -530,4 +540,24 @@ def test_a_busy_result_page_is_looked_at_again_on_the_poll_schedule(
     assert_own_images(host, batch, [image])
     first, second = host.result_reads[:2]
     assert second[2] - first[2] < 1.5, "the 503 was retried before the next scheduled look"
+    batch.finish()
+
+
+@pytest.mark.parametrize("path", ["python", "legacy"])
+def test_a_busy_upload_page_is_retried_like_the_legacy_pre_request(
+    tmp_path, bridge, host_factory, path
+):
+    # The legacy pre_request retried a 503 home page with the sidecar's
+    # backoff; the Python path's session step does too. (Once the retries run
+    # out the sidecar reports "HTTP 503" without the page; see
+    # test_turbo_upload_path.py.)
+    host = host_factory(busy_home_pages=1)
+    [image] = make_files(tmp_path, ["a.jpg"])
+
+    batch = Batch([image], path_config(path), {})
+    assert batch.read(batch.all_terminal), batch.statuses
+
+    assert batch.terminal(image) == "Done"
+    assert len(host.home_reads) == 2
+    assert host.home_reads[1] - host.home_reads[0] >= 1.0, "retried after the backoff"
     batch.finish()
