@@ -175,10 +175,23 @@ class UploadManager:
         """Remember which files a sidecar job owns so its events can be scoped."""
         self._job_files[job_id] = list(files)
 
-    def _submit_job(self, job_id: str, job_data: Dict[str, Any]) -> bool:
-        """Write a registered job to the sidecar and remember which process got it."""
+    def _submit_job(
+        self, job_id: str, job_data: Dict[str, Any], generation: Optional[int] = None
+    ) -> bool:
+        """Write a registered job to the sidecar and remember which process got it.
+
+        With ``generation`` (a job on a transport session), the job goes only
+        to that process: once it is gone, even if the crash report has not
+        been handled yet, nothing is written and False is returned.
+        """
+        send_to = getattr(self.bridge, "send_job_to", None) if generation is not None else None
         send_job = getattr(self.bridge, "send_job", None)
-        if callable(send_job):
+        if callable(send_to):
+            written = send_to(job_data, generation)
+            if written is None:
+                return False
+            generation = written if isinstance(written, int) else None
+        elif callable(send_job):
             generation = send_job(job_data)
             if generation is None:
                 return False
@@ -882,6 +895,7 @@ class UploadManager:
             bridge=self.bridge,
             rate_limits=rate_limits,
             cancel_event=token,
+            generation=session.generation,
         )
         try:
             # Plugins that do not subclass ImageHostPlugin get its defaults.
@@ -1042,20 +1056,34 @@ class UploadManager:
         }
         if job.rate_limits:
             payload["rate_limits"] = job.rate_limits
-        if self._submit_job(job_id, payload):
+        if self._submit_job(job_id, payload, generation=job.session.generation):
             return
+        status_text = (
+            f"error: {PROCESS_RESTARTED_MSG}"
+            if self._session_process_gone(job.session)
+            else "error: sidecar unavailable"
+        )
         with self._jobs_lock:
             # A Clear List or a crash report may have ended the job meanwhile;
             # its files are then no longer this job's to report.
             owned = self._job_files.pop(job_id, None) is not None
             self._session_jobs.pop(job_id, None)
             job.sidecar_jobs.discard(job_id)
-            self._mark_session_dead(job, "error: sidecar unavailable")
+            self._mark_session_dead(job, status_text)
             for fp in files:
                 self.active_files.discard(fp)
         if owned:
-            self._finish_files(files, "error: sidecar unavailable")
+            self._finish_files(files, status_text)
         self._advance_session_job(job)
+
+    def _session_process_gone(self, session: TransportSession) -> bool:
+        """Whether the bridge runs another process now, or none, than the session's."""
+        current = getattr(self.bridge, "generation", None)
+        if isinstance(current, int) and isinstance(session.generation, int):
+            if current != session.generation:
+                return True
+        alive = getattr(self.bridge, "is_process_alive", None)
+        return callable(alive) and alive() is False
 
     def _mark_session_dead(self, job: _SessionJob, status_text: str) -> None:
         """The session's sidecar process is gone; call with ``_jobs_lock`` held."""

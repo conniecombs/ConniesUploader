@@ -207,6 +207,10 @@ def bridge(sidecar_binary, monkeypatch):  # noqa: F811
             self.sent.append(payload)
             return super().send_job(payload)
 
+        def send_job_to(self, payload, generation):  # what names a session
+            self.sent.append(payload)
+            return super().send_job_to(payload, generation)
+
     real = LocalBridge()
     real.sent = []
     monkeypatch.setattr(upload_manager.SidecarBridge, "get", staticmethod(lambda: real))

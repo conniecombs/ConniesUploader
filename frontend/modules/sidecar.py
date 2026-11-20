@@ -439,10 +439,13 @@ class SidecarBridge:
             "id": f"session-close:{uuid.uuid4().hex}",
             "session_id": session_id,
         }
-        # Off the stdout reader thread, which must never wait on stdin.
-        threading.Thread(
-            target=self.send_cmd, args=(payload,), name="SidecarLateClose", daemon=True
-        ).start()
+        # Off the stdout reader thread, which must never wait on stdin. Only to
+        # the process that opened it: another process never had the session.
+        if generation is None:
+            target, args = self.send_cmd, (payload,)
+        else:
+            target, args = self.send_job_to, (payload, generation)
+        threading.Thread(target=target, args=args, name="SidecarLateClose", daemon=True).start()
 
     def send_cmd(self, payload: JsonDict) -> bool:
         """Send a JSON command to the sidecar."""
@@ -458,10 +461,29 @@ class SidecarBridge:
         if not self.is_process_alive():
             logger.warning("Sidecar is not running; attempting restart")
             self._start_process()
+        return self._write(payload, None)
 
+    def send_job_to(self, payload: JsonDict, generation: int) -> Optional[int]:
+        """Send a JSON command only to process ``generation``; return it, or None.
+
+        For commands about something that lives in one process, such as a
+        transport session: once that process is gone (dead, or replaced by a
+        restart) the command is not written, and no process is started for
+        it. The check and the write are one step, so a restart between them
+        cannot route the command to the new process.
+        """
+        return self._write(payload, generation)
+
+    def _write(self, payload: JsonDict, only_generation: Optional[int]) -> Optional[int]:
         with self.restart_lock:
             proc = self.proc
             generation = self.generation
+        if only_generation is not None and generation != only_generation:
+            logger.debug(
+                f"Not sending {payload.get('action')}: process {only_generation} is gone "
+                f"(now {generation})"
+            )
+            return None
         if proc is None or proc.poll() is not None or proc.stdin is None:
             logger.error("Cannot send command; sidecar is unavailable")
             return None
@@ -508,12 +530,31 @@ class SidecarBridge:
         """
         return self._request(payload, timeout, cancel_event, track_generation=True)
 
+    def request_in_generation(
+        self,
+        payload: JsonDict,
+        generation: int,
+        timeout: float = 5.0,
+        cancel_event: Optional[threading.Event] = None,
+    ) -> JsonDict:
+        """``request_with_generation`` sent only to process ``generation`` (``send_job_to``).
+
+        Once that process is gone the request is not sent and is answered at
+        once with PROCESS_RESTARTED_MSG: a request on a transport session
+        must never reach a process that does not have the session.
+        """
+        reply, _ = self._request(
+            payload, timeout, cancel_event, track_generation=True, only_generation=generation
+        )
+        return reply
+
     def _request(
         self,
         payload: JsonDict,
         timeout: float,
         cancel_event: Optional[threading.Event],
         track_generation: bool,
+        only_generation: Optional[int] = None,
     ) -> Tuple[JsonDict, Optional[int]]:
         request_id = str(payload.get("id") or uuid.uuid4())
         payload = dict(payload)
@@ -533,7 +574,12 @@ class SidecarBridge:
         generation: Optional[int] = None
 
         try:
-            if track_generation:
+            if only_generation is not None:
+                generation = self.send_job_to(payload, only_generation)
+                sent = generation is not None
+                if not sent and (self.generation != only_generation or not self.is_process_alive()):
+                    return reply("error", PROCESS_RESTARTED_MSG), None
+            elif track_generation:
                 generation = self.send_job(payload)
                 sent = generation is not None
             else:

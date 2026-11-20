@@ -131,7 +131,15 @@ request run on it.
   It answers only a request that carries an `id`; without one it logs.
 - Both actions run on the request pool, never behind queued uploads.
 - Sessions die with the sidecar process: after a restart Python never
-  closes, or uses, a session of the dead process.
+  closes, or uses, a session of the dead process. Python writes everything
+  that names a session (its upload jobs, the requests on it, its close) only
+  to the process that opened it: the bridge checks the process and writes in
+  one step (`SidecarBridge.send_job_to`), so this holds even before Python
+  has handled the crash report. Once that process is gone nothing is
+  written: a request (a parser's follow-up, a result-page poll) fails at
+  once with `Uploader process restarted; upload interrupted`, the files of
+  an upload job that was not written yet end with it, and the close is
+  skipped.
 
 ## Raw Upload Jobs
 

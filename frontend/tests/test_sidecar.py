@@ -612,6 +612,69 @@ def test_send_job_returns_the_generation_it_was_written_to():
     assert bridge.send_cmd({"action": "noop"}) is False
 
 
+def _pinnable_bridge(generation):
+    from types import SimpleNamespace
+
+    bridge = SidecarBridge.__new__(SidecarBridge)
+    bridge.written = []
+    bridge.proc = SimpleNamespace(
+        poll=lambda: None,
+        stdin=SimpleNamespace(write=bridge.written.append, flush=lambda: None),
+    )
+    bridge.generation = generation
+    bridge.cmd_lock = threading.RLock()
+    bridge.restart_lock = threading.RLock()
+    bridge.listeners = []
+    bridge.listeners_lock = threading.RLock()
+    bridge.started = []
+    bridge._start_process = lambda: bridge.started.append(True) or False
+    return bridge
+
+
+@pytest.mark.unit
+def test_send_job_to_writes_only_to_the_process_it_names():
+    bridge = _pinnable_bridge(3)
+    assert bridge.send_job_to({"action": "session_close", "session_id": "s-1"}, 3) == 3
+    assert "".join(bridge.written).startswith('{"action": "session_close"')
+
+    # A restart replaced process 3: nothing is written to process 4.
+    bridge.written.clear()
+    bridge.generation = 4
+    assert bridge.send_job_to({"action": "session_close", "session_id": "s-1"}, 3) is None
+    assert bridge.written == []
+
+    # Process 4 died: no process is started for a command about process 4.
+    bridge.proc = None
+    assert bridge.send_job_to({"action": "http_upload"}, 4) is None
+    assert bridge.started == [] and bridge.written == []
+
+
+@pytest.mark.unit
+def test_request_in_generation_answers_at_once_once_its_process_is_gone():
+    bridge = _pinnable_bridge(5)
+    start = time.monotonic()
+    reply = bridge.request_in_generation({"action": "http_request", "id": "r-1"}, 4, timeout=10)
+    assert time.monotonic() - start < 1
+    assert reply == {
+        "id": "r-1",
+        "type": "error",
+        "status": "error",
+        "msg": "Uploader process restarted; upload interrupted",
+    }
+    assert bridge.written == [] and bridge.listeners == []
+
+    def answer():
+        deadline = time.monotonic() + 2
+        while not bridge.listeners and time.monotonic() < deadline:
+            time.sleep(0.01)
+        bridge._dispatch_event({"id": "r-2", "type": "result", "status": "success"})
+
+    threading.Thread(target=answer).start()
+    reply = bridge.request_in_generation({"action": "http_request", "id": "r-2"}, 5, timeout=5)
+    assert reply["status"] == "success"
+    assert '"id": "r-2"' in "".join(bridge.written)
+
+
 def _bridge_whose_write_fails():
     from types import SimpleNamespace
 

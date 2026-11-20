@@ -310,6 +310,12 @@ the implementation differs from the text above:
   parse and report nothing more. The non-terminal `Uploaded` status may be
   dropped by the sidecar bridge under load; the raw `result` is the terminal
   event it always delivers.
+- A session lives in one sidecar process. Its uploads, its requests
+  (`UploadTransport` knows the session's process) and its close are written
+  only to that process; after a crash a parser still running gets
+  `Uploader process restarted; upload interrupted` for its follow-ups, and a
+  sequential job's next file ends with it, even before the manager has
+  handled the crash report.
 - "30 minutes idle" counts from the end of a session's last use. A session
   is in use from the moment Go reads an upload job that names it until the
   job ends, so a group whose job waits behind other uploads for longer still

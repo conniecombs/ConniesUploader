@@ -190,6 +190,7 @@ def _bridge_with(send):
     bridge.listeners_lock = threading.RLock()
     bridge.send_cmd = lambda payload: send(bridge, payload) is not None
     bridge.send_job = lambda payload: send(bridge, payload)
+    bridge.send_job_to = lambda payload, generation: send(bridge, payload)
     return bridge
 
 

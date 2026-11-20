@@ -97,6 +97,7 @@ def execute_transport_request(
     retry: bool = True,
     session_id: Optional[str] = None,
     cancel_event: Optional[threading.Event] = None,
+    session_generation: Optional[int] = None,
 ) -> TransportResponse:
     """Execute a resolved transport request through the Go sidecar.
 
@@ -104,9 +105,12 @@ def execute_transport_request(
     and Python waits that long plus a small margin. ``retry=False`` disables
     Go's transport retries for requests that must not be repeated, such as a
     forum post. ``session_id`` runs the request on that transport session's
-    isolated cookie jar (see ``open_transport_session``). With
-    ``cancel_event``, a request is not sent once the event is set and the
-    wait for its answer ends when it is set (status ``cancelled``).
+    isolated cookie jar (see ``open_transport_session``), and
+    ``session_generation`` names the sidecar process the session lives in: once
+    that process is gone the request is not sent and fails with
+    PROCESS_RESTARTED_MSG. With ``cancel_event``, a request is not sent once
+    the event is set and the wait for its answer ends when it is set (status
+    ``cancelled``).
     """
     generic_spec = dict(spec)
     if "timeout_seconds" not in generic_spec:
@@ -132,7 +136,15 @@ def execute_transport_request(
     with_generation = (
         getattr(active_bridge, "request_with_generation", None) if session_id else None
     )
-    if callable(with_generation):
+    in_generation = (
+        getattr(active_bridge, "request_in_generation", None)
+        if session_id and session_generation is not None
+        else None
+    )
+    if callable(in_generation):
+        # Only to the session's own process, and the wait ends if it dies.
+        raw = in_generation(payload, session_generation, timeout=wait, cancel_event=cancel_event)
+    elif callable(with_generation):
         # A session lives in one sidecar process: stop waiting at once if it dies.
         raw, _ = with_generation(payload, timeout=wait, cancel_event=cancel_event)
     elif cancel_event is None:
@@ -274,17 +286,19 @@ def close_transport_session(bridge: Any, session: TransportSession) -> bool:
     """Ask the sidecar to close ``session``; does not wait for the answer.
 
     The close carries its own request id: an event without one would reach
-    the upload listener as an anonymous result.
+    the upload listener as an anonymous result. It goes only to the process
+    the session lives in; once that process is gone there is nothing to
+    close, and nothing is sent.
     """
-    return bool(
-        bridge.send_cmd(
-            {
-                "action": "session_close",
-                "id": f"session-close:{uuid.uuid4().hex}",
-                "session_id": session.session_id,
-            }
-        )
-    )
+    payload = {
+        "action": "session_close",
+        "id": f"session-close:{uuid.uuid4().hex}",
+        "session_id": session.session_id,
+    }
+    send_to = getattr(bridge, "send_job_to", None)
+    if session.generation is not None and callable(send_to):
+        return send_to(payload, session.generation) is not None
+    return bool(bridge.send_cmd(payload))
 
 
 class UploadTransport:
@@ -300,6 +314,10 @@ class UploadTransport:
     status and body in ``message`` ("HTTP 403: ..."); transport failures
     likewise. Plugins read ``response.ok``, ``body``, ``status_code`` and
     ``final_url``, and ``json()``.
+
+    ``generation`` is the sidecar process the session lives in. Once that
+    process is gone (a crash and restart), requests are not sent and fail
+    with ``message`` PROCESS_RESTARTED_MSG.
     """
 
     DEFAULT_TIMEOUT_SECONDS = 30.0
@@ -313,6 +331,7 @@ class UploadTransport:
         rate_limits: Optional[Mapping[str, Any]] = None,
         cancel_event: Optional[threading.Event] = None,
         timeout: float = DEFAULT_TIMEOUT_SECONDS,
+        generation: Optional[int] = None,
     ) -> None:
         self._session_id = str(session_id)
         self.service = str(service or "")
@@ -320,6 +339,7 @@ class UploadTransport:
         self._rate_limits = dict(rate_limits) if rate_limits else None
         self._cancel_event = cancel_event
         self.timeout = float(timeout)
+        self._generation = generation
 
     @property
     def session_id(self) -> str:
@@ -366,6 +386,7 @@ class UploadTransport:
             retry=retry,
             session_id=self._session_id,
             cancel_event=self._cancel_event,
+            session_generation=self._generation,
         )
 
     def get(

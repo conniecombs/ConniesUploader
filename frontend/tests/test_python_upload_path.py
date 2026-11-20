@@ -67,6 +67,19 @@ class FakeSidecar:
     def request_sync(self, payload, timeout=0, cancel_event=None):
         return self.request_with_generation(payload, timeout, cancel_event)[0]
 
+    # Like SidecarBridge: write only to process ``generation``. A test makes
+    # the sidecar restart by raising ``generation``.
+
+    def send_job_to(self, payload, generation):
+        if generation != self.generation:
+            return None
+        return self.send_job(payload)
+
+    def request_in_generation(self, payload, generation, timeout=0, cancel_event=None):
+        if generation != self.generation:
+            return {"id": payload.get("id"), "status": "error", "msg": PROCESS_RESTARTED_MSG}
+        return self.request_with_generation(payload, timeout, cancel_event)[0]
+
     def jobs(self):
         return [p for p in self.sent if p.get("action") == "http_upload"]
 
@@ -579,6 +592,62 @@ def test_a_crash_of_an_older_process_leaves_the_session_alone(env):
     env.um._handle_event({"type": "sidecar_crashed", "generation": 2, "msg": PROCESS_RESTARTED_MSG})
     finish_raw(env, env.bridge.jobs()[0], ["/a.jpg"])
     wait_for(env, lambda: "Done" in status_of(env, "/a.jpg") and len(env.bridge.closes()) == 1)
+
+
+# A restart can come before the upload manager has handled the crash report:
+# what Python sends for a session must still never reach the new process.
+
+
+def test_after_a_restart_a_parser_follow_up_never_reaches_the_new_process(env):
+    def parse_with_a_follow_up(fp, response):
+        transport = env.plugin.calls[-1][3]
+        page = transport.get("https://h/result")
+        if not page.ok:
+            return UploadResult.failed(f"result page: {page.message}")
+        return UploadResult("https://h/v", "https://h/t")
+
+    env.plugin.gate = threading.Event()
+    env.plugin.parse = parse_with_a_follow_up
+    env.um._send_job(["/a.jpg"], CFG, CREDS)
+    [job] = env.bridge.jobs()
+    env.um._handle_event(raw_result(job["id"], "/a.jpg"))  # its parser is running
+
+    env.bridge.generation = 2  # the sidecar died and a new process started
+    env.plugin.gate.set()
+    wait_for(env, lambda: any(s.startswith("error") for s in status_of(env, "/a.jpg")))
+    assert status_of(env, "/a.jpg")[-1] == f"error: result page: {PROCESS_RESTARTED_MSG}"
+    assert [r for r in env.bridge.requests if r["action"] == "http_request"] == []
+
+    env.um._handle_event({"type": "sidecar_crashed", "generation": 1, "msg": PROCESS_RESTARTED_MSG})
+    wait_for(env, lambda: env.um._open_session_jobs == [])
+    assert env.bridge.closes() == []
+
+
+def test_after_a_restart_a_sequential_job_never_sends_its_next_file_to_the_new_process(env):
+    env.plugin.options = {"sequential": True}
+    env.plugin.gate = threading.Event()
+    env.um._send_job(["/s/1.jpg", "/s/2.jpg"], CFG, CREDS)
+    [first] = env.bridge.jobs()
+    finish_raw(env, first, ["/s/1.jpg"])  # its parser is running
+
+    env.bridge.generation = 2  # the crash report has not been handled yet
+    env.plugin.gate.set()
+    wait_for(env, lambda: status_of(env, os.path.normpath("/s/2.jpg")))
+    assert status_of(env, os.path.normpath("/s/2.jpg")) == [INTERRUPTED]
+    assert status_of(env, os.path.normpath("/s/1.jpg"))[-1] == "Done"
+    assert len(env.bridge.jobs()) == 1, "the next file went to the new process"
+    wait_for(env, lambda: env.um._open_session_jobs == [])
+    assert env.bridge.closes() == []
+
+
+def test_after_a_restart_the_dead_session_is_never_closed_on_the_new_process(env):
+    env.um._send_job(["/a.jpg"], CFG, CREDS)
+    [job] = env.bridge.jobs()
+    env.bridge.generation = 2  # the job's last events were read before the crash
+    finish_raw(env, job, ["/a.jpg"])
+    wait_for(env, lambda: "Done" in status_of(env, "/a.jpg") and not env.um._open_session_jobs)
+    time.sleep(0.1)
+    assert env.bridge.closes() == [], "a close for a dead session reached the new process"
 
 
 def test_a_failed_upload_whose_body_reached_the_host_is_recorded(env):
