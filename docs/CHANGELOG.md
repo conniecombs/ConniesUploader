@@ -7,9 +7,84 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.2.0] - 2026-11-20
+
+v3.2.0 fixes the 40 bugs found in a full bug hunt of v3.1.3, plus the defects two follow-up code reviews found in those fixes, and moves upload sessions and upload-result parsing from the Go sidecar into the Python host plugins. The sidecar is now transport only for every host; the legacy Go parsing stays available behind a setting for one release.
+
+### Added
+
+- Python-owned upload parsing (design: `docs/plans/V3_2_0_PYTHON_UPLOAD_PARSING_DESIGN.md`). Host plugins log in, build each file's upload request, and read the host's answer themselves; the sidecar opens isolated transport sessions, streams the files, and returns the raw response. Sidecar protocol additions: `session_open`, `session_close`, `session_id` on requests and upload jobs, `raw_response` uploads with per-file `file_requests`, `sequential` jobs, a raw `result` event followed by the non-terminal status `Uploaded`, and a `body_sent` hint on failures. See `docs/TRANSPORT_CONTRACT.md`.
+- IMX, Pixhost and Imgur read their upload results in Python, with the same results as before (42 shared parity cases between the Go and Python parsers). Vipr, TurboImageHost and ImageBam are being migrated next.
+- While a host's answer is being read, a row shows "Processing".
+- The `legacy_upload_parsing` setting (default `false`, not shown in the window) sends every host back through the legacy Go specs, as a fallback in case a live host answers differently from the recorded fixtures. It will be removed together with the legacy Go hooks in a later release.
+
 ### Fixed
 
+Uploads and the sidecar
+
+- Uploads a host rejects, or that come back without a link, are marked Failed with the host's reason instead of "Uploaded" with no link. Error messages quote only a short host message, with credentials and login-session values hidden, including failed follow-up requests and single-file jobs.
+- Passwords, titles, gallery names and file names containing curly braces (for example `Holiday {2024}`) are sent as typed instead of failing every file, and the value is no longer written to the error log.
+- Large uploads on slow connections no longer fail after 3 minutes. An upload fails only if no data moves for 2 minutes or the host does not answer within 5 minutes after the file was sent.
+- An image the host stored but whose reply was lost is reported as failed ("no response from host after upload; check the host before retrying") instead of being uploaded again as a duplicate. Host error pages are no longer retried because their scripts contain words like "timeout". On the new path, uploads answered 429 or 503 are re-sent after the host's `Retry-After` (at most 60 seconds); other server errors are never re-sent.
+- Starting a small upload, such as a single cover, no longer slows every other upload to that host down to one at a time.
+- Forum login, auto-posting and gallery actions run immediately during big uploads instead of timing out behind them.
+- Logging in to the forum no longer logs you out of image hosts such as Vipr; resetting cookies affects only the site being logged in to.
+- If the sidecar crashes during an upload, the affected images are marked failed ("Uploader process restarted; upload interrupted") and the upload finishes. Stop always works, even when the sidecar cannot be reached or is restarting, and no longer freezes the window.
+- An upload no longer hangs on "Uploading" when a file's final status is lost under load: final events are never dropped, and the end of a batch settles every file.
+- Stop during a multi-file job's login cancels it at once instead of waiting up to 3 minutes, and files waiting for an upload slot are cancelled immediately.
+- A malformed request line no longer makes the sidecar repeat the same error forever and stop reading requests.
+
+Hosts
+
+- TurboImageHost links are no longer mixed up between files with similar or identical names (`cover.jpg` and `back_cover.jpg`, `2.jpg` and `12.jpg`, `01.jpg` from two folders, names the host rewrites such as `Scan 1.jpg` listed as `Scan_1.jpg`, and accented names saved by macOS).
+- ImageBam uploads of several files give each file its own link, also after an upload that failed on the host's side. Files in one ImageBam session upload one at a time.
+- ImageBam auto-gallery with a cover image creates one gallery instead of two.
+- TurboImageHost uploads send each file's own size and ID. Its default thumbnail size is 200, one of its listed sizes; a saved 180 from older versions becomes 200.
+- The Imgur Thumbnail Size setting works; thumbnails are no longer the full-size image.
+- Vipr gallery list and create report a wrong username or password as a login failure, and creating a gallery whose name already exists returns the new gallery.
+- IMX auto-gallery no longer fails when the first image is a `.webp` file, and the IMX gallery list keeps names when a thumbnail link comes before the title.
+
+Output and templates
+
+- Output files are never overwritten; batches with the same name get separate files (`_2`, `_3`, ...), including history copies, links files and FAILED reports.
+- A batch that already finished produces output again when images are added to it or its failed images are removed, and that output can be scheduled and copied from the completion panel.
+- A new upload no longer copies or counts the previous upload's output, and the completion summary and auto-copy always include the last batch's output.
+- `#direct_url#` and `#all_full_images#` are real image links (full size on IMX, Pixhost and Imgur, the thumbnail elsewhere), never a web page.
+- Batches using a deleted template switch to the default template, renamed templates keep their batches, and empty output is never saved or posted.
+- The Template Editor always saves the template being edited; switching templates no longer copies edits into the next one, and a duplicate made under a Category filter no longer overwrites the built-in it came from.
+- Custom templates produce HTML or Markdown when their text is HTML or Markdown, in output and in the browser preview.
+- Templates showing a cover inside `[if]` no longer drop the first image, `[if cover_count]` is false when no covers are selected, and `{viewer}`, `{thumb}` and `{direct}` are reported as unsupported instead of reaching posts as literal text.
+- Image loops written over several lines use exactly the chosen separator, and quoted separators such as `separator="[hr]"` work.
+- A batch or gallery name containing a placeholder such as `#all_images#` is output as typed instead of being expanded; the editor preview fills `#thumb_size#`.
+- Saving templates in one window no longer erases templates saved from another; a templates file with a byte order mark loads normally; non-text entries are skipped and reported accurately; Import refuses or skips malformed entries and lists them. Built-in templates can no longer be deleted or renamed (they always came back on restart); Delete on an edited built-in offers to reset it.
+
+Posting
+
+- If the ViperGirls login fails, or posting is stopped, auto-posts are recorded as failed in the posting history and shown as warnings instead of showing "Queued" and disappearing. Posts for a target chosen after the upload started are recorded and reported the same way.
+
+Queue, galleries and settings
+
+- "Remove Batch" is refused while an upload runs, rows removed mid-upload no longer count toward completion, and Clear List during an upload stops it like Stop (finalizing Pixhost galleries). Pressing Start right after Clear List uploads the new files, never the cleared ones, and late statuses from the cleared upload leave re-added files alone.
+- An upload that returns no link is shown as failed ("Host returned no link"), and a batch's file count updates when images are removed.
+- One oversized or broken image no longer stops a whole folder from importing; the good images are queued and each skipped file is listed. Names such as `x1²2.jpg` import, and a failed import scan no longer leaves the import stuck. Dropping an already queued folder no longer adds an empty batch, the 1,000-file folder limit counts only images, and the same image added through a symlinked folder and directly is queued once.
+- Typing, clearing or re-choosing a host's gallery replaces a gallery picked in Gallery Manager, so the upload, the pre-upload check and the output use the same gallery. A gallery ID set for one host is no longer used or restored for another host (ImageBam has its own `imagebam_gallery_id`). An unmatched saved Vipr gallery stops the upload with "Refresh galleries or select it again" instead of uploading without a gallery.
+- A damaged settings file no longer resets everything or stops the app from starting: bad values are repaired one by one, an unreadable file is backed up and replaced with a notice, a file with a byte order mark loads normally, and saves are atomic.
+- File sizes just under 1 MB or 1 GB show as "1 MB" or "1 GB" instead of "1024 KB" or "1024 MB".
+
+Release process
+
 - GitHub releases use only their own version's changelog section as the description. The release workflow's extraction always came out empty and silently fell back to publishing the entire `docs/CHANGELOG.md` (v3.1.3 and earlier releases are affected). Extraction now lives in `scripts/maintenance/extract_release_notes.py` with unit tests, and a missing or empty section fails the release instead of publishing a wrong body.
+
+### Security
+
+- The IMX API key is no longer written to `user_settings.json`, and a key saved there by earlier versions is removed when settings load.
+- Upload error messages hide credentials and login-session values, and values containing braces (such as passwords) are no longer echoed into the log.
+
+### Changed
+
+- Sidecar protocol: besides the additions above, `{token}` substitution replaces only tokens with a known value, in one pass, and leaves other brace text as typed; retry decisions use the HTTP status code or the transport error type, never response text; uploads have no wall-clock limit; non-upload actions run on their own worker pool; `reset_cookies` clears only the request's site; per-file `{file_size}` and thumb-template `{url_no_ext}`/`{url_dot_ext}` tokens; `upload_order` result matching; requests are read as JSON lines.
+- "Assign to selected batches" in Gallery Manager no longer also sets the host-wide gallery pick.
+- Bumped app, build-script, and active plugin metadata to `3.2.0`.
 
 ## [3.1.3] - 2026-11-18
 

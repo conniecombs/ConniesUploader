@@ -270,7 +270,7 @@ def test_version_strings_agree():
     from modules import config
     from modules.plugin_manager import PluginManager
 
-    expected = "3.1.3"
+    expected = "3.2.0"
     assert config.APP_VERSION == expected
     assert f"VERSION := {expected}" in (ROOT / "Makefile").read_text(encoding="utf-8")
     assert f'VERSION="{expected}"' in (ROOT / "build.sh").read_text(encoding="utf-8")
@@ -279,7 +279,7 @@ def test_version_strings_agree():
     assert f"badge/app-v{expected}-" in readme
     assert f"### v{expected}" in readme
     changelog = (ROOT / "docs" / "CHANGELOG.md").read_text(encoding="utf-8")
-    assert re.search(rf"^## \[{re.escape(expected)}\] - 2026-11-18$", changelog, re.MULTILINE)
+    assert re.search(rf"^## \[{re.escape(expected)}\] - 2026-11-20$", changelog, re.MULTILINE)
     assert (ROOT / "docs" / "releases" / f"RELEASE_NOTES_v{expected}.md").is_file()
     for plugin in PluginManager().get_all_plugins():
         assert plugin.metadata.get("version") == expected, plugin.id

@@ -4,23 +4,24 @@ This directory contains release notes and publishing guidance for Connie's Uploa
 
 ## Latest Release
 
-**v3.1.3 - "Posting Sessions & Shared Limits"**
-Release date: November 18, 2026
-Tag: `v3.1.3`
+**v3.2.0 - "Reliable Uploads & Python-Owned Parsing"**
+Release date: November 20, 2026
+Tag: `v3.2.0`
 
-Read the full notes: [RELEASE_NOTES_v3.1.3.md](RELEASE_NOTES_v3.1.3.md)
-Previous release notes: [RELEASE_NOTES_v3.1.2.md](RELEASE_NOTES_v3.1.2.md)
+Read the full notes: [RELEASE_NOTES_v3.2.0.md](RELEASE_NOTES_v3.2.0.md)
+Previous release notes: [RELEASE_NOTES_v3.1.3.md](RELEASE_NOTES_v3.1.3.md)
 
 ### Summary
 
-- Ships the v3.1.2 review fixes that merged after the `v3.1.2` tag: no dropped or competing auto-posts when a new upload starts, and no late forum replies after the app reported a failure.
-- Aligns the per-file size limit at 100 MB in the app and the sidecar, and sends the sidecar only the credentials a host needs.
-- Splits the ViperGirls module into storage, client, and UI parts, and bumps app, build scripts, plugin metadata, and release docs to `3.1.3`.
+- Fixes the 40 bugs from a full bug hunt of v3.1.3 and the issues two follow-up reviews found in those fixes: trustworthy upload results and links, uploads that always finish, output that is never overwritten or lost, templates that behave as documented, and per-host galleries and settings.
+- Moves upload sessions and result parsing from the Go sidecar into the Python host plugins, with a hidden `legacy_upload_parsing` fallback.
+- Stops saving the IMX API key in the settings file and hides credentials in error messages; bumps app, build scripts, plugin metadata, and release docs to `3.2.0`.
 
 ## Release History
 
 | Version | Date | Focus | Notes |
 |---------|------|-------|-------|
+| v3.2.0 | 2026-11-20 | Reliable Uploads & Python-Owned Parsing | [Notes](RELEASE_NOTES_v3.2.0.md) |
 | v3.1.3 | 2026-11-18 | Posting Sessions & Shared Limits | [Notes](RELEASE_NOTES_v3.1.3.md) |
 | v3.1.2 | 2026-11-06 | Lifecycle Hardening | [Notes](RELEASE_NOTES_v3.1.2.md) |
 | v3.1.1 | 2026-09-07 | Activity Hide & IMX Thumbnail Fix | [Notes](RELEASE_NOTES_v3.1.1.md) |

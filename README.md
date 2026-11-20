@@ -1,7 +1,7 @@
 # Connie's Uploader
 
-![Current app build badge showing v3.1.3](https://img.shields.io/badge/app-v3.1.3-orange.svg)
-![Latest tagged release badge showing v3.1.3](https://img.shields.io/badge/latest%20release-v3.1.3-blue.svg)
+![Current app build badge showing v3.2.0](https://img.shields.io/badge/app-v3.2.0-orange.svg)
+![Latest tagged release badge showing v3.2.0](https://img.shields.io/badge/latest%20release-v3.2.0-blue.svg)
 ![MIT License badge](https://img.shields.io/badge/license-MIT-green.svg)
 ![Supported platforms: Windows, Linux, and macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)
 ![Continuous integration workflow status: passing](https://github.com/conniecombs/ConniesUploader/actions/workflows/ci.yml/badge.svg?branch=main)
@@ -12,7 +12,7 @@
 
 Connie's Uploader is a desktop image-uploading tool with a CustomTkinter GUI and a Go sidecar for concurrent uploads. It supports batch uploads, gallery workflows, custom output templates, drag and drop, secure credential storage, ViperGirls posting workflows, and automated release builds for Windows, Linux, and macOS.
 
-**Latest tagged release:** v3.1.3 "Posting Sessions & Shared Limits" (November 18, 2026)
+**Latest tagged release:** v3.2.0 "Reliable Uploads & Python-Owned Parsing" (November 20, 2026)
 
 **Current release branch:** `main`
 
@@ -91,6 +91,28 @@ The active upload plugins are:
 - `vipr.im`
 
 ## Latest Changelog
+
+### v3.2.0 - Reliable Uploads & Python-Owned Parsing
+
+Released November 20, 2026.
+
+**Added**
+
+- Upload sessions and result parsing run in the Python host plugins; the Go sidecar only transports files. IMX, Pixhost and Imgur are migrated; Vipr, TurboImageHost and ImageBam follow. A hidden `legacy_upload_parsing` setting switches back to the old Go parsing if a live host misbehaves.
+
+**Fixed**
+
+- Fixes the 40 bugs found in a full bug hunt of v3.1.3, plus the issues two follow-up code reviews found in those fixes. Among them: rejected uploads no longer show as "Uploaded", TurboImageHost and ImageBam links always belong to the right file, slow uploads are no longer cut off after 3 minutes, and lost replies no longer create duplicates. Stop, Clear List, Remove Batch and sidecar crashes can no longer leave an upload stuck. Same-named batches no longer overwrite each other's output. The Template Editor saves the template being edited, and gallery IDs no longer leak between hosts.
+
+**Security**
+
+- The IMX API key is no longer saved in `user_settings.json` (old copies are removed), and error messages hide credentials and session values.
+
+**Changed**
+
+- New sidecar protocol for sessions and raw uploads (see `docs/TRANSPORT_CONTRACT.md`). Bumped the app, build scripts, and active plugin metadata to `v3.2.0`.
+
+Full history is available in [CHANGELOG.md](docs/CHANGELOG.md), and the full v3.2.0 release notes are available in [RELEASE_NOTES_v3.2.0.md](docs/releases/RELEASE_NOTES_v3.2.0.md).
 
 ### v3.1.3 - Posting Sessions & Shared Limits
 
@@ -231,13 +253,13 @@ Full history is available in [CHANGELOG.md](docs/CHANGELOG.md).
 
 ### Download a Release
 
-Download the latest release from [GitHub Releases](https://github.com/conniecombs/ConniesUploader/releases/tag/v3.1.3).
+Download the latest release from [GitHub Releases](https://github.com/conniecombs/ConniesUploader/releases/tag/v3.2.0).
 
 Expected release artifacts:
 
-- `ConniesUploader-v3.1.3-windows-x64.zip`
-- `ConniesUploader-v3.1.3-linux-x64.tar.gz`
-- `ConniesUploader-v3.1.3-macos-arm64.zip`
+- `ConniesUploader-v3.2.0-windows-x64.zip`
+- `ConniesUploader-v3.2.0-linux-x64.tar.gz`
+- `ConniesUploader-v3.2.0-macos-arm64.zip`
 
 Each release artifact includes a SHA256 checksum.
 

@@ -37,7 +37,7 @@ Complete guide to the current documentation for Connie's Uploader.
 ## Implementation Plans
 
 - [RAM-First Archives and File-Host Uploads](plans/RAM_FIRST_FILE_HOST_IMPLEMENTATION_PLAN.md) is the detailed proposal for RAM-backed ZIP creation, explicit disk opt-in, a reusable provider engine, Rapidgator integration, recovery, forum posting, implementation milestones, and acceptance tests. It describes planned work, not shipped functionality.
-- [v3.2.0 Python-owned upload sessions and parsing (proposed)](plans/V3_2_0_PYTHON_UPLOAD_PARSING_DESIGN.md)
+- [v3.2.0 Python-owned upload sessions and parsing](plans/V3_2_0_PYTHON_UPLOAD_PARSING_DESIGN.md): implemented in v3.2.0 (M1–M4); removing the legacy Go hooks (M5) is still planned.
 
 ## Release Docs
 
@@ -142,6 +142,11 @@ docs/
 - Added the detailed RAM-first archive and file-host implementation plan, with Rapidgator as the first provider and disk archive creation requiring explicit user selection.
 - Linked the proposal separately from current behavior documentation.
 
+### 2026-11-20
+
+- Promoted current release documentation, build metadata, and app metadata to `v3.2.0`.
+- Added v3.2.0 release notes and the Python-owned upload parsing protocol (sessions, raw uploads) to `TRANSPORT_CONTRACT.md` and `ARCHITECTURE.md`; the design doc records the implementation decisions and how to migrate a host.
+
 ### 2026-11-18
 
 - Promoted current release documentation, build metadata, and app metadata to `v3.1.3`.
@@ -212,7 +217,7 @@ docs/
 - Update plugin docs when plugin discovery, schema fields, request specs, or packaging hidden imports change.
 - Keep historical docs clearly separated from current guidance.
 
-- **Last Updated:** 2026-11-18
-- **Documentation Version:** 3.1.3
-- **Project Version:** v3.1.3
+- **Last Updated:** 2026-11-20
+- **Documentation Version:** 3.2.0
+- **Project Version:** v3.2.0
 
