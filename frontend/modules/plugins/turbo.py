@@ -20,6 +20,24 @@ from . import helpers
 class TurboPlugin(ImageHostPlugin):
     """TurboImageHost image hosting plugin using schema-based UI."""
 
+    THUMBNAIL_SIZES = ("150", "200", "250", "300", "350", "400", "500", "600")
+    DEFAULT_THUMBNAIL_SIZE = "200"
+
+    @classmethod
+    def _offered_thumbnail_size(cls, value: Any) -> str:
+        """Return ``value`` if Turbo offers it, else the nearest offered size.
+
+        Older settings default to 180, which Turbo does not offer.
+        """
+        text = str(value or "").strip()
+        if text in cls.THUMBNAIL_SIZES:
+            return text
+        try:
+            wanted = float(text)
+        except ValueError:
+            return cls.DEFAULT_THUMBNAIL_SIZE
+        return min(cls.THUMBNAIL_SIZES, key=lambda size: (abs(int(size) - wanted), -int(size)))
+
     @property
     def id(self) -> str:
         return "turboimagehost"
@@ -77,8 +95,8 @@ class TurboPlugin(ImageHostPlugin):
                 "type": "dropdown",
                 "key": "thumbnail_size",
                 "label": "Thumbnail Size",
-                "values": ["150", "200", "250", "300", "350", "400", "500", "600"],
-                "default": "180",
+                "values": list(self.THUMBNAIL_SIZES),
+                "default": self.DEFAULT_THUMBNAIL_SIZE,
                 "required": True,
             },
             {
@@ -171,8 +189,9 @@ class TurboPlugin(ImageHostPlugin):
         raw_content = (config.get("content_type") or "all").lower()
         content_value = "adult" if raw_content in ("adult", "18", "true") else "all"
 
-        # Thumbnail size.
-        thumb_size = config.get("thumbnail_size") or config.get("turbo_thumb") or "150"
+        thumb_size = self._offered_thumbnail_size(
+            config.get("thumbnail_size") or config.get("turbo_thumb")
+        )
 
         # Build multipart fields. One spec serves every file of the job, so
         # per-file values are sidecar tokens it fills for each file:
@@ -184,7 +203,7 @@ class TurboPlugin(ImageHostPlugin):
             "qqfilename": {"type": "text", "value": "{filename}"},
             "qqtotalfilesize": {"type": "text", "value": "{file_size}"},
             "imcontent": {"type": "text", "value": content_value},
-            "thumb_size": {"type": "text", "value": str(thumb_size)},
+            "thumb_size": {"type": "text", "value": thumb_size},
         }
 
         # Gallery fields.

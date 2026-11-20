@@ -709,6 +709,36 @@ class TestTurboHttpSpec(unittest.TestCase):
         self.assertEqual(fields["qquuid"]["value"], "{upload_id}")
         self.assertEqual(fields["qqfilename"]["value"], "{filename}")
 
+    def test_default_thumbnail_size_is_one_of_the_offered_values(self):
+        from modules.plugins.turbo import TurboPlugin
+
+        field = next(f for f in TurboPlugin().settings_schema if f.get("key") == "thumbnail_size")
+
+        self.assertIn(field["default"], field["values"])
+
+    def test_spec_without_thumbnail_setting_sends_the_schema_default(self):
+        from modules.plugins.turbo import TurboPlugin
+
+        plugin = TurboPlugin()
+        field = next(f for f in plugin.settings_schema if f.get("key") == "thumbnail_size")
+
+        fields = plugin.build_http_request("/tmp/image.jpg", {}, {})["multipart_fields"]
+
+        self.assertEqual(fields["thumb_size"]["value"], field["default"])
+
+    def test_saved_size_turbo_does_not_offer_is_sent_as_nearest_offered_size(self):
+        from modules.plugins.turbo import TurboPlugin
+
+        plugin = TurboPlugin()
+        sent = {
+            size: plugin.build_http_request("/tmp/i.jpg", {"thumbnail_size": size}, {})[
+                "multipart_fields"
+            ]["thumb_size"]["value"]
+            for size in ("180", "350", "999", "junk")
+        }
+
+        self.assertEqual(sent, {"180": "200", "350": "350", "999": "600", "junk": "200"})
+
 
 class TestImgurHttpSpec(unittest.TestCase):
     """Test Imgur generic HTTP runner specification."""
