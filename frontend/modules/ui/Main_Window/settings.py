@@ -294,6 +294,9 @@ class SettingsMixin:
             "show_previews": self.var_show_previews.get(),
             "separate_batches": self.var_separate_batches.get(),
             "appearance_mode": self.var_appearance_mode.get(),
+            # Not shown in the window; kept so a value set in the settings
+            # file reaches the upload and survives the save at Start.
+            "legacy_upload_parsing": self.settings.get("legacy_upload_parsing") is True,
         }
 
         settings_view = self.__dict__.get("settings_view")

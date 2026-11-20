@@ -76,6 +76,23 @@ type JobRequest struct {
 	RateLimits  *RateLimitConfig        `json:"rate_limits,omitempty"`
 	RetryConfig *RetryConfig            `json:"retry_config,omitempty"`
 
+	// SessionID names a transport session (see sessions.go). On http_upload
+	// the job's uploads use that session's client and cookie jar; on
+	// session_close it is the session to close.
+	SessionID string `json:"session_id,omitempty"`
+
+	// RawResponse makes an http_upload job send FileRequests[file] for each
+	// file and report the host's answer as a raw result (see raw_upload.go)
+	// instead of running http_spec, response_parser and resolve_spec.
+	RawResponse  bool                         `json:"raw_response,omitempty"`
+	FileRequests map[string]*RawUploadRequest `json:"file_requests,omitempty"`
+	// Sequential uploads the job's files one at a time, in list order.
+	Sequential bool `json:"sequential,omitempty"`
+
+	// Session is the open transport session the job's uploads use, set while
+	// the job runs. Not serialized.
+	Session *TransportSession `json:"-"`
+
 	// SessionClient / SessionValues hold a once-per-job pre_request result so
 	// concurrent file uploads reuse login cookies and extracted tokens instead
 	// of re-authenticating on every file. Not serialized over JSON.
@@ -191,8 +208,12 @@ type GenericHttpRequestSpec struct {
 	// TimeoutSeconds bounds this request; values above the client ceiling
 	// clamp to it and zero selects the default.
 	TimeoutSeconds int `json:"timeout_seconds,omitempty"`
-	// ResetCookies discards the shared cookie jar before the request runs.
+	// ResetCookies discards the request site's cookies before it runs (in
+	// the session's jar when SessionID is set, else in the shared jar).
 	ResetCookies bool `json:"reset_cookies,omitempty"`
+	// SessionID runs the request on that transport session's client and
+	// cookie jar instead of the shared ones.
+	SessionID string `json:"session_id,omitempty"`
 
 	// Deprecated compatibility fields. New Python code should call Go one
 	// resolved transport request at a time, then parse and validate responses in

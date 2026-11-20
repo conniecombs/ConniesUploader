@@ -4,15 +4,26 @@
 """
 Pixhost.cc plugin - Schema-based implementation with Go sidecar uploads.
 
-Go-based upload plugin (upload handled by Go sidecar).
-Python side manages UI, configuration validation, and gallery coordination.
+Uploads run through the Go sidecar's transport; this plugin builds each
+upload request and reads Pixhost's JSON answer (the Python upload path).
+It also manages UI, configuration validation, and gallery coordination.
 """
 
 from typing import Dict, Any, List
 from .base import ImageHostPlugin
 from . import helpers
 from .. import api, config as app_config
+from ..upload_results import UploadResult, json_parser_options, parse_json_upload
 from loguru import logger
+
+# Pixhost has no status field: an answer without show_url (or a non-2xx one)
+# is a failure, reported with the host's error message. Shared by the legacy
+# spec and the Python parser.
+RESPONSE_PARSER = {
+    "type": "json",
+    "url_path": "show_url",
+    "thumb_path": "th_url",
+}
 
 
 class PixhostPlugin(ImageHostPlugin):
@@ -36,7 +47,7 @@ class PixhostPlugin(ImageHostPlugin):
                 "Upload images to Pixhost.cc with gallery support and cover image handling"
             ),
             "website": app_config.PIXHOST_BASE_URL,
-            "implementation": "go",
+            "implementation": "python",  # Python upload path; the sidecar is its transport
             "features": {
                 "galleries": True,
                 "covers": True,
@@ -170,15 +181,30 @@ class PixhostPlugin(ImageHostPlugin):
             "method": "POST",
             "headers": {"Accept": "application/json"},
             "multipart_fields": multipart_fields,
-            "response_parser": {
-                "type": "json",
-                "url_path": "show_url",
-                "thumb_path": "th_url",
-                # Pixhost has no explicit status field. The sidecar fails a
-                # non-2xx response, or one without show_url, with the host's
-                # error message.
-            },
+            "response_parser": dict(RESPONSE_PARSER),
         }
+
+    # --- Python upload path ---
+
+    def build_raw_upload_request(
+        self,
+        file_path: str,
+        config: Dict[str, Any],
+        session_values: Dict[str, str],
+        creds: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """The same request as the legacy spec: Pixhost's upload needs no session."""
+        return helpers.raw_request_from_spec(self.build_http_request(file_path, config, creds))
+
+    def parse_upload_response(
+        self, file_path, response, transport, session_values, session_state
+    ) -> UploadResult:
+        return parse_json_upload(
+            response,
+            file_path=file_path,
+            secrets=session_state.secrets,
+            **json_parser_options(RESPONSE_PARSER),
+        )
 
     def initialize_session(self, config: Dict[str, Any], creds: Dict[str, Any]) -> Dict[str, Any]:
         """Stub - Go sidecar handles session initialization."""

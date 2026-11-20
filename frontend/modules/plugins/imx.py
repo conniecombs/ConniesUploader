@@ -5,10 +5,13 @@
 """
 IMX.to plugin - Schema-based implementation.
 
-Go-based upload plugin (upload handled by Go sidecar).
-Python side only manages UI and gallery creation.
+Uploads run through the Go sidecar's transport; this plugin builds each
+upload request and reads IMX's JSON answer (the Python upload path). It also
+manages the UI and gallery creation.
 """
 
+import dataclasses
+import urllib.parse
 from typing import Dict, Any, List
 from .base import ImageHostPlugin
 from . import helpers
@@ -18,7 +21,31 @@ from ..imx_api import (
     create_gallery_with_image,
     require_upload_credentials,
 )
+from ..upload_results import UploadResult, json_parser_options, parse_json_upload
 from loguru import logger
+
+# How IMX's upload API answers; shared by the legacy spec and the Python parser.
+RESPONSE_PARSER = {
+    "type": "json",
+    "url_path": "data.image_url",
+    "thumb_path": "data.thumbnail_url",
+    "status_path": "status",
+    "success_value": "success",
+}
+
+
+def canonical_thumbnail_url(thumb_url: str) -> str:
+    """Return IMX thumbnail URLs in the durable image.imx.to/u/t form."""
+    thumb_url = str(thumb_url or "").strip()
+    if not thumb_url:
+        return ""
+
+    parsed = urllib.parse.urlsplit(thumb_url)
+    if parsed.hostname == "i.imx.to" and parsed.path.startswith("/t/"):
+        return urllib.parse.urlunsplit(
+            ("https", "image.imx.to", "/u" + parsed.path, parsed.query, parsed.fragment)
+        )
+    return thumb_url
 
 
 class ImxPlugin(ImageHostPlugin):
@@ -40,7 +67,7 @@ class ImxPlugin(ImageHostPlugin):
             "author": "Connie's Uploader Team",
             "description": "Upload images to IMX.to with gallery support, multiple thumbnail formats, and API-based uploads",
             "website": "https://imx.to",
-            "implementation": "go",
+            "implementation": "python",  # Python upload path; the sidecar is its transport
             "features": {
                 "galleries": True,
                 "covers": True,
@@ -238,14 +265,33 @@ class ImxPlugin(ImageHostPlugin):
                 "X-API-Key": creds.get("imx_api", ""),
             },
             "multipart_fields": multipart_fields,
-            "response_parser": {
-                "type": "json",
-                "url_path": "data.image_url",
-                "thumb_path": "data.thumbnail_url",
-                "status_path": "status",
-                "success_value": "success",
-            },
+            "response_parser": dict(RESPONSE_PARSER),
         }
+
+    # --- Python upload path ---
+
+    def build_raw_upload_request(
+        self,
+        file_path: str,
+        config: Dict[str, Any],
+        session_values: Dict[str, str],
+        creds: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """The same request as the legacy spec: IMX's upload needs no session."""
+        return helpers.raw_request_from_spec(self.build_http_request(file_path, config, creds))
+
+    def parse_upload_response(
+        self, file_path, response, transport, session_values, session_state
+    ) -> UploadResult:
+        result = parse_json_upload(
+            response,
+            file_path=file_path,
+            secrets=session_state.secrets,
+            **json_parser_options(RESPONSE_PARSER),
+        )
+        if not result.ok:
+            return result
+        return dataclasses.replace(result, thumb=canonical_thumbnail_url(result.thumb))
 
     @staticmethod
     def _gallery_id_from_config(config: Dict[str, Any]) -> str:

@@ -4,6 +4,7 @@
 """UploadChecks behavior for the main window."""
 
 from modules.imx_api import ImxApiError, validate_gallery_name
+from modules.plugins.base import uses_python_upload_parsing
 
 from .common import (  # noqa: F401
     Any,
@@ -344,7 +345,9 @@ class UploadChecksMixin:
             self.preflight_action_file_issue_texts = file_issue_texts
 
     def _preflight_check_sidecar(self, plugin, issues: List[str]) -> None:
-        if plugin.metadata.get("implementation") != "go":
+        # Legacy-spec hosts ("go") and hosts on the Python upload path both
+        # upload through the sidecar.
+        if plugin.metadata.get("implementation") != "go" and not uses_python_upload_parsing(plugin):
             return
 
         bridge = getattr(getattr(self, "upload_manager", None), "bridge", None)

@@ -56,14 +56,22 @@ func ValidateServiceName(service string) error {
 func ValidateJobRequest(job *JobRequest) error {
 	validActions := map[string]bool{
 		"http_upload": true, "http_request": true, "http_batch_resolve": true,
-		"generate_thumb": true, "cancel": true,
+		"generate_thumb": true, "cancel": true, "session_open": true, "session_close": true,
 	}
 	if !validActions[job.Action] {
 		return fmt.Errorf("invalid action: %s", job.Action)
 	}
-	if job.Action == "cancel" {
+	switch job.Action {
+	case "cancel":
 		if strings.TrimSpace(job.BatchID) == "" {
 			return fmt.Errorf("cancel requires batch_id")
+		}
+		return nil
+	case "session_open":
+		return nil
+	case "session_close":
+		if strings.TrimSpace(job.SessionID) == "" {
+			return fmt.Errorf("session_close requires session_id")
 		}
 		return nil
 	}

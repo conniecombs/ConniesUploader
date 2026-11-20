@@ -121,6 +121,9 @@ class SettingsManager:
             "pix_gallery_hash": {"type": "string"},
             "turbo_gallery_id": {"type": "string"},
             "imagebam_gallery_id": {"type": "string"},
+            # Escape hatch, not shown in the window: true sends every host
+            # through its legacy Go upload specs instead of Python parsing.
+            "legacy_upload_parsing": {"type": "boolean"},
         },
         "additionalProperties": True,  # Allow extra fields for forward compatibility
     }
@@ -176,6 +179,7 @@ class SettingsManager:
             "imgur_threads": 2,
             "imx_gallery_id": "",
             "turbo_gallery_id": "",
+            "legacy_upload_parsing": False,
         }
 
     @staticmethod
