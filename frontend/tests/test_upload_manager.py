@@ -5,6 +5,7 @@
 
 import queue
 import threading
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -16,6 +17,8 @@ class FakeBridge:
     def __init__(self):
         self.listeners = []
         self.sent = []
+        self.generation = 1
+        self.available = True
 
     def add_listener(self, q):
         self.listeners.append(q)
@@ -24,9 +27,14 @@ class FakeBridge:
         if q in self.listeners:
             self.listeners.remove(q)
 
-    def send_cmd(self, payload):
+    def send_job(self, payload):
+        if not self.available:
+            return None
         self.sent.append(payload)
-        return True
+        return self.generation
+
+    def send_cmd(self, payload):
+        return self.send_job(payload) is not None
 
     def is_process_alive(self):
         return True
@@ -182,3 +190,95 @@ def test_jobs_for_plugins_without_credentials_send_none(manager, monkeypatch):
     manager.um._send_job(["/e.jpg"], {"service": "pixhost.cc"}, {"imx_api": "secret"})
 
     assert manager.bridge.sent[-1]["creds"] == {}
+
+
+INTERRUPTED = "error: Uploader process restarted; upload interrupted"
+
+
+class SpecPlugin:
+    metadata = {}
+
+    def build_http_request(self, file_path, config, creds):
+        return {"url": "https://host.test/u", "multipart_fields": {}}
+
+
+def send_job(manager, monkeypatch, files):
+    monkeypatch.setattr(manager.um.plugin_manager, "get_plugin", lambda service_id: SpecPlugin())
+    manager.um._send_job(files, {"service": "pixhost.cc"}, {})
+    return manager.bridge.sent[-1]["id"]
+
+
+def crash(generation):
+    return {
+        "type": "sidecar_crashed",
+        "generation": generation,
+        "msg": "Uploader process restarted; upload interrupted",
+    }
+
+
+def test_sidecar_crash_ends_every_unfinished_file_of_the_dead_process(manager, monkeypatch):
+    job = send_job(manager, monkeypatch, ["/c.jpg", "/d.jpg", "/e.jpg"])
+    manager.um._handle_event({"id": job, "type": "result", "file": "/c.jpg", "url": "u"})
+    manager.um._handle_event({"id": job, "type": "status", "file": "/c.jpg", "status": "Done"})
+    # /d.jpg got its result, then the process died before its Done.
+    manager.um._handle_event({"id": job, "type": "result", "file": "/d.jpg", "url": "u2"})
+    drain(manager.results), drain(manager.progress)
+
+    manager.um._handle_event(crash(1))
+
+    assert drain(manager.results) == [("/e.jpg", "", "")]
+    assert sorted(drain(manager.progress)) == [
+        ("status", "/d.jpg", "Done"),
+        ("status", "/e.jpg", INTERRUPTED),
+    ]
+    assert job not in manager.um._job_files
+
+
+def test_sidecar_crash_leaves_jobs_of_the_restarted_process_alone(manager, monkeypatch):
+    old_job = send_job(manager, monkeypatch, ["/c.jpg"])
+    manager.bridge.generation = 2  # restarted; the next job reaches the new process
+    new_job = send_job(manager, monkeypatch, ["/f.jpg"])
+
+    manager.um._handle_event(crash(1))
+
+    assert drain(manager.progress) == [("status", "/c.jpg", INTERRUPTED)]
+    assert old_job not in manager.um._job_files
+    assert new_job in manager.um._job_files
+    assert "/f.jpg" in manager.um.active_files
+
+
+def test_job_written_to_a_process_already_reported_dead_is_ended(manager, monkeypatch):
+    manager.um._handle_event(crash(1))
+
+    send_job(manager, monkeypatch, ["/c.jpg"])
+
+    assert drain(manager.results) == [("/c.jpg", "", "")]
+    assert drain(manager.progress) == [("status", "/c.jpg", INTERRUPTED)]
+
+
+def test_stop_ends_unfinished_files_when_the_cancel_cannot_reach_the_sidecar(
+    manager, monkeypatch
+):
+    send_job(manager, monkeypatch, ["/c.jpg"])
+    manager.bridge.available = False
+
+    manager.um.cancel_batch()
+
+    statuses = []
+    deadline = time.monotonic() + 3
+    while len(statuses) < 3 and time.monotonic() < deadline:
+        statuses += drain(manager.progress)
+        time.sleep(0.01)
+    assert sorted(statuses) == [
+        ("status", "/a.jpg", "Cancelled"),
+        ("status", "/b.jpg", "Cancelled"),
+        ("status", "/c.jpg", "Cancelled"),
+    ]
+    assert manager.um.active_files == set()
+
+
+def test_stop_leaves_files_to_the_sidecar_when_the_cancel_is_delivered(manager):
+    manager.um.cancel_batch()
+
+    assert drain(manager.progress) == []
+    assert manager.um.active_files == {"/a.jpg", "/b.jpg"}
