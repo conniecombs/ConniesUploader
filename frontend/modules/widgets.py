@@ -558,6 +558,8 @@ class CollapsibleGroupFrame(ctk.CTkFrame):
             )
             self.btn_post_preview.pack(side="right", padx=5)
 
+        self.template_var = None
+        self.template_combo = None
         if template_names:
             val = (
                 default_template
@@ -594,6 +596,23 @@ class CollapsibleGroupFrame(ctk.CTkFrame):
 
     def _on_template_change(self, choice):
         self.selected_template = choice
+
+    def update_template_names(self, template_names, fallback="BBCode"):
+        """Refresh the template dropdown after templates were edited.
+
+        A selection that was renamed or deleted switches to ``fallback`` (or
+        the first template). Returns True when the selection changed.
+        """
+        names = list(template_names or [])
+        if self.template_combo is not None:
+            self.template_combo.configure(values=names)
+        if self.selected_template in names:
+            return False
+        replacement = fallback if fallback in names or not names else names[0]
+        self.selected_template = replacement
+        if self.template_var is not None:
+            self.template_var.set(replacement)
+        return True
 
     def toggle(self):
         if self.is_collapsed:

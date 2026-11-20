@@ -1014,7 +1014,19 @@ class RuntimeMixin:
             "thread_id": thread_id,
             "upload_date": datetime.now().strftime("%Y-%m-%d"),
         }
-        text = self.template_mgr.apply(group.selected_template, ctx, group_results)
+        template_name = self._output_template_for_group(group)
+        text = self.template_mgr.apply(template_name, ctx, group_results)
+        if not str(text or "").strip():
+            self.log(
+                f"Warning: Output skipped for '{group.title}' because template "
+                f"'{template_name}' produced no text."
+            )
+            self.add_activity(
+                f'Skipped output for {group.title}: template "{template_name}" produced no text.',
+                "warning",
+            )
+            self._skip_poster_for_group(group, "empty output")
+            return
 
         try:
             from modules.file_handler import sanitize_filename
@@ -1074,7 +1086,30 @@ class RuntimeMixin:
             self.log(f"Error writing output: {e}")
             self.add_activity(f"Error writing output: {e}", "error")
 
-    def _skip_poster_for_group(self, group) -> None:
+    def _output_template_for_group(self, group) -> str:
+        """The group's template, or the default when it was renamed or deleted."""
+        selected = str(getattr(group, "selected_template", "") or "")
+        get_all_keys = getattr(self.template_mgr, "get_all_keys", None)
+        if not callable(get_all_keys):
+            return selected
+        names = list(get_all_keys())
+        if selected in names:
+            return selected
+
+        fallback = self._default_template_name(names)
+        update = getattr(group, "update_template_names", None)
+        if callable(update):
+            update(names, fallback)
+        else:
+            group.selected_template = fallback
+        self.add_activity(
+            f'Template "{selected}" for {self._batch_display_name(group)} no longer exists; '
+            f'used "{fallback}" instead.',
+            "warning",
+        )
+        return fallback
+
+    def _skip_poster_for_group(self, group, reason: Optional[str] = None) -> None:
         """Tell the AutoPoster this group will never post so later batches proceed."""
         target = group.selected_thread
         if not target or target == "Do Not Post":
@@ -1083,9 +1118,10 @@ class RuntimeMixin:
         batch_index = group.batch_index
         if poster is None or not isinstance(batch_index, int):
             return
-        with self.lock:
-            states = [self.file_widgets.get(fp, {}).get("state") for fp in group.files]
-        reason = "upload cancelled" if "cancelled" in states else "upload failed"
+        if reason is None:
+            with self.lock:
+                states = [self.file_widgets.get(fp, {}).get("state") for fp in group.files]
+            reason = "upload cancelled" if "cancelled" in states else "upload failed"
         poster.skip(batch_index, reason)
 
     def generate_failed_group_output(self, group, failed_count: Optional[int] = None):

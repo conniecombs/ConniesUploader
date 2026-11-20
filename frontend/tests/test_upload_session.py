@@ -308,6 +308,100 @@ def test_pixhost_full_image_post_embeds_images_not_viewer_pages(tmp_path):
     assert "/show/" not in text
 
 
+def _template_app(tmp_path):
+    from modules.template_manager import TemplateManager
+
+    app = _output_app(tmp_path, [("/s/a1.jpg", "https://h/show/A1", "https://h/t/A1.jpg")])
+    app.var_auto_copy = FakeVar(False)
+    app.settings = {"service": "imagebam.com"}
+    app.template_mgr = TemplateManager(str(tmp_path / "templates.json"))
+    app.saved_threads_data = {"T": {"thread_id": "123"}}
+    group = FakeGroup("Set", ["/s/a1.jpg"])
+    group.selected_template = "Mine"
+    group.selected_thread = "T"
+    group.batch_index = 0
+    app.groups = [group]
+    return app, group
+
+
+@pytest.mark.unit
+def test_output_for_a_deleted_template_falls_back_to_the_default(tmp_path):
+    app, group = _template_app(tmp_path)
+    app.template_mgr.set_template("Mine", "[b]#batch_name#[/b]\n#all_images#")
+    app.template_mgr.rename_template("Mine", "Mine v2")
+
+    UploaderApp.generate_group_output(app, group)
+
+    text = Path(app.current_output_files[0]).read_text(encoding="utf-8")
+    assert "https://h/t/A1.jpg" in text
+    assert group.selected_template == "BBCode"
+    assert any(
+        level == "warning" and '"Mine"' in message and '"BBCode"' in message
+        for message, level in app.activity
+    )
+    posted_text = app.auto_poster.queue_post.call_args.args[1]
+    assert posted_text == text
+
+
+@pytest.mark.unit
+def test_empty_rendered_output_is_never_written_or_posted(tmp_path):
+    app, group = _template_app(tmp_path)
+    app.template_mgr = SimpleNamespace(
+        apply=lambda name, context, results: "  \n",
+        get_all_keys=lambda: ["BBCode", "Mine"],
+    )
+
+    UploaderApp.generate_group_output(app, group)
+
+    assert app.current_output_files == []
+    assert not Path(app.output_dir).exists() or list(Path(app.output_dir).iterdir()) == []
+    app.auto_poster.queue_post.assert_not_called()
+    app.auto_poster.skip.assert_called_once()
+    assert app.auto_poster.skip.call_args.args[0] == 0
+    assert any(
+        level == "warning" and "produced no text" in message for message, level in app.activity
+    )
+
+
+@pytest.mark.unit
+def test_template_changes_switch_batches_off_missing_templates(tmp_path):
+    from modules.template_manager import TemplateManager
+
+    app = _ui_app(tmp_path)
+    app.template_mgr = TemplateManager(str(tmp_path / "templates.json"))
+    app.template_mgr.set_template("Mine v2", "#all_images#")
+    stale = SimpleNamespace(
+        title="Old", selected_template="Mine", update_template_names=Mock(return_value=True)
+    )
+    current = SimpleNamespace(
+        title="New", selected_template="Mine v2", update_template_names=Mock(return_value=False)
+    )
+    app.groups = [stale, current]
+
+    UploaderApp._on_templates_changed(app, "Mine v2")
+
+    names = app.template_mgr.get_all_keys()
+    stale.update_template_names.assert_called_once_with(names, "BBCode")
+    current.update_template_names.assert_called_once_with(names, "BBCode")
+    assert [level for _message, level in app.activity] == ["warning"]
+
+
+@pytest.mark.unit
+def test_template_editor_reports_changes_to_the_main_window(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(
+        "modules.ui.Main_Window.menu_actions.TemplateEditor",
+        lambda *args, **kwargs: captured.update(kwargs),
+    )
+    app = make_app()
+    app.template_mgr = SimpleNamespace()
+    app.get_preview_data = lambda: {}
+
+    UploaderApp.open_template_editor(app)
+
+    assert captured["update_callback"] == app._on_templates_changed
+
+
 def _finishing_app(tmp_path, monkeypatch, files, auto_copy=False):
     """Upload in progress; finalization runs inline and after() callbacks are captured."""
     monkeypatch.setattr(

@@ -61,6 +61,35 @@ def test_removing_a_cover_file_updates_the_file_count_label():
 
 
 @pytest.mark.unit
+def test_template_dropdown_switches_a_missing_template_to_the_fallback():
+    group = make_group(["a.jpg"])
+    group.selected_template = "Mine"
+    group.template_var.set("Mine")
+
+    changed = CollapsibleGroupFrame.update_template_names(
+        group, ["BBCode", "Markdown", "Mine v2"], "BBCode"
+    )
+
+    assert changed is True
+    assert group.selected_template == "BBCode"
+    assert group.template_var.get() == "BBCode"
+    assert group.template_combo.options["values"] == ["BBCode", "Markdown", "Mine v2"]
+
+
+@pytest.mark.unit
+def test_template_dropdown_keeps_a_template_that_still_exists():
+    group = make_group(["a.jpg"])
+    group.selected_template = "Markdown"
+    group.template_var.set("Markdown")
+
+    changed = CollapsibleGroupFrame.update_template_names(group, ["BBCode", "Markdown"], "BBCode")
+
+    assert changed is False
+    assert group.selected_template == "Markdown"
+    assert group.template_combo.options["values"] == ["BBCode", "Markdown"]
+
+
+@pytest.mark.unit
 def test_adding_a_file_to_a_completed_group_clears_its_completion():
     group = make_group(["a.jpg"])
     CollapsibleGroupFrame.mark_complete(group)
