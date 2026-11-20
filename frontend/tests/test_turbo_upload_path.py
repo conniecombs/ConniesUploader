@@ -244,12 +244,68 @@ def test_a_refused_login_fails_the_group_with_the_hosts_message():
     assert [call[0] for call in transport.calls] == ["POST"], "no upload page after a refusal"
 
 
-def test_a_refused_login_without_a_message_still_says_what_happened():
-    form = '<form><input name="username"><input type="PASSWORD" name="password"></form>'
-    transport = FakeTransport({"https://www.turboimagehost.com/login.tu?": page(form)})
+LOGIN_URL = "https://www.turboimagehost.com/login.tu?"
+
+
+@pytest.mark.parametrize(
+    ("body", "url"),
+    [
+        (
+            '<form action="/LOGIN.tu"><input name="username"><input type="PASSWORD" name="p"></form>',
+            "https://www.turboimagehost.com/",
+        ),
+        # A form without an action posts back to the page it is on: the login page.
+        ('<form><input name="username"><input type="password" name="p"></form>', LOGIN_URL),
+    ],
+    ids=["action names login", "no action on the login page"],
+)
+def test_a_refused_login_without_a_message_still_says_what_happened(body, url):
+    transport = FakeTransport({LOGIN_URL: page(body, url=url)})
 
     with pytest.raises(RuntimeError, match="showed its login form again"):
         TurboPlugin().open_upload_session(transport, {}, CREDS)
+
+
+@pytest.mark.parametrize(
+    ("body", "url"),
+    [
+        # Logged in, with the header's login box still on the page.
+        (
+            '<div id="top"><form action="login.tu" method="post"><input name="username">'
+            '<input type="password" name="password"></form></div>'
+            '<a href="/LogOut.tu">Sign out</a><p>Welcome back, connie</p>',
+            LOGIN_URL,
+        ),
+        # A logout form counts as well as a logout link.
+        (
+            '<form action="https://www.turboimagehost.com/logout.tu" method="post">'
+            '<button>Logout</button></form>'
+            '<form action="login.tu"><input type="password" name="password"></form>',
+            LOGIN_URL,
+        ),
+        # An account page with a password field that is not the login form.
+        (
+            '<h1>My account</h1><form action="account.tu?change=pass">'
+            '<input type="password" name="new_password"></form>',
+            "https://www.turboimagehost.com/account.tu",
+        ),
+        # A password field in a form without an action, on a page that is not the login page.
+        (
+            '<form><input type="password" name="new_password"></form>',
+            "https://www.turboimagehost.com/account.tu",
+        ),
+    ],
+    ids=["header login box", "logout form", "account page", "account page without action"],
+)
+def test_a_logged_in_page_with_a_password_field_is_not_a_refusal(body, url):
+    transport = FakeTransport(
+        {LOGIN_URL: page(body, url=url), "https://www.turboimagehost.com/": page(HOME)}
+    )
+
+    values = TurboPlugin().open_upload_session(transport, {}, CREDS)
+
+    assert [call[0] for call in transport.calls] == ["POST", "GET"]
+    assert values["upload_url"] == "https://s8d8.turboimagehost.com/upload_html5.tu"
 
 
 @pytest.mark.parametrize(

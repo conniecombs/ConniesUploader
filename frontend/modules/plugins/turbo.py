@@ -59,6 +59,10 @@ POLL_DELAYS_MS = (500, 1000, 2000, 3000, 5000, 5000)
 # Result-page entries are matched to files by name (ResultPageMatcher).
 FILE_MATCH_MODE = "filename"
 
+# A login answer with a logout link or form is logged in.
+_LOGGED_IN_SELECTOR = "a[href*='logout' i], form[action*='logout' i]"
+_PASSWORD_INPUT = "input[type=password i]"
+
 # Elements a login page shows its error in, most specific first.
 _LOGIN_MESSAGE_SELECTORS = (
     ".error",
@@ -114,10 +118,28 @@ def _upload_script_url(endpoint: str) -> str:
         return default
 
 
-def _login_refusal(body: str, secrets_: Iterable[str]) -> Optional[str]:
-    """Why the host refused a login, when its answer shows the login form again; else None."""
+def _is_login_form(form: Any, page_url: str) -> bool:
+    """Whether ``form`` is a login form: a password field, posted to the login page.
+
+    A form without an action posts back to the page it is on.
+    """
+    if form.select_one(_PASSWORD_INPUT) is None:
+        return False
+    action = str(form.get("action") or "").strip()
+    return "login" in (action or str(page_url or "")).lower()
+
+
+def _login_refusal(body: str, secrets_: Iterable[str], page_url: str = "") -> Optional[str]:
+    """Why the host refused a login, when its answer shows the login form again; else None.
+
+    An answer with a logout link or form is logged in, whatever else it
+    shows (a header login box, an account page's password field). Without
+    one, the login is refused only if the answer shows the login form again.
+    """
     soup = BeautifulSoup(str(body or ""), "html.parser")
-    if soup.select_one("input[type=password i]") is None:
+    if soup.select_one(_LOGGED_IN_SELECTOR) is not None:
+        return None
+    if not any(_is_login_form(form, page_url) for form in soup.select("form")):
         return None
     for selector in _LOGIN_MESSAGE_SELECTORS:
         element = soup.select_one(selector)
@@ -408,7 +430,7 @@ class TurboPlugin(ImageHostPlugin):
                 raise TurboSessionError(
                     request_failure("TurboImageHost login failed", login, hidden)
                 )
-            refusal = _login_refusal(login.body, hidden)
+            refusal = _login_refusal(login.body, hidden, login.final_url)
             if refusal is not None:
                 raise TurboSessionError(f"TurboImageHost refused the login: {refusal}")
 
