@@ -15,6 +15,9 @@ This module contains helper functions for common plugin operations:
 Used across all plugins to reduce code duplication and ensure consistency.
 """
 
+import os
+import secrets
+import string
 from typing import Dict, Any, List, Callable, Optional
 from loguru import logger
 
@@ -486,6 +489,28 @@ def get_gallery_id(config: Dict[str, Any], group=None) -> Optional[str]:
 # ============================================================================
 # Python Upload Path Helpers
 # ============================================================================
+
+
+_UPLOAD_ID_ALPHABET = string.ascii_lowercase + string.digits
+
+
+def per_file_upload_values(file_path: str) -> Dict[str, str]:
+    """The per-file values the sidecar used to substitute into legacy specs.
+
+    ``filename`` (base name), ``file_size`` (bytes, "" if unreadable) and
+    ``upload_id`` (a random 12-character token, new on every call). On the
+    Python upload path a plugin puts these into the request itself in
+    ``build_raw_upload_request``; raw requests are sent literally.
+    """
+    try:
+        size = str(os.path.getsize(file_path))
+    except OSError:
+        size = ""
+    return {
+        "filename": os.path.basename(str(file_path)),
+        "file_size": size,
+        "upload_id": "".join(secrets.choice(_UPLOAD_ID_ALPHABET) for _ in range(12)),
+    }
 
 
 def raw_request_from_spec(spec: Dict[str, Any]) -> Dict[str, Any]:

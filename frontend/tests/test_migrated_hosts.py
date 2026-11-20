@@ -13,7 +13,7 @@ import pytest
 
 from modules import upload_manager
 from modules.imx_api import ImxGalleryUpload
-from modules.plugins import imx
+from modules.plugins import helpers, imx
 from modules.plugins.base import uses_python_upload_parsing
 from modules.plugins.imagebam import ImageBamPlugin
 from modules.plugins.imgur import ImgurPlugin
@@ -66,6 +66,21 @@ def test_raw_request_is_the_legacy_request_without_parser_hooks(plugin, config):
     file_fields = [f for f in raw["multipart_fields"].values() if f["type"] == "file"]
     assert file_fields == [{"type": "file", "value": "/in/a.jpg"}]
     assert {f["type"] for f in raw["multipart_fields"].values()} == {"file", "text"}
+
+
+def test_per_file_values_replace_the_sidecar_tokens(tmp_path):
+    first, second = tmp_path / "Scan #1.jpg", tmp_path / "b.jpg"
+    first.write_bytes(b"x" * 1234)
+    second.write_bytes(b"y" * 10)
+
+    one = helpers.per_file_upload_values(str(first))
+    two = helpers.per_file_upload_values(str(second))
+
+    assert one["filename"] == "Scan #1.jpg" and one["file_size"] == "1234"
+    assert two["filename"] == "b.jpg" and two["file_size"] == "10"
+    assert len(one["upload_id"]) == 12 and one["upload_id"].isalnum()
+    assert one["upload_id"] != two["upload_id"]
+    assert helpers.per_file_upload_values(str(tmp_path / "missing.jpg"))["file_size"] == ""
 
 
 def test_imgur_job_options_carry_the_thumbnail_size_to_the_parser():
