@@ -1,0 +1,878 @@
+{
+  "_comment": "TurboImageHost parity fixtures. backend/core/turbo_upload_parity_test.go checks that the legacy Go path (legacy.response_parser and legacy.resolve_spec, as TurboPlugin.build_http_request builds them) gives each 'want'; frontend/tests/test_turbo_upload_parity.py checks that the plugin's Python parser gives the same (python_error where the Python path quotes the host's message). Each case uploads its files one after another, each resolved right after its own upload; 'upload' answers every upload unless 'uploads' (by upload order) says otherwise; 'pages' are the result page as served to successive requests (the last repeats); 'result_url' is the page every request must ask for, and 'page_requests' how many there are. Change both sides together.",
+  "legacy": {
+    "response_parser": {
+      "type": "json",
+      "url_path": "newUrl",
+      "thumb_path": "",
+      "status_path": "success",
+      "success_value": "true",
+      "url_template": "https://www.turboimagehost.com/p/{id}/{filename}.html"
+    },
+    "resolve_spec": {
+      "result_url": "{url}",
+      "poll_delays_ms": [
+        500,
+        1000,
+        2000,
+        3000,
+        5000,
+        5000
+      ],
+      "link_extractor": "(?is)\\[url=(?P<image_url>https?://[^\\]]+?/p/[0-9]+/(?P<filename>[^/\\]]+?)\\.html)\\]\\s*\\[img\\](?P<thumb_url>https?://[^\\]]+?)\\[/img\\]\\s*\\[/url\\]",
+      "gallery_extractor": "input#imgCodeGG",
+      "file_match_mode": "filename"
+    }
+  },
+  "cases": [
+    {
+      "name": "result page thumbnail and gallery",
+      "source": "backend/uploader_http_runner_test.go TestExecuteHttpUploadResolvesTurboResultPageThumbnail",
+      "files": [
+        "/in/turbo-upload.jpg"
+      ],
+      "upload": {
+        "status": 200,
+        "body": "{\"success\":true,\"newUrl\":\"https://www.turboimagehost.com/upload_complete.tu?upload_id=a1b2c3d4e5f6g7h8i9j0\"}"
+      },
+      "pages": [
+        "<input id=\"imgCodeGG\" value=\"https://www.turboimagehost.com/album/394761/miscellaneous\">\n<textarea id=\"imgCodeURF\">\n\t[URL=https://www.turboimagehost.com/p/123/other.jpg.html][IMG]https://s8d8.turboimg.net/t1/123_other.jpg[/IMG][/URL]\n\t[URL=https://www.turboimagehost.com/p/124/turbo-upload.jpg.html][IMG]https://s8d8.turboimg.net/t1/124_turbo-upload.jpg[/IMG][/URL]\n</textarea>"
+      ],
+      "result_url": "https://www.turboimagehost.com/upload_complete.tu?upload_id=a1b2c3d4e5f6g7h8i9j0",
+      "page_requests": 1,
+      "want": {
+        "/in/turbo-upload.jpg": {
+          "url": "https://www.turboimagehost.com/p/124/turbo-upload.jpg.html",
+          "thumb": "https://s8d8.turboimg.net/t1/124_turbo-upload.jpg",
+          "gallery_url": "https://www.turboimagehost.com/album/394761/miscellaneous",
+          "error": ""
+        }
+      }
+    },
+    {
+      "name": "sanitized file name",
+      "source": "backend/uploader_http_runner_test.go TestExecuteHttpUploadResolvesTurboResultPageSanitizedFilename",
+      "files": [
+        "/in/imx api.jpg"
+      ],
+      "upload": {
+        "status": 200,
+        "body": "{\"success\":true,\"newUrl\":\"https://www.turboimagehost.com/upload_complete.tu?upload_id=a1b2c3d4e5f6g7h8i9j0\"}"
+      },
+      "pages": [
+        "<input id=\"imgCodeGG\" value=\"https://www.turboimagehost.com/album/395178/miscellaneous\">\n<textarea id=\"imgCodeURF\">\n\t[URL=https://www.turboimagehost.com/p/123691283/imx_api.jpg.html][IMG]https://s8d9.turboimg.net/t1/123691283_imx_api.jpg[/IMG][/URL]\n</textarea>"
+      ],
+      "result_url": "https://www.turboimagehost.com/upload_complete.tu?upload_id=a1b2c3d4e5f6g7h8i9j0",
+      "page_requests": 1,
+      "want": {
+        "/in/imx api.jpg": {
+          "url": "https://www.turboimagehost.com/p/123691283/imx_api.jpg.html",
+          "thumb": "https://s8d9.turboimg.net/t1/123691283_imx_api.jpg",
+          "gallery_url": "https://www.turboimagehost.com/album/395178/miscellaneous",
+          "error": ""
+        }
+      }
+    },
+    {
+      "name": "cover does not take back_cover",
+      "source": "backend/core/batch_resolve_test.go TestBatchResolvePrefersExactFileNames",
+      "files": [
+        "/in/cover.jpg",
+        "/in/back_cover.jpg"
+      ],
+      "upload": {
+        "status": 200,
+        "body": "{\"success\":true,\"newUrl\":\"https://www.turboimagehost.com/upload_complete.tu?upload_id=a1b2c3d4e5f6g7h8i9j0\"}"
+      },
+      "pages": [
+        "<div class=\"codes\">\n<input type=\"text\" id=\"imgCodeGG\" value=\"https://www.turboimagehost.com/album/394761/miscellaneous\" readonly>\n<textarea id=\"imgCodeURF\" rows=\"6\">\n[URL=https://www.turboimagehost.com/p/1/back_cover.jpg.html][IMG]https://s8d8.turboimg.net/t1/1_back_cover.jpg[/IMG][/URL]\n[URL=https://www.turboimagehost.com/p/2/cover.jpg.html][IMG]https://s8d8.turboimg.net/t1/2_cover.jpg[/IMG][/URL]\n</textarea></div>"
+      ],
+      "result_url": "https://www.turboimagehost.com/upload_complete.tu?upload_id=a1b2c3d4e5f6g7h8i9j0",
+      "page_requests": 2,
+      "want": {
+        "/in/cover.jpg": {
+          "url": "https://www.turboimagehost.com/p/2/cover.jpg.html",
+          "thumb": "https://s8d8.turboimg.net/t1/2_cover.jpg",
+          "gallery_url": "https://www.turboimagehost.com/album/394761/miscellaneous",
+          "error": ""
+        },
+        "/in/back_cover.jpg": {
+          "url": "https://www.turboimagehost.com/p/1/back_cover.jpg.html",
+          "thumb": "https://s8d8.turboimg.net/t1/1_back_cover.jpg",
+          "gallery_url": "https://www.turboimagehost.com/album/394761/miscellaneous",
+          "error": ""
+        }
+      }
+    },
+    {
+      "name": "2.jpg does not take 12.jpg",
+      "source": "backend/core/batch_resolve_test.go TestBatchResolvePrefersExactFileNames",
+      "files": [
+        "/in/2.jpg",
+        "/in/12.jpg"
+      ],
+      "upload": {
+        "status": 200,
+        "body": "{\"success\":true,\"newUrl\":\"https://www.turboimagehost.com/upload_complete.tu?upload_id=a1b2c3d4e5f6g7h8i9j0\"}"
+      },
+      "pages": [
+        "<div class=\"codes\">\n<input type=\"text\" id=\"imgCodeGG\" value=\"https://www.turboimagehost.com/album/394761/miscellaneous\" readonly>\n<textarea id=\"imgCodeURF\" rows=\"6\">\n[URL=https://www.turboimagehost.com/p/1/12.jpg.html][IMG]https://s8d8.turboimg.net/t1/1_12.jpg[/IMG][/URL]\n[URL=https://www.turboimagehost.com/p/2/2.jpg.html][IMG]https://s8d8.turboimg.net/t1/2_2.jpg[/IMG][/URL]\n</textarea></div>"
+      ],
+      "result_url": "https://www.turboimagehost.com/upload_complete.tu?upload_id=a1b2c3d4e5f6g7h8i9j0",
+      "page_requests": 2,
+      "want": {
+        "/in/2.jpg": {
+          "url": "https://www.turboimagehost.com/p/2/2.jpg.html",
+          "thumb": "https://s8d8.turboimg.net/t1/2_2.jpg",
+          "gallery_url": "https://www.turboimagehost.com/album/394761/miscellaneous",
+          "error": ""
+        },
+        "/in/12.jpg": {
+          "url": "https://www.turboimagehost.com/p/1/12.jpg.html",
+          "thumb": "https://s8d8.turboimg.net/t1/1_12.jpg",
+          "gallery_url": "https://www.turboimagehost.com/album/394761/miscellaneous",
+          "error": ""
+        }
+      }
+    },
+    {
+      "name": "Scan #1 and Scan #2 listed as Scan__1 and Scan__2",
+      "source": "backend/core/batch_resolve_test.go TestBatchResolvePrefersExactFileNames",
+      "files": [
+        "/in/Scan #1.jpg",
+        "/in/Scan #2.jpg"
+      ],
+      "upload": {
+        "status": 200,
+        "body": "{\"success\":true,\"newUrl\":\"https://www.turboimagehost.com/upload_complete.tu?upload_id=a1b2c3d4e5f6g7h8i9j0\"}"
+      },
+      "pages": [
+        "<div class=\"codes\">\n<input type=\"text\" id=\"imgCodeGG\" value=\"https://www.turboimagehost.com/album/394761/miscellaneous\" readonly>\n<textarea id=\"imgCodeURF\" rows=\"6\">\n[URL=https://www.turboimagehost.com/p/1/Scan__2.jpg.html][IMG]https://s8d8.turboimg.net/t1/1_Scan__2.jpg[/IMG][/URL]\n[URL=https://www.turboimagehost.com/p/2/Scan__1.jpg.html][IMG]https://s8d8.turboimg.net/t1/2_Scan__1.jpg[/IMG][/URL]\n</textarea></div>"
+      ],
+      "result_url": "https://www.turboimagehost.com/upload_complete.tu?upload_id=a1b2c3d4e5f6g7h8i9j0",
+      "page_requests": 2,
+      "want": {
+        "/in/Scan #1.jpg": {
+          "url": "https://www.turboimagehost.com/p/2/Scan__1.jpg.html",
+          "thumb": "https://s8d8.turboimg.net/t1/2_Scan__1.jpg",
+          "gallery_url": "https://www.turboimagehost.com/album/394761/miscellaneous",
+          "error": ""
+        },
+        "/in/Scan #2.jpg": {
+          "url": "https://www.turboimagehost.com/p/1/Scan__2.jpg.html",
+          "thumb": "https://s8d8.turboimg.net/t1/1_Scan__2.jpg",
+          "gallery_url": "https://www.turboimagehost.com/album/394761/miscellaneous",
+          "error": ""
+        }
+      }
+    },
+    {
+      "name": "percent-encoded page names",
+      "source": "backend/core/batch_resolve_test.go TestBatchResolvePrefersExactFileNames",
+      "files": [
+        "/in/Scan #1.jpg",
+        "/in/Scan #2.jpg"
+      ],
+      "upload": {
+        "status": 200,
+        "body": "{\"success\":true,\"newUrl\":\"https://www.turboimagehost.com/upload_complete.tu?upload_id=a1b2c3d4e5f6g7h8i9j0\"}"
+      },
+      "pages": [
+        "<div class=\"codes\">\n<input type=\"text\" id=\"imgCodeGG\" value=\"https://www.turboimagehost.com/album/394761/miscellaneous\" readonly>\n<textarea id=\"imgCodeURF\" rows=\"6\">\n[URL=https://www.turboimagehost.com/p/1/Scan%20%232.jpg.html][IMG]https://s8d8.turboimg.net/t1/1_Scan%20%232.jpg[/IMG][/URL]\n[URL=https://www.turboimagehost.com/p/2/Scan%20%231.jpg.html][IMG]https://s8d8.turboimg.net/t1/2_Scan%20%231.jpg[/IMG][/URL]\n</textarea></div>"
+      ],
+      "result_url": "https://www.turboimagehost.com/upload_complete.tu?upload_id=a1b2c3d4e5f6g7h8i9j0",
+      "page_requests": 2,
+      "want": {
+        "/in/Scan #1.jpg": {
+          "url": "https://www.turboimagehost.com/p/2/Scan%20%231.jpg.html",
+          "thumb": "https://s8d8.turboimg.net/t1/2_Scan%20%231.jpg",
+          "gallery_url": "https://www.turboimagehost.com/album/394761/miscellaneous",
+          "error": ""
+        },
+        "/in/Scan #2.jpg": {
+          "url": "https://www.turboimagehost.com/p/1/Scan%20%232.jpg.html",
+          "thumb": "https://s8d8.turboimg.net/t1/1_Scan%20%232.jpg",
+          "gallery_url": "https://www.turboimagehost.com/album/394761/miscellaneous",
+          "error": ""
+        }
+      }
+    },
+    {
+      "name": "host replaced spaces with underscores",
+      "source": "backend/core/batch_resolve_test.go TestBatchResolvePrefersExactFileNames",
+      "files": [
+        "/in/imx api.jpg",
+        "/in/imx.jpg"
+      ],
+      "upload": {
+        "status": 200,
+        "body": "{\"success\":true,\"newUrl\":\"https://www.turboimagehost.com/upload_complete.tu?upload_id=a1b2c3d4e5f6g7h8i9j0\"}"
+      },
+      "pages": [
+        "<div class=\"codes\">\n<input type=\"text\" id=\"imgCodeGG\" value=\"https://www.turboimagehost.com/album/394761/miscellaneous\" readonly>\n<textarea id=\"imgCodeURF\" rows=\"6\">\n[URL=https://www.turboimagehost.com/p/1/imx.jpg.html][IMG]https://s8d8.turboimg.net/t1/1_imx.jpg[/IMG][/URL]\n[URL=https://www.turboimagehost.com/p/2/imx_api.jpg.html][IMG]https://s8d8.turboimg.net/t1/2_imx_api.jpg[/IMG][/URL]\n</textarea></div>"
+      ],
+      "result_url": "https://www.turboimagehost.com/upload_complete.tu?upload_id=a1b2c3d4e5f6g7h8i9j0",
+      "page_requests": 2,
+      "want": {
+        "/in/imx api.jpg": {
+          "url": "https://www.turboimagehost.com/p/2/imx_api.jpg.html",
+          "thumb": "https://s8d8.turboimg.net/t1/2_imx_api.jpg",
+          "gallery_url": "https://www.turboimagehost.com/album/394761/miscellaneous",
+          "error": ""
+        },
+        "/in/imx.jpg": {
+          "url": "https://www.turboimagehost.com/p/1/imx.jpg.html",
+          "thumb": "https://s8d8.turboimg.net/t1/1_imx.jpg",
+          "gallery_url": "https://www.turboimagehost.com/album/394761/miscellaneous",
+          "error": ""
+        }
+      }
+    },
+    {
+      "name": "same base name in two folders",
+      "source": "backend/core/batch_resolve_test.go TestBatchResolvePrefersExactFileNames",
+      "files": [
+        "/in/setA/01.jpg",
+        "/in/setB/01.jpg"
+      ],
+      "upload": {
+        "status": 200,
+        "body": "{\"success\":true,\"newUrl\":\"https://www.turboimagehost.com/upload_complete.tu?upload_id=a1b2c3d4e5f6g7h8i9j0\"}"
+      },
+      "pages": [
+        "<div class=\"codes\">\n<input type=\"text\" id=\"imgCodeGG\" value=\"https://www.turboimagehost.com/album/394761/miscellaneous\" readonly>\n<textarea id=\"imgCodeURF\" rows=\"6\">\n[URL=https://www.turboimagehost.com/p/1/01.jpg.html][IMG]https://s8d8.turboimg.net/t1/1_01.jpg[/IMG][/URL]\n[URL=https://www.turboimagehost.com/p/2/01.jpg.html][IMG]https://s8d8.turboimg.net/t1/2_01.jpg[/IMG][/URL]\n</textarea></div>"
+      ],
+      "result_url": "https://www.turboimagehost.com/upload_complete.tu?upload_id=a1b2c3d4e5f6g7h8i9j0",
+      "page_requests": 2,
+      "want": {
+        "/in/setA/01.jpg": {
+          "url": "https://www.turboimagehost.com/p/1/01.jpg.html",
+          "thumb": "https://s8d8.turboimg.net/t1/1_01.jpg",
+          "gallery_url": "https://www.turboimagehost.com/album/394761/miscellaneous",
+          "error": ""
+        },
+        "/in/setB/01.jpg": {
+          "url": "https://www.turboimagehost.com/p/2/01.jpg.html",
+          "thumb": "https://s8d8.turboimg.net/t1/2_01.jpg",
+          "gallery_url": "https://www.turboimagehost.com/album/394761/miscellaneous",
+          "error": ""
+        }
+      }
+    },
+    {
+      "name": "a host prefix matches only on the last look",
+      "source": "backend/core/batch_resolve_test.go TestBatchResolvePrefersExactFileNames",
+      "files": [
+        "/in/beach.jpg"
+      ],
+      "upload": {
+        "status": 200,
+        "body": "{\"success\":true,\"newUrl\":\"https://www.turboimagehost.com/upload_complete.tu?upload_id=a1b2c3d4e5f6g7h8i9j0\"}"
+      },
+      "pages": [
+        "<div class=\"codes\">\n<input type=\"text\" id=\"imgCodeGG\" value=\"https://www.turboimagehost.com/album/394761/miscellaneous\" readonly>\n<textarea id=\"imgCodeURF\" rows=\"6\">\n[URL=https://www.turboimagehost.com/p/1/4411_beach.jpg.html][IMG]https://s8d8.turboimg.net/t1/1_4411_beach.jpg[/IMG][/URL]\n</textarea></div>"
+      ],
+      "result_url": "https://www.turboimagehost.com/upload_complete.tu?upload_id=a1b2c3d4e5f6g7h8i9j0",
+      "page_requests": 7,
+      "want": {
+        "/in/beach.jpg": {
+          "url": "https://www.turboimagehost.com/p/1/4411_beach.jpg.html",
+          "thumb": "https://s8d8.turboimg.net/t1/1_4411_beach.jpg",
+          "gallery_url": "https://www.turboimagehost.com/album/394761/miscellaneous",
+          "error": ""
+        }
+      }
+    },
+    {
+      "name": "each file of a job gets its own entry as the page grows",
+      "source": "backend/core/batch_resolve_test.go TestPerFileResolveGivesEachFileOfAJobItsOwnEntry",
+      "files": [
+        "/in/back_cover.jpg",
+        "/in/cover.jpg",
+        "/in/12.jpg",
+        "/in/2.jpg",
+        "/in/setA/01.jpg",
+        "/in/setB/01.jpg",
+        "/in/Scan #1.jpg",
+        "/in/Scan #2.jpg"
+      ],
+      "upload": {
+        "status": 200,
+        "body": "{\"success\":true,\"newUrl\":\"https://www.turboimagehost.com/upload_complete.tu?upload_id=a1b2c3d4e5f6g7h8i9j0\"}"
+      },
+      "pages": [
+        "<div class=\"codes\">\n<input type=\"text\" id=\"imgCodeGG\" value=\"https://www.turboimagehost.com/album/394761/miscellaneous\" readonly>\n<textarea id=\"imgCodeURF\" rows=\"6\">\n[URL=https://www.turboimagehost.com/p/1000/back_cover.jpg.html][IMG]https://s8d8.turboimg.net/t1/1000_back_cover.jpg[/IMG][/URL]\n</textarea></div>",
+        "<div class=\"codes\">\n<input type=\"text\" id=\"imgCodeGG\" value=\"https://www.turboimagehost.com/album/394761/miscellaneous\" readonly>\n<textarea id=\"imgCodeURF\" rows=\"6\">\n[URL=https://www.turboimagehost.com/p/1000/back_cover.jpg.html][IMG]https://s8d8.turboimg.net/t1/1000_back_cover.jpg[/IMG][/URL]\n[URL=https://www.turboimagehost.com/p/1001/cover.jpg.html][IMG]https://s8d8.turboimg.net/t1/1001_cover.jpg[/IMG][/URL]\n</textarea></div>",
+        "<div class=\"codes\">\n<input type=\"text\" id=\"imgCodeGG\" value=\"https://www.turboimagehost.com/album/394761/miscellaneous\" readonly>\n<textarea id=\"imgCodeURF\" rows=\"6\">\n[URL=https://www.turboimagehost.com/p/1000/back_cover.jpg.html][IMG]https://s8d8.turboimg.net/t1/1000_back_cover.jpg[/IMG][/URL]\n[URL=https://www.turboimagehost.com/p/1001/cover.jpg.html][IMG]https://s8d8.turboimg.net/t1/1001_cover.jpg[/IMG][/URL]\n[URL=https://www.turboimagehost.com/p/1002/12.jpg.html][IMG]https://s8d8.turboimg.net/t1/1002_12.jpg[/IMG][/URL]\n</textarea></div>",
+        "<div class=\"codes\">\n<input type=\"text\" id=\"imgCodeGG\" value=\"https://www.turboimagehost.com/album/394761/miscellaneous\" readonly>\n<textarea id=\"imgCodeURF\" rows=\"6\">\n[URL=https://www.turboimagehost.com/p/1000/back_cover.jpg.html][IMG]https://s8d8.turboimg.net/t1/1000_back_cover.jpg[/IMG][/URL]\n[URL=https://www.turboimagehost.com/p/1001/cover.jpg.html][IMG]https://s8d8.turboimg.net/t1/1001_cover.jpg[/IMG][/URL]\n[URL=https://www.turboimagehost.com/p/1002/12.jpg.html][IMG]https://s8d8.turboimg.net/t1/1002_12.jpg[/IMG][/URL]\n[URL=https://www.turboimagehost.com/p/1003/2.jpg.html][IMG]https://s8d8.turboimg.net/t1/1003_2.jpg[/IMG][/URL]\n</textarea></div>",
+        "<div class=\"codes\">\n<input type=\"text\" id=\"imgCodeGG\" value=\"https://www.turboimagehost.com/album/394761/miscellaneous\" readonly>\n<textarea id=\"imgCodeURF\" rows=\"6\">\n[URL=https://www.turboimagehost.com/p/1000/back_cover.jpg.html][IMG]https://s8d8.turboimg.net/t1/1000_back_cover.jpg[/IMG][/URL]\n[URL=https://www.turboimagehost.com/p/1001/cover.jpg.html][IMG]https://s8d8.turboimg.net/t1/1001_cover.jpg[/IMG][/URL]\n[URL=https://www.turboimagehost.com/p/1002/12.jpg.html][IMG]https://s8d8.turboimg.net/t1/1002_12.jpg[/IMG][/URL]\n[URL=https://www.turboimagehost.com/p/1003/2.jpg.html][IMG]https://s8d8.turboimg.net/t1/1003_2.jpg[/IMG][/URL]\n[URL=https://www.turboimagehost.com/p/1004/01.jpg.html][IMG]https://s8d8.turboimg.net/t1/1004_01.jpg[/IMG][/URL]\n</textarea></div>",
+        "<div class=\"codes\">\n<input type=\"text\" id=\"imgCodeGG\" value=\"https://www.turboimagehost.com/album/394761/miscellaneous\" readonly>\n<textarea id=\"imgCodeURF\" rows=\"6\">\n[URL=https://www.turboimagehost.com/p/1000/back_cover.jpg.html][IMG]https://s8d8.turboimg.net/t1/1000_back_cover.jpg[/IMG][/URL]\n[URL=https://www.turboimagehost.com/p/1001/cover.jpg.html][IMG]https://s8d8.turboimg.net/t1/1001_cover.jpg[/IMG][/URL]\n[URL=https://www.turboimagehost.com/p/1002/12.jpg.html][IMG]https://s8d8.turboimg.net/t1/1002_12.jpg[/IMG][/URL]\n[URL=https://www.turboimagehost.com/p/1003/2.jpg.html][IMG]https://s8d8.turboimg.net/t1/1003_2.jpg[/IMG][/URL]\n[URL=https://www.turboimagehost.com/p/1004/01.jpg.html][IMG]https://s8d8.turboimg.net/t1/1004_01.jpg[/IMG][/URL]\n[URL=https://www.turboimagehost.com/p/1005/01.jpg.html][IMG]https://s8d8.turboimg.net/t1/1005_01.jpg[/IMG][/URL]\n</textarea></div>",
+        "<div class=\"codes\">\n<input type=\"text\" id=\"imgCodeGG\" value=\"https://www.turboimagehost.com/album/394761/miscellaneous\" readonly>\n<textarea id=\"imgCodeURF\" rows=\"6\">\n[URL=https://www.turboimagehost.com/p/1000/back_cover.jpg.html][IMG]https://s8d8.turboimg.net/t1/1000_back_cover.jpg[/IMG][/URL]\n[URL=https://www.turboimagehost.com/p/1001/cover.jpg.html][IMG]https://s8d8.turboimg.net/t1/1001_cover.jpg[/IMG][/URL]\n[URL=https://www.turboimagehost.com/p/1002/12.jpg.html][IMG]https://s8d8.turboimg.net/t1/1002_12.jpg[/IMG][/URL]\n[URL=https://www.turboimagehost.com/p/1003/2.jpg.html][IMG]https://s8d8.turboimg.net/t1/1003_2.jpg[/IMG][/URL]\n[URL=https://www.turboimagehost.com/p/1004/01.jpg.html][IMG]https://s8d8.turboimg.net/t1/1004_01.jpg[/IMG][/URL]\n[URL=https://www.turboimagehost.com/p/1005/01.jpg.html][IMG]https://s8d8.turboimg.net/t1/1005_01.jpg[/IMG][/URL]\n[URL=https://www.turboimagehost.com/p/1006/Scan_#1.jpg.html][IMG]https://s8d8.turboimg.net/t1/1006_Scan_#1.jpg[/IMG][/URL]\n</textarea></div>",
+        "<div class=\"codes\">\n<input type=\"text\" id=\"imgCodeGG\" value=\"https://www.turboimagehost.com/album/394761/miscellaneous\" readonly>\n<textarea id=\"imgCodeURF\" rows=\"6\">\n[URL=https://www.turboimagehost.com/p/1000/back_cover.jpg.html][IMG]https://s8d8.turboimg.net/t1/1000_back_cover.jpg[/IMG][/URL]\n[URL=https://www.turboimagehost.com/p/1001/cover.jpg.html][IMG]https://s8d8.turboimg.net/t1/1001_cover.jpg[/IMG][/URL]\n[URL=https://www.turboimagehost.com/p/1002/12.jpg.html][IMG]https://s8d8.turboimg.net/t1/1002_12.jpg[/IMG][/URL]\n[URL=https://www.turboimagehost.com/p/1003/2.jpg.html][IMG]https://s8d8.turboimg.net/t1/1003_2.jpg[/IMG][/URL]\n[URL=https://www.turboimagehost.com/p/1004/01.jpg.html][IMG]https://s8d8.turboimg.net/t1/1004_01.jpg[/IMG][/URL]\n[URL=https://www.turboimagehost.com/p/1005/01.jpg.html][IMG]https://s8d8.turboimg.net/t1/1005_01.jpg[/IMG][/URL]\n[URL=https://www.turboimagehost.com/p/1006/Scan_#1.jpg.html][IMG]https://s8d8.turboimg.net/t1/1006_Scan_#1.jpg[/IMG][/URL]\n[URL=https://www.turboimagehost.com/p/1007/Scan_#2.jpg.html][IMG]https://s8d8.turboimg.net/t1/1007_Scan_#2.jpg[/IMG][/URL]\n</textarea></div>"
+      ],
+      "result_url": "https://www.turboimagehost.com/upload_complete.tu?upload_id=a1b2c3d4e5f6g7h8i9j0",
+      "page_requests": 8,
+      "want": {
+        "/in/back_cover.jpg": {
+          "url": "https://www.turboimagehost.com/p/1000/back_cover.jpg.html",
+          "thumb": "https://s8d8.turboimg.net/t1/1000_back_cover.jpg",
+          "gallery_url": "https://www.turboimagehost.com/album/394761/miscellaneous",
+          "error": ""
+        },
+        "/in/cover.jpg": {
+          "url": "https://www.turboimagehost.com/p/1001/cover.jpg.html",
+          "thumb": "https://s8d8.turboimg.net/t1/1001_cover.jpg",
+          "gallery_url": "https://www.turboimagehost.com/album/394761/miscellaneous",
+          "error": ""
+        },
+        "/in/12.jpg": {
+          "url": "https://www.turboimagehost.com/p/1002/12.jpg.html",
+          "thumb": "https://s8d8.turboimg.net/t1/1002_12.jpg",
+          "gallery_url": "https://www.turboimagehost.com/album/394761/miscellaneous",
+          "error": ""
+        },
+        "/in/2.jpg": {
+          "url": "https://www.turboimagehost.com/p/1003/2.jpg.html",
+          "thumb": "https://s8d8.turboimg.net/t1/1003_2.jpg",
+          "gallery_url": "https://www.turboimagehost.com/album/394761/miscellaneous",
+          "error": ""
+        },
+        "/in/setA/01.jpg": {
+          "url": "https://www.turboimagehost.com/p/1004/01.jpg.html",
+          "thumb": "https://s8d8.turboimg.net/t1/1004_01.jpg",
+          "gallery_url": "https://www.turboimagehost.com/album/394761/miscellaneous",
+          "error": ""
+        },
+        "/in/setB/01.jpg": {
+          "url": "https://www.turboimagehost.com/p/1005/01.jpg.html",
+          "thumb": "https://s8d8.turboimg.net/t1/1005_01.jpg",
+          "gallery_url": "https://www.turboimagehost.com/album/394761/miscellaneous",
+          "error": ""
+        },
+        "/in/Scan #1.jpg": {
+          "url": "https://www.turboimagehost.com/p/1006/Scan_#1.jpg.html",
+          "thumb": "https://s8d8.turboimg.net/t1/1006_Scan_#1.jpg",
+          "gallery_url": "https://www.turboimagehost.com/album/394761/miscellaneous",
+          "error": ""
+        },
+        "/in/Scan #2.jpg": {
+          "url": "https://www.turboimagehost.com/p/1007/Scan_#2.jpg.html",
+          "thumb": "https://s8d8.turboimg.net/t1/1007_Scan_#2.jpg",
+          "gallery_url": "https://www.turboimagehost.com/album/394761/miscellaneous",
+          "error": ""
+        }
+      }
+    },
+    {
+      "name": "a lagging page: cover waits for its own entry, not back_cover",
+      "source": "backend/core/batch_resolve_test.go TestBatchResolveFilenameModeWaitsForExactEntryBeforeLooseMatch",
+      "files": [
+        "/in/cover.jpg"
+      ],
+      "upload": {
+        "status": 200,
+        "body": "{\"success\":true,\"newUrl\":\"https://www.turboimagehost.com/upload_complete.tu?upload_id=a1b2c3d4e5f6g7h8i9j0\"}"
+      },
+      "pages": [
+        "<div class=\"codes\">\n<input type=\"text\" id=\"imgCodeGG\" value=\"https://www.turboimagehost.com/album/394761/miscellaneous\" readonly>\n<textarea id=\"imgCodeURF\" rows=\"6\">\n[URL=https://www.turboimagehost.com/p/1/back_cover.jpg.html][IMG]https://s8d8.turboimg.net/t1/1_back_cover.jpg[/IMG][/URL]\n</textarea></div>",
+        "<div class=\"codes\">\n<input type=\"text\" id=\"imgCodeGG\" value=\"https://www.turboimagehost.com/album/394761/miscellaneous\" readonly>\n<textarea id=\"imgCodeURF\" rows=\"6\">\n[URL=https://www.turboimagehost.com/p/1/back_cover.jpg.html][IMG]https://s8d8.turboimg.net/t1/1_back_cover.jpg[/IMG][/URL]\n[URL=https://www.turboimagehost.com/p/2/cover.jpg.html][IMG]https://s8d8.turboimg.net/t1/2_cover.jpg[/IMG][/URL]\n</textarea></div>"
+      ],
+      "result_url": "https://www.turboimagehost.com/upload_complete.tu?upload_id=a1b2c3d4e5f6g7h8i9j0",
+      "page_requests": 2,
+      "want": {
+        "/in/cover.jpg": {
+          "url": "https://www.turboimagehost.com/p/2/cover.jpg.html",
+          "thumb": "https://s8d8.turboimg.net/t1/2_cover.jpg",
+          "gallery_url": "https://www.turboimagehost.com/album/394761/miscellaneous",
+          "error": ""
+        }
+      }
+    },
+    {
+      "name": "an entry is held back only for an upload that finished",
+      "source": "backend/core/resolve_reservation_test.go TestNameMatchHoldsEntriesOnlyForFinishedUploads",
+      "files": [
+        "/in/Scan 1.jpg",
+        "/in/x/Scan_1.jpg"
+      ],
+      "upload": {
+        "status": 200,
+        "body": "{\"success\":true,\"newUrl\":\"https://www.turboimagehost.com/upload_complete.tu?upload_id=a1b2c3d4e5f6g7h8i9j0\"}"
+      },
+      "pages": [
+        "<div class=\"codes\">\n<input type=\"text\" id=\"imgCodeGG\" value=\"https://www.turboimagehost.com/album/394761/miscellaneous\" readonly>\n<textarea id=\"imgCodeURF\" rows=\"6\">\n[URL=https://www.turboimagehost.com/p/1000/Scan_1.jpg.html][IMG]https://s8d8.turboimg.net/t1/1000_Scan_1.jpg[/IMG][/URL]\n</textarea></div>",
+        "<div class=\"codes\">\n<input type=\"text\" id=\"imgCodeGG\" value=\"https://www.turboimagehost.com/album/394761/miscellaneous\" readonly>\n<textarea id=\"imgCodeURF\" rows=\"6\">\n[URL=https://www.turboimagehost.com/p/1000/Scan_1.jpg.html][IMG]https://s8d8.turboimg.net/t1/1000_Scan_1.jpg[/IMG][/URL]\n[URL=https://www.turboimagehost.com/p/1001/Scan_1.jpg.html][IMG]https://s8d8.turboimg.net/t1/1001_Scan_1.jpg[/IMG][/URL]\n</textarea></div>"
+      ],
+      "result_url": "https://www.turboimagehost.com/upload_complete.tu?upload_id=a1b2c3d4e5f6g7h8i9j0",
+      "page_requests": 2,
+      "want": {
+        "/in/Scan 1.jpg": {
+          "url": "https://www.turboimagehost.com/p/1000/Scan_1.jpg.html",
+          "thumb": "https://s8d8.turboimg.net/t1/1000_Scan_1.jpg",
+          "gallery_url": "https://www.turboimagehost.com/album/394761/miscellaneous",
+          "error": ""
+        },
+        "/in/x/Scan_1.jpg": {
+          "url": "https://www.turboimagehost.com/p/1001/Scan_1.jpg.html",
+          "thumb": "https://s8d8.turboimg.net/t1/1001_Scan_1.jpg",
+          "gallery_url": "https://www.turboimagehost.com/album/394761/miscellaneous",
+          "error": ""
+        }
+      }
+    },
+    {
+      "name": "an entry never goes to two files",
+      "source": "backend/core/batch_resolve_test.go TestBatchResolveSingleModeNeverGivesOneEntryToTwoFiles, by name",
+      "files": [
+        "/in/setA/01.jpg",
+        "/in/setB/01.jpg"
+      ],
+      "upload": {
+        "status": 200,
+        "body": "{\"success\":true,\"newUrl\":\"https://www.turboimagehost.com/upload_complete.tu?upload_id=a1b2c3d4e5f6g7h8i9j0\"}"
+      },
+      "pages": [
+        "<div class=\"codes\">\n<input type=\"text\" id=\"imgCodeGG\" value=\"https://www.turboimagehost.com/album/394761/miscellaneous\" readonly>\n<textarea id=\"imgCodeURF\" rows=\"6\">\n[URL=https://www.turboimagehost.com/p/1/01.jpg.html][IMG]https://s8d8.turboimg.net/t1/1_01.jpg[/IMG][/URL]\n</textarea></div>"
+      ],
+      "result_url": "https://www.turboimagehost.com/upload_complete.tu?upload_id=a1b2c3d4e5f6g7h8i9j0",
+      "page_requests": 8,
+      "want": {
+        "/in/setA/01.jpg": {
+          "url": "https://www.turboimagehost.com/p/1/01.jpg.html",
+          "thumb": "https://s8d8.turboimg.net/t1/1_01.jpg",
+          "gallery_url": "https://www.turboimagehost.com/album/394761/miscellaneous",
+          "error": ""
+        },
+        "/in/setB/01.jpg": {
+          "url": "",
+          "thumb": "",
+          "gallery_url": "",
+          "error": "resolve upload result: result page missing 1 link(s)"
+        }
+      }
+    },
+    {
+      "name": "NFD file names match NFC page names",
+      "source": "backend/core/resolve_unicode_test.go",
+      "files": [
+        "/in/Café.jpg",
+        "/in/Cafe.jpg"
+      ],
+      "upload": {
+        "status": 200,
+        "body": "{\"success\":true,\"newUrl\":\"https://www.turboimagehost.com/upload_complete.tu?upload_id=a1b2c3d4e5f6g7h8i9j0\"}"
+      },
+      "pages": [
+        "<div class=\"codes\">\n<input type=\"text\" id=\"imgCodeGG\" value=\"https://www.turboimagehost.com/album/394761/miscellaneous\" readonly>\n<textarea id=\"imgCodeURF\" rows=\"6\">\n[URL=https://www.turboimagehost.com/p/1/Cafe.jpg.html][IMG]https://s8d8.turboimg.net/t1/1_Cafe.jpg[/IMG][/URL]\n[URL=https://www.turboimagehost.com/p/2/Caf%C3%A9.jpg.html][IMG]https://s8d8.turboimg.net/t1/2_Caf%C3%A9.jpg[/IMG][/URL]\n</textarea></div>"
+      ],
+      "result_url": "https://www.turboimagehost.com/upload_complete.tu?upload_id=a1b2c3d4e5f6g7h8i9j0",
+      "page_requests": 2,
+      "want": {
+        "/in/Café.jpg": {
+          "url": "https://www.turboimagehost.com/p/2/Caf%C3%A9.jpg.html",
+          "thumb": "https://s8d8.turboimg.net/t1/2_Caf%C3%A9.jpg",
+          "gallery_url": "https://www.turboimagehost.com/album/394761/miscellaneous",
+          "error": ""
+        },
+        "/in/Cafe.jpg": {
+          "url": "https://www.turboimagehost.com/p/1/Cafe.jpg.html",
+          "thumb": "https://s8d8.turboimg.net/t1/1_Cafe.jpg",
+          "gallery_url": "https://www.turboimagehost.com/album/394761/miscellaneous",
+          "error": ""
+        }
+      }
+    },
+    {
+      "name": "braces in a file name are part of the name",
+      "source": "added",
+      "files": [
+        "/in/Holiday {filename}.jpg"
+      ],
+      "upload": {
+        "status": 200,
+        "body": "{\"success\":true,\"newUrl\":\"https://www.turboimagehost.com/upload_complete.tu?upload_id=a1b2c3d4e5f6g7h8i9j0\"}"
+      },
+      "pages": [
+        "<div class=\"codes\">\n<input type=\"text\" id=\"imgCodeGG\" value=\"https://www.turboimagehost.com/album/394761/miscellaneous\" readonly>\n<textarea id=\"imgCodeURF\" rows=\"6\">\n[URL=https://www.turboimagehost.com/p/1/Holiday_.jpg.html][IMG]https://s8d8.turboimg.net/t1/1_Holiday_.jpg[/IMG][/URL]\n[URL=https://www.turboimagehost.com/p/2/Holiday_{filename}.jpg.html][IMG]https://s8d8.turboimg.net/t1/2_Holiday_{filename}.jpg[/IMG][/URL]\n</textarea></div>"
+      ],
+      "result_url": "https://www.turboimagehost.com/upload_complete.tu?upload_id=a1b2c3d4e5f6g7h8i9j0",
+      "page_requests": 1,
+      "want": {
+        "/in/Holiday {filename}.jpg": {
+          "url": "https://www.turboimagehost.com/p/2/Holiday_{filename}.jpg.html",
+          "thumb": "https://s8d8.turboimg.net/t1/2_Holiday_{filename}.jpg",
+          "gallery_url": "https://www.turboimagehost.com/album/394761/miscellaneous",
+          "error": ""
+        }
+      }
+    },
+    {
+      "name": "auth failure: the upload is refused with 403",
+      "source": "added",
+      "files": [
+        "/in/a.jpg"
+      ],
+      "upload": {
+        "status": 403,
+        "body": "{\"success\":false,\"error\":\"You must be logged in to upload into a gallery\"}"
+      },
+      "pages": [
+        "<div class=\"codes\">\n<input type=\"text\" id=\"imgCodeGG\" value=\"https://www.turboimagehost.com/album/394761/miscellaneous\" readonly>\n<textarea id=\"imgCodeURF\" rows=\"6\">\n[URL=https://www.turboimagehost.com/p/1/a.jpg.html][IMG]https://s8d8.turboimg.net/t1/1_a.jpg[/IMG][/URL]\n</textarea></div>"
+      ],
+      "page_requests": 0,
+      "want": {
+        "/in/a.jpg": {
+          "url": "",
+          "thumb": "",
+          "gallery_url": "",
+          "error": "upload rejected (HTTP 403): You must be logged in to upload into a gallery"
+        }
+      }
+    },
+    {
+      "name": "auth failure: success false on a 200",
+      "source": "added",
+      "files": [
+        "/in/a.jpg"
+      ],
+      "upload": {
+        "status": 200,
+        "body": "{\"success\":false,\"error\":\"Session expired, please log in again\"}"
+      },
+      "pages": [
+        "<div class=\"codes\">\n<input type=\"text\" id=\"imgCodeGG\" value=\"https://www.turboimagehost.com/album/394761/miscellaneous\" readonly>\n<textarea id=\"imgCodeURF\" rows=\"6\">\n[URL=https://www.turboimagehost.com/p/1/a.jpg.html][IMG]https://s8d8.turboimg.net/t1/1_a.jpg[/IMG][/URL]\n</textarea></div>"
+      ],
+      "page_requests": 0,
+      "want": {
+        "/in/a.jpg": {
+          "url": "",
+          "thumb": "",
+          "gallery_url": "",
+          "error": "upload failed: status check did not match (HTTP 200): Session expired, please log in again"
+        }
+      }
+    },
+    {
+      "name": "an html error page instead of json",
+      "source": "added",
+      "files": [
+        "/in/a.jpg"
+      ],
+      "upload": {
+        "status": 200,
+        "body": "<html><head><title>Error</title><style>p{}</style></head><body><h2>File too big</h2><p>Maximum 35 MB</p></body></html>"
+      },
+      "pages": [
+        "<div class=\"codes\">\n<input type=\"text\" id=\"imgCodeGG\" value=\"https://www.turboimagehost.com/album/394761/miscellaneous\" readonly>\n<textarea id=\"imgCodeURF\" rows=\"6\">\n[URL=https://www.turboimagehost.com/p/1/a.jpg.html][IMG]https://s8d8.turboimg.net/t1/1_a.jpg[/IMG][/URL]\n</textarea></div>"
+      ],
+      "page_requests": 0,
+      "want": {
+        "/in/a.jpg": {
+          "url": "",
+          "thumb": "",
+          "gallery_url": "",
+          "error": "upload response was not valid JSON (HTTP 200): File too big Maximum 35 MB"
+        }
+      }
+    },
+    {
+      "name": "a server error",
+      "source": "added",
+      "files": [
+        "/in/a.jpg"
+      ],
+      "upload": {
+        "status": 500,
+        "body": "<html><body><h1>Internal Server Error</h1></body></html>"
+      },
+      "pages": [
+        "<div class=\"codes\">\n<input type=\"text\" id=\"imgCodeGG\" value=\"https://www.turboimagehost.com/album/394761/miscellaneous\" readonly>\n<textarea id=\"imgCodeURF\" rows=\"6\">\n[URL=https://www.turboimagehost.com/p/1/a.jpg.html][IMG]https://s8d8.turboimg.net/t1/1_a.jpg[/IMG][/URL]\n</textarea></div>"
+      ],
+      "page_requests": 0,
+      "want": {
+        "/in/a.jpg": {
+          "url": "",
+          "thumb": "",
+          "gallery_url": "",
+          "error": "upload rejected (HTTP 500): Internal Server Error"
+        }
+      }
+    },
+    {
+      "name": "no newUrl: the link template names the page to read",
+      "source": "added (response_parser url_template)",
+      "files": [
+        "/in/photo.jpg"
+      ],
+      "upload": {
+        "status": 200,
+        "body": "{\"success\":true,\"id\":\"77\"}"
+      },
+      "pages": [
+        "<div class=\"codes\">\n<input type=\"text\" id=\"imgCodeGG\" value=\"https://www.turboimagehost.com/album/394761/miscellaneous\" readonly>\n<textarea id=\"imgCodeURF\" rows=\"6\">\n[URL=https://www.turboimagehost.com/p/77/photo.jpg.html][IMG]https://s8d8.turboimg.net/t1/77_photo.jpg[/IMG][/URL]\n</textarea></div>"
+      ],
+      "result_url": "https://www.turboimagehost.com/p/77/photo.jpg.html",
+      "page_requests": 1,
+      "want": {
+        "/in/photo.jpg": {
+          "url": "https://www.turboimagehost.com/p/77/photo.jpg.html",
+          "thumb": "https://s8d8.turboimg.net/t1/77_photo.jpg",
+          "gallery_url": "https://www.turboimagehost.com/album/394761/miscellaneous",
+          "error": ""
+        }
+      }
+    },
+    {
+      "name": "a failed file in the middle does not shift the others",
+      "source": "added",
+      "files": [
+        "/in/a.jpg",
+        "/in/b.jpg",
+        "/in/c.jpg"
+      ],
+      "upload": {
+        "status": 200,
+        "body": "{\"success\":true,\"newUrl\":\"https://www.turboimagehost.com/upload_complete.tu?upload_id=a1b2c3d4e5f6g7h8i9j0\"}"
+      },
+      "uploads": [
+        null,
+        {
+          "status": 413,
+          "body": "<html><body><center><h1>413 Request Entity Too Large</h1></center></body></html>"
+        },
+        null
+      ],
+      "pages": [
+        "<div class=\"codes\">\n<input type=\"text\" id=\"imgCodeGG\" value=\"https://www.turboimagehost.com/album/394761/miscellaneous\" readonly>\n<textarea id=\"imgCodeURF\" rows=\"6\">\n[URL=https://www.turboimagehost.com/p/1/a.jpg.html][IMG]https://s8d8.turboimg.net/t1/1_a.jpg[/IMG][/URL]\n</textarea></div>",
+        "<div class=\"codes\">\n<input type=\"text\" id=\"imgCodeGG\" value=\"https://www.turboimagehost.com/album/394761/miscellaneous\" readonly>\n<textarea id=\"imgCodeURF\" rows=\"6\">\n[URL=https://www.turboimagehost.com/p/1/a.jpg.html][IMG]https://s8d8.turboimg.net/t1/1_a.jpg[/IMG][/URL]\n[URL=https://www.turboimagehost.com/p/3/c.jpg.html][IMG]https://s8d8.turboimg.net/t1/3_c.jpg[/IMG][/URL]\n</textarea></div>"
+      ],
+      "result_url": "https://www.turboimagehost.com/upload_complete.tu?upload_id=a1b2c3d4e5f6g7h8i9j0",
+      "page_requests": 2,
+      "want": {
+        "/in/a.jpg": {
+          "url": "https://www.turboimagehost.com/p/1/a.jpg.html",
+          "thumb": "https://s8d8.turboimg.net/t1/1_a.jpg",
+          "gallery_url": "https://www.turboimagehost.com/album/394761/miscellaneous",
+          "error": ""
+        },
+        "/in/b.jpg": {
+          "url": "",
+          "thumb": "",
+          "gallery_url": "",
+          "error": "upload rejected (HTTP 413): 413 Request Entity Too Large"
+        },
+        "/in/c.jpg": {
+          "url": "https://www.turboimagehost.com/p/3/c.jpg.html",
+          "thumb": "https://s8d8.turboimg.net/t1/3_c.jpg",
+          "gallery_url": "https://www.turboimagehost.com/album/394761/miscellaneous",
+          "error": ""
+        }
+      }
+    },
+    {
+      "name": "missing entry",
+      "source": "added",
+      "files": [
+        "/in/a.jpg"
+      ],
+      "upload": {
+        "status": 200,
+        "body": "{\"success\":true,\"newUrl\":\"https://www.turboimagehost.com/upload_complete.tu?upload_id=a1b2c3d4e5f6g7h8i9j0\"}"
+      },
+      "pages": [
+        "<div class=\"codes\">\n<input type=\"text\" id=\"imgCodeGG\" value=\"https://www.turboimagehost.com/album/394761/miscellaneous\" readonly>\n<textarea id=\"imgCodeURF\" rows=\"6\">\n[URL=https://www.turboimagehost.com/p/1/other.jpg.html][IMG]https://s8d8.turboimg.net/t1/1_other.jpg[/IMG][/URL]\n</textarea></div>"
+      ],
+      "result_url": "https://www.turboimagehost.com/upload_complete.tu?upload_id=a1b2c3d4e5f6g7h8i9j0",
+      "page_requests": 7,
+      "want": {
+        "/in/a.jpg": {
+          "url": "",
+          "thumb": "",
+          "gallery_url": "",
+          "error": "resolve upload result: result page missing 1 link(s)"
+        }
+      }
+    },
+    {
+      "name": "listed on the fourth look",
+      "source": "added",
+      "files": [
+        "/in/a.jpg"
+      ],
+      "upload": {
+        "status": 200,
+        "body": "{\"success\":true,\"newUrl\":\"https://www.turboimagehost.com/upload_complete.tu?upload_id=a1b2c3d4e5f6g7h8i9j0\"}"
+      },
+      "pages": [
+        "<div class=\"codes\">\n<input type=\"text\" id=\"imgCodeGG\" value=\"https://www.turboimagehost.com/album/394761/miscellaneous\" readonly>\n<textarea id=\"imgCodeURF\" rows=\"6\">\n\n</textarea></div>",
+        "<div class=\"codes\">\n<input type=\"text\" id=\"imgCodeGG\" value=\"https://www.turboimagehost.com/album/394761/miscellaneous\" readonly>\n<textarea id=\"imgCodeURF\" rows=\"6\">\n[URL=https://www.turboimagehost.com/p/1/other.jpg.html][IMG]https://s8d8.turboimg.net/t1/1_other.jpg[/IMG][/URL]\n</textarea></div>",
+        "<div class=\"codes\">\n<input type=\"text\" id=\"imgCodeGG\" value=\"https://www.turboimagehost.com/album/394761/miscellaneous\" readonly>\n<textarea id=\"imgCodeURF\" rows=\"6\">\n[URL=https://www.turboimagehost.com/p/1/other.jpg.html][IMG]https://s8d8.turboimg.net/t1/1_other.jpg[/IMG][/URL]\n</textarea></div>",
+        "<div class=\"codes\">\n<input type=\"text\" id=\"imgCodeGG\" value=\"https://www.turboimagehost.com/album/394761/miscellaneous\" readonly>\n<textarea id=\"imgCodeURF\" rows=\"6\">\n[URL=https://www.turboimagehost.com/p/1/other.jpg.html][IMG]https://s8d8.turboimg.net/t1/1_other.jpg[/IMG][/URL]\n[URL=https://www.turboimagehost.com/p/2/a.jpg.html][IMG]https://s8d8.turboimg.net/t1/2_a.jpg[/IMG][/URL]\n</textarea></div>"
+      ],
+      "result_url": "https://www.turboimagehost.com/upload_complete.tu?upload_id=a1b2c3d4e5f6g7h8i9j0",
+      "page_requests": 4,
+      "want": {
+        "/in/a.jpg": {
+          "url": "https://www.turboimagehost.com/p/2/a.jpg.html",
+          "thumb": "https://s8d8.turboimg.net/t1/2_a.jpg",
+          "gallery_url": "https://www.turboimagehost.com/album/394761/miscellaneous",
+          "error": ""
+        }
+      }
+    },
+    {
+      "name": "no gallery input",
+      "source": "added",
+      "files": [
+        "/in/a.jpg"
+      ],
+      "upload": {
+        "status": 200,
+        "body": "{\"success\":true,\"newUrl\":\"https://www.turboimagehost.com/upload_complete.tu?upload_id=a1b2c3d4e5f6g7h8i9j0\"}"
+      },
+      "pages": [
+        "<div class=\"codes\">\n<textarea id=\"imgCodeURF\" rows=\"6\">\n[URL=https://www.turboimagehost.com/p/1/a.jpg.html][IMG]https://s8d8.turboimg.net/t1/1_a.jpg[/IMG][/URL]\n</textarea></div>"
+      ],
+      "result_url": "https://www.turboimagehost.com/upload_complete.tu?upload_id=a1b2c3d4e5f6g7h8i9j0",
+      "page_requests": 1,
+      "want": {
+        "/in/a.jpg": {
+          "url": "https://www.turboimagehost.com/p/1/a.jpg.html",
+          "thumb": "https://s8d8.turboimg.net/t1/1_a.jpg",
+          "gallery_url": "",
+          "error": ""
+        }
+      }
+    },
+    {
+      "name": "the gallery input appears on a later look",
+      "source": "added",
+      "files": [
+        "/in/a.jpg"
+      ],
+      "upload": {
+        "status": 200,
+        "body": "{\"success\":true,\"newUrl\":\"https://www.turboimagehost.com/upload_complete.tu?upload_id=a1b2c3d4e5f6g7h8i9j0\"}"
+      },
+      "pages": [
+        "<div class=\"codes\">\n<textarea id=\"imgCodeURF\" rows=\"6\">\n\n</textarea></div>",
+        "<div class=\"codes\">\n<input type=\"text\" id=\"imgCodeGG\" value=\"https://www.turboimagehost.com/album/394761/miscellaneous\" readonly>\n<textarea id=\"imgCodeURF\" rows=\"6\">\n[URL=https://www.turboimagehost.com/p/1/a.jpg.html][IMG]https://s8d8.turboimg.net/t1/1_a.jpg[/IMG][/URL]\n</textarea></div>"
+      ],
+      "result_url": "https://www.turboimagehost.com/upload_complete.tu?upload_id=a1b2c3d4e5f6g7h8i9j0",
+      "page_requests": 2,
+      "want": {
+        "/in/a.jpg": {
+          "url": "https://www.turboimagehost.com/p/1/a.jpg.html",
+          "thumb": "https://s8d8.turboimg.net/t1/1_a.jpg",
+          "gallery_url": "https://www.turboimagehost.com/album/394761/miscellaneous",
+          "error": ""
+        }
+      }
+    },
+    {
+      "name": "the gallery is read from the first page that has it",
+      "source": "added",
+      "files": [
+        "/in/a.jpg"
+      ],
+      "upload": {
+        "status": 200,
+        "body": "{\"success\":true,\"newUrl\":\"https://www.turboimagehost.com/upload_complete.tu?upload_id=a1b2c3d4e5f6g7h8i9j0\"}"
+      },
+      "pages": [
+        "<div class=\"codes\">\n<input type=\"text\" id=\"imgCodeGG\" value=\"https://www.turboimagehost.com/album/394761/miscellaneous\" readonly>\n<textarea id=\"imgCodeURF\" rows=\"6\">\n[URL=https://www.turboimagehost.com/p/1/other.jpg.html][IMG]https://s8d8.turboimg.net/t1/1_other.jpg[/IMG][/URL]\n</textarea></div>",
+        "<div class=\"codes\">\n<input type=\"text\" id=\"imgCodeGG\" value=\"https://www.turboimagehost.com/album/999/renamed\" readonly>\n<textarea id=\"imgCodeURF\" rows=\"6\">\n[URL=https://www.turboimagehost.com/p/1/other.jpg.html][IMG]https://s8d8.turboimg.net/t1/1_other.jpg[/IMG][/URL]\n[URL=https://www.turboimagehost.com/p/2/a.jpg.html][IMG]https://s8d8.turboimg.net/t1/2_a.jpg[/IMG][/URL]\n</textarea></div>"
+      ],
+      "result_url": "https://www.turboimagehost.com/upload_complete.tu?upload_id=a1b2c3d4e5f6g7h8i9j0",
+      "page_requests": 2,
+      "want": {
+        "/in/a.jpg": {
+          "url": "https://www.turboimagehost.com/p/2/a.jpg.html",
+          "thumb": "https://s8d8.turboimg.net/t1/2_a.jpg",
+          "gallery_url": "https://www.turboimagehost.com/album/394761/miscellaneous",
+          "error": ""
+        }
+      }
+    },
+    {
+      "name": "a result page error, then the page",
+      "source": "added",
+      "files": [
+        "/in/a.jpg"
+      ],
+      "upload": {
+        "status": 200,
+        "body": "{\"success\":true,\"newUrl\":\"https://www.turboimagehost.com/upload_complete.tu?upload_id=a1b2c3d4e5f6g7h8i9j0\"}"
+      },
+      "pages": [
+        {
+          "status": 502,
+          "body": "<html><body><h1>502 Bad Gateway</h1></body></html>"
+        },
+        "<div class=\"codes\">\n<input type=\"text\" id=\"imgCodeGG\" value=\"https://www.turboimagehost.com/album/394761/miscellaneous\" readonly>\n<textarea id=\"imgCodeURF\" rows=\"6\">\n[URL=https://www.turboimagehost.com/p/1/a.jpg.html][IMG]https://s8d8.turboimg.net/t1/1_a.jpg[/IMG][/URL]\n</textarea></div>"
+      ],
+      "result_url": "https://www.turboimagehost.com/upload_complete.tu?upload_id=a1b2c3d4e5f6g7h8i9j0",
+      "page_requests": 2,
+      "want": {
+        "/in/a.jpg": {
+          "url": "https://www.turboimagehost.com/p/1/a.jpg.html",
+          "thumb": "https://s8d8.turboimg.net/t1/1_a.jpg",
+          "gallery_url": "https://www.turboimagehost.com/album/394761/miscellaneous",
+          "error": ""
+        }
+      }
+    },
+    {
+      "name": "the result page never loads",
+      "source": "added",
+      "files": [
+        "/in/a.jpg"
+      ],
+      "upload": {
+        "status": 200,
+        "body": "{\"success\":true,\"newUrl\":\"https://www.turboimagehost.com/upload_complete.tu?upload_id=a1b2c3d4e5f6g7h8i9j0\"}"
+      },
+      "pages": [
+        {
+          "status": 404,
+          "body": "<html><body><h1>Not Found</h1><p>The upload expired.</p></body></html>"
+        }
+      ],
+      "result_url": "https://www.turboimagehost.com/upload_complete.tu?upload_id=a1b2c3d4e5f6g7h8i9j0",
+      "page_requests": 7,
+      "want": {
+        "/in/a.jpg": {
+          "url": "",
+          "thumb": "",
+          "gallery_url": "",
+          "error": "resolve upload result: result page HTTP 404",
+          "python_error": "resolve upload result: result page (HTTP 404): Not Found The upload expired."
+        }
+      }
+    },
+    {
+      "name": "an entry without a thumbnail is not a result",
+      "source": "added",
+      "files": [
+        "/in/a.jpg"
+      ],
+      "upload": {
+        "status": 200,
+        "body": "{\"success\":true,\"newUrl\":\"https://www.turboimagehost.com/upload_complete.tu?upload_id=a1b2c3d4e5f6g7h8i9j0\"}"
+      },
+      "pages": [
+        "<textarea>[URL=https://www.turboimagehost.com/p/5/a.jpg.html][IMG][/IMG][/URL]</textarea>"
+      ],
+      "result_url": "https://www.turboimagehost.com/upload_complete.tu?upload_id=a1b2c3d4e5f6g7h8i9j0",
+      "page_requests": 7,
+      "want": {
+        "/in/a.jpg": {
+          "url": "",
+          "thumb": "",
+          "gallery_url": "",
+          "error": "resolve upload result: result page missing 1 link(s)"
+        }
+      }
+    }
+  ]
+}
