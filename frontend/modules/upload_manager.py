@@ -299,6 +299,17 @@ class UploadManager:
                     covers = [file_path for file_path in files if file_path in cover_set]
                     standards = [file_path for file_path in files if file_path not in cover_set]
 
+                if covers and standards and self._upload_session_creates_gallery(group_cfg):
+                    # Each job opens its own upload session, and each session
+                    # would create its own gallery: send one job, covers first.
+                    logger.info(
+                        f"Group '{group_obj.title}': {group_cfg.get('service')} creates the "
+                        "gallery per upload session, so covers upload with the other files "
+                        "in one job and the larger cover thumbnail size does not apply."
+                    )
+                    self._send_job(covers + standards, group_cfg, creds)
+                    continue
+
                 if covers:
                     cover_cfg = group_cfg.copy()
                     self._apply_cover_thumbnail_overrides(cover_cfg)
@@ -308,6 +319,21 @@ class UploadManager:
                     self._send_job(standards, group_cfg, creds)
         finally:
             logger.info("Upload dispatch finished")
+
+    def _upload_session_creates_gallery(self, cfg: Dict[str, Any]) -> bool:
+        """Whether the host plugin creates a new gallery in every upload session.
+
+        Plugins declare this with ``upload_session_creates_gallery(config)``.
+        """
+        plugin = self.plugin_manager.get_plugin(cfg.get("service", ""))
+        check = getattr(plugin, "upload_session_creates_gallery", None)
+        if not callable(check):
+            return False
+        try:
+            return bool(check(cfg))
+        except Exception as exc:
+            logger.debug(f"Could not ask {cfg.get('service')} about session galleries: {exc}")
+            return False
 
     @staticmethod
     def _cover_count_for_service(cfg: Dict[str, Any]) -> int:

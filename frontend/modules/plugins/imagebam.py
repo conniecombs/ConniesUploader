@@ -179,6 +179,16 @@ class ImageBamPlugin(ImageHostPlugin):
             },
         }
 
+    def upload_session_creates_gallery(self, config: Dict[str, Any]) -> bool:
+        """Whether each upload session built from ``config`` creates a new gallery.
+
+        ImageBam creates the gallery when the upload session opens with a
+        gallery title, so every job sent with this config makes its own.
+        """
+        return bool(
+            self._gallery_title_from_config(config) and not self._gallery_id_from_config(config)
+        )
+
     @staticmethod
     def _gallery_id_from_config(config: Dict[str, Any]) -> str:
         for key in ("gallery_id", "selected_gallery_id", "imagebam_gallery_id"):
