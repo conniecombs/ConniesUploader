@@ -1,8 +1,12 @@
 # v3.2.0 Python-Owned Upload Sessions and Result Parsing: Design
 
-Status: **Proposed. Deferred from v3.1.3; nothing here is implemented yet.**
+Status: **Being implemented for v3.2.0 (M1–M4). M5, removing the legacy Go
+hooks, stays deferred until a release has shipped with no parsing regressions
+(§3.7).** Section 7 records the decisions taken for the implementation; where it
+differs from sections 3–4, section 7 wins.
 
 Created: 2026-11-18
+Updated: 2026-11-20 (implementation decisions, informed by the v3.2.0 bug hunt)
 Baseline: v3.1.3 (branch `ccr-c7a6caec-wpl3wv` at the v3.1.3 release commit)
 
 ## 1. Why
@@ -203,3 +207,58 @@ v3.2.x.
   upload time; post-processing runs in parallel.
 - **Two parsers during the transition.** Accepted for at most two releases;
   M5 removes the Go side.
+
+## 7. Implementation decisions for v3.2.0
+
+The v3.2.0 bug hunt found several legacy-parser bugs (an empty link reported
+as success, Turbo links matched to the wrong file, every ImageBam file getting
+the first image's link, Turbo sending the first file's size and id for every
+file). v3.2.0 fixes them in the legacy Go path, and the Python parsers must
+reproduce the *fixed* behaviour, not the old one.
+
+1. **Per-file upload requests.** An `http_upload` job with `raw_response: true`
+   carries `file_requests`: a map from each file path to a fully resolved
+   request (`url`, `method`, `headers`, `multipart_fields`, optional
+   `form_fields`). Exactly one multipart field has `type: "file"`, and its value is
+   that path. Values are literal: Go performs no `{token}` substitution in raw
+   mode. A file without an entry fails with `missing upload request`.
+2. **Raw results.** Per file, Go emits
+   `{"type":"result","file":…,"data":{"response_body":…,"status_code":…,"final_url":…}}`
+   and then `status: "Uploaded"`, which is non-terminal. Python decides
+   success or failure for every HTTP status. Transport failures still emit
+   `Failed` with an `error`, and cancellation still emits `Cancelled`. A response
+   body over 2 MiB fails the file with `upload response too large`. Go never
+   retries a raw upload because of its HTTP status; transport retries follow
+   the general rule (no retry once the body has been fully sent).
+3. **Sequential jobs.** `sequential: true` uploads a job's files one at a time
+   in list order. A host whose results are matched by upload order (ImageBam)
+   needs it.
+4. **Transport sessions.** These follow §3.1 as written: `session_open` /
+   `session_close`, `session_id` on `generic_spec` requests and on
+   `http_upload` jobs. Cancelling a `batch_id` closes its sessions, and
+   sessions are reaped after 30 minutes idle. A session never touches the
+   shared cookie jar.
+5. **Python transport.** `UploadTransport` wraps `execute_transport_request`
+   with the session id, the plugin's rate limits, `literal_values=True`, and
+   the batch's cancel event. `request(spec)` returns a `TransportResponse`
+   (`status_code`, `body`, `final_url`).
+6. **Plugin interface.** The methods in §3.3, plus:
+   - a per-job `session_state` dict passed to `parse_upload_response`. Result-page
+     matching uses it: claim-once, exact file name first for Turbo; upload
+     order for ImageBam, falling back to the only entry when the page lists
+     exactly one.
+   - `upload_job_options(config)` returning e.g. `{"sequential": True}`.
+   - a result with no viewer URL and no error is a failure ("Host returned no
+     link").
+7. **Per-file values** that Go used to substitute (`{upload_id}`, `{file_size}`)
+   are produced by `build_raw_upload_request`, so Turbo's `qquuid` and
+   `qqtotalfilesize` are per file.
+8. **Escape hatch.** The setting `legacy_upload_parsing` (default `false`, not
+   shown in the main window) makes every host use its legacy Go specs. It is a
+   temporary fallback in case a live host differs from the fixtures, and it
+   goes away with M5.
+9. **Parity tests.** These run per host and cover the fixtures in §3.6 and the
+   v3.2.0 bug-fix cases above.
+10. **Live checklist.** §5 cannot run in CI. A person must run it per host
+    before `v3.2.0` is tagged, and if any host fails it, that host's plugin
+    stays on the legacy path for the release.
