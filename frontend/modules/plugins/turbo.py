@@ -165,15 +165,7 @@ class TurboPlugin(ImageHostPlugin):
         Uses FineUploader-compatible multipart fields with a dynamic upload
         endpoint discovered from the homepage.
         """
-        import os
-
         upload_id = config.get("turbo_upload_id") or config.get("upload_id") or self._upload_id()
-
-        file_size = 0
-        try:
-            file_size = os.path.getsize(file_path)
-        except OSError:
-            pass
 
         # Map content type.
         raw_content = (config.get("content_type") or "all").lower()
@@ -182,13 +174,15 @@ class TurboPlugin(ImageHostPlugin):
         # Thumbnail size.
         thumb_size = config.get("thumbnail_size") or config.get("turbo_thumb") or "150"
 
-        # Build multipart fields.
+        # Build multipart fields. One spec serves every file of the job, so
+        # per-file values are sidecar tokens it fills for each file:
+        # {filename}, {file_size} (bytes) and {upload_id} (unique per file).
         multipart_fields = {
             "qqfile": {"type": "file", "value": file_path},
             "upload_id": {"type": "text", "value": upload_id},
-            "qquuid": {"type": "text", "value": self._upload_id()},
+            "qquuid": {"type": "text", "value": "{upload_id}"},
             "qqfilename": {"type": "text", "value": "{filename}"},
-            "qqtotalfilesize": {"type": "text", "value": str(file_size)},
+            "qqtotalfilesize": {"type": "text", "value": "{file_size}"},
             "imcontent": {"type": "text", "value": content_value},
             "thumb_size": {"type": "text", "value": str(thumb_size)},
         }

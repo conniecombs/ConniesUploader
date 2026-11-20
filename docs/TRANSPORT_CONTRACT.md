@@ -151,6 +151,22 @@ host-defined in Python and Go remains host-name agnostic, but the execution of
 those parser specs is a legacy bridge to be retired when upload result parsing
 moves into Python.
 
+## Per-File Upload Tokens
+
+Python builds one `http_spec` for a whole upload job, from its first file, so
+a value that differs between files must not be baked into it. Go fills these
+tokens separately for each file, in the upload URL, headers, and multipart
+`text`/`dynamic` field values:
+
+| Token | Value |
+| --- | --- |
+| `{filename}` | the file's base name |
+| `{file_size}` | the file's size in bytes |
+| `{upload_id}` | a random 12-character token unique to this file's upload |
+
+Job credentials, config, context data, and shared session values are also
+available as `{key}`.
+
 ## Result Resolution (`resolve_spec`)
 
 When an upload job carries a `resolve_spec` and the upload response has a link

@@ -687,6 +687,29 @@ class TestImxPlugin(unittest.TestCase):
         self.assertEqual(request["multipart_fields"]["gallery_id"]["value"], "group123")
 
 
+class TestTurboHttpSpec(unittest.TestCase):
+    """Turbo's spec is built once per job, from the job's first file."""
+
+    def test_per_file_fields_are_sidecar_tokens(self):
+        import os
+        import tempfile
+
+        from modules.plugins.turbo import TurboPlugin
+
+        with tempfile.TemporaryDirectory() as tmp:
+            first = os.path.join(tmp, "first.jpg")
+            with open(first, "wb") as handle:
+                handle.write(b"x" * 104)
+
+            fields = TurboPlugin().build_http_request(first, {}, {})["multipart_fields"]
+
+        # Values that differ per file are filled by the sidecar for each file;
+        # a literal taken from the first file would be sent for every file.
+        self.assertEqual(fields["qqtotalfilesize"]["value"], "{file_size}")
+        self.assertEqual(fields["qquuid"]["value"], "{upload_id}")
+        self.assertEqual(fields["qqfilename"]["value"], "{filename}")
+
+
 class TestImgurHttpSpec(unittest.TestCase):
     """Test Imgur generic HTTP runner specification."""
 

@@ -128,9 +128,14 @@ func ExecuteHttpUploadWithData(ctx context.Context, client *http.Client, fp stri
 	for k, v := range job.SessionValues {
 		extractedValues[k] = v
 	}
+	// Per-file tokens. The job's spec is built once for all of its files, so
+	// anything that differs between files must be filled in here.
 	extractedValues["filename"] = filepath.Base(fp)
-	// Unique per-file token for hosts that embed {upload_id} in the URL.
+	// A random token unique to this file's upload.
 	extractedValues["upload_id"] = RandomString(12)
+	if info, statErr := os.Stat(fp); statErr == nil {
+		extractedValues["file_size"] = strconv.FormatInt(info.Size(), 10)
+	}
 
 	retryConfig := retryConfigForJob(job)
 
