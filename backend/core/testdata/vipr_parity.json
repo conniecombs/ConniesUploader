@@ -1,0 +1,515 @@
+{
+  "_comment": "Vipr parity fixtures. backend/core/vipr_parity_test.go runs every case through the legacy Go path (legacy_spec, the spec ViprPlugin.build_http_request builds for file, config and creds, against a local server that answers each step with the case's page; {{SERVER}} is that server's URL) and checks want and legacy_error. frontend/tests/test_vipr_parity.py runs the same cases through ViprPlugin's Python path and checks want and python_error, and that legacy_spec is the plugin's. Change both sides together.",
+  "base_url": "https://vipr.im/",
+  "file": "/in/IMG {final}.jpg",
+  "config": {
+    "thumbnail_size": "250x250",
+    "vipr_gal_id": "104999",
+    "vipr_gallery_name": "Summer"
+  },
+  "creds": {
+    "vipr_user": "vipr-user",
+    "vipr_pass": "Tr0ub{4dor}-3x"
+  },
+  "sess_id": "SESS7f3a9c2b1d0e",
+  "legacy_spec": {
+    "url": "https://vipr.im/cgi-bin/upload.cgi?upload_id={upload_id}&js_on=1&utype=reg&upload_type=file",
+    "method": "POST",
+    "headers": {},
+    "pre_request": {
+      "action": "login_step1",
+      "url": "https://vipr.im/",
+      "method": "POST",
+      "headers": {},
+      "form_fields": {
+        "op": "login",
+        "login": "vipr-user",
+        "password": "Tr0ub{4dor}-3x"
+      },
+      "use_cookies": true,
+      "extract_fields": {},
+      "response_type": "html",
+      "follow_up_request": {
+        "action": "login_step2",
+        "url": "https://vipr.im/",
+        "method": "GET",
+        "headers": {},
+        "form_fields": {},
+        "use_cookies": true,
+        "extract_fields": {
+          "sess_id": "input[name='sess_id']",
+          "endpoint": "regex:<form[^>]+action=[\\\"']([^\\\"']+/cgi-bin/upload\\.cgi)\\?upload_id="
+        },
+        "response_type": "html"
+      }
+    },
+    "multipart_fields": {
+      "file_0": {
+        "type": "file",
+        "value": "/in/IMG {final}.jpg"
+      },
+      "upload_type": {
+        "type": "text",
+        "value": "file"
+      },
+      "sess_id": {
+        "type": "dynamic",
+        "value": "sess_id"
+      },
+      "thumb_size": {
+        "type": "text",
+        "value": "250x250"
+      },
+      "per_row": {
+        "type": "text",
+        "value": "750"
+      },
+      "sdomain": {
+        "type": "text",
+        "value": "vipr.im"
+      },
+      "fld_id": {
+        "type": "text",
+        "value": "104999"
+      },
+      "tos": {
+        "type": "text",
+        "value": "1"
+      },
+      "submit_btn": {
+        "type": "text",
+        "value": "Upload"
+      }
+    },
+    "response_parser": {
+      "type": "html",
+      "follow_up_request": {
+        "url": "https://vipr.im/",
+        "method": "POST",
+        "response_type": "html",
+        "extract_fields": {
+          "fn": "textarea[name='fn']",
+          "st": "textarea[name='st']",
+          "op": "textarea[name='op']",
+          "per_row": "textarea[name='per_row']"
+        },
+        "form_fields": {
+          "fn": "{fn}",
+          "st": "{st}",
+          "op": "{op}",
+          "per_row": "{per_row}"
+        }
+      },
+      "url_path": "regex:(?is)\\[URL=(https?://vipr\\.im/[^\\]\\s]+)\\]\\s*\\[IMG\\]",
+      "thumb_path": "regex:(?is)\\[IMG\\](https?://[^\\[]+?)\\[/IMG\\]"
+    }
+  },
+  "upload_fields": {
+    "upload_type": "file",
+    "sess_id": "SESS7f3a9c2b1d0e",
+    "thumb_size": "250x250",
+    "per_row": "750",
+    "sdomain": "vipr.im",
+    "fld_id": "104999",
+    "tos": "1",
+    "submit_btn": "Upload"
+  },
+  "upload_query": "^upload_id=[a-z0-9]{12}&js_on=1&utype=reg&upload_type=file$",
+  "cases": [
+    {
+      "name": "result form and BBCode (Go TestExecuteHttpUploadFollowsViprUploadResultForm)",
+      "login": {
+        "status": 200,
+        "body": "<html><head><title>Vipr.im</title></head><body><p>Welcome back, vipr-user</p></body></html>"
+      },
+      "home": {
+        "status": 200,
+        "body": "<!DOCTYPE html>\n<html><head><title>Vipr.im - Free Image Hosting</title><script>var maxSize = 50;</script></head>\n<body><div class=\"top\"><a href=\"/?op=my_files\">My Files</a> <a href=\"/?op=logout\">Logout</a></div>\n<form name=\"file\" enctype=\"multipart/form-data\" action=\"{{SERVER}}/cgi-bin/upload.cgi?upload_id=\" method=\"post\" onSubmit=\"return StartUpload(this);\">\n<input type=\"hidden\" name=\"upload_type\" value=\"file\">\n<input type=\"hidden\" name=\"sess_id\" value=\"SESS7f3a9c2b1d0e\">\n<input type=\"hidden\" name=\"srv_tmp_url\" value=\"{{SERVER}}/tmp\">\n<input type=\"file\" name=\"file_0\">\n<select name=\"thumb_size\"><option value=\"170x170\">170x170</option><option value=\"250x250\">250x250</option></select>\n<select name=\"fld_id\"><option value=\"0\">-</option><option value=\"104999\">Summer</option></select>\n<input type=\"checkbox\" name=\"tos\" value=\"1\" checked> I agree\n<input type=\"submit\" name=\"submit_btn\" value=\"Upload\">\n</form></body></html>"
+      },
+      "upload": {
+        "status": 200,
+        "body": "<HTML><BODY><Form name='F1' action='/result' target='_parent' method='POST'>\n\t\t\t\t<textarea name='fn'>abc123</textarea>\n\t\t\t\t<textarea name='st'>OK</textarea>\n\t\t\t\t<textarea name='op'>upload_result</textarea>\n\t\t\t\t<textarea name='per_row'>750</textarea>\n\t\t\t\t</Form></BODY></HTML>"
+      },
+      "follow_up": {
+        "status": 200,
+        "body": "<textarea id=\"tl1\">[URL=https://vipr.im/abc123][IMG]https://i6.vipr.im/th/123/abc123.jpg[/IMG][/URL]</textarea>"
+      },
+      "posted_result_form": {
+        "fn": "abc123",
+        "st": "OK",
+        "op": "upload_result",
+        "per_row": "750"
+      },
+      "want": {
+        "url": "https://vipr.im/abc123",
+        "thumb": "https://i6.vipr.im/th/123/abc123.jpg",
+        "gallery_url": ""
+      },
+      "python_error": "",
+      "legacy_error": ""
+    },
+    {
+      "name": "XFileSharing result page: lowercase BBCode across a line break after HTML code",
+      "login": {
+        "status": 200,
+        "body": "<html><head><title>Vipr.im</title></head><body><p>Welcome back, vipr-user</p></body></html>"
+      },
+      "home": {
+        "status": 200,
+        "body": "<!DOCTYPE html>\n<html><head><title>Vipr.im - Free Image Hosting</title><script>var maxSize = 50;</script></head>\n<body><div class=\"top\"><a href=\"/?op=my_files\">My Files</a> <a href=\"/?op=logout\">Logout</a></div>\n<form name='file' enctype='multipart/form-data' action='{{SERVER}}/cgi-bin/upload.cgi?upload_id=' method='post' onSubmit='return StartUpload(this);'>\n<input type=\"hidden\" name=\"upload_type\" value=\"file\">\n<input type=\"hidden\" name=\"sess_id\" value=\"SESS7f3a9c2b1d0e\">\n<input type=\"hidden\" name=\"srv_tmp_url\" value=\"{{SERVER}}/tmp\">\n<input type=\"file\" name=\"file_0\">\n<select name=\"thumb_size\"><option value=\"170x170\">170x170</option><option value=\"250x250\">250x250</option></select>\n<select name=\"fld_id\"><option value=\"0\">-</option><option value=\"104999\">Summer</option></select>\n<input type=\"checkbox\" name=\"tos\" value=\"1\" checked> I agree\n<input type=\"submit\" name=\"submit_btn\" value=\"Upload\">\n</form></body></html>"
+      },
+      "upload": {
+        "status": 200,
+        "body": "<HTML><BODY><Form name='F1' action='https://vipr.im/' target='_parent' method='POST'>\n<textarea name='op'>upload_result</textarea>\n<textarea name='per_row'>750</textarea>\n<textarea name='link_rcpt'></textarea>\n<textarea name='fn'>\nk9xq2m7v1d0a\n</textarea><textarea name='st'>OK</textarea>\n</Form><Script>document.F1.submit();</Script></BODY></HTML>"
+      },
+      "follow_up": {
+        "status": 200,
+        "body": "<html><head><title>Vipr.im - Upload results</title></head><body>\n<h2>Upload results</h2>\n<b>Links:</b><textarea id=\"tl1\" rows=\"3\">https://vipr.im/k9xq2m7v1d0a</textarea>\n<b>HTML code:</b><textarea id=\"tl2\">&lt;a href=\"https://vipr.im/k9xq2m7v1d0a\"&gt;&lt;img src=\"https://i1.vipr.im/th/00512/k9xq2m7v1d0a.jpg\"&gt;&lt;/a&gt;</textarea>\n<b>Forum code:</b><textarea id=\"tl3\">[url=https://vipr.im/k9xq2m7v1d0a]\n[img]https://i1.vipr.im/th/00512/k9xq2m7v1d0a.jpg[/img][/url]</textarea>\n</body></html>"
+      },
+      "posted_result_form": {
+        "fn": "k9xq2m7v1d0a",
+        "st": "OK",
+        "op": "upload_result",
+        "per_row": "750"
+      },
+      "want": {
+        "url": "https://vipr.im/k9xq2m7v1d0a",
+        "thumb": "https://i1.vipr.im/th/00512/k9xq2m7v1d0a.jpg",
+        "gallery_url": ""
+      },
+      "python_error": "",
+      "legacy_error": ""
+    },
+    {
+      "name": "result page without BBCode",
+      "login": {
+        "status": 200,
+        "body": "<html><head><title>Vipr.im</title></head><body><p>Welcome back, vipr-user</p></body></html>"
+      },
+      "home": {
+        "status": 200,
+        "body": "<!DOCTYPE html>\n<html><head><title>Vipr.im - Free Image Hosting</title><script>var maxSize = 50;</script></head>\n<body><div class=\"top\"><a href=\"/?op=my_files\">My Files</a> <a href=\"/?op=logout\">Logout</a></div>\n<form name=\"file\" enctype=\"multipart/form-data\" action=\"{{SERVER}}/cgi-bin/upload.cgi?upload_id=\" method=\"post\" onSubmit=\"return StartUpload(this);\">\n<input type=\"hidden\" name=\"upload_type\" value=\"file\">\n<input type=\"hidden\" name=\"sess_id\" value=\"SESS7f3a9c2b1d0e\">\n<input type=\"hidden\" name=\"srv_tmp_url\" value=\"{{SERVER}}/tmp\">\n<input type=\"file\" name=\"file_0\">\n<select name=\"thumb_size\"><option value=\"170x170\">170x170</option><option value=\"250x250\">250x250</option></select>\n<select name=\"fld_id\"><option value=\"0\">-</option><option value=\"104999\">Summer</option></select>\n<input type=\"checkbox\" name=\"tos\" value=\"1\" checked> I agree\n<input type=\"submit\" name=\"submit_btn\" value=\"Upload\">\n</form></body></html>"
+      },
+      "upload": {
+        "status": 200,
+        "body": "<HTML><BODY><Form name='F1' action='https://vipr.im/' target='_parent' method='POST'>\n<textarea name='op'>upload_result</textarea>\n<textarea name='per_row'>750</textarea>\n<textarea name='link_rcpt'></textarea>\n<textarea name='fn'>\nk9xq2m7v1d0a\n</textarea><textarea name='st'>OK</textarea>\n</Form><Script>document.F1.submit();</Script></BODY></HTML>"
+      },
+      "follow_up": {
+        "status": 200,
+        "body": "<html><head><title>Vipr.im</title></head><body><h2>Upload results</h2><p>No files were uploaded. Try again later.</p></body></html>"
+      },
+      "posted_result_form": {
+        "fn": "k9xq2m7v1d0a",
+        "st": "OK",
+        "op": "upload_result",
+        "per_row": "750"
+      },
+      "want": {
+        "url": "",
+        "thumb": "",
+        "gallery_url": ""
+      },
+      "python_error": "upload response had no image link (HTTP 200): Upload results No files were uploaded. Try again later.",
+      "legacy_error": "upload response had no image link (HTTP 200): Upload results No files were uploaded. Try again later."
+    },
+    {
+      "name": "result page answered 202 without BBCode (the message names the upload's status)",
+      "login": {
+        "status": 200,
+        "body": "<html><head><title>Vipr.im</title></head><body><p>Welcome back, vipr-user</p></body></html>"
+      },
+      "home": {
+        "status": 200,
+        "body": "<!DOCTYPE html>\n<html><head><title>Vipr.im - Free Image Hosting</title><script>var maxSize = 50;</script></head>\n<body><div class=\"top\"><a href=\"/?op=my_files\">My Files</a> <a href=\"/?op=logout\">Logout</a></div>\n<form name=\"file\" enctype=\"multipart/form-data\" action=\"{{SERVER}}/cgi-bin/upload.cgi?upload_id=\" method=\"post\" onSubmit=\"return StartUpload(this);\">\n<input type=\"hidden\" name=\"upload_type\" value=\"file\">\n<input type=\"hidden\" name=\"sess_id\" value=\"SESS7f3a9c2b1d0e\">\n<input type=\"hidden\" name=\"srv_tmp_url\" value=\"{{SERVER}}/tmp\">\n<input type=\"file\" name=\"file_0\">\n<select name=\"thumb_size\"><option value=\"170x170\">170x170</option><option value=\"250x250\">250x250</option></select>\n<select name=\"fld_id\"><option value=\"0\">-</option><option value=\"104999\">Summer</option></select>\n<input type=\"checkbox\" name=\"tos\" value=\"1\" checked> I agree\n<input type=\"submit\" name=\"submit_btn\" value=\"Upload\">\n</form></body></html>"
+      },
+      "upload": {
+        "status": 200,
+        "body": "<HTML><BODY><Form name='F1' action='/result' target='_parent' method='POST'>\n\t\t\t\t<textarea name='fn'>abc123</textarea>\n\t\t\t\t<textarea name='st'>OK</textarea>\n\t\t\t\t<textarea name='op'>upload_result</textarea>\n\t\t\t\t<textarea name='per_row'>750</textarea>\n\t\t\t\t</Form></BODY></HTML>"
+      },
+      "follow_up": {
+        "status": 202,
+        "body": "<html><body><p>Processing, check back later</p></body></html>"
+      },
+      "posted_result_form": {
+        "fn": "abc123",
+        "st": "OK",
+        "op": "upload_result",
+        "per_row": "750"
+      },
+      "want": {
+        "url": "",
+        "thumb": "",
+        "gallery_url": ""
+      },
+      "python_error": "upload response had no image link (HTTP 200): Processing, check back later",
+      "legacy_error": "upload response had no image link (HTTP 200): Processing, check back later"
+    },
+    {
+      "name": "upload rejected with the session id quoted back (single-file job)",
+      "login": {
+        "status": 200,
+        "body": "<html><head><title>Vipr.im</title></head><body><p>Welcome back, vipr-user</p></body></html>"
+      },
+      "home": {
+        "status": 200,
+        "body": "<!DOCTYPE html>\n<html><head><title>Vipr.im - Free Image Hosting</title><script>var maxSize = 50;</script></head>\n<body><div class=\"top\"><a href=\"/?op=my_files\">My Files</a> <a href=\"/?op=logout\">Logout</a></div>\n<form name=\"file\" enctype=\"multipart/form-data\" action=\"{{SERVER}}/cgi-bin/upload.cgi?upload_id=\" method=\"post\" onSubmit=\"return StartUpload(this);\">\n<input type=\"hidden\" name=\"upload_type\" value=\"file\">\n<input type=\"hidden\" name=\"sess_id\" value=\"SESS7f3a9c2b1d0e\">\n<input type=\"hidden\" name=\"srv_tmp_url\" value=\"{{SERVER}}/tmp\">\n<input type=\"file\" name=\"file_0\">\n<select name=\"thumb_size\"><option value=\"170x170\">170x170</option><option value=\"250x250\">250x250</option></select>\n<select name=\"fld_id\"><option value=\"0\">-</option><option value=\"104999\">Summer</option></select>\n<input type=\"checkbox\" name=\"tos\" value=\"1\" checked> I agree\n<input type=\"submit\" name=\"submit_btn\" value=\"Upload\">\n</form></body></html>"
+      },
+      "upload": {
+        "status": 403,
+        "body": "{\"error\":\"session SESS7f3a9c2b1d0e is not allowed to upload\"}"
+      },
+      "follow_up": null,
+      "want": {
+        "url": "",
+        "thumb": "",
+        "gallery_url": ""
+      },
+      "python_error": "upload rejected (HTTP 403): session [redacted] is not allowed to upload",
+      "legacy_error": "upload rejected (HTTP 403): session [redacted] is not allowed to upload"
+    },
+    {
+      "name": "upload rejected by nginx",
+      "login": {
+        "status": 200,
+        "body": "<html><head><title>Vipr.im</title></head><body><p>Welcome back, vipr-user</p></body></html>"
+      },
+      "home": {
+        "status": 200,
+        "body": "<!DOCTYPE html>\n<html><head><title>Vipr.im - Free Image Hosting</title><script>var maxSize = 50;</script></head>\n<body><div class=\"top\"><a href=\"/?op=my_files\">My Files</a> <a href=\"/?op=logout\">Logout</a></div>\n<form name=\"file\" enctype=\"multipart/form-data\" action=\"{{SERVER}}/cgi-bin/upload.cgi?upload_id=\" method=\"post\" onSubmit=\"return StartUpload(this);\">\n<input type=\"hidden\" name=\"upload_type\" value=\"file\">\n<input type=\"hidden\" name=\"sess_id\" value=\"SESS7f3a9c2b1d0e\">\n<input type=\"hidden\" name=\"srv_tmp_url\" value=\"{{SERVER}}/tmp\">\n<input type=\"file\" name=\"file_0\">\n<select name=\"thumb_size\"><option value=\"170x170\">170x170</option><option value=\"250x250\">250x250</option></select>\n<select name=\"fld_id\"><option value=\"0\">-</option><option value=\"104999\">Summer</option></select>\n<input type=\"checkbox\" name=\"tos\" value=\"1\" checked> I agree\n<input type=\"submit\" name=\"submit_btn\" value=\"Upload\">\n</form></body></html>"
+      },
+      "upload": {
+        "status": 413,
+        "body": "<html>\r\n<head><title>413 Request Entity Too Large</title></head>\r\n<body>\r\n<center><h1>413 Request Entity Too Large</h1></center>\r\n<hr><center>nginx</center>\r\n</body>\r\n</html>\r\n"
+      },
+      "follow_up": null,
+      "want": {
+        "url": "",
+        "thumb": "",
+        "gallery_url": ""
+      },
+      "python_error": "upload rejected (HTTP 413): 413 Request Entity Too Large nginx",
+      "legacy_error": "upload rejected (HTTP 413): 413 Request Entity Too Large nginx"
+    },
+    {
+      "name": "follow-up 5xx quoting the credentials in a long page",
+      "login": {
+        "status": 200,
+        "body": "<html><head><title>Vipr.im</title></head><body><p>Welcome back, vipr-user</p></body></html>"
+      },
+      "home": {
+        "status": 200,
+        "body": "<!DOCTYPE html>\n<html><head><title>Vipr.im - Free Image Hosting</title><script>var maxSize = 50;</script></head>\n<body><div class=\"top\"><a href=\"/?op=my_files\">My Files</a> <a href=\"/?op=logout\">Logout</a></div>\n<form name=\"file\" enctype=\"multipart/form-data\" action=\"{{SERVER}}/cgi-bin/upload.cgi?upload_id=\" method=\"post\" onSubmit=\"return StartUpload(this);\">\n<input type=\"hidden\" name=\"upload_type\" value=\"file\">\n<input type=\"hidden\" name=\"sess_id\" value=\"SESS7f3a9c2b1d0e\">\n<input type=\"hidden\" name=\"srv_tmp_url\" value=\"{{SERVER}}/tmp\">\n<input type=\"file\" name=\"file_0\">\n<select name=\"thumb_size\"><option value=\"170x170\">170x170</option><option value=\"250x250\">250x250</option></select>\n<select name=\"fld_id\"><option value=\"0\">-</option><option value=\"104999\">Summer</option></select>\n<input type=\"checkbox\" name=\"tos\" value=\"1\" checked> I agree\n<input type=\"submit\" name=\"submit_btn\" value=\"Upload\">\n</form></body></html>"
+      },
+      "upload": {
+        "status": 200,
+        "body": "<HTML><BODY><Form name='F1' action='https://vipr.im/' target='_parent' method='POST'>\n<textarea name='op'>upload_result</textarea>\n<textarea name='per_row'>750</textarea>\n<textarea name='link_rcpt'></textarea>\n<textarea name='fn'>\nk9xq2m7v1d0a\n</textarea><textarea name='st'>OK</textarea>\n</Form><Script>document.F1.submit();</Script></BODY></HTML>"
+      },
+      "follow_up": {
+        "status": 500,
+        "body": "<html><body>login=vipr-user password=Tr0ub{4dor}-3x padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding </body></html>"
+      },
+      "posted_result_form": {
+        "fn": "k9xq2m7v1d0a",
+        "st": "OK",
+        "op": "upload_result",
+        "per_row": "750"
+      },
+      "want": {
+        "url": "",
+        "thumb": "",
+        "gallery_url": ""
+      },
+      "python_error": "response follow-up (HTTP 500): login=[redacted] password=[redacted] padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding pad…",
+      "note": "Same message; the Python path writes the status as (HTTP 500) like every other failure it reports.",
+      "legacy_error": "response follow-up HTTP 500: login=[redacted] password=[redacted] padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding pad…"
+    },
+    {
+      "name": "follow-up refused with the session id quoted back",
+      "login": {
+        "status": 200,
+        "body": "<html><head><title>Vipr.im</title></head><body><p>Welcome back, vipr-user</p></body></html>"
+      },
+      "home": {
+        "status": 200,
+        "body": "<!DOCTYPE html>\n<html><head><title>Vipr.im - Free Image Hosting</title><script>var maxSize = 50;</script></head>\n<body><div class=\"top\"><a href=\"/?op=my_files\">My Files</a> <a href=\"/?op=logout\">Logout</a></div>\n<form name=\"file\" enctype=\"multipart/form-data\" action=\"{{SERVER}}/cgi-bin/upload.cgi?upload_id=\" method=\"post\" onSubmit=\"return StartUpload(this);\">\n<input type=\"hidden\" name=\"upload_type\" value=\"file\">\n<input type=\"hidden\" name=\"sess_id\" value=\"SESS7f3a9c2b1d0e\">\n<input type=\"hidden\" name=\"srv_tmp_url\" value=\"{{SERVER}}/tmp\">\n<input type=\"file\" name=\"file_0\">\n<select name=\"thumb_size\"><option value=\"170x170\">170x170</option><option value=\"250x250\">250x250</option></select>\n<select name=\"fld_id\"><option value=\"0\">-</option><option value=\"104999\">Summer</option></select>\n<input type=\"checkbox\" name=\"tos\" value=\"1\" checked> I agree\n<input type=\"submit\" name=\"submit_btn\" value=\"Upload\">\n</form></body></html>"
+      },
+      "upload": {
+        "status": 200,
+        "body": "<HTML><BODY><Form name='F1' action='https://vipr.im/' target='_parent' method='POST'>\n<textarea name='op'>upload_result</textarea>\n<textarea name='per_row'>750</textarea>\n<textarea name='link_rcpt'></textarea>\n<textarea name='fn'>\nk9xq2m7v1d0a\n</textarea><textarea name='st'>OK</textarea>\n</Form><Script>document.F1.submit();</Script></BODY></HTML>"
+      },
+      "follow_up": {
+        "status": 403,
+        "body": "{\"error\":\"session SESS7f3a9c2b1d0e expired\"}"
+      },
+      "posted_result_form": {
+        "fn": "k9xq2m7v1d0a",
+        "st": "OK",
+        "op": "upload_result",
+        "per_row": "750"
+      },
+      "want": {
+        "url": "",
+        "thumb": "",
+        "gallery_url": ""
+      },
+      "python_error": "response follow-up (HTTP 403): session [redacted] expired",
+      "note": "Same message; the Python path writes the status as (HTTP 403).",
+      "legacy_error": "response follow-up HTTP 403: session [redacted] expired"
+    },
+    {
+      "name": "upload refused by XFileSharing's status (fn empty, reason in st)",
+      "login": {
+        "status": 200,
+        "body": "<html><head><title>Vipr.im</title></head><body><p>Welcome back, vipr-user</p></body></html>"
+      },
+      "home": {
+        "status": 200,
+        "body": "<!DOCTYPE html>\n<html><head><title>Vipr.im - Free Image Hosting</title><script>var maxSize = 50;</script></head>\n<body><div class=\"top\"><a href=\"/?op=my_files\">My Files</a> <a href=\"/?op=logout\">Logout</a></div>\n<form name=\"file\" enctype=\"multipart/form-data\" action=\"{{SERVER}}/cgi-bin/upload.cgi?upload_id=\" method=\"post\" onSubmit=\"return StartUpload(this);\">\n<input type=\"hidden\" name=\"upload_type\" value=\"file\">\n<input type=\"hidden\" name=\"sess_id\" value=\"SESS7f3a9c2b1d0e\">\n<input type=\"hidden\" name=\"srv_tmp_url\" value=\"{{SERVER}}/tmp\">\n<input type=\"file\" name=\"file_0\">\n<select name=\"thumb_size\"><option value=\"170x170\">170x170</option><option value=\"250x250\">250x250</option></select>\n<select name=\"fld_id\"><option value=\"0\">-</option><option value=\"104999\">Summer</option></select>\n<input type=\"checkbox\" name=\"tos\" value=\"1\" checked> I agree\n<input type=\"submit\" name=\"submit_btn\" value=\"Upload\">\n</form></body></html>"
+      },
+      "upload": {
+        "status": 200,
+        "body": "<HTML><BODY><Form name='F1' action='https://vipr.im/' target='_parent' method='POST'>\n<textarea name='op'>upload_result</textarea><textarea name='per_row'>750</textarea>\n<textarea name='fn'></textarea><textarea name='st'>not allowed extension</textarea>\n</Form></BODY></HTML>"
+      },
+      "follow_up": null,
+      "want": {
+        "url": "",
+        "thumb": "",
+        "gallery_url": ""
+      },
+      "python_error": "upload refused (HTTP 200): not allowed extension",
+      "note": "The legacy path names the empty textarea; the Python path quotes Vipr's reason.",
+      "legacy_error": "response follow-up field extraction failed: required HTML field \"fn\" not found using selector \"textarea[name='fn']\""
+    },
+    {
+      "name": "upload answered with a page that has no result form",
+      "login": {
+        "status": 200,
+        "body": "<html><head><title>Vipr.im</title></head><body><p>Welcome back, vipr-user</p></body></html>"
+      },
+      "home": {
+        "status": 200,
+        "body": "<!DOCTYPE html>\n<html><head><title>Vipr.im - Free Image Hosting</title><script>var maxSize = 50;</script></head>\n<body><div class=\"top\"><a href=\"/?op=my_files\">My Files</a> <a href=\"/?op=logout\">Logout</a></div>\n<form name=\"file\" enctype=\"multipart/form-data\" action=\"{{SERVER}}/cgi-bin/upload.cgi?upload_id=\" method=\"post\" onSubmit=\"return StartUpload(this);\">\n<input type=\"hidden\" name=\"upload_type\" value=\"file\">\n<input type=\"hidden\" name=\"sess_id\" value=\"SESS7f3a9c2b1d0e\">\n<input type=\"hidden\" name=\"srv_tmp_url\" value=\"{{SERVER}}/tmp\">\n<input type=\"file\" name=\"file_0\">\n<select name=\"thumb_size\"><option value=\"170x170\">170x170</option><option value=\"250x250\">250x250</option></select>\n<select name=\"fld_id\"><option value=\"0\">-</option><option value=\"104999\">Summer</option></select>\n<input type=\"checkbox\" name=\"tos\" value=\"1\" checked> I agree\n<input type=\"submit\" name=\"submit_btn\" value=\"Upload\">\n</form></body></html>"
+      },
+      "upload": {
+        "status": 200,
+        "body": "<html><head><title>Vipr.im - Login</title></head><body><p>Your session has expired. Please log in again.</p><form method=\"POST\" action=\"/\"><input type=\"hidden\" name=\"op\" value=\"login\"><input name=\"login\" value=\"vipr-user\"><input type=\"password\" name=\"password\"><input type=\"submit\" value=\"Login\"></form></body></html>"
+      },
+      "follow_up": null,
+      "want": {
+        "url": "",
+        "thumb": "",
+        "gallery_url": ""
+      },
+      "legacy_error_prefix": true,
+      "python_error": "upload response had no result form (HTTP 200): Your session has expired. Please log in again.",
+      "note": "The legacy path names whichever textarea it looked for first (Go map order); the Python path quotes the page.",
+      "legacy_error": "response follow-up field extraction failed: required HTML field \""
+    },
+    {
+      "name": "wrong password",
+      "login": {
+        "status": 200,
+        "body": "<html><head><title>Vipr.im - Login</title></head><body><div class=\"err\">Incorrect Login or Password</div><form method=\"POST\" action=\"/\"><input type=\"hidden\" name=\"op\" value=\"login\"><input name=\"login\" value=\"vipr-user\"><input type=\"password\" name=\"password\"><input type=\"submit\" value=\"Login\"></form></body></html>"
+      },
+      "home": {
+        "status": 200,
+        "body": "<!DOCTYPE html>\n<html><head><title>Vipr.im - Free Image Hosting</title><script>var maxSize = 50;</script></head>\n<body><div class=\"top\"><a href=\"/?op=my_files\">My Files</a> <a href=\"/?op=logout\">Logout</a></div>\n<form name=\"file\" enctype=\"multipart/form-data\" action=\"{{SERVER}}/cgi-bin/upload.cgi?upload_id=\" method=\"post\" onSubmit=\"return StartUpload(this);\">\n<input type=\"hidden\" name=\"upload_type\" value=\"file\">\n<input type=\"hidden\" name=\"sess_id\" value=\"\">\n<input type=\"hidden\" name=\"srv_tmp_url\" value=\"{{SERVER}}/tmp\">\n<input type=\"file\" name=\"file_0\">\n<select name=\"thumb_size\"><option value=\"170x170\">170x170</option><option value=\"250x250\">250x250</option></select>\n<select name=\"fld_id\"><option value=\"0\">-</option><option value=\"104999\">Summer</option></select>\n<input type=\"checkbox\" name=\"tos\" value=\"1\" checked> I agree\n<input type=\"submit\" name=\"submit_btn\" value=\"Upload\">\n</form></body></html>"
+      },
+      "upload": null,
+      "follow_up": null,
+      "want": {
+        "url": "",
+        "thumb": "",
+        "gallery_url": ""
+      },
+      "python_error": "Vipr.im login failed: Incorrect Login or Password. Check the saved username and password.",
+      "note": "The legacy path reports the missing sess_id field; the Python path fails the group with Vipr's login message.",
+      "legacy_error": "required HTML field \"sess_id\" not found using selector \"input[name='sess_id']\"; diagnostics: status=200 final_url={{SERVER}}/ title=\"Vipr.im - Free Image Hosting\" forms=[{method=\"post\" action=\"{{SERVER}}/cgi-bin/upload.cgi?upload_id=\" fields=\"upload_type,sess_id,srv_tmp_url,file_0,thumb_size,fld_id,tos,submit_btn\"}]"
+    },
+    {
+      "name": "wrong password in a Bootstrap alert",
+      "login": {
+        "status": 200,
+        "body": "<html><body><div class=\"alert alert-danger\" role=\"alert\">Wrong username or password!</div><form method=\"POST\" action=\"/\"><input type=\"hidden\" name=\"op\" value=\"login\"><input name=\"login\" value=\"vipr-user\"><input type=\"password\" name=\"password\"><input type=\"submit\" value=\"Login\"></form></body></html>"
+      },
+      "home": {
+        "status": 200,
+        "body": "<!DOCTYPE html>\n<html><head><title>Vipr.im - Free Image Hosting</title><script>var maxSize = 50;</script></head>\n<body><div class=\"top\"><a href=\"/?op=my_files\">My Files</a> <a href=\"/?op=logout\">Logout</a></div>\n<form name=\"file\" enctype=\"multipart/form-data\" action=\"{{SERVER}}/cgi-bin/upload.cgi?upload_id=\" method=\"post\" onSubmit=\"return StartUpload(this);\">\n<input type=\"hidden\" name=\"upload_type\" value=\"file\">\n<input type=\"hidden\" name=\"sess_id\" value=\"\">\n<input type=\"hidden\" name=\"srv_tmp_url\" value=\"{{SERVER}}/tmp\">\n<input type=\"file\" name=\"file_0\">\n<select name=\"thumb_size\"><option value=\"170x170\">170x170</option><option value=\"250x250\">250x250</option></select>\n<select name=\"fld_id\"><option value=\"0\">-</option><option value=\"104999\">Summer</option></select>\n<input type=\"checkbox\" name=\"tos\" value=\"1\" checked> I agree\n<input type=\"submit\" name=\"submit_btn\" value=\"Upload\">\n</form></body></html>"
+      },
+      "upload": null,
+      "follow_up": null,
+      "want": {
+        "url": "",
+        "thumb": "",
+        "gallery_url": ""
+      },
+      "python_error": "Vipr.im login failed: Wrong username or password! Check the saved username and password.",
+      "note": "As for a wrong password.",
+      "legacy_error": "required HTML field \"sess_id\" not found using selector \"input[name='sess_id']\"; diagnostics: status=200 final_url={{SERVER}}/ title=\"Vipr.im - Free Image Hosting\" forms=[{method=\"post\" action=\"{{SERVER}}/cgi-bin/upload.cgi?upload_id=\" fields=\"upload_type,sess_id,srv_tmp_url,file_0,thumb_size,fld_id,tos,submit_btn\"}]"
+    },
+    {
+      "name": "login refused without a message",
+      "login": {
+        "status": 200,
+        "body": "<html><body><form method=\"POST\" action=\"/\"><input type=\"hidden\" name=\"op\" value=\"login\"><input name=\"login\" value=\"vipr-user\"><input type=\"password\" name=\"password\"><input type=\"submit\" value=\"Login\"></form></body></html>"
+      },
+      "home": {
+        "status": 200,
+        "body": "<html><head><title>Vipr.im - Login</title></head><body><form method=\"POST\" action=\"/\"><input type=\"hidden\" name=\"op\" value=\"login\"><input name=\"login\" value=\"vipr-user\"><input type=\"password\" name=\"password\"><input type=\"submit\" value=\"Login\"></form></body></html>"
+      },
+      "upload": null,
+      "follow_up": null,
+      "want": {
+        "url": "",
+        "thumb": "",
+        "gallery_url": ""
+      },
+      "legacy_error_prefix": true,
+      "python_error": "Vipr.im login failed: no upload session after login. Check the saved username and password.",
+      "note": "The legacy path names whichever field it looked for first (Go map order).",
+      "legacy_error": "required HTML field \""
+    },
+    {
+      "name": "login answered with an error status",
+      "login": {
+        "status": 403,
+        "body": "<html><head><title>403 Forbidden</title></head><body><center><h1>403 Forbidden</h1></center><hr><center>nginx</center></body></html>"
+      },
+      "home": {
+        "status": 200,
+        "body": "<!DOCTYPE html>\n<html><head><title>Vipr.im - Free Image Hosting</title><script>var maxSize = 50;</script></head>\n<body><div class=\"top\"><a href=\"/?op=my_files\">My Files</a> <a href=\"/?op=logout\">Logout</a></div>\n<form name=\"file\" enctype=\"multipart/form-data\" action=\"{{SERVER}}/cgi-bin/upload.cgi?upload_id=\" method=\"post\" onSubmit=\"return StartUpload(this);\">\n<input type=\"hidden\" name=\"upload_type\" value=\"file\">\n<input type=\"hidden\" name=\"sess_id\" value=\"\">\n<input type=\"hidden\" name=\"srv_tmp_url\" value=\"{{SERVER}}/tmp\">\n<input type=\"file\" name=\"file_0\">\n<select name=\"thumb_size\"><option value=\"170x170\">170x170</option><option value=\"250x250\">250x250</option></select>\n<select name=\"fld_id\"><option value=\"0\">-</option><option value=\"104999\">Summer</option></select>\n<input type=\"checkbox\" name=\"tos\" value=\"1\" checked> I agree\n<input type=\"submit\" name=\"submit_btn\" value=\"Upload\">\n</form></body></html>"
+      },
+      "upload": null,
+      "follow_up": null,
+      "want": {
+        "url": "",
+        "thumb": "",
+        "gallery_url": ""
+      },
+      "python_error": "Vipr.im login failed (HTTP 403): 403 Forbidden nginx",
+      "note": "The legacy path ignores the login's status and fails on the missing sess_id.",
+      "legacy_error": "required HTML field \"sess_id\" not found using selector \"input[name='sess_id']\"; diagnostics: status=200 final_url={{SERVER}}/ title=\"Vipr.im - Free Image Hosting\" forms=[{method=\"post\" action=\"{{SERVER}}/cgi-bin/upload.cgi?upload_id=\" fields=\"upload_type,sess_id,srv_tmp_url,file_0,thumb_size,fld_id,tos,submit_btn\"}]"
+    },
+    {
+      "name": "home page without the upload form",
+      "login": {
+        "status": 200,
+        "body": "<html><head><title>Vipr.im</title></head><body><p>Welcome back, vipr-user</p></body></html>"
+      },
+      "home": {
+        "status": 200,
+        "body": "<html><head><title>Vipr.im - Maintenance</title></head><body><form action=\"/\" method=\"post\"><input type=\"hidden\" name=\"sess_id\" value=\"SESS7f3a9c2b1d0e\"><input type=\"hidden\" name=\"op\" value=\"my_files\"></form><p>Uploads are disabled for maintenance.</p></body></html>"
+      },
+      "upload": null,
+      "follow_up": null,
+      "want": {
+        "url": "",
+        "thumb": "",
+        "gallery_url": ""
+      },
+      "python_error": "Vipr.im's home page has no upload form (HTTP 200): Uploads are disabled for maintenance.",
+      "note": "The legacy path reports the missing endpoint field with page diagnostics.",
+      "legacy_error": "required HTML field \"endpoint\" not found using selector \"regex:<form[^>]+action=[\\\\\\\"']([^\\\\\\\"']+/cgi-bin/upload\\\\.cgi)\\\\?upload_id=\"; diagnostics: status=200 final_url={{SERVER}}/ title=\"Vipr.im - Maintenance\" forms=[{method=\"post\" action=\"/\" fields=\"sess_id,op\"}]"
+    }
+  ]
+}
