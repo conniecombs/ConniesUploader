@@ -59,6 +59,8 @@ from .common import (  # noqa: F401
 # Row states that end a file's part in the current upload. A row only counts
 # toward completion the first time it enters one of these states.
 TERMINAL_ROW_STATES = frozenset({"success", "failed", "cancelled"})
+# Row states of files that belong to the running upload but have not finished.
+IN_FLIGHT_ROW_STATES = frozenset({"queued", "uploading"})
 GENERIC_FAILURE_REASON = "Upload failed without more detail."
 CANCELLED_REASON = "Upload cancelled."
 NO_LINK_REASON = "Host returned no link"
@@ -615,6 +617,27 @@ class RuntimeMixin:
 
     def _upload_in_progress(self) -> bool:
         return bool(self.is_uploading or self._finalizing)
+
+    def _forget_rows(self, filepaths) -> List[Dict[str, Any]]:
+        """Drop rows from the queue model and return them.
+
+        Terminal statuses of removed rows are ignored, so a row removed while
+        it still belongs to the running upload no longer counts toward the
+        upload total; otherwise the upload would never finish.
+        """
+        removed = []
+        with self.lock:
+            for fp in filepaths:
+                row = self.file_widgets.pop(fp, None)
+                if row is None:
+                    continue
+                removed.append(row)
+                if self.is_uploading and row.get("state") in IN_FLIGHT_ROW_STATES:
+                    self.upload_total = max(self.upload_count, self.upload_total - 1)
+                img_ref = row.get("image_ref")
+                if img_ref:
+                    self.image_refs.discard(img_ref)
+        return removed
 
     def _retry_file(self, filepath: str) -> None:
         if self._upload_in_progress():

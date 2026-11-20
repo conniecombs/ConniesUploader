@@ -526,6 +526,71 @@ def test_removing_a_successful_image_keeps_the_existing_output(tmp_path):
     assert len(app.current_output_files) == 1
 
 
+def _two_batch_upload(tmp_path):
+    app = _ui_app(tmp_path)
+    app.progress_queue, app.result_queue = queue.Queue(), queue.Queue()
+    app.image_refs = set()
+    app._clear_highlights = lambda *args: None
+    app.after = lambda *args, **kwargs: None
+    app.finished = []
+    app.finish_upload = lambda: app.finished.append(True)
+    first = FakeGroup("A", ["/a/1.jpg", "/a/2.jpg"])
+    second = FakeGroup("B", ["/b/1.jpg"])
+    app.groups = [first, second]
+    for group in (first, second):
+        for fp in group.files:
+            app.file_widgets[fp] = _row(group, "queued")
+    app.is_uploading = True
+    app.upload_total = 3
+    return app, first, second
+
+
+@pytest.mark.unit
+def test_remove_batch_is_refused_while_uploading(tmp_path, monkeypatch):
+    import modules.dnd as dnd
+
+    asked = []
+    monkeypatch.setattr(dnd.messagebox, "askyesno", lambda *a, **k: asked.append(a) or True)
+    app, first, _second = _two_batch_upload(tmp_path)
+
+    UploaderApp._delete_group(app, first)
+
+    assert asked == []
+    assert first in app.groups
+    assert "/a/1.jpg" in app.file_widgets
+    assert app.activity[-1] == (
+        "Wait for the current upload to finish before removing images.",
+        "warning",
+    )
+
+
+@pytest.mark.unit
+def test_rows_removed_mid_upload_no_longer_count_toward_completion(tmp_path):
+    app, first, second = _two_batch_upload(tmp_path)
+
+    # Whatever path removes them, in-flight rows leave the expected total.
+    UploaderApp._forget_rows(app, list(first.files))
+    for fp in ("/a/1.jpg", "/a/2.jpg", "/b/1.jpg"):
+        app.result_queue.put((fp, "http://v", "http://t"))
+        app.progress_queue.put(("status", fp, "Done"))
+    app.update_ui_loop()
+
+    assert app.upload_total == 1
+    assert app.upload_count == 1
+    assert app.finished == [True]
+
+
+@pytest.mark.unit
+def test_removing_a_finished_row_mid_upload_keeps_the_total(tmp_path):
+    app, first, _second = _two_batch_upload(tmp_path)
+    app.file_widgets["/a/1.jpg"]["state"] = "success"
+    app.upload_count = 1
+
+    UploaderApp._forget_rows(app, ["/a/1.jpg"])
+
+    assert app.upload_total == 3
+
+
 def _finishing_app(tmp_path, monkeypatch, files, auto_copy=False):
     """Upload in progress; finalization runs inline and after() callbacks are captured."""
     monkeypatch.setattr(
