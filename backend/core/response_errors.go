@@ -160,13 +160,15 @@ func truncateRunes(text string, limit int) string {
 }
 
 // uploadSecrets lists the job's credential and session values that must not be
-// quoted back in an error message.
-func uploadSecrets(job *JobRequest) []string {
+// quoted back in an error message. loginValues are the values a pre_request
+// that ran for this file alone extracted (a single-file or once_per_file job);
+// a shared session's values are already in job.SessionValues.
+func uploadSecrets(job *JobRequest, loginValues map[string]string) []string {
 	if job == nil {
 		return nil
 	}
 	var secrets []string
-	for _, values := range []map[string]string{job.Creds, job.SessionValues} {
+	for _, values := range []map[string]string{job.Creds, job.SessionValues, loginValues} {
 		for _, value := range values {
 			if len(strings.TrimSpace(value)) >= 4 {
 				secrets = append(secrets, value)

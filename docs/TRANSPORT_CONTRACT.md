@@ -160,8 +160,9 @@ failed `status_path` check, a body the parser cannot read, or a response
 (after any resolution) without a link ends as `Failed`. The error
 names the HTTP status and the host's own message (a JSON `error`, `message`,
 `msg`, or similar field) or else a short plain-text snippet of the response,
-with job credentials redacted. Go does not re-send such an upload: the host
-already answered.
+with job credentials and every value the `pre_request` login step extracted
+redacted (whether it ran once for the job or for the file alone). Go does not
+re-send such an upload: the host already answered.
 
 ## Deprecated Compatibility Hooks
 

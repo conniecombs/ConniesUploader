@@ -141,6 +141,7 @@ func ExecuteHttpUploadWithData(ctx context.Context, client *http.Client, fp stri
 	retryConfig := retryConfigForJob(job)
 
 	var sessionClient *http.Client
+	var loginValues map[string]string // what this file's own pre_request extracted
 	if job.SessionClient != nil {
 		sessionClient = job.SessionClient
 		emitUploadLog(job, fp, fmt.Sprintf("Reusing job session: %s", filepath.Base(fp)))
@@ -156,6 +157,7 @@ func ExecuteHttpUploadWithData(ctx context.Context, client *http.Client, fp stri
 		for k, v := range preValues {
 			extractedValues[k] = v
 		}
+		loginValues = preValues
 		sessionClient = uploadClientWithPreRequestCookies(client, preClient)
 	}
 
@@ -178,7 +180,7 @@ func ExecuteHttpUploadWithData(ctx context.Context, client *http.Client, fp stri
 		// already seen the file, so sending it again cannot help.
 		Failure error
 	}
-	secrets := uploadSecrets(job)
+	secrets := uploadSecrets(job, loginValues)
 
 	res, err := RetryWithBackoff(ctx, retryConfig, func() (_ uploadResult, _ int, attemptErr error) {
 		pr, pw := io.Pipe()
