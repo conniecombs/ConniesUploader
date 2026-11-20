@@ -117,7 +117,8 @@ forum post or gallery call never waits behind queued uploads. Go reads stdin
 without blocking on busy workers, however many jobs are queued.
 
 `cancel` is handled as soon as it is read from stdin, even while every worker
-is busy. In-flight uploads of that batch are aborted and report
+is busy. In-flight uploads of that batch, and a multi-file job's shared
+`pre_request` login still running, are aborted at once and report
 `status: "Cancelled"` plus an `error` event; jobs still queued for that batch
 emit `Cancelled` for each file instead of uploading; every job still ends with
 `batch_complete`.
