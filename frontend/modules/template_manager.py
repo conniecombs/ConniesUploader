@@ -776,7 +776,7 @@ class TemplateManager:
 
     def _condition_matches(self, name: str, expected: Optional[str], data: Dict[str, Any]) -> bool:
         actual_value = data.get(name, "")
-        text = str(actual_value).strip()
+        text = self._restore_hashes(str(actual_value)).strip()
         if expected is not None:
             return text == expected
         # A count of 0 (cover_count, image_count, ...) means "none", not "has a value".
@@ -915,6 +915,19 @@ class TemplateManager:
                     nodes[-1] = ("text", text[: -len(line_break)])
                     break
         return nodes
+
+    # While a template renders, "#" inside inserted values (batch and gallery names,
+    # URLs) is swapped for this private-use character so a later replacement pass can
+    # never read user text as a placeholder. apply() swaps it back at the end.
+    _HASH_GUARD = "\ue000"
+
+    @classmethod
+    def _guard_hashes(cls, value: Any) -> Any:
+        return value.replace("#", cls._HASH_GUARD) if isinstance(value, str) else value
+
+    @classmethod
+    def _restore_hashes(cls, text: str) -> str:
+        return text.replace(cls._HASH_GUARD, "#")
 
     def _replace_placeholders(
         self,
@@ -1065,7 +1078,8 @@ class TemplateManager:
         template = self.get_template(format_mode)
         output_format = self.resolve_output_format(format_mode, template)
         nodes = self._parse_template_nodes(template)
-        data = dict(data)
+        data = {key: self._guard_hashes(value) for key, value in data.items()}
+        images = [tuple(self._guard_hashes(part) for part in image) for image in images]
         if images:
             first_image = images[0]
             first_viewer = first_image[0] if len(first_image) > 0 else ""
@@ -1147,7 +1161,8 @@ class TemplateManager:
 
         content = re.sub(r"#cover_image#|#cover_url#", cover_repl, content)
 
-        return self._replace_placeholders(content, data, skip_keys={"cover_image", "cover_url"})
+        content = self._replace_placeholders(content, data, skip_keys={"cover_image", "cover_url"})
+        return self._restore_hashes(content)
 
 
 class TemplateEditor(ctk.CTkToplevel):
@@ -1881,6 +1896,7 @@ class TemplateEditor(ctk.CTkToplevel):
             "cover_count": self.mgr._safe_nonnegative_int(cover_count, 0),
             "folder_size": file_handler.format_file_collection_size(files),
             "image_count": len(mock),
+            "thumb_size": str(size),
             "service": "preview",
             "thread_name": "Preview Thread",
             "thread_id": "PREV_THREAD",

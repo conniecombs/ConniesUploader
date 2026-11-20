@@ -1171,7 +1171,7 @@ class TestTemplateManagerAdvanced:
         editor.mgr = mgr
         editor.txt = FakeText(
             (
-                "#batch_name#|#service#|#thread_name#|#thread_id#|#folder_size#\n"
+                "#batch_name#|#service#|#thread_name#|#thread_id#|#folder_size#|#thumb_size#\n"
                 "[for image separator=space]#image_url#[/for]"
             )
         )
@@ -1191,7 +1191,7 @@ class TestTemplateManagerAdvanced:
         raw, fmt, size = preview
         assert fmt == "BBCode"
         assert size == "180"
-        assert raw.startswith("Preview Batch|preview|Preview Thread|PREV_THREAD|6 B")
+        assert raw.startswith("Preview Batch|preview|Preview Thread|PREV_THREAD|6 B|180\n")
         assert "first%20image.jpg" in raw
         assert "second.jpg" in raw
 
@@ -1916,3 +1916,37 @@ class TestTemplateEditorSavesTheEditedTemplate:
         assert "Zebra" in editor.cb_fmt.values
         assert editor.fmt.get() == "Zebra"
         assert editor.saved_tmpl_var.get() == "Zebra"
+
+
+class TestUserTextIsNotExpanded:
+    """Text from the batch, gallery or upload is inserted as-is, never re-read as a placeholder."""
+
+    IMAGES = [("https://h/v1", "https://h/t1.jpg", "https://h/i1.jpg")]
+
+    def _manager(self, tmp_path, name, content):
+        tm = TemplateManager(str(tmp_path / "templates.json"))
+        tm.set_template(name, content)
+        return tm
+
+    def test_batch_name_containing_a_placeholder_is_output_literally(self, tmp_path):
+        tm = self._manager(tmp_path, "Mine", "[b]#batch_name#[/b] #all_images#")
+        out = tm.apply("Mine", {"batch_name": "x #all_images# y"}, self.IMAGES)
+        assert out == "[b]x #all_images# y[/b] [url=https://h/v1][img]https://h/t1.jpg[/img][/url]"
+
+    def test_gallery_name_containing_placeholders_is_output_literally(self, tmp_path):
+        tm = self._manager(tmp_path, "Mine", "#gallery_name#|#batch_name#|#all_images#")
+        out = tm.apply(
+            "Mine", {"gallery_name": "#batch_name# #cover_image#", "batch_name": "B"}, self.IMAGES
+        )
+        assert out.startswith("#batch_name# #cover_image#|B|[url=https://h/v1]")
+
+    def test_conditions_compare_user_text_containing_hashes(self, tmp_path):
+        tm = self._manager(
+            tmp_path, "Mine", "[if batch_name=Set #1]ONE[else]OTHER[/if] #all_images#"
+        )
+        assert tm.apply("Mine", {"batch_name": "Set #1"}, self.IMAGES).startswith("ONE ")
+
+    def test_image_urls_with_fragments_survive(self, tmp_path):
+        tm = self._manager(tmp_path, "Mine", "#all_images#")
+        out = tm.apply("Mine", {}, [("https://h/v#1", "https://h/t1.jpg#x", "")])
+        assert out == "[url=https://h/v#1][img]https://h/t1.jpg#x[/img][/url]"
