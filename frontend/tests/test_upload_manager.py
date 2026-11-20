@@ -88,12 +88,31 @@ def test_batch_complete_fails_stragglers(manager):
     manager.um._handle_event(
         {"id": "b1:0", "type": "result", "file": "/a.jpg", "url": "u", "thumb": "t"}
     )
+    manager.um._handle_event({"id": "b1:0", "type": "status", "file": "/a.jpg", "status": "Done"})
     manager.um._handle_event({"id": "b1:0", "type": "batch_complete", "status": "done"})
 
     assert drain(manager.results) == [("/a.jpg", "u", "t"), ("/b.jpg", "", "")]
     assert drain(manager.progress) == [
-        ("status", "/b.jpg", "error: no result received from sidecar")
+        ("status", "/a.jpg", "Done"),
+        ("status", "/b.jpg", "error: no result received from sidecar"),
     ]
+
+
+def test_batch_complete_finishes_a_file_whose_done_was_lost(manager):
+    manager.um._handle_event(
+        {"id": "b1:0", "type": "result", "file": "/a.jpg", "url": "u", "thumb": "t"}
+    )
+    # ...its {"type": "status", "status": "Done"} never arrived...
+    manager.um._handle_event({"id": "b1:0", "type": "batch_complete", "status": "done"})
+
+    assert drain(manager.results) == [("/a.jpg", "u", "t"), ("/b.jpg", "", "")]
+    assert drain(manager.progress) == [
+        ("status", "/a.jpg", "Done"),
+        ("status", "/b.jpg", "error: no result received from sidecar"),
+    ]
+    assert manager.um._awaiting_done == set()
+    assert manager.um.active_files == set()
+    assert "b1:0" not in manager.um._job_files
 
 
 def test_cancelled_status_is_forwarded(manager):

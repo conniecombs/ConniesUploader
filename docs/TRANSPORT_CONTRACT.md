@@ -258,9 +258,17 @@ last word on a file the host answered is the raw `result` and `Uploaded`;
 Python then reports `Done` or the failure itself. Python counts a file once
 and treats the trailing `error` as the reason for the preceding status. An
 `error` event that carries a job `id` but no file applies to every file of
-that job that has not finished. After `batch_complete`, any file of that job
-without a terminal event (or, for a raw job, without a raw result) is failed
-by Python.
+that job that has not finished (for a raw job it also ends the job, since the
+sidecar sends no `batch_complete` after it). After `batch_complete`, Python
+ends every file of that job that has not finished: a file whose `result`
+arrived without its `status: "Done"` is completed as Done, a raw job's file
+whose raw `result` arrived is left to its parser, and any other file is
+failed ("no result received from sidecar"). Python's sidecar bridge never
+drops a terminal event (`result`, raw results included, `error`, `status`
+`Done`/`Failed`/`Cancelled`, `batch_complete`): when a listener's queue is
+full it waits for room. Only progress events and other statuses are dropped
+under load; `Uploaded` is one of those, since a file's raw `result` already
+arrived and only a row label depends on it.
 
 An upload is `Done` only when it produced a viewer link. A non-2xx upload
 response, a non-2xx answer to the response parser's `follow_up_request`, a

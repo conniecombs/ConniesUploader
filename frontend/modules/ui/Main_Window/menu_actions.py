@@ -171,19 +171,30 @@ class MenuActionsMixin:
                 return candidate
         return names[0] if names else "BBCode"
 
-    def _on_templates_changed(self, _changed_name: Optional[str] = None) -> None:
-        """Refresh batch template dropdowns after a save, rename, delete or import."""
+    def _on_templates_changed(
+        self, changed_name: Optional[str] = None, renamed_from: Optional[str] = None
+    ) -> None:
+        """Refresh batch template dropdowns after a save, rename, delete or import.
+
+        Batches using a template renamed from ``renamed_from`` to
+        ``changed_name`` follow the rename; batches whose template is gone
+        otherwise switch to the default.
+        """
         names = self.template_mgr.get_all_keys()
         fallback = self._default_template_name(names)
+        follow_rename = bool(renamed_from) and renamed_from not in names and changed_name in names
         for group in self.groups:
             update = getattr(group, "update_template_names", None)
             if not callable(update):
                 continue
             previous = group.selected_template
+            if follow_rename and previous == renamed_from:
+                update(names, changed_name)
+                continue
             if update(names, fallback):
                 self.add_activity(
                     f"{self._batch_display_name(group)} now uses template "
-                    f'"{group.selected_template}" because "{previous}" was renamed or deleted.',
+                    f'"{group.selected_template}" because "{previous}" no longer exists.',
                     "warning",
                 )
 

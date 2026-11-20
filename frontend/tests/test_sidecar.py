@@ -453,18 +453,61 @@ def test_restart_backoff_sleeps_without_holding_restart_lock(monkeypatch):
     assert bridge.restart_count == 0  # reset after a successful restart
 
 
-@pytest.mark.unit
-def test_dispatch_event_blocks_at_most_one_second_per_terminal_event():
-    import queue
-    import time
-
+def _bridge_with_full_listener():
     from modules import sidecar
 
     bridge = sidecar.SidecarBridge.__new__(sidecar.SidecarBridge)
     bridge.listeners_lock = threading.RLock()
+    bridge._shutdown_requested = threading.Event()
     full_queue = queue.Queue(maxsize=1)
-    full_queue.put_nowait({"type": "status"})
+    full_queue.put_nowait({"type": "status", "status": "Uploading"})
     bridge.listeners = [full_queue]
+    return bridge, full_queue
+
+
+@pytest.mark.unit
+def test_dispatch_event_never_drops_a_terminal_event_for_a_full_listener():
+    bridge, full_queue = _bridge_with_full_listener()
+    events = [
+        {"type": "status", "file": "/a.jpg", "status": "Done"},
+        {"type": "status", "file": "/b.jpg", "status": "Failed"},
+        {"type": "status", "file": "/c.jpg", "status": "Cancelled"},
+        {"type": "result", "file": "/d.jpg", "url": "u"},
+        {"type": "batch_complete", "id": "b:1"},
+    ]
+    received = []
+
+    def slow_consumer():
+        time.sleep(1.3)  # longer than one put timeout
+        for _ in range(len(events) + 1):
+            received.append(full_queue.get(timeout=3))
+
+    consumer = threading.Thread(target=slow_consumer, daemon=True)
+    consumer.start()
+    for event in events:
+        bridge._dispatch_event(event)
+    consumer.join(5)
+
+    assert received[1:] == events
+
+
+@pytest.mark.unit
+def test_dispatch_event_drops_progress_for_a_full_listener():
+    bridge, full_queue = _bridge_with_full_listener()
+
+    started = time.monotonic()
+    bridge._dispatch_event({"type": "status", "file": "/a.jpg", "status": "Uploading"})
+    bridge._dispatch_event({"type": "progress", "file": "/a.jpg", "data": {}})
+
+    assert time.monotonic() - started < 0.5
+    assert full_queue.qsize() == 1
+
+
+@pytest.mark.unit
+def test_dispatch_event_stops_waiting_for_a_listener_that_was_removed():
+    bridge, full_queue = _bridge_with_full_listener()
+    remover = threading.Timer(0.3, bridge.remove_listener, args=(full_queue,))
+    remover.start()
 
     started = time.monotonic()
     bridge._dispatch_event({"type": "result", "file": "/a.jpg"})
@@ -567,3 +610,53 @@ def test_send_job_returns_the_generation_it_was_written_to():
     bridge._start_process = lambda: False
     assert bridge.send_job({"action": "noop"}) is None
     assert bridge.send_cmd({"action": "noop"}) is False
+
+
+def _bridge_whose_write_fails():
+    from types import SimpleNamespace
+
+    def broken_pipe(_text):
+        raise BrokenPipeError("sidecar exited")
+
+    bridge = SidecarBridge.__new__(SidecarBridge)
+    bridge.proc = SimpleNamespace(
+        poll=lambda: None, stdin=SimpleNamespace(write=broken_pipe, flush=lambda: None)
+    )
+    bridge.generation = 1
+    bridge.cmd_lock = threading.RLock()
+    bridge.restart_lock = threading.RLock()
+    bridge.backoff_started = threading.Event()
+
+    def restart_with_backoff():
+        bridge.backoff_started.set()
+        time.sleep(1.0)  # _handle_crash sleeps before restarting
+
+    bridge._handle_crash = restart_with_backoff
+    return bridge
+
+
+@pytest.mark.unit
+def test_restart_after_a_failed_write_does_not_hold_the_command_lock():
+    bridge = _bridge_whose_write_fails()
+    sender = threading.Thread(target=bridge.send_job, args=({"action": "http_upload"},))
+    sender.start()
+    assert bridge.backoff_started.wait(2)
+
+    # Stop's cancel_batch on the Tk thread needs cmd_lock during the backoff.
+    acquired = bridge.cmd_lock.acquire(timeout=0.5)
+    if acquired:
+        bridge.cmd_lock.release()
+    sender.join(3)
+
+    assert acquired, "every other sender waits out the restart backoff"
+
+
+@pytest.mark.unit
+def test_failed_write_returns_without_waiting_for_the_restart_backoff():
+    bridge = _bridge_whose_write_fails()
+
+    started = time.monotonic()
+    assert bridge.send_job({"action": "cancel", "batch_id": "b"}) is None
+
+    assert time.monotonic() - started < 0.5
+    assert bridge.backoff_started.wait(2)  # the restart still happens

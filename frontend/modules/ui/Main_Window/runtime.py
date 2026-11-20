@@ -75,14 +75,21 @@ def direct_image_url(service_id: str, viewer_url: str, thumb_url: str) -> str:
     The full-size image is derived where the host's URL scheme is known:
     IMX ``.../u/t/...`` becomes ``.../u/i/...`` and Pixhost
     ``tN.pixhost.to/thumbs/...`` becomes ``imgN.pixhost.to/images/...``.
-    Imgur's link is already the image. Otherwise the thumbnail image is used:
-    the viewer URL is a web page, which an ``[img]`` tag cannot show.
+    Imgur's link (``i.imgur.com/<id>.<ext>``) is already the full image; its
+    thumbnail is ``<id><size letter>.<ext>``. Otherwise the thumbnail image is
+    used: the viewer URL is a web page, which an ``[img]`` tag cannot show.
     """
     thumb_url = str(thumb_url or "").strip()
     parts = urllib.parse.urlsplit(thumb_url)
     host = (parts.hostname or "").lower()
+    service = config.normalize_service_id(service_id)
 
-    if config.normalize_service_id(service_id) == "imx.to" and "/t/" in parts.path:
+    if service == "imgur.com":
+        viewer_url = str(viewer_url or "").strip()
+        if (urllib.parse.urlsplit(viewer_url).hostname or "").lower() == "i.imgur.com":
+            return viewer_url
+
+    if service == "imx.to" and "/t/" in parts.path:
         path = parts.path.replace("/t/", "/i/", 1)
         return urllib.parse.urlunsplit(parts._replace(path=path))
 
@@ -310,10 +317,11 @@ class RuntimeMixin:
                                 self._process_result_queue()
                             if self._apply_terminal_status(f, w, status_text):
                                 pass
-                            elif w.get("state") not in TERMINAL_ROW_STATES:
+                            elif w.get("state") in IN_FLIGHT_ROW_STATES:
                                 # A late "Preparing"/"Uploading" from a worker
                                 # that lost a race with Stop must not relabel
-                                # a row that already finished.
+                                # a row that already finished, nor a row added
+                                # again after Clear List.
                                 w["status"].configure(text=self._friendly_row_status(status_text))
                         elif k == "prog":
                             progress_value = self._normalize_progress_value(v)
@@ -369,6 +377,10 @@ class RuntimeMixin:
         new_state = self._terminal_state_for_status(status_text)
         if new_state is None:
             return False
+        if row.get("state") not in TERMINAL_ROW_STATES | IN_FLIGHT_ROW_STATES:
+            # Not part of a running upload: a late status of a cleared upload
+            # for a file added again must not end (or count) the new row.
+            return True
 
         name = os.path.basename(fp)
         if row.get("state") not in TERMINAL_ROW_STATES and (
@@ -617,12 +629,22 @@ class RuntimeMixin:
             fallback = color[-1] if isinstance(color, (list, tuple)) else color
             progress.configure(progress_color=fallback)
 
+    @staticmethod
+    def _reset_group_completion(group) -> None:
+        """Forget a batch's finished upload, including its "(Completed)" header."""
+        reset_completion = getattr(group, "reset_completion", None)
+        if callable(reset_completion):
+            reset_completion()
+        else:
+            group.is_completed = False
+            group.completed_with_failures = False
+
     def _reset_row_for_retry(self, row_data: Dict[str, Any]) -> None:
         row_data["state"] = "pending"
         row_data.pop("upload_result", None)
         group = row_data.get("group")
-        if group is not None and hasattr(group, "is_completed"):
-            group.is_completed = False
+        if group is not None:
+            self._reset_group_completion(group)
         self._set_row_error(row_data, "")
         row_data["status"].configure(text="Retry")
         row_data["prog"].set(0)
@@ -793,26 +815,45 @@ class RuntimeMixin:
     def _recheck_group_output(self, group) -> None:
         """Give a batch its output once removing rows left only successful uploads.
 
-        A batch that finished with failures got only a FAILED report. When the
-        failed or cancelled rows are removed, the rest of the batch is complete
-        and successful, so it now produces its normal output. A batch that
-        already has its normal output keeps it.
+        A batch that finished with failures got only a FAILED report, and a
+        batch whose Retry never started (preflight issue, or No at the posting
+        confirmation) has no output at all. When the failed, cancelled or
+        pending rows are removed and every remaining row uploaded, the batch
+        produces its normal output. A batch that already has it keeps it.
         """
-        if not (group.files and group.is_completed):
+        if not group.files:
             return
-        if not getattr(group, "completed_with_failures", False):
+        has_normal_output = group.is_completed and not getattr(
+            group, "completed_with_failures", False
+        )
+        if has_normal_output:
             return
         with self.lock:
             states = [self.file_widgets.get(fp, {}).get("state") for fp in group.files]
         if any(state != "success" for state in states):
             return
-        reset_completion = getattr(group, "reset_completion", None)
-        if callable(reset_completion):
-            reset_completion()
-        else:
-            group.is_completed = False
-            group.completed_with_failures = False
+        outputs_before = len(self.copyable_output_files)
+        self._reset_group_completion(group)
         self._update_group_progress(group.files[0])
+        if len(self.copyable_output_files) > outputs_before:
+            self._show_outputs_in_completion_summary()
+
+    def _show_outputs_in_completion_summary(self) -> None:
+        """Make output written after the upload finished reachable from the panel.
+
+        Schedule for Later and Copy Output read the summary's output files, so
+        the summary must list output a later re-check wrote. When no summary is
+        shown (Start hid it before a Retry stopped), a new one is shown.
+        """
+        summary = self.current_completion_summary
+        if not summary:
+            self._set_completion_summary(self._build_completion_summary())
+            return
+        summary["output_files"] = list(self.current_output_files)
+        summary["generated_count"] = len(summary["output_files"])
+        summary["copyable_output_files"] = list(self.copyable_output_files)
+        summary["has_copy_text"] = bool(self.clipboard_buffer or self.copyable_output_files)
+        self._set_completion_summary(summary)
 
     def finish_upload(self) -> None:
         if not self.is_uploading or self._finalizing:
