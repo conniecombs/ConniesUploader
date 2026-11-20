@@ -20,6 +20,7 @@ from typing import Dict, Any, Iterable, List, Optional
 from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
+from loguru import logger
 
 from .base import ImageHostPlugin
 from . import helpers
@@ -382,17 +383,26 @@ class TurboPlugin(ImageHostPlugin):
     def open_upload_session(
         self, transport, config: Dict[str, Any], creds: Dict[str, Any]
     ) -> Dict[str, str]:
-        """Log in when a username is set, then read the upload endpoint from the home page.
+        """Log in when a username and password are set, then read the upload endpoint.
 
         The steps of the legacy pre_request chain, on the job's session. A
         refused login and an upload page without an endpoint fail the job's
-        files with the host's message. Returns the upload URL and the job's
-        upload_id (the group's gallery id, else a new one, as the legacy spec).
+        files with the host's message. With only one of the two credentials
+        the files upload anonymously, as they did on the legacy path (which
+        posted the half login and ignored Turbo's answer). Returns the upload
+        URL and the job's upload_id (the group's gallery id, else a new one,
+        as the legacy spec).
         """
         username = (creds.get("turbo_user") or "").strip()
         password = str(creds.get("turbo_pass") or "")
         hidden = [password, username]
-        if username:
+        if bool(username) != bool(password):
+            missing = "password" if username else "username"
+            logger.warning(
+                f"TurboImageHost: no {missing} saved, so this upload goes anonymously; "
+                "save both to upload to your account"
+            )
+        if username and password:
             login = transport.post(f"{BASE_URL}/login.tu?", _login_form(username, password))
             if not login.ok:
                 raise TurboSessionError(

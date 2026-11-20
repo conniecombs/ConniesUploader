@@ -252,6 +252,31 @@ def test_a_refused_login_without_a_message_still_says_what_happened():
         TurboPlugin().open_upload_session(transport, {}, CREDS)
 
 
+@pytest.mark.parametrize(
+    "creds",
+    [{"turbo_user": "connie", "turbo_pass": ""}, {"turbo_user": "", "turbo_pass": "hunter2-secret"}],
+    ids=["username only", "password only"],
+)
+def test_half_saved_credentials_upload_anonymously_with_a_warning(monkeypatch, creds):
+    # The legacy path posted the half login and ignored Turbo's answer (the
+    # login form again), so the files uploaded anonymously; so does this one.
+    warnings = []
+    monkeypatch.setattr(turbo.logger, "warning", warnings.append)
+    transport = FakeTransport(
+        {
+            "https://www.turboimagehost.com/login.tu?": page(LOGIN_FORM_AGAIN),
+            "https://www.turboimagehost.com/": page(HOME),
+        }
+    )
+
+    values = TurboPlugin().open_upload_session(transport, {}, creds)
+
+    assert transport.calls == [("GET", "https://www.turboimagehost.com/", None)]
+    assert values["upload_url"] == "https://s8d8.turboimagehost.com/upload_html5.tu"
+    assert len(warnings) == 1 and "anonymously" in warnings[0]
+    assert "hunter2-secret" not in warnings[0]
+
+
 def test_a_login_the_host_answers_with_an_error_status_fails_the_group():
     transport = FakeTransport(
         {
