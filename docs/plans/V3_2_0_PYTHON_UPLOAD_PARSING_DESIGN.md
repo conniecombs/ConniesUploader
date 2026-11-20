@@ -262,3 +262,140 @@ reproduce the *fixed* behaviour, not the old one.
 10. **Live checklist.** §5 cannot run in CI. A person must run it per host
     before `v3.2.0` is tagged, and if any host fails it, that host's plugin
     stays on the legacy path for the release.
+
+### 7.11 As built (M1–M3)
+
+M1–M3 are implemented; IMX, Pixhost and Imgur are on the Python path. Where
+the implementation differs from the text above:
+
+- `build_raw_upload_request(file_path, config, session_values, creds)` also
+  takes `creds` (IMX and Imgur authenticate with a header built from them),
+  and `parse_upload_response(file_path, response, transport, session_values,
+  session_state)` takes the per-job `session_state` of §7.6.
+- A failed raw upload whose whole body reached the host carries
+  `data.body_sent` on its `Failed` event, so upload-order matching knows the
+  host may list it.
+- `ResultPageMatcher` corrects three resolve.go rules (see 8.4): upload_order
+  takes the newest unclaimed entry after the last claimed one instead of the
+  n-th entry, held-back entries are only those of files that finished
+  uploading and are still resolving, and names are compared in NFC.
+- For a `sequential` host the upload manager sends one file per raw job, each
+  after the previous file was parsed (one session for all of them), so the
+  result page changes by one upload between two resolutions. Go's own
+  `sequential` flag (§7.3) is also set.
+- Session open and the plugin's login run on the dispatch thread, one job
+  after another; uploads of earlier jobs proceed meanwhile.
+- A raw upload is never retried because of its HTTP status, so a 429 or 5xx
+  answer that the legacy path would retry now fails the file with the host's
+  message (the host may have stored it).
+
+## 8. How to migrate a host
+
+This is the checklist for moving a host from its legacy Go specs to the
+Python path (M4: Vipr, Turbo, ImageBam). IMX (`plugins/imx.py`), Pixhost and
+Imgur are worked examples of the simple case; read `plugins/base.py` for the
+interface and `tests/test_python_upload_path.py` for the manager's behaviour.
+
+### 8.1 The interface
+
+```python
+class MyPlugin(ImageHostPlugin):
+    def upload_job_options(self, config) -> dict:            # optional
+        return {"sequential": True}                          # one file at a time
+
+    def open_upload_session(self, transport, config, creds) -> dict:   # optional
+        # Login and token steps, once per upload job, on a worker thread.
+        page = transport.get("https://host/")
+        if not page.ok:
+            raise RuntimeError(request_failure("could not open the host", page))
+        return {"sess_id": html_field(page.body, "input[name='sess_id']")}
+
+    def build_raw_upload_request(self, file_path, config, session_values, creds) -> dict:
+        values = helpers.per_file_upload_values(file_path)  # filename, file_size, upload_id
+        return {
+            "url": f"https://host/upload?upload_id={values['upload_id']}",
+            "method": "POST",
+            "headers": {"Referer": "https://host/"},
+            "multipart_fields": {
+                "file_0": {"type": "file", "value": file_path},
+                "sess_id": {"type": "text", "value": session_values["sess_id"]},
+            },
+        }
+
+    def parse_upload_response(self, file_path, response, transport,
+                              session_values, session_state) -> UploadResult:
+        ...
+```
+
+Defining `parse_upload_response` moves the plugin to the new path. Keep
+`build_http_request` unchanged: it is the `legacy_upload_parsing` fallback
+until M5.
+
+### 8.2 Translating the legacy spec
+
+| Legacy spec | Python path |
+| --- | --- |
+| `pre_request` chain (+ `follow_up_request`) | `open_upload_session`: one `transport.get`/`transport.post` per step, in order; cookies stay in the job's session |
+| `extract_fields` CSS selector / `regex:` | `upload_results.html_field(body, selector)` (same attribute order: value, content, action, href, src, data-url, then text) or `json_value(data, path)` |
+| `dynamic` multipart field, `{token}` | the value from `session_values`, put into the request in `build_raw_upload_request` |
+| `{upload_id}`, `{file_size}`, `{filename}` | `helpers.per_file_upload_values(file_path)` |
+| `endpoint` value rewriting the upload URL | build the URL from the extracted endpoint yourself |
+| `response_parser` (JSON) | `parse_json_upload(response, **json_parser_options(PARSER), file_path=…, secrets=session_state.secrets)` |
+| `response_parser` (HTML) | `html_field` on `response.body`; fail with `upload_failure(reason, response.status_code, response.body, session_state.secrets)` |
+| `response_parser.follow_up_request` | a `transport.post(...)` inside `parse_upload_response` |
+| `resolve_spec` | `resolve_from_result_page(transport, url, file_path, session_state.result_matcher(mode), link_extractor=…, poll_delays_ms=…, gallery_extractor=…, secrets=session_state.secrets)` |
+| `file_match_mode: upload_order` | `upload_job_options -> {"sequential": True}` and `result_matcher("upload_order")` |
+
+Values are literal on the Python path: nothing substitutes `{name}` for you.
+Python `re` replaces RE2; avoid backtracking-only constructs. BeautifulSoup's
+`html.parser` replaces goquery's HTML5 parser; test selectors on recorded pages.
+
+### 8.3 Rules the framework enforces, and what is left to the plugin
+
+- A result with no viewer URL fails the file ("Host returned no link");
+  return `UploadResult.failed(reason)` with a better reason when you have one.
+- Every failure reason is redacted with `session_state.secrets` (the
+  plugin's declared credentials and every `session_values` value of 4+
+  characters). Add tokens a parser extracts with `session_state.add_secrets`.
+  Build reasons with `upload_failure` / `request_failure`, which quote the
+  host's JSON message or 200 characters of visible text, never a whole page.
+- A follow-up request that is not 2xx comes back with `ok == False` and
+  `message` "HTTP <code>: <body>"; pass it to `request_failure`.
+- After Stop, `transport` answers `status == "cancelled"` without sending,
+  `transport.pause()` returns False, and a failure is reported as
+  `Cancelled`. Just return early.
+- `parse_upload_response` runs for several files of one job at once: keep
+  shared state in `session_state` (use `session_state.lock` or
+  `get_or_create` for read-modify-write).
+- Raise from `open_upload_session` to fail the whole group (for example a
+  refused login: "Wrong password" must name the host's message, not a parse
+  error). Raise from `build_raw_upload_request` to fail one file.
+
+### 8.4 Result pages
+
+`session_state.result_matcher(mode)` returns the job's shared matcher; the
+upload manager tells it which files were uploaded (raw result, or a failure
+with `body_sent`) and which are finished. Modes: `filename` (Turbo: exact
+name, then the name without punctuation, then whole-word containment on the
+last poll), `contains`, `first`/`single`, `upload_order` (ImageBam: the
+newest unclaimed entry after the last claimed one; needs `sequential`).
+`resolve_from_result_page` polls with your delays, extracts entries with your
+regex (named groups `image_url`, `thumb_url`, optional `filename`), matches,
+and returns `UploadResult(url, thumb, gallery_url)` or the reason it gave up.
+
+### 8.5 Tests a migration needs
+
+1. Parity: add the host's recorded answers (success, auth failure, a markup
+   variant, the v3.2.0 bug-fix cases) to `backend/core/testdata/upload_parity.json`
+   when the legacy Go path can produce them, so `upload_parity_test.go`
+   pins the legacy result and `tests/test_upload_parity.py` checks the new
+   parser against it; otherwise test the parser directly with those bodies.
+2. The request: `build_raw_upload_request` gives the same fields, per file,
+   as the legacy spec did after substitution.
+3. The session step with a fake transport: login success, wrong password
+   (the host's message), a missing token.
+4. Result pages (Turbo, ImageBam): files with similar names, a lagging page,
+   a failed upload in the middle of an upload-order session.
+5. `uses_python_upload_parsing(plugin)` is true and `legacy_upload_parsing`
+   routes the host to its legacy spec (see `tests/test_migrated_hosts.py`).
+6. Then the live checklist in §5.

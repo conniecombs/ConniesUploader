@@ -12,7 +12,12 @@ Connie's Uploader is a hybrid desktop app:
 - Go runs as a local sidecar process and owns concurrent transport execution, Python-provided rate limits, retries, generic HTTP request execution, multipart upload streaming, cookie/session mechanics, and thumbnail generation.
 - Python and Go communicate through JSON events over standard input and standard output.
 
-The upload model is plugin-driven. Python plugins build HTTP upload specifications with `build_http_request()`, and the Go sidecar executes those specs through the generic runner. All host-specific logic lives in Python. The Go sidecar has no knowledge of any specific image host or forum — it is a "dumb and fast" transport runner.
+The upload model is plugin-driven, with two upload paths during the v3.2.0 migration (see [Upload Paths](#upload-paths)):
+
+- **Python path** (IMX, Pixhost, Imgur): the plugin builds one resolved request per file, Go sends it on an isolated transport session and returns the host's raw answer, and the plugin's `parse_upload_response()` decides what it means.
+- **Legacy path** (Turbo, Vipr, ImageBam until they migrate, and every host when the hidden `legacy_upload_parsing` setting is on): the plugin's `build_http_request()` spec carries declarative login, parser and result-page hooks that Go executes.
+
+All host-specific logic is defined in Python. The Go sidecar has no knowledge of any specific image host or forum — it is a "dumb and fast" transport runner.
 
 The Python/Go boundary is documented in [`TRANSPORT_CONTRACT.md`](TRANSPORT_CONTRACT.md).
 
@@ -48,10 +53,25 @@ For a typical upload:
 
 1. The GUI collects selected files, service settings, template choice, gallery choice, cover selections, and optional ViperGirls targets.
 2. Upload Checks validate obvious problems before work starts, including files, credentials, gallery settings, and posting targets.
-3. The selected plugin validates configuration and builds a `HttpRequestSpec` when it supports the generic runner.
-4. `UploadManager` sends upload jobs to `SidecarBridge`.
-5. The Go sidecar validates each file as it reaches a worker, applies Python-provided rate limits, executes the upload, retries transient transport failures, and emits correlated progress/result events. Every job carries the batch id of this Start, and `Stop Upload` sends a `cancel` for that batch. Existing upload plugins still use Go's generic parser compatibility shim to convert upload responses into result events.
+3. The selected plugin validates configuration. On the Python path it builds one resolved upload request per file; on the legacy path it builds a `HttpRequestSpec`.
+4. `UploadManager` sends upload jobs to `SidecarBridge` (on the Python path after opening a transport session and running the plugin's login step).
+5. The Go sidecar validates each file as it reaches a worker, applies Python-provided rate limits, executes the upload, retries transient transport failures, and emits correlated progress/result events. Every job carries the batch id of this Start, and `Stop Upload` sends a `cancel` for that batch. On the Python path Go reports each host answer raw and the plugin's parser, on a small worker pool, turns it into the result; on the legacy path Go's parser compatibility shim does.
 6. Python stores results, generates template output, saves history, copies output when enabled, and queues optional ViperGirls posts.
+
+## Upload Paths
+
+`UploadManager._send_job()` picks the path per job: a plugin whose class defines `parse_upload_response()` uses the Python path unless the settings file has `"legacy_upload_parsing": true` (an escape hatch kept until the legacy hooks are removed; it is not shown in the window).
+
+Python path, per `_send_job()` call (one group's covers or other files):
+
+1. `session_open` for the batch opens an isolated cookie jar in the sidecar (`modules/transport.py` `open_transport_session`). The wait ends at once on Stop or when the sidecar process dies.
+2. On the dispatch thread, `plugin.open_upload_session(transport, config, creds)` logs in and fetches tokens through an `UploadTransport` bound to that session; its return value is the job's `session_values`.
+3. `plugin.build_raw_upload_request(file, config, session_values, creds)` gives each file's literal request; one `http_upload` job with `raw_response`, `session_id` and `file_requests` goes to the sidecar (one job per file, each after the previous file was parsed, when the plugin's `upload_job_options()` asks for `sequential`).
+4. The sidecar streams each upload with the usual stall, response-wait and no-resend protections and reports the answer as a raw `result` plus the non-terminal status `Uploaded` (rows show "Processing").
+5. The event listener hands each raw result to a 4-thread post-processing pool (`modules/upload_sessions.py`), which calls `plugin.parse_upload_response(file, response, transport, session_values, session_state)` and reports the result and `Done`, or `error: <reason>` with credentials and session values redacted. Parsers may make follow-up requests on the session; `session_state` is a per-job dict that also feeds the job's `ResultPageMatcher` (`modules/result_matcher.py`).
+6. Once the sidecar finished the job and every parse is done, `session_close`.
+
+Stop cancels the batch: the sidecar closes the batch's sessions, aborts its uploads and follow-ups, and files whose parse ends after Stop report `Cancelled`. A sidecar crash ends the files still in the sidecar and the unsent files of a sequential job; the dead process's sessions are never closed. A failed session open or login fails the group's files with the reason. Building blocks for parsers (JSON paths, templates, the B1 failure messages, HTML selection) live in `modules/upload_results.py`; their parity with the legacy Go parser is tested against the shared fixtures in `backend/core/testdata/upload_parity.json`.
 
 ## Python Responsibilities
 
@@ -67,7 +87,7 @@ For a typical upload:
 
 The GUI keeps user-facing controls synchronized with the upload job model. Worker Count is clamped to `1-16`, Thread Limit is clamped to `1-10`, and upload checks prevent or warn on invalid preflight state before starting work.
 
-Row states are `pending`, `queued`, `uploading`, and the terminal states `success`, `failed`, and `cancelled`. A row counts toward batch completion the first time it enters a terminal state; the sidecar's `Failed` status followed by an `error` event only refines the failure reason. `Stop Upload` sets the cancel flag, sends the sidecar a `cancel` for the current batch id, and the window reaches a normal completion once every row is terminal. `Start` and `Retry Failed` refuse to run while an upload is in progress or being finalized.
+Row states are `pending`, `queued`, `uploading`, and the terminal states `success`, `failed`, and `cancelled`. A row counts toward batch completion the first time it enters a terminal state; the sidecar's `Failed` status followed by an `error` event only refines the failure reason. On the Python upload path the non-terminal `Uploaded` status (the host answered, its answer is being parsed) shows as "Processing". `Stop Upload` sets the cancel flag, sends the sidecar a `cancel` for the current batch id, and the window reaches a normal completion once every row is terminal. `Start` and `Retry Failed` refuse to run while an upload is in progress or being finalized.
 
 ### Plugins
 
@@ -78,11 +98,12 @@ Recommended plugin responsibilities:
 - `id`, `name`, and `metadata`
 - `settings_schema` for declarative service settings
 - `validate_configuration()` for service-specific validation
-- `build_http_request()` for generic sidecar uploads
+- Python upload path: `build_raw_upload_request()` and `parse_upload_response()`, plus `open_upload_session()` for a login or token step and `upload_job_options()` for `{"sequential": True}`
+- `build_http_request()` for the legacy path (kept by migrated plugins as the `legacy_upload_parsing` fallback)
 - `prepare_group()` when a service needs per-batch setup such as gallery creation
 - `finalize_batch()` when a service needs post-upload finalization
 
-Legacy `initialize_session()` and `upload_file()` hooks remain for compatibility, but new upload services should prefer schema settings plus `build_http_request()`. New non-upload workflows should use raw sidecar transport requests and parse/validate responses in Python.
+Legacy `initialize_session()` and `upload_file()` hooks remain for compatibility. New upload services should use schema settings plus the Python upload path; the steps are in "How to migrate a host" in [`plans/V3_2_0_PYTHON_UPLOAD_PARSING_DESIGN.md`](plans/V3_2_0_PYTHON_UPLOAD_PARSING_DESIGN.md). New non-upload workflows should use raw sidecar transport requests and parse/validate responses in Python.
 
 ### Templates and Output
 
@@ -151,10 +172,11 @@ Go owns:
 - Transport retry behavior
 - Multipart upload construction
 - Generic HTTP request execution (uploads and standalone requests)
-- Batch cancellation (`cancel` action keyed by `batch_id`)
-- Cookie/session mechanics, including an on-demand cookie reset for logins
+- Batch cancellation (`cancel` action keyed by `batch_id`), which also closes the batch's transport sessions
+- Cookie/session mechanics, including an on-demand cookie reset for logins and isolated transport sessions (`session_open` / `session_close`, reaped after 30 idle minutes)
+- Raw upload responses (`raw_response`) for the Python upload path
 - Thumbnail generation, capped at 50 megapixels
-- Legacy parser/pre-request/batch-resolve compatibility for existing upload specs
+- Legacy parser/pre-request/batch-resolve compatibility for upload specs of hosts not yet migrated
 
 Go does **not** contain any host-specific knowledge. All service-specific behavior is defined by Python modules and plugins.
 
@@ -163,17 +185,18 @@ Go does **not** contain any host-specific knowledge. All service-specific behavi
 The generic runner supports two action types:
 
 **`http_upload`** — File upload with multipart construction:
-- Upload request specs from Python plugins
-- Shared cookies for login/session workflows
+- Raw mode (`raw_response`): one literal request per file from `file_requests`, sent on the job's transport session (`session_id`), answered with the raw `response_body`, `status_code` and `final_url` whatever the status; `sequential` uploads the files one at a time in list order
+- Legacy mode: upload request specs with parser hooks from Python plugins, shared cookies for login/session workflows, and response-parser compatibility for result events
 - Correlated request IDs so stale sidecar events do not satisfy the wrong upload
-- Legacy response-parser compatibility for current upload result events
 
 **`http_request`** — Standalone (non-file) HTTP requests:
 - One resolved HTTP request per Python call
 - Form-encoded POST requests
-- Cookie reuse through the sidecar cookie jar
+- Cookie reuse through the sidecar cookie jar, or through a transport session's own jar with `generic_spec.session_id`
 - Optional raw `response_body`, `status_code`, and `final_url` return fields
 - Python-owned response parsing and success/failure decisions
+
+**`session_open` / `session_close`** — Isolated transport sessions: a cookie jar of their own and a client that shares the global transport. Run on the request pool.
 
 **`http_batch_resolve`** — Deferred batch result polling compatibility:
 - Polls a result page with configurable delays
@@ -216,7 +239,7 @@ Known hardening opportunities:
 
 - Continue tightening Go-side file validation (paths are validated per file; the shared 100 MB cap and regular-file checks remain, see `TRANSPORT_CONTRACT.md`).
 - Replace any `regexp.MustCompile()` path that can receive plugin-provided patterns with `regexp.Compile()` and graceful error returns.
-- Retire the legacy Go parser compatibility by moving upload sessions and response parsing into Python; designed in [`plans/V3_2_0_PYTHON_UPLOAD_PARSING_DESIGN.md`](plans/V3_2_0_PYTHON_UPLOAD_PARSING_DESIGN.md), targeted for v3.2.0.
+- Retire the legacy Go parser compatibility by moving upload sessions and response parsing into Python ([`plans/V3_2_0_PYTHON_UPLOAD_PARSING_DESIGN.md`](plans/V3_2_0_PYTHON_UPLOAD_PARSING_DESIGN.md)). Sessions, raw uploads and the Python path are in place and IMX, Pixhost and Imgur use them; Turbo, Vipr and ImageBam migrate next, after which the Go hooks can be removed.
 - Consider stricter plugin trust/sandboxing if third-party plugin loading becomes a supported user feature.
 
 ## Performance Characteristics
@@ -248,8 +271,8 @@ Preferred path:
 2. Subclass `ImageHostPlugin`.
 3. Add `id`, `name`, `metadata`, and `settings_schema`.
 4. Implement `validate_configuration()` if the schema cannot express all rules.
-5. Implement `build_http_request()` to return a generic sidecar spec.
-6. Add focused tests for config validation and generated request shape.
+5. Implement `build_raw_upload_request()` and `parse_upload_response()` (plus `open_upload_session()` if the host needs a login or token); see "How to migrate a host" in the v3.2.0 design.
+6. Add focused tests for config validation, the generated request, and the parser on recorded host answers.
 7. Run `cd frontend && pytest tests/ -v` and `cd backend && go test ./...`.
 
 Only add Go code for generic transport capability. Host parsing, website decisions, and response interpretation belong in Python.
@@ -260,7 +283,7 @@ Near-term hardening:
 
 - Gracefully handle malformed plugin regex patterns in Go.
 - Add Go-side path bounds validation for upload file paths.
-- Move upload result parsing out of the remaining compatibility shim and into Python.
+- Migrate Turbo, Vipr and ImageBam to the Python upload path, then remove the Go parser hooks (design milestones M4 and M5).
 - Keep documentation and screenshots synchronized with the current UI.
 - Consider stricter plugin trust/sandboxing if third-party plugin loading becomes a supported user feature.
 
