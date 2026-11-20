@@ -19,7 +19,7 @@ import threading
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from loguru import logger
 
@@ -31,6 +31,8 @@ JsonDict = Dict[str, Any]
 # request. Jobs written to that process (its "generation") are lost.
 SIDECAR_CRASHED_EVENT = "sidecar_crashed"
 PROCESS_RESTARTED_MSG = "Uploader process restarted; upload interrupted"
+# Reply message of a request whose wait ended because its batch was cancelled.
+REQUEST_CANCELLED_MSG = "Upload cancelled"
 
 
 class SidecarBridge:
@@ -363,42 +365,95 @@ class SidecarBridge:
                 self._handle_crash()
                 return None
 
-    def request_sync(self, payload: JsonDict, timeout: float = 5.0) -> JsonDict:
-        """Send a command and wait for a correlated terminal response."""
+    def request_sync(
+        self,
+        payload: JsonDict,
+        timeout: float = 5.0,
+        cancel_event: Optional[threading.Event] = None,
+    ) -> JsonDict:
+        """Send a command and wait for a correlated terminal response.
+
+        With ``cancel_event``, the wait ends (status ``cancelled``) as soon as
+        the event is set, and a request is not sent once it is set.
+        """
+        reply, _ = self._request(payload, timeout, cancel_event, track_generation=False)
+        return reply
+
+    def request_with_generation(
+        self,
+        payload: JsonDict,
+        timeout: float = 5.0,
+        cancel_event: Optional[threading.Event] = None,
+    ) -> Tuple[JsonDict, Optional[int]]:
+        """``request_sync`` that also returns the process generation it reached.
+
+        Knowing the process also lets the wait end at once when that process
+        dies (``sidecar_crashed`` for its generation or ``sidecar_stopped``)
+        instead of running into the timeout.
+        """
+        return self._request(payload, timeout, cancel_event, track_generation=True)
+
+    def _request(
+        self,
+        payload: JsonDict,
+        timeout: float,
+        cancel_event: Optional[threading.Event],
+        track_generation: bool,
+    ) -> Tuple[JsonDict, Optional[int]]:
         request_id = str(payload.get("id") or uuid.uuid4())
         payload = dict(payload)
         payload["id"] = request_id
+
+        def reply(status: str, msg: str) -> JsonDict:
+            return {"id": request_id, "type": "error", "status": status, "msg": msg}
+
+        if cancel_event is not None and cancel_event.is_set():
+            return reply("cancelled", REQUEST_CANCELLED_MSG), None
 
         temp_q: queue.Queue[JsonDict] = queue.Queue(maxsize=100)
         self.add_listener(temp_q)
 
         try:
-            if not self.send_cmd(payload):
-                return {
-                    "id": request_id,
-                    "type": "error",
-                    "status": "error",
-                    "msg": "Sidecar unavailable",
-                }
+            generation: Optional[int] = None
+            if track_generation:
+                generation = self.send_job(payload)
+                sent = generation is not None
+            else:
+                sent = self.send_cmd(payload)
+            if not sent:
+                return reply("error", "Sidecar unavailable"), None
 
             deadline = time.monotonic() + timeout
-            while time.monotonic() < deadline:
-                try:
-                    item = temp_q.get(timeout=max(0.0, deadline - time.monotonic()))
-                except queue.Empty:
+            while True:
+                if cancel_event is not None and cancel_event.is_set():
+                    return reply("cancelled", REQUEST_CANCELLED_MSG), generation
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
                     break
+                wait = min(remaining, 0.1) if cancel_event is not None else remaining
+                try:
+                    item = temp_q.get(timeout=wait)
+                except queue.Empty:
+                    continue
 
                 if item.get("id") == request_id:
-                    return item
+                    return item, generation
+                if generation is not None and self._ends_process(item, generation):
+                    return reply("error", PROCESS_RESTARTED_MSG), generation
 
-            return {
-                "id": request_id,
-                "type": "error",
-                "status": "error",
-                "msg": "Timeout waiting for sidecar response",
-            }
+            return reply("error", "Timeout waiting for sidecar response"), generation
         finally:
             self.remove_listener(temp_q)
+
+    @staticmethod
+    def _ends_process(event: JsonDict, generation: int) -> bool:
+        """Whether ``event`` reports the death of process ``generation``."""
+        if event.get("type") == "sidecar_stopped":
+            return True
+        if event.get("type") != SIDECAR_CRASHED_EVENT:
+            return False
+        dead = event.get("generation")
+        return not isinstance(dead, int) or dead >= generation
 
     def restart_for_config_change(self) -> bool:
         """Restart the sidecar process to apply configuration changes."""
