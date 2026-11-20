@@ -173,8 +173,10 @@ class ImageBamPlugin(ImageHostPlugin):
                 "gallery_extractor": "a#gallery-name",
                 # Every file of a job shares one upload session, whose result
                 # page lists all of the session's images, and view links carry
-                # no file names. The n-th upload to finish takes the n-th
-                # entry; the sidecar runs such a job's uploads one at a time.
+                # no file names. The sidecar runs such a job's uploads one at a
+                # time and gives each file the newest entry after the last one
+                # the job already holds, counting attempts that failed after
+                # reaching the host.
                 "file_match_mode": "upload_order",
             },
         }
