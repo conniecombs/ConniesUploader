@@ -232,6 +232,11 @@ def open_transport_session(
 
     Raises TransportCancelled when ``cancel_event`` is set before the session
     opens, and TransportSessionError when the sidecar refuses or cannot answer.
+
+    Go gives up on an open still queued after ``timeout`` (its
+    ``timeout_seconds``) and Python waits a little longer, so Go answers
+    first. Should the session open after Python stopped waiting all the same,
+    the sidecar bridge closes it (``SidecarBridge._close_late_session``).
     """
     if cancel_event is not None and cancel_event.is_set():
         raise TransportCancelled(REQUEST_CANCELLED_MSG)
@@ -239,12 +244,14 @@ def open_transport_session(
         "action": "session_open",
         "id": f"session-open:{uuid.uuid4().hex}",
         "batch_id": str(batch_id or ""),
+        "timeout_seconds": max(1, int(math.ceil(float(timeout)))),
     }
+    wait = float(timeout) + TRANSPORT_WAIT_MARGIN_SECONDS
     with_generation = getattr(bridge, "request_with_generation", None)
     if callable(with_generation):
-        reply, generation = with_generation(payload, timeout=timeout, cancel_event=cancel_event)
+        reply, generation = with_generation(payload, timeout=wait, cancel_event=cancel_event)
     else:
-        reply = bridge.request_sync(payload, timeout=timeout, cancel_event=cancel_event)
+        reply = bridge.request_sync(payload, timeout=wait, cancel_event=cancel_event)
         generation = None
     reply = reply if isinstance(reply, dict) else {}
     if reply.get("status") == "cancelled" or (

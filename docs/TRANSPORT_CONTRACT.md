@@ -96,9 +96,10 @@ upload path; the host's login, every upload of the job and every follow-up
 request run on it.
 
 ```json
-{"action": "session_open", "id": "session-open:<uuid>", "batch_id": "<batch id>"}
+{"action": "session_open", "id": "session-open:<uuid>", "batch_id": "<batch id>", "timeout_seconds": 30}
 → {"id": "session-open:<uuid>", "type": "result", "status": "success", "data": {"session_id": "s-<24 chars>"}}
 → {"id": "session-open:<uuid>", "type": "result", "status": "failed", "msg": "batch cancelled"}
+→ {"id": "session-open:<uuid>", "type": "result", "status": "failed", "msg": "request deadline passed while queued (waited 31s)"}
 
 {"action": "session_close", "id": "session-close:<uuid>", "session_id": "s-…"}
 → {"id": "session-close:<uuid>", "type": "result", "status": "success", "data": {"session_id": "s-…", "closed": "true"}}
@@ -118,6 +119,14 @@ request run on it.
   until that job ends, including the time the job waits in the upload queue
   behind other jobs. A `session_close` or a batch `cancel` still closes a
   session in use.
+- `session_open`'s `timeout_seconds` is its deadline, counted from when Go
+  queued it, as for an `http_request` (values above the client ceiling clamp
+  to it; without one the ceiling applies). An open still queued at its
+  deadline opens nothing and fails with `request deadline passed while
+  queued`. Python waits that long plus a small margin, so Go answers first;
+  should a session open after Python stopped waiting all the same (a reply
+  delayed on its way, or Stop), the sidecar bridge closes it as soon as the
+  reply arrives, so no session is left for the idle reaper.
 - `session_close` of a session that is not open answers `"closed": "false"`.
   It answers only a request that carries an `id`; without one it logs.
 - Both actions run on the request pool, never behind queued uploads.

@@ -185,8 +185,15 @@ func handleCancel(job JobRequest) {
 // Transport sessions
 // ---------------------------------------------------------------------------
 
+// handleSessionOpen opens a session unless the deadline Python waits for
+// (timeout_seconds, from when the job was queued) has passed: Python has
+// then given up on the open and would never close the session.
 func handleSessionOpen(job JobRequest) {
 	ensureInitialized()
+	if _, msg, expired := queueDeadline(&job, job.TimeoutSeconds); expired {
+		sendJobEvent(&job, OutputEvent{Type: "result", Status: "failed", Msg: msg})
+		return
+	}
 	session, err := core.OpenSession(client, job.BatchID)
 	if err != nil {
 		sendJobEvent(&job, OutputEvent{Type: "result", Status: "failed", Msg: err.Error()})
@@ -475,21 +482,10 @@ func handleHttpRequest(job JobRequest) {
 		return
 	}
 
-	// The deadline Python asked for counts from when the request was queued,
-	// not from when a worker picked it up; otherwise a request that waited
-	// behind uploads could run after Python already gave up on it.
-	timeout := core.RequestTimeout(spec.TimeoutSeconds)
-	if !job.EnqueuedAt.IsZero() {
-		waited := time.Since(job.EnqueuedAt)
-		if waited >= timeout {
-			sendJobEvent(&job, OutputEvent{
-				Type:   "result",
-				Status: "failed",
-				Msg:    fmt.Sprintf("request deadline passed while queued (waited %.0fs)", waited.Seconds()),
-			})
-			return
-		}
-		timeout -= waited
+	timeout, msg, expired := queueDeadline(&job, spec.TimeoutSeconds)
+	if expired {
+		sendJobEvent(&job, OutputEvent{Type: "result", Status: "failed", Msg: msg})
+		return
 	}
 
 	// A request on a transport session uses the session's client and jar,
@@ -662,6 +658,23 @@ func handleGenerateThumb(job JobRequest) {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+// queueDeadline applies the deadline Python asked for (seconds, clamped to
+// the client ceiling) from when the job was queued, not from when a worker
+// picked it up; otherwise a job that waited behind others could run after
+// Python already gave up on it. It returns the time left, or, once the
+// deadline has passed, the failure message and expired true.
+func queueDeadline(job *JobRequest, seconds int) (remaining time.Duration, msg string, expired bool) {
+	timeout := core.RequestTimeout(seconds)
+	if job.EnqueuedAt.IsZero() {
+		return timeout, "", false
+	}
+	waited := time.Since(job.EnqueuedAt)
+	if waited >= timeout {
+		return 0, fmt.Sprintf("request deadline passed while queued (waited %.0fs)", waited.Seconds()), true
+	}
+	return timeout - waited, "", false
+}
 
 func workerLimit(config map[string]string) int {
 	if w, err := strconv.Atoi(config["threads"]); err == nil && w > 0 {

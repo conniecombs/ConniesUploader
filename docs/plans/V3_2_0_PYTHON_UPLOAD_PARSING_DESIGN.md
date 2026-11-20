@@ -292,7 +292,10 @@ the implementation differs from the text above:
   result page changes by one upload between two resolutions. Go's own
   `sequential` flag (§7.3) is also set.
 - Session open and the plugin's login run on the dispatch thread, one job
-  after another; uploads of earlier jobs proceed meanwhile.
+  after another; uploads of earlier jobs proceed meanwhile. `session_open`
+  carries a 30 s `timeout_seconds` that Go counts from when it queued the
+  open; Python waits a little longer, and a session whose open reply arrives
+  after Python stopped waiting is closed by the sidecar bridge at once.
 - A raw upload is re-sent only after a 429 or 503 refusal (statuses that
   mean the host did not take the file), honouring Retry-After (capped at
   60 s) and the host's rate limit, within the legacy attempt count. A 408,

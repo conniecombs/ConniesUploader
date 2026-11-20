@@ -8,8 +8,10 @@ import time
 
 import pytest
 
+from modules import transport
 from modules.sidecar import PROCESS_RESTARTED_MSG, SIDECAR_CRASHED_EVENT, SidecarBridge
 from modules.transport import (
+    TRANSPORT_WAIT_MARGIN_SECONDS,
     TransportCancelled,
     TransportSession,
     TransportSessionError,
@@ -142,7 +144,10 @@ def test_open_transport_session_returns_the_session_and_its_process():
     assert payload["action"] == "session_open"
     assert payload["batch_id"] == "batch-1"
     assert payload["id"]
-    assert timeout == pytest.approx(4)
+    # Go gives up on an open still queued after timeout_seconds, and Python
+    # waits a little longer, so Go answers first.
+    assert payload["timeout_seconds"] == 4
+    assert timeout == pytest.approx(4 + TRANSPORT_WAIT_MARGIN_SECONDS)
 
 
 def test_open_transport_session_reports_failure_and_cancel():
@@ -251,6 +256,125 @@ def test_request_sync_still_ignores_uncorrelated_events():
 
     assert reply["status"] == "success"
     assert "msg" not in reply
+
+
+@pytest.fixture
+def no_wait_margin(monkeypatch):
+    monkeypatch.setattr(transport, "TRANSPORT_WAIT_MARGIN_SECONDS", 0.0)
+
+
+def _silent_bridge():
+    """A bridge whose sidecar never answers in time; it records what is sent."""
+    sent = []
+
+    def send(bridge, payload):
+        sent.append(payload)
+        return 2
+
+    bridge = _bridge_with(send)
+    bridge.sent = sent
+    return bridge
+
+
+def _closes(bridge, timeout=2.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        closes = [p for p in bridge.sent if p.get("action") == "session_close"]
+        if closes:
+            return closes
+        time.sleep(0.01)
+    return []
+
+
+@pytest.mark.parametrize("ends", ["timeout", "cancel"])
+def test_a_session_whose_open_reply_comes_after_python_stopped_waiting_is_closed(
+    ends, no_wait_margin
+):
+    bridge = _silent_bridge()
+    cancel = threading.Event()
+    if ends == "cancel":
+        threading.Timer(0.05, cancel.set).start()
+    timeout = 5.0 if ends == "cancel" else 0.01
+    with pytest.raises(TransportCancelled if ends == "cancel" else TransportSessionError):
+        open_transport_session(bridge, "b", timeout=timeout, cancel_event=cancel)
+    [opened] = bridge.sent
+    assert bridge.listeners == [], "the wait's listener is gone"
+
+    # The sidecar opened the session after all: nobody will use it, so the
+    # bridge closes it.
+    bridge._dispatch_event(
+        {
+            "id": opened["id"],
+            "type": "result",
+            "status": "success",
+            "data": {"session_id": "s-late"},
+        }
+    )
+    [close] = _closes(bridge)
+    assert close["session_id"] == "s-late" and close["id"].startswith("session-close:")
+
+    # One reply, one close.
+    bridge._dispatch_event(
+        {
+            "id": opened["id"],
+            "type": "result",
+            "status": "success",
+            "data": {"session_id": "s-late"},
+        }
+    )
+    time.sleep(0.1)
+    assert len(_closes(bridge)) == 1
+
+
+def test_a_late_open_reply_that_lands_while_the_wait_ends_is_still_closed(no_wait_margin):
+    bridge = _silent_bridge()
+    remove = SidecarBridge.remove_listener
+
+    def reply_then_remove(q):
+        # The reply reaches the wait's own queue just after it gave up.
+        [opened] = bridge.sent
+        q.put(
+            {
+                "id": opened["id"],
+                "type": "result",
+                "status": "success",
+                "data": {"session_id": "s-race"},
+            }
+        )
+        remove(bridge, q)
+
+    bridge.remove_listener = reply_then_remove
+    with pytest.raises(TransportSessionError):
+        open_transport_session(bridge, "b", timeout=0.01)
+    [close] = _closes(bridge)
+    assert close["session_id"] == "s-race"
+
+
+def test_a_late_failed_open_or_a_dead_process_closes_nothing(no_wait_margin):
+    bridge = _silent_bridge()
+    with pytest.raises(TransportSessionError):
+        open_transport_session(bridge, "b", timeout=0.01)
+    [opened] = bridge.sent
+    bridge._dispatch_event(
+        {
+            "id": opened["id"],
+            "type": "result",
+            "status": "failed",
+            "msg": "request deadline passed while queued (waited 31s)",
+        }
+    )
+    with pytest.raises(TransportSessionError):
+        open_transport_session(bridge, "b", timeout=0.01)
+    second = bridge.sent[-1]
+    # The process the open went to died: it will never answer, and its
+    # sessions died with it.
+    bridge._forget_late_replies(2)
+    bridge._dispatch_event(
+        {"id": second["id"], "type": "result", "status": "success", "data": {"session_id": "s-x"}}
+    )
+    time.sleep(0.1)
+    assert _closes(bridge, timeout=0.1) == []
+    assert bridge._late_replies == {}
 
 
 def test_transport_requests_wait_in_a_way_that_ends_when_the_sidecar_dies():

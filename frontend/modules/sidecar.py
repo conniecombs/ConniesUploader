@@ -39,6 +39,7 @@ TERMINAL_STATUSES = frozenset({"Done", "Failed", "Cancelled"})
 TERMINAL_EVENT_TYPES = frozenset(
     {"result", "error", "batch_complete", SIDECAR_CRASHED_EVENT, "sidecar_stopped"}
 )
+_LATE_REPLIES_INIT_LOCK = threading.Lock()
 
 
 class SidecarBridge:
@@ -91,6 +92,10 @@ class SidecarBridge:
         self.restart_delay = float(config.SIDECAR_RESTART_DELAY_SECONDS)
         self._shutdown_requested = threading.Event()
         self._listener_thread: Optional[threading.Thread] = None
+        # Requests whose wait ended without a reply: id -> (generation of the
+        # process it went to, name of the method that undoes a late reply).
+        self._late_replies_lock = threading.Lock()
+        self._late_replies: Dict[str, Tuple[Optional[int], str]] = {}
 
         self._start_process()
 
@@ -248,6 +253,7 @@ class SidecarBridge:
         """
         if self._shutdown_requested.is_set():
             return
+        self._forget_late_replies(generation)
         self._dispatch_event(
             {
                 "type": SIDECAR_CRASHED_EVENT,
@@ -369,6 +375,75 @@ class SidecarBridge:
                     except ValueError:
                         pass
 
+        if must_deliver and data.get("id") and "_late_replies" in self.__dict__:
+            self._take_late_reply(data)
+
+    # --- Replies that arrive after their caller stopped waiting -----------------------
+
+    def _late_reply_state(self) -> Tuple[threading.Lock, Dict[str, Tuple[Optional[int], str]]]:
+        """The table of requests whose wait ended without a reply, created on first use."""
+        with _LATE_REPLIES_INIT_LOCK:
+            if "_late_replies" not in self.__dict__:
+                self._late_replies_lock = threading.Lock()
+                self._late_replies = {}
+        return self._late_replies_lock, self._late_replies
+
+    @staticmethod
+    def _late_reply_handler(payload: JsonDict) -> Optional[str]:
+        """How to undo ``payload`` if its reply comes after its caller stopped waiting.
+
+        A session that opens after Python gave up on it would be used and
+        closed by nobody (it would live until the idle reaper), so it is
+        closed. Every other request is left as it is.
+        """
+        if payload.get("action") == "session_open":
+            return "_close_late_session"
+        return None
+
+    def _expect_late_reply(self, request_id: str, generation: Optional[int], handler: str) -> None:
+        lock, table = self._late_reply_state()
+        with lock:
+            table[request_id] = (generation, handler)
+
+    def _take_late_reply(self, reply: JsonDict) -> None:
+        """Run the undo step of a request whose caller stopped waiting, once."""
+        lock, table = self._late_reply_state()
+        with lock:
+            entry = table.pop(str(reply.get("id")), None)
+        if entry is None:
+            return
+        generation, handler = entry
+        try:
+            getattr(self, handler)(reply, generation)
+        except Exception as exc:
+            logger.warning(f"Could not undo the late reply to {reply.get('id')}: {exc}")
+
+    def _forget_late_replies(self, generation: Optional[int]) -> None:
+        """Process ``generation`` is gone: none of its requests will answer any more."""
+        if "_late_replies" not in self.__dict__:
+            return
+        lock, table = self._late_reply_state()
+        with lock:
+            for request_id, (owner, _handler) in list(table.items()):
+                if owner is None or generation is None or owner <= generation:
+                    del table[request_id]
+
+    def _close_late_session(self, reply: JsonDict, generation: Optional[int]) -> None:
+        data = reply.get("data") if isinstance(reply.get("data"), dict) else {}
+        session_id = str(data.get("session_id") or "")
+        if reply.get("status") != "success" or not session_id:
+            return
+        logger.info(f"Closing transport session {session_id}: it opened after its caller gave up")
+        payload = {
+            "action": "session_close",
+            "id": f"session-close:{uuid.uuid4().hex}",
+            "session_id": session_id,
+        }
+        # Off the stdout reader thread, which must never wait on stdin.
+        threading.Thread(
+            target=self.send_cmd, args=(payload,), name="SidecarLateClose", daemon=True
+        ).start()
+
     def send_cmd(self, payload: JsonDict) -> bool:
         """Send a JSON command to the sidecar."""
         return self.send_job(payload) is not None
@@ -452,9 +527,12 @@ class SidecarBridge:
 
         temp_q: queue.Queue[JsonDict] = queue.Queue(maxsize=100)
         self.add_listener(temp_q)
+        late_handler = self._late_reply_handler(payload)
+        # True while the request was sent and its reply may still come.
+        owed = False
+        generation: Optional[int] = None
 
         try:
-            generation: Optional[int] = None
             if track_generation:
                 generation = self.send_job(payload)
                 sent = generation is not None
@@ -462,6 +540,7 @@ class SidecarBridge:
                 sent = self.send_cmd(payload)
             if not sent:
                 return reply("error", "Sidecar unavailable"), None
+            owed = True
 
             deadline = time.monotonic() + timeout
             while True:
@@ -477,13 +556,29 @@ class SidecarBridge:
                     continue
 
                 if item.get("id") == request_id:
+                    owed = False
                     return item, generation
                 if generation is not None and self._ends_process(item, generation):
+                    owed = False  # the process is gone and will never answer
                     return reply("error", PROCESS_RESTARTED_MSG), generation
 
             return reply("error", "Timeout waiting for sidecar response"), generation
         finally:
+            # The caller stopped waiting (timeout or cancel) for a reply that
+            # may still come: from now on _dispatch_event undoes it, and a
+            # reply that reached this wait's queue as it ended is undone here.
+            if owed and late_handler is not None:
+                self._expect_late_reply(request_id, generation, late_handler)
             self.remove_listener(temp_q)
+            if owed and late_handler is not None:
+                while True:
+                    try:
+                        item = temp_q.get_nowait()
+                    except queue.Empty:
+                        break
+                    if item.get("id") == request_id:
+                        self._take_late_reply(item)
+                        break
 
     @staticmethod
     def _ends_process(event: JsonDict, generation: int) -> bool:
