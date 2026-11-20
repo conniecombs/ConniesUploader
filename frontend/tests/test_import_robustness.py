@@ -253,3 +253,49 @@ def test_dropped_file_is_queued_under_its_canonical_path(tmp_path):
     result = _import_app()._scan_import_inputs([image])
 
     assert result["misc_files"] == [str((tmp_path / "a" / "1.jpg").resolve())]
+
+
+# --- E7: no empty batch for a re-dropped folder/file -----------------------
+
+
+@pytest.mark.unit
+def test_dropping_already_queued_folder_does_not_create_empty_group(tmp_path):
+    folder = tmp_path / "Set1"
+    for name in ("1.jpg", "2.jpg"):
+        _touch(str(folder / name))
+    app = _import_app()
+
+    app._process_files([str(folder)])
+    _drain_rows(app)
+    app._process_files([str(folder)])
+    _drain_rows(app)
+
+    assert [(g.title, len(g.files)) for g in app.groups] == [("Set1", 2)]
+    assert app.lbl_eta.text == "No new files were added."
+
+
+@pytest.mark.unit
+def test_separate_batches_redrop_does_not_create_empty_group(tmp_path):
+    loose = _touch(str(tmp_path / "x.png"))
+    app = _import_app(separate_batches=True)
+
+    app._process_files([loose])
+    _drain_rows(app)
+    app._process_files([loose])
+    _drain_rows(app)
+
+    assert [(g.title, len(g.files)) for g in app.groups] == [("x.png", 1)]
+
+
+@pytest.mark.unit
+def test_misc_group_not_created_when_all_loose_files_are_duplicates(tmp_path):
+    loose = _touch(str(tmp_path / "x.png"))
+    app = _import_app()
+    app._process_files([loose])
+    _drain_rows(app)
+    app.groups[0].title = "Renamed"
+
+    app._process_files([loose])
+    _drain_rows(app)
+
+    assert [g.title for g in app.groups] == ["Renamed"]

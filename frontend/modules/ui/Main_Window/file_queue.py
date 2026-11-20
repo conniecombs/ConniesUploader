@@ -342,13 +342,18 @@ class FileQueueMixin:
     ) -> int:
         queued_count = 0
 
+        # Only files that are not queued yet are considered, so re-dropping a
+        # folder or file never creates an empty batch.
         for folder_name, files_in_folder in result.get("folder_batches", []):
+            files_in_folder = self._unqueued_files(files_in_folder)
+            if not files_in_folder:
+                continue
             group = target_group if target_group else self._create_group(folder_name, refresh=False)
             queued_count += len(
                 self._enqueue_rows_for_group(files_in_folder, group, show_previews, epoch)
             )
 
-        misc_files = list(result.get("misc_files", []))
+        misc_files = self._unqueued_files(result.get("misc_files", []))
         if target_group:
             queued_count += len(
                 self._enqueue_rows_for_group(misc_files, target_group, show_previews, epoch)
@@ -370,6 +375,22 @@ class FileQueueMixin:
         if queued_count:
             self._refresh_queue_state()
         return queued_count
+
+    def _unqueued_files(self, files: List[str]) -> List[str]:
+        """Return files (in order, without repeats) that are not queued yet."""
+        unqueued = []
+        seen = set()
+        with self._import_lock():
+            for filepath in files or []:
+                if (
+                    filepath in seen
+                    or filepath in self.file_widgets
+                    or filepath in self.pending_filepaths
+                ):
+                    continue
+                seen.add(filepath)
+                unqueued.append(filepath)
+        return unqueued
 
     def _enqueue_rows_for_group(
         self, files: List[str], group_widget: Any, show_previews: bool, epoch: int
