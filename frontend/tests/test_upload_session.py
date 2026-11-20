@@ -116,3 +116,85 @@ def test_start_upload_keeps_imx_api_key_out_of_saved_settings(tmp_path, no_worke
     pending, upload_cfg, creds = app.upload_manager.start_batch.call_args.args
     assert "SECRET-IMX-KEY" not in upload_cfg.values()
     assert creds["imx_api"] == "SECRET-IMX-KEY"
+
+
+def _finishing_app(tmp_path, monkeypatch, files, auto_copy=False):
+    """Upload in progress; finalization runs inline and after() callbacks are captured."""
+    monkeypatch.setattr(
+        "modules.ui.Main_Window.runtime.threading.Thread",
+        lambda target=None, **kwargs: SimpleNamespace(start=target),
+    )
+    app = _ui_app(tmp_path)
+    app.progress_queue, app.result_queue = queue.Queue(), queue.Queue()
+    group = FakeGroup("Batch", list(files))
+    group.selected_template = "BBCode"
+    app.groups = [group]
+    app.file_widgets = {fp: _row(group, "queued") for fp in files}
+    app.is_uploading = True
+    app.upload_total = len(files)
+    app.var_auto_copy = FakeVar(auto_copy)
+    app.callbacks = []
+    app.after = lambda delay, callback: app.callbacks.append((delay, callback))
+    return app, group
+
+
+def _run_after_zero(app):
+    pending = [callback for delay, callback in app.callbacks if delay == 0]
+    app.callbacks.clear()
+    for callback in pending:
+        callback()
+
+
+@pytest.mark.unit
+def test_result_racing_the_progress_drain_is_in_the_completion_summary(tmp_path, monkeypatch):
+    app, group = _finishing_app(tmp_path, monkeypatch, ["a.jpg", "b.jpg"], auto_copy=True)
+    copied = []
+    monkeypatch.setattr(
+        "modules.ui.Main_Window.runtime.pyperclip.copy", lambda text: copied.append(text)
+    )
+    app.result_queue.put(("a.jpg", "http://v/a", "http://t/a"))
+    app.progress_queue.put(("status", "a.jpg", "Done"))
+    app.update_ui_loop()
+
+    def upload_thread_delivers_last_file():
+        # The manager thread runs between the result drain and the progress drain.
+        app.result_queue.put(("b.jpg", "http://v/b", "http://t/b"))
+        app.progress_queue.put(("status", "b.jpg", "Done"))
+
+    app._process_ui_queue = upload_thread_delivers_last_file
+    app.update_ui_loop()
+    _run_after_zero(app)
+
+    summary = app._set_completion_summary.call_args.args[0]
+    assert group.is_completed is True
+    assert summary["generated_count"] == 1
+    assert summary["copied_to_clipboard"] is True
+    assert copied[-1] == "http://v/a\nhttp://v/b"
+
+
+@pytest.mark.unit
+def test_done_without_a_link_fails_the_row(tmp_path, monkeypatch):
+    app, group = _finishing_app(tmp_path, monkeypatch, ["a.jpg"])
+    app.result_queue.put(("a.jpg", "", ""))
+    app.progress_queue.put(("status", "a.jpg", "Done"))
+
+    app.update_ui_loop()
+
+    row = app.file_widgets["a.jpg"]
+    assert row["state"] == "failed"
+    assert row["error"] == "Host returned no link"
+    assert row["status"].text == "Failed"
+    assert app.upload_count == 1
+    assert ("Failed a.jpg: Host returned no link.", "error") in app.activity
+    assert app.current_output_files and app.current_output_files[0].endswith("_FAILED.txt")
+
+
+@pytest.mark.unit
+def test_done_without_any_result_fails_the_row(tmp_path, monkeypatch):
+    app, group = _finishing_app(tmp_path, monkeypatch, ["a.jpg"])
+    app.progress_queue.put(("status", "a.jpg", "Done"))
+
+    app.update_ui_loop()
+
+    assert app.file_widgets["a.jpg"]["state"] == "failed"
+    assert app.file_widgets["a.jpg"]["error"] == "Host returned no link"

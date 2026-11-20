@@ -58,6 +58,7 @@ from .common import (  # noqa: F401
 TERMINAL_ROW_STATES = frozenset({"success", "failed", "cancelled"})
 GENERIC_FAILURE_REASON = "Upload failed without more detail."
 CANCELLED_REASON = "Upload cancelled."
+NO_LINK_REASON = "Host returned no link"
 
 
 class RuntimeMixin:
@@ -69,6 +70,8 @@ class RuntimeMixin:
             self._process_progress_queue()
 
             if self.is_uploading:
+                # Completion must see every result already delivered.
+                self._process_result_queue()
                 with self.lock:
                     if self.upload_count >= self.upload_total:
                         self.finish_upload()
@@ -241,6 +244,11 @@ class RuntimeMixin:
                             self._apply_result_gallery_url(f, v)
                         elif k == "status":
                             status_text = str(v or "")
+                            if self._terminal_state_for_status(status_text):
+                                # The upload thread queues a file's result before
+                                # its terminal status, so a result that arrived
+                                # after this tick's result drain is waiting now.
+                                self._process_result_queue()
                             if self._apply_terminal_status(f, w, status_text):
                                 pass
                             elif w.get("state") not in TERMINAL_ROW_STATES:
@@ -267,6 +275,14 @@ class RuntimeMixin:
         return None
 
     @staticmethod
+    def _row_has_link(row: Dict[str, Any]) -> bool:
+        result = row.get("upload_result")
+        try:
+            return bool(str(result[0] or "").strip())
+        except (TypeError, IndexError):
+            return False
+
+    @staticmethod
     def _failure_reason(status_text: str) -> str:
         reason = status_text
         if reason.lower().startswith("error:"):
@@ -285,6 +301,13 @@ class RuntimeMixin:
             return False
 
         name = os.path.basename(fp)
+        if row.get("state") not in TERMINAL_ROW_STATES and (
+            new_state == "success" and not self._row_has_link(row)
+        ):
+            # Never trust a "Done" without a link: the batch output needs one.
+            new_state = "failed"
+            status_text = f"error: {NO_LINK_REASON}"
+
         if row.get("state") in TERMINAL_ROW_STATES:
             if row.get("state") == "failed" and new_state == "failed":
                 reason = self._failure_reason(status_text)
