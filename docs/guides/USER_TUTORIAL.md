@@ -676,7 +676,7 @@ Recommended form:
 
 The condition name is the placeholder name without `#`. `[if #gallery_link#]` also works, but `[if gallery_link]` is easier to read.
 
-Truth checks match when the value is not empty after trimming spaces:
+Truth checks match when the value is not empty after trimming spaces and is not the number `0`:
 
 | Goal | Use |
 | --- | --- |
@@ -745,7 +745,9 @@ Keep these limits in mind:
 | Nested checks | Yes | Put one `[if]...[/if]` inside another. |
 | `and`, `or`, `not`, `contains`, `>`, `<` | No | Split the logic into simpler blocks or use exact comparisons. |
 
-Numeric placeholders are still treated as text for truth checks. For example, `cover_count` can be `0`, and `0` still counts as a non-empty value. If you need a specific count, use an exact comparison such as `[if cover_count=1]`. If you simply want covers to appear when selected, use `#cover_images#` or `[for cover]...[/for]`; both render nothing when no covers are selected.
+A count of `0` counts as "nothing": `[if cover_count]Covers:[/if]` shows `Covers:` only when at least one cover is used, and `[if image_count]` is false for an empty batch. If you need a specific count, use an exact comparison such as `[if cover_count=1]` (or `[if cover_count=0]`). If you simply want covers to appear when selected, use `#cover_images#` or `[for cover]...[/for]`; both render nothing when no covers are selected.
+
+Truth checks on image placeholders see the same values the output uses. `[if all_images]`, `[if cover_images]`, and `[if cover_count]` reflect the images and covers the template actually outputs, and `[if cover_image]` or `[if cover_url]` is true whenever the batch has an image, because those placeholders fall back to the first image when no cover is selected. An image that a branch sets aside as a cover is always output by that same branch.
 
 ### Template Image And Cover Loops
 

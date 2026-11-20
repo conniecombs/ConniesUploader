@@ -285,6 +285,8 @@ Conditionals allow you to write smart templates that show certain sections **onl
 
 * If the variable has text (like a URL, batch name, or size), the content inside is included.
 * If the variable is empty or blank, everything between `[if]` and `[/if]` is completely omitted.
+* A count of `0` counts as empty: `[if cover_count]` is only true when at least one cover is used. Use `[if cover_count=0]` to test for zero explicitly.
+* Image placeholders are tested against what the template really outputs, so a cover that an `[if]` branch sets aside is always shown by that branch and never silently dropped. `[if cover_image]` is true whenever the batch has an image, because `#cover_image#` falls back to the first image when no cover is selected.
 
 > [!TIP]
 > The condition tag takes the variable name **without** hashes: use `[if gallery_link]` rather than `[if #gallery_link#]`. (Both work, but without hashes is cleaner).
@@ -429,10 +431,17 @@ If your template doesn't produce the output you expect, consult this checklist:
 * **Behavior**: This is intentional! Connie's Uploader automatically excludes selected cover images from `#all_images#` and `[for image]` so that your cover photo isn't awkwardly repeated twice.
 * **Fix**: Place `#cover_images#` or `[for cover]` at the top of your template to showcase the covers.
 
-### 6. "Template must contain at least one image placeholder"
+### 6. "Template needs an image output placeholder"
 * **Cause**: Templates must actually output images. If you create a template with only text or batch metadata, Connie's Uploader blocks it from saving.
-* **Fix**: Include at least one image marker (`#all_images#`, `#all_full_images#`, `#cover_images#`, `#cover_image#`, `[for image]`, or `[for cover]`).
+* **Fix**: Include at least one image placeholder (`#all_images#`, `#all_full_images#`, `#cover_images#`, `#cover_image#`, `#cover_url#`, or `#image_url#` / `#thumb_url#` / `#direct_url#` inside a `[for image]` or `[for cover]` loop).
 
-### 7. Preview button doesn't do anything or shows empty data
+### 7. "Unsupported placeholder(s): {viewer}, {thumb}"
+* **Cause**: Placeholders in curly braces such as `{viewer}`, `{thumb}`, and `{direct}` are not part of the template language. They were never replaced, so they used to reach the forum post as literal text.
+* **Fix**: Use `#image_url#` instead of `{viewer}`, `#thumb_url#` instead of `{thumb}`, and `#direct_url#` instead of `{direct}`. Inside `[for image]...[/for]` they refer to each image in turn:
+  ```bbcode
+  [for image separator=space][url=#image_url#][img]#thumb_url#[/img][/url][/for]
+  ```
+
+### 8. Preview button doesn't do anything or shows empty data
 * **Cause**: The upload queue in the main Connie's Uploader window is empty.
 * **Fix**: Add at least one image or folder to the main window before clicking **Preview in Browser** or **Copy Preview Output**.

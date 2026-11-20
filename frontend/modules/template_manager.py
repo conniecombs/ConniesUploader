@@ -63,6 +63,13 @@ class TemplateManager:
         re.IGNORECASE,
     )
     HASH_PLACEHOLDER_PATTERN = re.compile(r"#([A-Za-z_][A-Za-z0-9_]*)#")
+    NUMERIC_ZERO_PATTERN = re.compile(r"[+-]?(?:0+(?:\.0*)?|\.0+)")
+    # Never substituted by the renderer; kept only to point people at the # placeholders.
+    UNSUPPORTED_BRACE_PLACEHOLDERS = {
+        "{viewer}": "#image_url#",
+        "{thumb}": "#thumb_url#",
+        "{direct}": "#direct_url#",
+    }
     HTML_TAG_PATTERN = re.compile(
         r"<\s*/?\s*(?:a|b|body|br|center|div|em|font|h[1-6]|html|i|img|p|span|strong|table|td|tr|u)\b[^>]*>",
         re.IGNORECASE,
@@ -98,9 +105,6 @@ class TemplateManager:
         "#image_url#",
         "#thumb_url#",
         "#direct_url#",
-        "{viewer}",
-        "{thumb}",
-        "{direct}",
     )
     CATEGORY_ALL = "All"
     CUSTOM_CATEGORY = "Custom"
@@ -453,6 +457,20 @@ class TemplateManager:
         )
         if unknown:
             errors.append("Unknown placeholder(s): " + ", ".join(f"#{name}#" for name in unknown))
+        brace_placeholders = [
+            brace for brace in self.UNSUPPORTED_BRACE_PLACEHOLDERS if brace in template
+        ]
+        if brace_placeholders:
+            errors.append(
+                "Unsupported placeholder(s): "
+                + ", ".join(brace_placeholders)
+                + ". Use "
+                + ", ".join(
+                    f"{self.UNSUPPORTED_BRACE_PLACEHOLDERS[brace]} instead of {brace}"
+                    for brace in brace_placeholders
+                )
+                + "; inside [for image]...[/for] they refer to each image in turn."
+            )
         errors.extend(structure_errors)
 
         if not any(marker in template for marker in self.IMAGE_OUTPUT_MARKERS):
@@ -578,9 +596,11 @@ class TemplateManager:
 
     def _condition_matches(self, name: str, expected: Optional[str], data: Dict[str, Any]) -> bool:
         actual_value = data.get(name, "")
+        text = str(actual_value).strip()
         if expected is not None:
-            return str(actual_value).strip() == expected
-        return bool(str(actual_value).strip())
+            return text == expected
+        # A count of 0 (cover_count, image_count, ...) means "none", not "has a value".
+        return bool(text) and not self.NUMERIC_ZERO_PATTERN.fullmatch(text)
 
     def _loop_separator_from_tag(self, raw_tag: str) -> str:
         match = self.LOOP_START_PATTERN.fullmatch(raw_tag.strip())
@@ -729,6 +749,40 @@ class TemplateManager:
             content = content.replace(f"#{key}#", str(value))
         return content
 
+    def _format_image(
+        self, image_format: str, data: Dict[str, Any], viewer: str, thumb: str, direct: str
+    ) -> str:
+        image_data = dict(data)
+        image_data["image_url"] = viewer
+        image_data["thumb_url"] = thumb
+        image_data["direct_url"] = direct
+        return self._replace_placeholders(image_format, image_data)
+
+    def _image_list_values(
+        self,
+        data: Dict[str, Any],
+        image_format: str,
+        full_image_format: str,
+        covers: List[Tuple[str, str, str]],
+        images: List[Tuple[str, str, str]],
+    ) -> Dict[str, Any]:
+        """Return ``data`` plus #all_images#, #all_full_images#, #cover_count#, #cover_images#."""
+        values = dict(data)
+        values["all_images"] = " ".join(
+            self._format_image(image_format, values, viewer, thumb, direct)
+            for viewer, thumb, direct in images
+        )
+        values["all_full_images"] = " ".join(
+            self._format_image(full_image_format, values, direct, thumb, direct)
+            for _viewer, thumb, direct in images
+        )
+        values["cover_count"] = len(covers)
+        values["cover_images"] = " ".join(
+            self._format_image(image_format, values, viewer, thumb, direct)
+            for viewer, thumb, direct in covers
+        )
+        return values
+
     @staticmethod
     def _safe_nonnegative_int(value: Any, default: int = 0) -> int:
         try:
@@ -768,8 +822,11 @@ class TemplateManager:
         data: Dict[str, Any],
         images: List[Tuple[str, str, str]],
         cover_images: Optional[List[Tuple[str, str, str]]] = None,
+        conditions: Optional[Dict[str, Any]] = None,
     ) -> str:
+        """Render ``nodes``; ``[if]`` tests read ``conditions`` (default: ``data``)."""
         cover_images = cover_images or []
+        conditions = data if conditions is None else conditions
         rendered: List[str] = []
         for node in nodes:
             kind = node[0]
@@ -778,23 +835,25 @@ class TemplateManager:
             elif kind == "if":
                 _kind, name, expected, true_nodes, false_nodes = node
                 selected_nodes = (
-                    true_nodes if self._condition_matches(name, expected, data) else false_nodes
+                    true_nodes
+                    if self._condition_matches(name, expected, conditions)
+                    else false_nodes
                 )
-                rendered.append(self._render_nodes(selected_nodes, data, images, cover_images))
-            elif kind == "for_image":
+                rendered.append(
+                    self._render_nodes(selected_nodes, data, images, cover_images, conditions)
+                )
+            elif kind in {"for_image", "for_cover"}:
                 _kind, separator, body_nodes = node
                 blocks = []
-                for image in images:
+                for image in images if kind == "for_image" else cover_images:
                     image_data = self._image_context(data, image)
-                    block = self._render_nodes(body_nodes, image_data, images, cover_images)
-                    blocks.append(self._replace_placeholders(block, image_data))
-                rendered.append(separator.join(blocks))
-            elif kind == "for_cover":
-                _kind, separator, body_nodes = node
-                blocks = []
-                for image in cover_images:
-                    image_data = self._image_context(data, image)
-                    block = self._render_nodes(body_nodes, image_data, images, cover_images)
+                    block = self._render_nodes(
+                        body_nodes,
+                        image_data,
+                        images,
+                        cover_images,
+                        self._image_context(conditions, image),
+                    )
                     blocks.append(self._replace_placeholders(block, image_data))
                 rendered.append(separator.join(blocks))
         return "".join(rendered)
@@ -842,60 +901,50 @@ class TemplateManager:
         data.setdefault("image_count", len(images))
         data.setdefault("folder_size", "")
 
-        temp_data = data.copy()
-        temp_data.setdefault("all_images", "dummy")
-        temp_data.setdefault("all_full_images", "dummy")
-        temp_data.setdefault("cover_image", "dummy")
-        temp_data.setdefault("cover_images", "dummy")
-        temp_data.setdefault("cover_url", "dummy")
-        cover_slots, uses_auto_covers = self._cover_requirements_from_nodes(nodes, temp_data)
-        selected_cover_count = self._safe_nonnegative_int(data.get("cover_count"), 0)
-        cover_count = max(cover_slots, selected_cover_count if uses_auto_covers else 0)
-        cover_count = min(cover_count, len(images))
-
-        covers_extracted = [self._image_values(img) for img in images[:cover_count]]
-        remaining_images = images[cover_count:] if cover_count > 0 else images
-
-        filtered_images = []
-        for img in remaining_images:
-            filtered_images.append(self._image_values(img))
-
+        image_values = [self._image_values(img) for img in images]
         img_fmt = self.image_formats.get(output_format, self.image_formats["BBCode"])
-        processed_images = []
-        for v_url, t_url, d_url in filtered_images:
-            item_str = img_fmt
-            image_data = dict(data)
-            image_data["image_url"] = v_url
-            image_data["thumb_url"] = t_url
-            image_data["direct_url"] = d_url
-            processed_images.append(self._replace_placeholders(item_str, image_data))
-        data["all_images"] = " ".join(processed_images)
-
         full_fmt = self.full_image_formats.get(output_format, self.full_image_formats["BBCode"])
-        processed_full = []
-        for _, t_url, d_url in filtered_images:
-            item_str = full_fmt
-            image_data = dict(data)
-            image_data["image_url"] = d_url
-            image_data["thumb_url"] = t_url
-            image_data["direct_url"] = d_url
-            processed_full.append(self._replace_placeholders(item_str, image_data))
-        data["all_full_images"] = " ".join(processed_full)
-        data["cover_count"] = len(covers_extracted)
-        data["cover_images"] = " ".join(
-            self._replace_placeholders(
-                img_fmt,
-                {
-                    **data,
-                    "image_url": viewer_url,
-                    "thumb_url": thumb_url,
-                    "direct_url": direct_url,
-                },
-            )
-            for viewer_url, thumb_url, direct_url in covers_extracted
-        )
+        selected_cover_count = self._safe_nonnegative_int(data.get("cover_count"), 0)
 
-        content = self._render_nodes(nodes, data, filtered_images, covers_extracted)
+        def condition_values(cover_total: int) -> Dict[str, Any]:
+            values = self._image_list_values(
+                data,
+                img_fmt,
+                full_fmt,
+                image_values[:cover_total],
+                image_values[cover_total:],
+            )
+            # #cover_image# and #cover_url# start with the first image whether or not
+            # it was selected as a cover.
+            first = image_values[0] if image_values else None
+            values["cover_image"] = self._format_image(img_fmt, values, *first) if first else ""
+            values["cover_url"] = (
+                first[1] if first else str(data.get("cover_url") or data.get("thumb_url") or "")
+            )
+            return values
+
+        def covers_used(conditions: Dict[str, Any]) -> int:
+            cover_slots, uses_auto_covers = self._cover_requirements_from_nodes(nodes, conditions)
+            cover_total = max(cover_slots, selected_cover_count if uses_auto_covers else 0)
+            return min(cover_total, len(images))
+
+        # [if] tests may read the cover and image lists, and those lists depend on how
+        # many covers the chosen branches use. Pick one set of values for every test, so
+        # the branches that decide the covers are exactly the branches that are rendered
+        # and no image is set aside as a cover without being output.
+        guess = min(selected_cover_count, len(images))
+        conditions = condition_values(guess)
+        cover_count = covers_used(conditions)
+        if cover_count != guess:
+            settled = condition_values(cover_count)
+            if covers_used(settled) == cover_count:
+                conditions = settled
+
+        covers_extracted = image_values[:cover_count]
+        filtered_images = image_values[cover_count:]
+        data = self._image_list_values(data, img_fmt, full_fmt, covers_extracted, filtered_images)
+
+        content = self._render_nodes(nodes, data, filtered_images, covers_extracted, conditions)
 
         covers_to_use = covers_extracted.copy()
 

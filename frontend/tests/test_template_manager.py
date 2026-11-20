@@ -131,7 +131,7 @@ class TestTemplateOperations:
             templates_file = Path(temp_dir) / "templates.json"
             tm = TemplateManager(str(templates_file))
 
-            template_content = "[url={viewer}][img]{thumb}[/img][/url]"
+            template_content = "[url=#image_url#][img]#thumb_url#[/img][/url]"
             tm.add_template("Test Template", template_content)
 
             templates = tm.get_all_templates()
@@ -144,7 +144,7 @@ class TestTemplateOperations:
             templates_file = Path(temp_dir) / "templates.json"
             tm = TemplateManager(str(templates_file))
 
-            template_content = "[img]{direct}[/img]"
+            template_content = "[img]#direct_url#[/img]"
             tm.add_template("Direct Link", template_content)
 
             retrieved = tm.get_template("Direct Link")
@@ -165,7 +165,7 @@ class TestTemplateOperations:
             templates_file = Path(temp_dir) / "templates.json"
             tm = TemplateManager(str(templates_file))
 
-            tm.add_template("To Delete", "[url]{viewer}[/url]")
+            tm.add_template("To Delete", "[url]#image_url#[/url]")
             assert "To Delete" in tm.get_all_templates()
 
             tm.delete_template("To Delete")
@@ -177,8 +177,8 @@ class TestTemplateOperations:
             templates_file = Path(temp_dir) / "templates.json"
             tm = TemplateManager(str(templates_file))
 
-            original = "[img]{thumb}[/img]"
-            updated = "[url={viewer}][img]{thumb}[/img][/url]"
+            original = "[img]#thumb_url#[/img]"
+            updated = "[url=#image_url#][img]#thumb_url#[/img][/url]"
 
             tm.add_template("MyTemplate", original)
             assert tm.get_template("MyTemplate") == original
@@ -347,7 +347,7 @@ class TestTemplatePersistence:
             templates_file = Path(temp_dir) / "templates.json"
             tm = TemplateManager(str(templates_file))
 
-            tm.add_template("Test", "[img]{thumb}[/img]")
+            tm.add_template("Test", "[img]#thumb_url#[/img]")
             tm.save()  # Assuming save method exists
 
             # Read file directly
@@ -375,7 +375,7 @@ class TestTemplatePersistence:
 
             # First instance
             tm1 = TemplateManager(str(templates_file))
-            tm1.add_template("Persistent", "[url]{viewer}[/url]")
+            tm1.add_template("Persistent", "[url]#image_url#[/url]")
 
             # Second instance
             tm2 = TemplateManager(str(templates_file))
@@ -568,7 +568,7 @@ class TestTemplateValidation:
             templates_file = Path(temp_dir) / "templates.json"
             tm = TemplateManager(str(templates_file))
 
-            long_template = "[img]{thumb}[/img]" * 1000
+            long_template = "[img]#thumb_url#[/img]" * 1000
             tm.add_template("Long", long_template)
 
             retrieved = tm.get_template("Long")
@@ -581,7 +581,7 @@ class TestTemplateValidation:
             tm = TemplateManager(str(templates_file))
 
             template_with_special = (
-                '<a href="{viewer}" title="View & Download">[img]{thumb}[/img]</a>'
+                '<a href="#image_url#" title="View & Download">[img]#thumb_url#[/img]</a>'
             )
             tm.add_template("Special", template_with_special)
 
@@ -645,17 +645,18 @@ class TestTemplateManagerIntegration:
 
             # Create manager and add template
             tm = TemplateManager(str(templates_file))
-            tm.add_template("Workflow", "[url={viewer}]{thumb}[/url]")
+            tm.add_template("Workflow", "[url=#image_url#]#thumb_url#[/url]")
 
             # Retrieve and use template
-            template = tm.get_template("Workflow")
-            result = template.format(
-                viewer="http://example.com", thumb="http://example.com/thumb.jpg"
+            result = tm.apply(
+                "Workflow",
+                {},
+                [("http://example.com", "http://example.com/thumb.jpg", "")],
             )
             assert result == "[url=http://example.com]http://example.com/thumb.jpg[/url]"
 
             # Update template
-            tm.add_template("Workflow", "[img]{thumb}[/img]")
+            tm.add_template("Workflow", "[img]#thumb_url#[/img]")
             updated = tm.get_template("Workflow")
             assert "[img]" in updated
 
@@ -1327,3 +1328,87 @@ class TestTemplateLoopLayout:
         result = mgr.apply("Apostrophe", {"gallery_name": "it's"}, [])
 
         assert result == "Match  it's"
+
+
+FOUR_IMAGES = THREE_IMAGES + [("viewer4", "thumb4", "direct4")]
+
+
+def _thumb_block(index):
+    return f"[url=viewer{index}][img]thumb{index}[/img][/url]"
+
+
+@pytest.mark.unit
+class TestTemplateConditionsMatchRender:
+    def test_conditional_cover_image_keeps_every_image(self, tmp_path):
+        mgr = TemplateManager(str(tmp_path / "templates.json"))
+        mgr.set_template("Optional Cover", "[if cover_image]#cover_image#\n[/if]#all_images#")
+
+        for cover_count in (0, 1):
+            result = mgr.apply("Optional Cover", {"cover_count": cover_count}, FOUR_IMAGES)
+
+            assert result == _thumb_block(1) + "\n" + " ".join(
+                _thumb_block(index) for index in range(2, 5)
+            )
+
+    def test_conditions_on_image_lists_never_drop_an_image(self, tmp_path):
+        mgr = TemplateManager(str(tmp_path / "templates.json"))
+        mgr.set_template("Cover If Rest", "[if all_images]#cover_image#[/if]")
+        mgr.set_template("Optional Covers", "[if cover_images]#cover_images#\n[/if]#all_images#")
+
+        assert mgr.apply("Cover If Rest", {}, THREE_IMAGES[:1]) == _thumb_block(1)
+        assert mgr.apply("Optional Covers", {"cover_count": 0}, THREE_IMAGES) == " ".join(
+            _thumb_block(index) for index in range(1, 4)
+        )
+        assert mgr.apply("Optional Covers", {"cover_count": 2}, THREE_IMAGES) == (
+            f"{_thumb_block(1)} {_thumb_block(2)}\n{_thumb_block(3)}"
+        )
+
+    def test_numeric_zero_is_false_in_conditions(self, tmp_path):
+        mgr = TemplateManager(str(tmp_path / "templates.json"))
+        mgr.set_template("Count", "[if cover_count]Covers: #cover_images#\n[/if]#all_images#")
+
+        without_covers = mgr.apply("Count", {"cover_count": 0}, FOUR_IMAGES)
+        with_covers = mgr.apply("Count", {"cover_count": 2}, FOUR_IMAGES)
+
+        assert without_covers == " ".join(_thumb_block(index) for index in range(1, 5))
+        assert with_covers == (
+            f"Covers: {_thumb_block(1)} {_thumb_block(2)}\n{_thumb_block(3)} {_thumb_block(4)}"
+        )
+        assert mgr.process_conditionals(
+            "[if image_count]Some[else]None[/if]", {"image_count": 0}
+        ) == ("None")
+        assert mgr.process_conditionals("[if thread_id]T[else]None[/if]", {"thread_id": "0"}) == (
+            "None"
+        )
+        assert mgr.process_conditionals("[if image_count]Some[/if]", {"image_count": 3}) == "Some"
+        assert mgr.process_conditionals("[if cover_count=0]Zero[/if]", {"cover_count": 0}) == (
+            "Zero"
+        )
+
+    def test_cover_count_condition_sees_the_rendered_cover_count(self, tmp_path):
+        mgr = TemplateManager(str(tmp_path / "templates.json"))
+        mgr.set_template(
+            "Two Slots",
+            "[if cover_count=2]Two covers: [/if]#cover_image# #cover_image#\n"
+            "#cover_count# #all_images#",
+        )
+
+        result = mgr.apply("Two Slots", {"cover_count": 0}, THREE_IMAGES)
+
+        assert result == f"Two covers: {_thumb_block(1)} {_thumb_block(2)}\n2 {_thumb_block(3)}"
+
+    def test_brace_placeholders_are_rejected_with_a_hint(self, tmp_path):
+        mgr = TemplateManager(str(tmp_path / "templates.json"))
+
+        errors = mgr.validate_template("[url={viewer}][img]{thumb}[/img][/url]")
+        direct_errors = mgr.validate_template("#all_images# [img]{direct}[/img]")
+
+        assert any(
+            "{viewer}" in error and "{thumb}" in error and "#image_url#" in error
+            for error in errors
+        )
+        assert any("image output placeholder" in error for error in errors)
+        assert len(direct_errors) == 1
+        assert "{direct}" in direct_errors[0] and "#direct_url#" in direct_errors[0]
+        with pytest.raises(TemplateValidationError):
+            mgr.set_template("Legacy", "[url={viewer}][img]{thumb}[/img][/url]")
