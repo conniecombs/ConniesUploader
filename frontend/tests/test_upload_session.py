@@ -264,7 +264,7 @@ def test_failed_reports_with_the_same_name_never_overwrite(tmp_path, frozen_minu
         (
             "imgur.com",
             "https://i.imgur.com/abc.jpg",
-            "https://i.imgur.com/abc.jpg",
+            "https://i.imgur.com/abcm.jpg",
             "https://i.imgur.com/abc.jpg",
         ),
         (
@@ -306,6 +306,48 @@ def test_pixhost_full_image_post_embeds_images_not_viewer_pages(tmp_path):
     assert "[img]https://img1.pixhost.to/images/42/a1.jpg[/img]" in text
     assert "[img]https://img1.pixhost.to/images/42/a2.jpg[/img]" in text
     assert "/show/" not in text
+
+
+def _imgur_thumb_for(link: str, size: str = "m") -> str:
+    """The thumbnail the sidecar builds from the Imgur plugin's thumb_template."""
+    from modules.plugins.imgur import ImgurPlugin
+
+    spec = ImgurPlugin().build_http_request(
+        "/x/a.jpg", {"thumbnail_size": size}, {"imgur_client_id": "cid"}
+    )
+    template = spec["response_parser"]["thumb_template"]
+    stem, dot, ext = link.rpartition(".")
+    return template.replace("{url_no_ext}", stem).replace("{url_dot_ext}", dot + ext)
+
+
+@pytest.mark.unit
+def test_imgur_direct_url_is_the_full_image_not_the_thumbnail():
+    from modules.ui.Main_Window.runtime import direct_image_url
+
+    link = "https://i.imgur.com/AbCd123.jpg"
+    thumb = _imgur_thumb_for(link)
+    assert thumb == "https://i.imgur.com/AbCd123m.jpg"
+
+    assert direct_image_url("imgur.com", link, thumb) == link
+
+
+@pytest.mark.unit
+def test_imgur_full_image_post_embeds_full_images(tmp_path):
+    from modules.template_manager import TemplateManager
+    from modules.ui.Main_Window.runtime import direct_image_url
+
+    mgr = TemplateManager(str(tmp_path / "templates.json"))
+    link = "https://i.imgur.com/AbCd123.jpg"
+    thumb = _imgur_thumb_for(link)
+
+    out = mgr.apply(
+        "ViperGirls Full Image Post",
+        {"batch_name": "Set"},
+        [(link, thumb, direct_image_url("imgur.com", link, thumb))],
+    )
+
+    assert f"[img]{link}[/img]" in out, out
+    assert f"[img]{thumb}[/img]" not in out
 
 
 def _template_app(tmp_path):

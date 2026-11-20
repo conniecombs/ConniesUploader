@@ -75,14 +75,21 @@ def direct_image_url(service_id: str, viewer_url: str, thumb_url: str) -> str:
     The full-size image is derived where the host's URL scheme is known:
     IMX ``.../u/t/...`` becomes ``.../u/i/...`` and Pixhost
     ``tN.pixhost.to/thumbs/...`` becomes ``imgN.pixhost.to/images/...``.
-    Imgur's link is already the image. Otherwise the thumbnail image is used:
-    the viewer URL is a web page, which an ``[img]`` tag cannot show.
+    Imgur's link (``i.imgur.com/<id>.<ext>``) is already the full image; its
+    thumbnail is ``<id><size letter>.<ext>``. Otherwise the thumbnail image is
+    used: the viewer URL is a web page, which an ``[img]`` tag cannot show.
     """
     thumb_url = str(thumb_url or "").strip()
     parts = urllib.parse.urlsplit(thumb_url)
     host = (parts.hostname or "").lower()
+    service = config.normalize_service_id(service_id)
 
-    if config.normalize_service_id(service_id) == "imx.to" and "/t/" in parts.path:
+    if service == "imgur.com":
+        viewer_url = str(viewer_url or "").strip()
+        if (urllib.parse.urlsplit(viewer_url).hostname or "").lower() == "i.imgur.com":
+            return viewer_url
+
+    if service == "imx.to" and "/t/" in parts.path:
         path = parts.path.replace("/t/", "/i/", 1)
         return urllib.parse.urlunsplit(parts._replace(path=path))
 
