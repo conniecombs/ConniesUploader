@@ -28,6 +28,7 @@ regular expressions use Python ``re`` instead of RE2: compile them with
 from __future__ import annotations
 
 import bisect
+import dataclasses
 import functools
 import html
 import json
@@ -38,7 +39,7 @@ import unicodedata
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import urlsplit
 
 from bs4 import BeautifulSoup, Doctype, NavigableString, Tag
 
@@ -238,7 +239,12 @@ def _redact_escaped(text: str, secrets: List[str], pattern: "re.Pattern[str]", d
         if value is None:
             continue
         if match.start() > cursor:
-            add(cursor, match.start(), text[cursor : match.start()].encode("utf-8", "surrogatepass"), False)
+            add(
+                cursor,
+                match.start(),
+                text[cursor : match.start()].encode("utf-8", "surrogatepass"),
+                False,
+            )
         add(match.start(), match.end(), value, True)
         cursor = match.end()
     if not segments:
@@ -273,7 +279,9 @@ def _redact_escaped(text: str, secrets: List[str], pattern: "re.Pattern[str]", d
             if (
                 start is not None
                 and end is not None
-                and not any(start < taken_end and taken_start < end for taken_start, taken_end in spans)
+                and not any(
+                    start < taken_end and taken_start < end for taken_start, taken_end in spans
+                )
             ):
                 spans.append((start, end))
                 position = found + len(needle)
@@ -547,25 +555,229 @@ def _path_ext(path: str) -> str:
     return ""
 
 
+# --- Links as Go's net/url reads and writes them -------------------------------------
+#
+# The legacy path built thumbnail links ({url_no_ext}) and upload URLs (an
+# endpoint read from a host page) with Go's url.Parse, ResolveReference and
+# URL.String. These port what changes such a link: which links Go refuses
+# (it then keeps the link or the default URL), how a path is escaped (a
+# space or "é" becomes %20 or %C3%A9; a valid escape is kept), and how dot
+# segments are removed. Not ported, as no host page names such a link: how
+# Go escapes a host or user info on output, its user-info checks, a few
+# hosts with brackets or braces it accepts, and a relative path that starts
+# with three slashes.
+
+_GO_ALNUM = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789")
+_GO_VALID_ENCODED = frozenset("!$&'()*+,;=:@[]%")
+_GO_HOST_CHARS = _GO_ALNUM | frozenset("-_.~!$&'()*+,;=:[]<>\"")
+_GO_HEX = frozenset("0123456789abcdefABCDEF")
+_GO_CONTROL = re.compile(r"[\x00-\x1f\x7f]")
+_GO_PORT = re.compile(r"(?::[0-9]*)?")
+
+
+def _go_should_escape(byte: int, mode: str) -> bool:
+    """Go's shouldEscape for a path ("path") or a fragment ("fragment")."""
+    char = chr(byte)
+    if char in _GO_ALNUM or char in "-_.~":
+        return False
+    if char in "$&+,/:;=?@":
+        return mode == "path" and char == "?"
+    return not (mode == "fragment" and char in "!()*")
+
+
+def _go_unescape(text: str, mode: str) -> Optional[bytes]:
+    """Go's unescape: the bytes ``text`` stands for, or None for a bad escape."""
+    raw = text.encode("utf-8", "surrogatepass")
+    out = bytearray()
+    index = 0
+    while index < len(raw):
+        byte = raw[index]
+        if byte == 0x25:  # "%"
+            pair = raw[index + 1 : index + 3].decode("latin-1")
+            if len(pair) < 2 or not set(pair) <= _GO_HEX:
+                return None
+            if mode == "host" and int(pair[0], 16) < 8 and pair != "25":
+                return None  # a host escapes only non-ASCII bytes
+            out.append(int(pair, 16))
+            index += 3
+            continue
+        if mode == "host" and byte < 0x80 and chr(byte) not in _GO_HOST_CHARS:
+            return None
+        out.append(byte)
+        index += 1
+    return bytes(out)
+
+
+def _go_escaped(text: str, mode: str) -> Optional[str]:
+    """Go's EscapedPath / EscapedFragment for ``text`` as written; None if Go refuses it.
+
+    Kept as written when every character may stand there, else escaped anew.
+    """
+    raw = _go_unescape(text, mode)
+    if raw is None:
+        return None
+    if all(
+        char in _GO_VALID_ENCODED or (ord(char) < 0x80 and not _go_should_escape(ord(char), mode))
+        for char in text
+    ):
+        return text
+    return "".join(
+        chr(byte) if not _go_should_escape(byte, mode) else f"%{byte:02X}" for byte in raw
+    )
+
+
+@dataclass(frozen=True)
+class _GoURL:
+    scheme: str
+    netloc: str
+    path: str  # escaped (Go's EscapedPath), or the opaque part
+    query: str
+    force_query: bool
+    fragment: str  # escaped
+    opaque: bool = False
+
+    def string(self) -> str:
+        """Go's URL.String."""
+        out = f"{self.scheme}:" if self.scheme else ""
+        if self.opaque:
+            out += self.path
+        else:
+            if (self.scheme or self.netloc) and (self.netloc or self.path):
+                out += "//" + self.netloc
+            if self.path and not self.path.startswith("/") and self.netloc:
+                out += "/"
+            if not out and ":" in self.path.split("/", 1)[0]:
+                out += "./"
+            out += self.path
+        if self.force_query or self.query:
+            out += "?" + self.query
+        if self.fragment:
+            out += "#" + self.fragment
+        return out
+
+
+def _go_parse(link: str) -> Optional[_GoURL]:
+    """Go's url.Parse, or None where Go refuses the link."""
+    if _GO_CONTROL.search(link):
+        return None
+    try:
+        parts = urlsplit(link)
+    except ValueError:  # an unclosed IPv6 bracket
+        return None
+    host = parts.netloc.rpartition("@")[2]
+    if host.startswith("["):
+        port = host[host.find("]") + 1 :]
+    else:
+        port = host[host.rfind(":") :] if ":" in host else ""
+        if _go_unescape(host, "host") is None:
+            return None
+    if not _GO_PORT.fullmatch(port):
+        return None  # Go refuses a port that is not a number
+    rest = link.split("#", 1)[0]
+    force_query = rest.endswith("?") and rest.count("?") == 1
+    fragment = _go_escaped(parts.fragment, "fragment")
+    if fragment is None:
+        return None
+    if parts.scheme and not parts.netloc and not parts.path.startswith("/"):
+        return _GoURL(parts.scheme, "", parts.path, parts.query, force_query, fragment, True)
+    if not parts.scheme and not parts.netloc and ":" in parts.path.split("/", 1)[0]:
+        return None  # a relative link whose first segment has a colon
+    path = _go_escaped(parts.path, "path")
+    if path is None:
+        return None
+    return _GoURL(parts.scheme, parts.netloc, path, parts.query, force_query, fragment)
+
+
+def _go_resolve_path(base: str, ref: str) -> str:
+    """Go's resolvePath: ``ref`` against ``base`` with dot segments removed (RFC 3986)."""
+    if not ref:
+        full = base
+    elif not ref.startswith("/"):
+        full = base[: base.rfind("/") + 1] + ref
+    else:
+        full = ref
+    if not full:
+        return ""
+    out, first, elem = "/", True, ""
+    elements = full.split("/")
+    for elem in elements:
+        if elem == ".":
+            first = False
+            continue
+        if elem == "..":
+            cut = out[1:].rfind("/")
+            out, first = ("/", True) if cut < 0 else ("/" + out[1:][:cut], first)
+            continue
+        if not first:
+            out += "/"
+        out += elem
+        first = False
+    if elem in (".", ".."):
+        out += "/"
+    return out[1:] if len(out) > 1 and out[1] == "/" else out
+
+
+def resolve_upload_url(upload_url: str, endpoint: str) -> str:
+    """The upload URL for an endpoint read from a host page, as the legacy path built it.
+
+    ``endpoint`` (absolute, or relative to ``upload_url``) is resolved with
+    its dot segments removed and its path escaped; without a query of its
+    own it takes ``upload_url``'s. An endpoint, or an upload URL, that Go's
+    url.Parse refuses leaves ``upload_url``. (backend/core/http.go
+    resolveUploadURL.)
+    """
+    endpoint = str(endpoint or "").strip()
+    base = _go_parse(upload_url)
+    ref = _go_parse(endpoint) if endpoint else None
+    if base is None or ref is None:
+        return upload_url
+    if ref.scheme or ref.netloc:
+        resolved = _GoURL(
+            ref.scheme or base.scheme,
+            ref.netloc,
+            ref.path if ref.opaque else _go_resolve_path(ref.path, ""),
+            ref.query,
+            ref.force_query,
+            ref.fragment,
+            ref.opaque,
+        )
+    else:
+        query, fragment = ref.query, ref.fragment
+        if not ref.path and not ref.force_query and not ref.query:
+            query = base.query
+            fragment = ref.fragment or base.fragment
+        resolved = _GoURL(
+            base.scheme,
+            base.netloc,
+            _go_resolve_path(base.path, ref.path),
+            query,
+            ref.force_query,
+            fragment,
+        )
+    if not resolved.query:
+        resolved = dataclasses.replace(resolved, query=base.query)
+    return resolved.string()
+
+
 def split_url_extension(link: str) -> Tuple[str, str]:
     """Split a link into everything before its path's extension, and the extension.
 
     ``https://h/a/x.jpg?q#f`` -> (``https://h/a/x``, ``.jpg``). The query and
-    fragment are dropped; the path keeps the link's own escaping (``%2F``
-    stays ``%2F``, ``(`` stays ``(``).
+    fragment are dropped; the path is escaped as Go writes it (a valid
+    escape such as ``%2F`` is kept, a space becomes ``%20``), and a link Go
+    cannot parse comes back whole with no extension.
     """
     link = str(link or "").strip()
     if not link:
         return "", ""
-    try:
-        parts = urlsplit(link)
-    except ValueError:
+    parts = _go_parse(link)
+    if parts is None:
         return link, ""
-    bare = parts._replace(query="", fragment="")
-    ext = _path_ext(parts.path)
-    if not ext:
-        return urlunsplit(bare), ""
-    return urlunsplit(bare._replace(path=parts.path[: -len(ext)])), ext
+    stripped = dataclasses.replace(parts, query="", force_query=False, fragment="").string()
+    ext = "" if parts.opaque else _path_ext(parts.path)
+    if not ext or not stripped.endswith(ext):
+        return stripped, ""
+    return stripped[: -len(ext)], ext
 
 
 _TEMPLATE_TOKEN = re.compile(r"\{([^{}]+)\}")

@@ -15,11 +15,18 @@ from pathlib import Path
 
 import pytest
 
+from modules.plugins import turbo, vipr
 from modules.plugins.imgur import ImgurPlugin
 from modules.plugins.imx import ImxPlugin
 from modules.plugins.pixhost import PixhostPlugin
 from modules.transport import TransportResponse
-from modules.upload_results import parse_json_upload, redact_secrets, upload_failure
+from modules.upload_results import (
+    parse_json_upload,
+    redact_secrets,
+    resolve_upload_url,
+    split_url_extension,
+    upload_failure,
+)
 from modules.upload_sessions import SessionState
 
 FIXTURE = (
@@ -44,6 +51,22 @@ def response(status, body, url="https://host.test/upload"):
 def test_failure_messages_match_the_go_path(case):
     got = upload_failure(case["reason"], case["status"], case["body"], case.get("secrets", ()))
     assert got == case["want"]
+
+
+@pytest.mark.parametrize("case", CASES["url_splits"], ids=lambda case: case["link"])
+def test_link_splits_match_the_go_path(case):
+    assert list(split_url_extension(case["link"])) == case["want"]
+
+
+@pytest.mark.parametrize("case", CASES["upload_urls"], ids=lambda case: case["endpoint"])
+def test_upload_urls_match_the_go_path(case):
+    assert resolve_upload_url(case["url"], case["endpoint"]) == case["want"]
+    # The plugins that read an upload endpoint from a page resolve it the same way.
+    if case["url"].startswith("https://vipr.im/"):
+        assert vipr.resolved_upload_url("UID", case["endpoint"]) == case["want"]
+    else:
+        assert case["url"] == f"{turbo.BASE_URL}/upload_html5.tu"
+        assert turbo._upload_script_url(case["endpoint"]) == case["want"]
 
 
 @pytest.mark.parametrize("case", CASES["redactions"], ids=lambda case: case["name"])

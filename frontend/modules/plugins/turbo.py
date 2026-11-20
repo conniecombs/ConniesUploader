@@ -17,7 +17,6 @@ import re
 import secrets
 import string
 from typing import Dict, Any, Iterable, List, Optional
-from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
 from loguru import logger
@@ -33,6 +32,7 @@ from ..upload_results import (
     parse_json_upload,
     redact_secrets,
     request_failure,
+    resolve_upload_url,
     truncate_text,
 )
 
@@ -109,13 +109,9 @@ def _upload_script_url(endpoint: str) -> str:
     """The upload URL for an endpoint read from the home page, as the legacy path resolves it.
 
     The endpoint may be absolute or relative to Turbo's default upload script;
-    one that is not a URL leaves the default script.
+    one that is not a URL leaves the default script (resolve_upload_url).
     """
-    default = f"{BASE_URL}/upload_html5.tu"
-    try:
-        return urljoin(default, endpoint.strip())
-    except ValueError:
-        return default
+    return resolve_upload_url(f"{BASE_URL}/upload_html5.tu", endpoint)
 
 
 def _is_login_form(form: Any, page_url: str) -> bool:

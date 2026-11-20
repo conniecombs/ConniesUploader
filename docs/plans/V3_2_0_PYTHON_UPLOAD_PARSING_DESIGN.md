@@ -382,7 +382,7 @@ until M5.
 | `extract_fields` CSS selector / `regex:` | `upload_results.html_field(body, selector)` (same attribute order: value, content, action, href, src, data-url, then text) or `json_value(data, path)` |
 | `dynamic` multipart field, `{token}` | the value from `session_values`, put into the request in `build_raw_upload_request` |
 | `{upload_id}`, `{file_size}`, `{filename}` | `helpers.per_file_upload_values(file_path)` |
-| `endpoint` value rewriting the upload URL | build the URL from the extracted endpoint yourself |
+| `endpoint` value rewriting the upload URL | `upload_results.resolve_upload_url(default_url, endpoint)`: resolved as Go did (dot segments removed, the path escaped, the default's query kept when the endpoint has none; an endpoint Go's url.Parse refuses leaves the default) |
 | `response_parser` (JSON) | `parse_json_upload(response, **json_parser_options(PARSER), file_path=…, secrets=session_state.secrets)` |
 | `response_parser` (HTML) | `html_field` on `response.body`; fail with `upload_failure(reason, response.status_code, response.body, session_state.secrets)` |
 | `response_parser.follow_up_request` | a `transport.post(...)` inside `parse_upload_response` |
