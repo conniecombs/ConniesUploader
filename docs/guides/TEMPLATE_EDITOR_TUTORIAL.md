@@ -199,10 +199,24 @@ The separator tells the app what to place between each image pass.
 | `separator=space` | Single space (`" "`) | Dense thumbnail grids that wrap naturally across the forum screen. |
 | `separator=none` | No separator (`""`) | Edge-to-edge images without any gaps. |
 | `separator=comma` | A comma and space (`, `) | Plain URL lists or links. |
-| `separator=" - "` | Custom characters in quotes | Custom dividers (e.g. `separator=" | "` or `separator="\n---\n"`). |
+| `separator=" - "` | Custom characters in quotes | Custom dividers (e.g. `separator=" | "`, `separator="\n---\n"`, or `separator="[hr]"`). Quoted text may contain `]`. |
 
 > [!NOTE]
 > You can also use the shorthand `sep=` instead of `separator=` (e.g. `[for image sep=space]`).
+
+### Line Breaks Around the Loop Body
+
+You can write a loop on one line or spread it over three lines. Both produce the same output:
+
+```bbcode
+[for image separator=space][url=#image_url#][img]#thumb_url#[/img][/url][/for]
+
+[for image separator=space]
+[url=#image_url#][img]#thumb_url#[/img][/url]
+[/for]
+```
+
+One line break directly after the opening `[for ...]` tag and one directly before `[/for]` only lay the loop out in the editor. They are not part of the repeated block, so the separator alone decides what goes between images: `separator=space` gives one row of thumbnails and `separator=newline` gives exactly one line break between images. Any further blank lines inside the loop body are kept and repeat with every image.
 
 ---
 

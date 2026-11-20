@@ -39,8 +39,17 @@ class TemplateValidationError(ValueError):
 
 
 class TemplateManager:
+    # Tag arguments end at the first "]", except inside a value quoted right after
+    # "=" (separator="[hr]", gallery_name="[HD] Set"); a quoted value stays on one line.
+    # The alternatives never overlap, so a tag that never closes fails in linear time.
+    _QUOTED_VALUE = r"\s*(?:\"[^\"\n]*\"|'[^'\n]*')"
+    _TAG_ARGUMENTS = r"(?:\s+(?:=" + _QUOTED_VALUE + r"|=(?!" + _QUOTED_VALUE + r")|[^\]=])*)?"
     TEMPLATE_TAG_PATTERN = re.compile(
-        r"\[(?P<tag>else|/if|/for|if(?:\s+[^\]]*)?|for\s+(?:image|cover)(?:\s+[^\]]*)?)\]",
+        r"\[(?P<tag>else|/if|/for|if"
+        + _TAG_ARGUMENTS
+        + r"|for\s+(?:image|cover)"
+        + _TAG_ARGUMENTS
+        + r")\]",
         re.IGNORECASE,
     )
     CONDITIONAL_START_PATTERN = re.compile(
@@ -674,7 +683,7 @@ class TemplateManager:
                     {"for_end"},
                 )
                 node_kind = "for_cover" if kind == "for_cover_start" else "for_image"
-                nodes.append((node_kind, separator, body_nodes))
+                nodes.append((node_kind, separator, self._trim_loop_layout(body_nodes)))
                 position = next_position
                 continue
 
@@ -684,6 +693,28 @@ class TemplateManager:
             nodes.append(("text", template_content[position:]))
 
         return nodes, len(template_content), ""
+
+    @staticmethod
+    def _trim_loop_layout(body_nodes: List[Tuple[Any, ...]]) -> List[Tuple[Any, ...]]:
+        """Drop the one line break written right after ``[for ...]`` and right before ``[/for]``.
+
+        Those line breaks only lay the loop out on its own lines in the editor; the
+        separator alone decides what goes between images.
+        """
+        nodes = list(body_nodes)
+        if nodes and nodes[0][0] == "text":
+            text = nodes[0][1]
+            for line_break in ("\r\n", "\n"):
+                if text.startswith(line_break):
+                    nodes[0] = ("text", text[len(line_break) :])
+                    break
+        if nodes and nodes[-1][0] == "text":
+            text = nodes[-1][1]
+            for line_break in ("\r\n", "\n"):
+                if text.endswith(line_break):
+                    nodes[-1] = ("text", text[: -len(line_break)])
+                    break
+        return nodes
 
     def _replace_placeholders(
         self,

@@ -1245,3 +1245,85 @@ class TestTemplateManagerAdvanced:
         assert TemplateEditor._build_preview_output(editor) is None
         assert warnings
         assert "Preview needs files" in warnings[0][1]
+
+
+THREE_IMAGES = [
+    ("viewer1", "thumb1", "direct1"),
+    ("viewer2", "thumb2", "direct2"),
+    ("viewer3", "thumb3", "direct3"),
+]
+
+
+@pytest.mark.unit
+class TestTemplateLoopLayout:
+    def test_line_breaks_next_to_loop_tags_are_layout_not_content(self, tmp_path):
+        mgr = TemplateManager(str(tmp_path / "templates.json"))
+        snippets = dict(TemplateEditor.PLACEHOLDER_CATEGORIES["Images"])
+        block = "[url=viewer{0}][img]thumb{0}[/img][/url]"
+        blocks = [block.format(index) for index in range(1, 4)]
+
+        mgr.templates["Newline"] = snippets["Loop: Newline"]
+        mgr.templates["Blank"] = snippets["Loop: Blank Line"]
+        mgr.templates["Space"] = (
+            "[for image separator=space]\n[url=#image_url#][img]#thumb_url#[/img][/url]\n[/for]"
+        )
+
+        assert mgr.apply("Newline", {}, THREE_IMAGES) == "\n".join(blocks)
+        assert mgr.apply("Blank", {}, THREE_IMAGES) == "\n\n".join(blocks)
+        assert mgr.apply("Space", {}, THREE_IMAGES) == " ".join(blocks)
+
+    def test_only_one_layout_line_break_is_removed_on_each_side(self, tmp_path):
+        mgr = TemplateManager(str(tmp_path / "templates.json"))
+        mgr.templates["Padded"] = "[for image separator=none]\n\n#thumb_url#\n\n[/for]"
+        mgr.templates["Windows"] = "[for image separator=comma]\r\n#thumb_url#\r\n[/for]"
+
+        assert mgr.apply("Padded", {}, THREE_IMAGES[:2]) == "\nthumb1\n\nthumb2\n"
+        assert mgr.apply("Windows", {}, THREE_IMAGES[:2]) == "thumb1, thumb2"
+
+    def test_documented_covers_and_grid_example_renders_rows(self, tmp_path):
+        mgr = TemplateManager(str(tmp_path / "templates.json"))
+        mgr.set_template(
+            "Example C",
+            "[center]\n[b]Covers:[/b]\n[for cover separator=space]\n"
+            "[url=#image_url#][img]#thumb_url#[/img][/url]\n[/for]\n\n"
+            "[b]Gallery Set:[/b]\n[for image separator=space]\n"
+            "[url=#image_url#][img]#thumb_url#[/img][/url]\n[/for]\n[/center]",
+        )
+        images = THREE_IMAGES + [("viewer4", "thumb4", "direct4")]
+
+        result = mgr.apply("Example C", {"cover_count": 2}, images)
+
+        assert result == (
+            "[center]\n[b]Covers:[/b]\n"
+            "[url=viewer1][img]thumb1[/img][/url] [url=viewer2][img]thumb2[/img][/url]\n\n"
+            "[b]Gallery Set:[/b]\n"
+            "[url=viewer3][img]thumb3[/img][/url] [url=viewer4][img]thumb4[/img][/url]\n"
+            "[/center]"
+        )
+
+    def test_quoted_separator_may_contain_closing_bracket(self, tmp_path):
+        mgr = TemplateManager(str(tmp_path / "templates.json"))
+        template = '[for image separator="[hr]"][img]#thumb_url#[/img][/for]'
+
+        assert mgr.validate_template(template) == []
+        mgr.set_template("Rule Between", template)
+
+        assert mgr.apply("Rule Between", {}, THREE_IMAGES[:2]) == (
+            "[img]thumb1[/img][hr][img]thumb2[/img]"
+        )
+
+    def test_quoted_condition_value_may_contain_closing_bracket(self, tmp_path):
+        mgr = TemplateManager(str(tmp_path / "templates.json"))
+        mgr.set_template("Bracket Name", '[if gallery_name="[HD] Set"]HD [/if]#all_images#')
+
+        result = mgr.apply("Bracket Name", {"gallery_name": "[HD] Set"}, [])
+
+        assert result == "HD "
+
+    def test_unquoted_values_still_end_at_the_first_closing_bracket(self, tmp_path):
+        mgr = TemplateManager(str(tmp_path / "templates.json"))
+        mgr.set_template("Apostrophe", "[if gallery_name=it's]Match[/if] #all_images# it's")
+
+        result = mgr.apply("Apostrophe", {"gallery_name": "it's"}, [])
+
+        assert result == "Match  it's"

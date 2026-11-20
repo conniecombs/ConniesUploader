@@ -799,8 +799,9 @@ Supported separators:
 | `separator=", "` | A custom quoted separator. |
 | `sep=" \| "` | Same as `separator`, shorter to type. |
 | `separator="\n---\n"` | Custom separator using escaped line breaks. |
+| `separator="[hr]"` | A quoted separator may contain `]`. |
 
-Spacing tip: the separator is inserted between complete loop blocks. If your loop body already starts or ends with blank lines, a `blankline` separator can produce more vertical space than expected.
+Spacing tip: the separator is inserted between complete loop blocks. One line break directly after the opening `[for ...]` tag and one directly before `[/for]` only lay the loop out on its own lines and are not repeated, so `[for image separator=space]`, a line with the image block, and `[/for]` on three lines still produce a single row. Any further blank lines inside the loop body are repeated with every image and add to the separator.
 
 Common loop patterns:
 
