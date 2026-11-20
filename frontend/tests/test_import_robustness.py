@@ -121,3 +121,32 @@ def test_import_worker_failure_still_completes_the_import():
     UploaderApp._handle_import_complete(app, *item[1:])
     assert app.active_import_ids == set()
     assert any("scan blew up" in issue for issue in app.import_checks[-1])
+
+
+# --- E8: scan limit counts only importable files ---------------------------
+
+
+@pytest.mark.unit
+def test_folder_scan_limit_ignores_files_that_would_not_be_queued(tmp_path, monkeypatch):
+    monkeypatch.setattr(file_handler, "MAX_SCAN_FILES", 5)
+    for index in range(5):
+        _touch(str(tmp_path / f"{index}.jpg"))
+    _touch(str(tmp_path / "zz_notes" / "readme.txt"))
+
+    assert len(file_handler.get_files_from_directory(str(tmp_path))) == 5
+
+    _touch(str(tmp_path / "zz_more" / "6.jpg"))
+    with pytest.raises(InvalidFileException, match="Too many files"):
+        file_handler.get_files_from_directory(str(tmp_path))
+
+
+@pytest.mark.unit
+def test_scan_inputs_limit_ignores_non_images_and_duplicates(tmp_path, monkeypatch):
+    monkeypatch.setattr(file_handler, "MAX_SCAN_FILES", 5)
+    folder = tmp_path / "big"
+    for index in range(5):
+        _touch(str(folder / f"{index}.jpg"))
+    notes = _touch(str(tmp_path / "notes.txt"))
+
+    assert len(file_handler.scan_inputs([str(folder), notes])) == 5
+    assert len(file_handler.scan_inputs([str(folder)] * 3)) == 5
