@@ -330,11 +330,16 @@ func (m *resolveMatcher) chooseByName(fp string, entries []resolveEntry, final b
 	return resolveEntry{}, false
 }
 
-// reservedForAnother reports whether another unresolved file of the job
-// matches entry better than fp does.
+// reservedForAnother reports whether entry is held back for another file of
+// the job that matches it better than fp does. Only a file whose upload has
+// finished and that holds no entry yet can hold one back: a file still
+// queued, or whose upload failed, is not on the page to be matched.
 func (m *resolveMatcher) reservedForAnother(entry resolveEntry, fp string, tier int) bool {
 	for other, forms := range m.names {
 		if other == fp || m.state.resolved[other] {
+			continue
+		}
+		if _, finished := m.state.finished[other]; !finished {
 			continue
 		}
 		if otherTier := entryMatch(entry, forms); otherTier != noMatch && otherTier < tier {

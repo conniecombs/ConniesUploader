@@ -229,7 +229,9 @@ when their lookups run at the same time.
   `Scan #1.jpg` into `Scan__1.jpg`). Only on the last poll, when neither is
   listed, a host name that contains the file's name as whole words
   (`4411_beach.jpg` for `beach.jpg`). An entry that another file of the job
-  matches more closely is left for that file. Local file names are never
+  matches more closely is left for that file, if that file's upload has
+  finished and it holds no entry yet; a file still queued, or whose upload
+  failed, holds nothing back. Local file names are never
   parsed as URLs; a page value is reduced to its last path segment only when
   it is a link, and its percent-escapes are decoded. Files of the job with
   the same name take the page's entries in the order their uploads finished.
