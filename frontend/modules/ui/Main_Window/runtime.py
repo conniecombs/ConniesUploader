@@ -317,10 +317,11 @@ class RuntimeMixin:
                                 self._process_result_queue()
                             if self._apply_terminal_status(f, w, status_text):
                                 pass
-                            elif w.get("state") not in TERMINAL_ROW_STATES:
+                            elif w.get("state") in IN_FLIGHT_ROW_STATES:
                                 # A late "Preparing"/"Uploading" from a worker
                                 # that lost a race with Stop must not relabel
-                                # a row that already finished.
+                                # a row that already finished, nor a row added
+                                # again after Clear List.
                                 w["status"].configure(text=self._friendly_row_status(status_text))
                         elif k == "prog":
                             progress_value = self._normalize_progress_value(v)
@@ -376,6 +377,10 @@ class RuntimeMixin:
         new_state = self._terminal_state_for_status(status_text)
         if new_state is None:
             return False
+        if row.get("state") not in TERMINAL_ROW_STATES | IN_FLIGHT_ROW_STATES:
+            # Not part of a running upload: a late status of a cleared upload
+            # for a file added again must not end (or count) the new row.
+            return True
 
         name = os.path.basename(fp)
         if row.get("state") not in TERMINAL_ROW_STATES and (

@@ -892,6 +892,27 @@ def test_result_racing_the_progress_drain_is_in_the_completion_summary(tmp_path,
 
 
 @pytest.mark.unit
+def test_late_statuses_of_a_cleared_upload_leave_a_re_added_row_alone(tmp_path):
+    app = _ui_app(tmp_path)
+    app.progress_queue, app.result_queue = queue.Queue(), queue.Queue()
+    group = FakeGroup("Set", ["/s/a.jpg"])
+    app.groups = [group]
+    # Clear List, then the same file is added again; no upload is running.
+    app.file_widgets = {"/s/a.jpg": _row(group)}
+    # The cleared upload's statuses for that path arrive late.
+    app.progress_queue.put(("status", "/s/a.jpg", "Uploading"))
+    app.progress_queue.put(("status", "/s/a.jpg", "Cancelled"))
+
+    UploaderApp._process_progress_queue(app)
+
+    row = app.file_widgets["/s/a.jpg"]
+    assert row["state"] == "pending"
+    assert row["status"].text is None  # still "Waiting"
+    assert app.upload_count == 0
+    assert app.activity == []
+
+
+@pytest.mark.unit
 def test_done_without_a_link_fails_the_row(tmp_path, monkeypatch):
     app, group = _finishing_app(tmp_path, monkeypatch, ["a.jpg"])
     app.result_queue.put(("a.jpg", "", ""))
