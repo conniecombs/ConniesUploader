@@ -198,7 +198,9 @@ for it, and substitutes no `{token}`s:
   the final refusal is the raw result. The legacy path instead retries every
   code of `retryable_http_codes` (`408`, `429`, `500`, `502`, `503`, `504` by
   default). A refused attempt does not count as a body the host may have
-  kept (`body_sent`).
+  kept (`body_sent`), and neither does the final refusal: Python does not
+  count a raw result with status `429` or `503` as an upload that reached
+  the host.
 - `"sequential": true` uploads the job's files one at a time, in list order.
   (The Python upload manager goes further for a sequential host: it sends
   one file per job, each after the previous file was parsed.)
@@ -363,10 +365,12 @@ stays `(`), and `{url_dot_ext}` is that extension (`.jpg`), so
 On the Python path a plugin polls the result page itself, with
 `resolve_from_result_page` and the job's `ResultPageMatcher`
 (`frontend/modules/result_matcher.py`), which ports the rules below. There,
-"attempts that reached the host" are the files with a raw result or a
-`Failed` event carrying `body_sent` (a raw upload is re-sent only after a
-`429`/`503` refusal, which the host did not keep, so those are not counted;
-should a host list one anyway, the file fails as ambiguous), an entry
+"attempts that reached the host" are the files with a raw result other
+than a `429`/`503` refusal, or a `Failed` event carrying `body_sent` (a raw
+upload is re-sent only after a `429`/`503` refusal, which the host did not
+keep, so refused attempts are not counted, the final refusal that arrives
+as the raw result included; should a host list one anyway, the file fails
+as ambiguous), an entry
 is held back only by a file whose upload reached the host and that is still
 being parsed, and the upload manager sends a sequential host's next file only
 after the previous one was resolved.

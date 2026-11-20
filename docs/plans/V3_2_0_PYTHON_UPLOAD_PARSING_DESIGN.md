@@ -302,8 +302,9 @@ the implementation differs from the text above:
   500, 502, 504 or 52x answer that the legacy path would retry now fails the
   file with the host's message, since the host may have stored it. Refused
   attempts are not counted as uploads that reached the host for upload-order
-  matching; a host that listed one anyway makes the file fail as ambiguous,
-  never take another image.
+  matching, and neither is the last refusal once the attempts run out (it
+  arrives as the raw result, with status 429 or 503); a host that listed one
+  anyway makes the file fail as ambiguous, never take another image.
 - A batch's session jobs follow its own cancel token (fix/v3.2.0's per-batch
   tokens): once Clear List and a new Start supersede the batch, they send,
   parse and report nothing more. The non-terminal `Uploaded` status may be

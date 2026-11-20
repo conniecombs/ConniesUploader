@@ -572,6 +572,34 @@ def test_a_failed_upload_whose_body_reached_the_host_is_recorded(env):
     assert state.uploaded_files == ("/a.jpg",)
 
 
+@pytest.mark.parametrize("status_code", ["429", "503"])
+def test_a_final_refusal_is_not_counted_as_an_upload_that_reached_the_host(env, status_code):
+    # The sidecar re-sends a refused (429/503) upload; once its attempts run
+    # out the last refusal arrives as the raw result. The host did not take
+    # that file, so result-page matching must not wait for it to be listed.
+    env.plugin.options = {"sequential": True}
+    env.plugin.parse = lambda fp, r: (
+        UploadResult.failed(f"HTTP {r.status_code}")
+        if r.status_code != 200
+        else UploadResult(f"https://h/v/{os.path.basename(fp)}", "https://h/t")
+    )
+    env.um._send_job(["/r/a.jpg", "/r/b.jpg"], CFG, CREDS)
+    [first] = env.bridge.jobs()
+    job = env.um._session_jobs[first["id"]]
+    matcher = job.state.result_matcher("upload_order")
+
+    env.um._handle_event(raw_result(first["id"], "/r/a.jpg", body="busy", status_code=status_code))
+    env.um._handle_event({"id": first["id"], "type": "batch_complete", "status": "done"})
+    wait_for(env, lambda: len(env.bridge.jobs()) == 2)
+    assert status_of(env, "/r/a.jpg")[-1] == f"error: HTTP {status_code}"
+    assert job.state.uploaded_files == ()
+    assert matcher._sent_since_claim == 0
+
+    second = env.bridge.jobs()[1]
+    env.um._handle_event(raw_result(second["id"], "/r/b.jpg", status_code="200"))
+    assert job.state.uploaded_files == ("/r/b.jpg",)
+
+
 # --- Sequential jobs -----------------------------------------------------------------
 
 

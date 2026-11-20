@@ -43,6 +43,11 @@ UPLOADED_STATUS = "Uploaded"
 # Threads that run plugin parsers (and their follow-up requests).
 POST_PROCESS_WORKERS = 4
 
+# Answers with which a host refuses an upload without taking it ("too many
+# requests", "unavailable"). The sidecar re-sends such an upload; a raw result
+# with one of them is the last refusal, an upload the host did not keep.
+REFUSAL_STATUS_CODES = frozenset({429, 503})
+
 SERVICE_THREAD_KEYS = {
     "imx.to": "imx_threads",
     config.PIXHOST_SERVICE_ID: "pix_threads",
@@ -1083,7 +1088,10 @@ class UploadManager:
             data=dict(payload),
             raw=dict(data),
         )
-        job.state.record_uploaded(os.path.normpath(file_path))
+        if response.status_code not in REFUSAL_STATUS_CODES:
+            # A 429/503 here is the last refusal after the sidecar's retries ran
+            # out: the host did not take the file, so it is not counted.
+            job.state.record_uploaded(os.path.normpath(file_path))
         with self._jobs_lock:
             job.post_pending += 1
         self._post_pool.submit(lambda: self._post_process(job, file_path, response))
