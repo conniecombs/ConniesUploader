@@ -1,12 +1,13 @@
 # v3.2.0 Python-Owned Upload Sessions and Result Parsing: Design
 
-Status: **Being implemented for v3.2.0 (M1–M4). M5, removing the legacy Go
-hooks, stays deferred until a release has shipped with no parsing regressions
-(§3.7).** Section 7 records the decisions taken for the implementation; where it
+Status: **M1–M4 implemented in v3.2.0: every host parses its uploads in
+Python. M5, removing the legacy Go hooks, stays deferred until a release has
+shipped with no parsing regressions (§3.7). The live checklist (§5) must be run
+before `v3.2.0` is tagged.** Section 7 records the decisions taken for the implementation; where it
 differs from sections 3–4, section 7 wins.
 
 Created: 2026-11-18
-Updated: 2026-11-20 (implementation decisions, informed by the v3.2.0 bug hunt)
+Updated: 2026-11-20 (implementation decisions informed by the v3.2.0 bug hunt; M1–M4 as built)
 Baseline: v3.1.3 (branch `ccr-c7a6caec-wpl3wv` at the v3.1.3 release commit)
 
 ## 1. Why
@@ -142,9 +143,9 @@ are produced in Python by `build_raw_upload_request`.
 | IMX | none | JSON: `status == "success"`, `data.image_url`, `data.thumbnail_url` (canonicalize thumb as today) |
 | Pixhost | none | JSON: `show_url`, `th_url`; an empty `show_url` is a failure (no status field) |
 | Imgur | none | JSON: `success == true`; `data.link` for both viewer and thumbnail (as today) |
-| Vipr | POST login, GET home → `sess_id`, upload `endpoint` | POST the `fn/st/op/per_row` textareas back to `/`, then regex `[URL=…][IMG]…[/IMG]` |
-| Turbo | optional POST login, GET home → `endpoint` | JSON `newUrl`; then poll the result page (500 ms … 5 s) and match `[url=…/p/<id>/<filename>.html][img]…` by file name; `input#imgCodeGG` → gallery URL |
-| ImageBam | optional login (GET `_token`, POST), GET home → CSRF, POST `/upload/session` → `data` token | JSON `success` → result page; poll (1/2/4 s) for `[URL=…/view/…][IMG]…`; `a#gallery-name` → gallery URL |
+| Vipr | POST login, GET home → `sess_id`, upload `endpoint`; no `sess_id` fails the group with Vipr's login message | POST the `fn/st/op/per_row` textareas back to `/` (one attempt), then regex `[URL=…][IMG]…[/IMG]`; an empty `fn` with a non-OK `st` fails with that reason; no gallery URL (as before) |
+| Turbo | optional POST login.tu? (an error status, or the login form shown again, fails the group with the host's message), GET home → endpoint resolved against /upload_html5.tu; one upload_id per job (the group's gallery id) | JSON success == true, newUrl (else /p/{id}/{filename}.html); poll that page (500 ms … 5 s, 7 looks) with result_matcher("filename") for [url=…/p/<id>/<name>.html][img]…[/img][/url]; input#imgCodeGG → gallery URL |
+| ImageBam | optional login (GET /auth/login `_token`, POST; logged in when the answer has `form[action*='logout']`, else fail with the host's alert), GET / → `meta[name='csrf-token']`, POST /upload/session with the gallery fields (not retried when it creates a gallery) → `data` token | JSON `success` must be an http(s) link to the result page, else fail with the host's message; poll it (1/2/4 s) for `[URL=…/view/…][IMG]…` with `result_matcher("upload_order")` on a `sequential` job; `a#gallery-name` → gallery URL |
 
 ### 3.6 Parity
 
@@ -196,6 +197,12 @@ v3.2.x.
 5. Wrong password: the batch fails with the host's message, not a parse error.
 6. Press Stop mid-batch: remaining rows end `Cancelled`, the session closes,
    and no later result arrives.
+
+Host notes from the M4 migrations (what the fixtures could not prove):
+
+- **Vipr:** 1 n/a (login required). 2 one Done with a vipr.im/<code> link and an i*.vipr.im/th thumbnail. 3 five files at Thread Limit 3 → one login, distinct links. 4 pick a folder in the dropdown (or auto-gallery) → files in that folder. 5 wrong password → every row "upload session setup failed: Vipr.im login failed: <Vipr's message>…"; if it says "no upload session after login", record the login page's error markup. 6 Stop. Also upload an unsupported type: the row quotes Vipr's reason. Repeat 2 with legacy_upload_parsing and compare. Unverified assumptions: login error markup selectors (XFileSharing-based), refusal reason in st, absolute endpoint, follow-up needs no Referer.
+- **TurboImageHost:** (1) home page still has endpoint: '…', newUrl absolute and its page lists BBCode. (2) after a correct login uploads succeed; a false "refused the login" (post-login page still showing a password field) would fail every logged-in upload, so check this first. (3) include names with spaces and #. (4) auto gallery with covers: two jobs share one upload_id; both land in one gallery and imgCodeGG opens. (5) wrong password: note Turbo's exact message. Unverified assumptions: wrong-password marker unknown; newUrl assumed absolute.
+- **ImageBam:** 1 anonymous upload: only GET / and POST /upload/session before the upload. 2 log in and upload one file. 3 five files upload one at a time by design; open each link, own image. 4 auto-gallery with a cover: exactly one new gallery, cover first, gallery URL captured, {…} title kept. 5 wrong password: note ImageBam's message. 6 Stop mid-batch. 7 try an existing Gallery Token, and one batch with legacy_upload_parsing=true to compare. Unverified assumptions: refused-login markup; success absolute; result page lists stored-but-failed uploads in order.
 
 ## 6. Risks
 

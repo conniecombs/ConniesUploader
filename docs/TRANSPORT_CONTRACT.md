@@ -310,10 +310,10 @@ These Go-side fields remain only for existing upload compatibility:
 Do not add new non-upload workflows that depend on these hooks. Prefer Python
 sequencing plus raw transport responses.
 
-The current compatibility exception is upload plugin result handling. Hosts
-not yet on the Python upload path (Turbo, Vipr, ImageBam), and every host when
-the `legacy_upload_parsing` setting is on, still emit parser specs so Go can
-turn upload responses into result events. Those specs are host-defined in
+The current compatibility exception is upload plugin result handling. Every
+host is on the Python upload path since v3.2.0; only when the
+`legacy_upload_parsing` setting is on do plugins still emit parser specs so Go
+can turn upload responses into result events. Those specs are host-defined in
 Python and Go remains host-name agnostic, but the execution of those parser
 specs is a legacy bridge, retired once every host parses in Python.
 

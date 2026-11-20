@@ -12,10 +12,10 @@ Connie's Uploader is a hybrid desktop app:
 - Go runs as a local sidecar process and owns concurrent transport execution, Python-provided rate limits, retries, generic HTTP request execution, multipart upload streaming, cookie/session mechanics, and thumbnail generation.
 - Python and Go communicate through JSON events over standard input and standard output.
 
-The upload model is plugin-driven, with two upload paths during the v3.2.0 migration (see [Upload Paths](#upload-paths)):
+The upload model is plugin-driven, with two upload paths in v3.2.0 (see [Upload Paths](#upload-paths)):
 
-- **Python path** (IMX, Pixhost, Imgur): the plugin builds one resolved request per file, Go sends it on an isolated transport session and returns the host's raw answer, and the plugin's `parse_upload_response()` decides what it means.
-- **Legacy path** (Turbo, Vipr, ImageBam until they migrate, and every host when the hidden `legacy_upload_parsing` setting is on): the plugin's `build_http_request()` spec carries declarative login, parser and result-page hooks that Go executes.
+- **Python path** (every host: IMX, Pixhost, Imgur, Vipr, TurboImageHost, ImageBam): the plugin builds one resolved request per file, Go sends it on an isolated transport session and returns the host's raw answer, and the plugin's `parse_upload_response()` decides what it means.
+- **Legacy path** (only when the hidden `legacy_upload_parsing` setting is on, as a fallback for one release): the plugin's `build_http_request()` spec carries declarative login, parser and result-page hooks that Go executes.
 
 All host-specific logic is defined in Python. The Go sidecar has no knowledge of any specific image host or forum — it is a "dumb and fast" transport runner.
 
@@ -239,7 +239,7 @@ Known hardening opportunities:
 
 - Continue tightening Go-side file validation (paths are validated per file; the shared 100 MB cap and regular-file checks remain, see `TRANSPORT_CONTRACT.md`).
 - Replace any `regexp.MustCompile()` path that can receive plugin-provided patterns with `regexp.Compile()` and graceful error returns.
-- Retire the legacy Go parser compatibility by moving upload sessions and response parsing into Python ([`plans/V3_2_0_PYTHON_UPLOAD_PARSING_DESIGN.md`](plans/V3_2_0_PYTHON_UPLOAD_PARSING_DESIGN.md)). Sessions, raw uploads and the Python path are in place and IMX, Pixhost and Imgur use them; Turbo, Vipr and ImageBam migrate next, after which the Go hooks can be removed.
+- Retire the legacy Go parser compatibility by moving upload sessions and response parsing into Python ([`plans/V3_2_0_PYTHON_UPLOAD_PARSING_DESIGN.md`](plans/V3_2_0_PYTHON_UPLOAD_PARSING_DESIGN.md)). Every host uses the Python path since v3.2.0; the Go hooks are removed (milestone M5) once a release has shipped without parsing regressions.
 - Consider stricter plugin trust/sandboxing if third-party plugin loading becomes a supported user feature.
 
 ## Performance Characteristics
@@ -283,7 +283,7 @@ Near-term hardening:
 
 - Gracefully handle malformed plugin regex patterns in Go.
 - Add Go-side path bounds validation for upload file paths.
-- Migrate Turbo, Vipr and ImageBam to the Python upload path, then remove the Go parser hooks (design milestones M4 and M5).
+- Remove the legacy Go parser hooks and the `legacy_upload_parsing` setting (design milestone M5) after v3.2.0 has shipped without parsing regressions.
 - Keep documentation and screenshots synchronized with the current UI.
 - Consider stricter plugin trust/sandboxing if third-party plugin loading becomes a supported user feature.
 

@@ -98,7 +98,7 @@ Released November 20, 2026.
 
 **Added**
 
-- Upload sessions and result parsing run in the Python host plugins; the Go sidecar only transports files. IMX, Pixhost and Imgur are migrated; Vipr, TurboImageHost and ImageBam follow. A hidden `legacy_upload_parsing` setting switches back to the old Go parsing if a live host misbehaves.
+- Upload sessions and result parsing run in the Python host plugins; the Go sidecar only transports files. All six hosts are migrated, and wrong passwords and refused uploads show the host's own message. A hidden `legacy_upload_parsing` setting switches back to the old Go parsing if a live host misbehaves.
 
 **Fixed**
 

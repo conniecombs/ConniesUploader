@@ -10,7 +10,7 @@ v3.2.0 fixes the 40 bugs a full bug hunt found in v3.1.3, plus the defects two f
 
 ## Highlights
 
-- **Python-owned upload parsing.** IMX, Pixhost and Imgur log in, build upload requests, and read the host's answer in their Python plugins; Vipr, TurboImageHost and ImageBam are being migrated next. The sidecar opens isolated transport sessions, streams files, and hands back the raw response. A row shows "Processing" while the answer is read.
+- **Python-owned upload parsing.** All six hosts (IMX, Pixhost, Imgur, Vipr, TurboImageHost and ImageBam) log in, build upload requests, and read the host's answer in their Python plugins, with the same results as before on recorded host responses. Wrong passwords and refused uploads now show the host's own message. The sidecar opens isolated transport sessions, streams files, and hands back the raw response. A row shows "Processing" while the answer is read.
 - **Uploads you can trust.** Rejected uploads or uploads without a link are marked Failed with the host's reason, never "Uploaded". TurboImageHost and ImageBam links always belong to the right file. A lost reply no longer creates a duplicate image, and large uploads on slow connections are no longer cut off after 3 minutes.
 - **Stop, Clear List and crashes always finish.** A sidecar crash, Remove Batch, Clear List or a lost status can no longer leave an upload stuck on "Uploading", and Start after Clear List uploads the new files only.
 - **Output that is never lost.** Same-named batches no longer overwrite each other's output. Finished batches produce output again after images are added or failed ones removed. `#direct_url#` is a real image link.
@@ -20,7 +20,7 @@ v3.2.0 fixes the 40 bugs a full bug hunt found in v3.1.3, plus the defects two f
 
 ## Before you tag: live-host checklist
 
-The new parsing path is verified against recorded host responses and local fake hosts, not against the live sites. Before tagging `v3.2.0`, run the checklist in §5 of the design doc for each host:
+The new parsing path is verified against recorded host responses and local fake hosts, not against the live sites. Before tagging `v3.2.0`, run the checklist in §5 of the design doc for each host. The design doc also lists per-host notes and the assumptions the fixtures could not prove (for example how Vipr, Turbo and ImageBam show a refused login):
 
 1. upload without login (where the host allows it);
 2. log in and upload;

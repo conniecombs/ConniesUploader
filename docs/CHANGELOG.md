@@ -14,7 +14,11 @@ v3.2.0 fixes the 40 bugs found in a full bug hunt of v3.1.3, plus the defects tw
 ### Added
 
 - Python-owned upload parsing (design: `docs/plans/V3_2_0_PYTHON_UPLOAD_PARSING_DESIGN.md`). Host plugins log in, build each file's upload request, and read the host's answer themselves; the sidecar opens isolated transport sessions, streams the files, and returns the raw response. Sidecar protocol additions: `session_open`, `session_close`, `session_id` on requests and upload jobs, `raw_response` uploads with per-file `file_requests`, `sequential` jobs, a raw `result` event followed by the non-terminal status `Uploaded`, and a `body_sent` hint on failures. See `docs/TRANSPORT_CONTRACT.md`.
-- IMX, Pixhost and Imgur read their upload results in Python, with the same results as before (42 shared parity cases between the Go and Python parsers). Vipr, TurboImageHost and ImageBam are being migrated next.
+- Every host now reads its upload results in Python, with the same links, thumbnails and galleries as before on recorded host responses (shared parity fixtures run through both the Go and the Python parsers).
+  - IMX, Pixhost and Imgur: the same results; failures quote the host's own message.
+  - Vipr: logs in, uploads and reads results in Python; a wrong password names Vipr's own message, and refused uploads quote Vipr's reason instead of a parse error.
+  - TurboImageHost: the app finds each upload's link and gallery on Turbo's result page itself, and a refused login fails the batch with Turbo's message instead of silently uploading anonymously.
+  - ImageBam: each image gets its own link, an auto-gallery with a cover makes exactly one gallery, and a wrong password shows ImageBam's own message.
 - While a host's answer is being read, a row shows "Processing".
 - The `legacy_upload_parsing` setting (default `false`, not shown in the window) sends every host back through the legacy Go specs, as a fallback in case a live host answers differently from the recorded fixtures. It will be removed together with the legacy Go hooks in a later release.
 
@@ -83,7 +87,8 @@ Release process
 ### Changed
 
 - Sidecar protocol: besides the additions above, `{token}` substitution replaces only tokens with a known value, in one pass, and leaves other brace text as typed; retry decisions use the HTTP status code or the transport error type, never response text; uploads have no wall-clock limit; non-upload actions run on their own worker pool; `reset_cookies` clears only the request's site; per-file `{file_size}` and thumb-template `{url_no_ext}`/`{url_dot_ext}` tokens; `upload_order` result matching; requests are read as JSON lines.
-- "Assign to selected batches" in Gallery Manager no longer also sets the host-wide gallery pick.
+- "Assign to selected batches" in Gallery Manager no longer also sets the host-wide gallery pick, and a batch's gallery is sent only to the host it was chosen for.
+- On the Python upload path an upload is never re-sent after a server error other than 429 or 503 (for example a 502 after the host stored the image): the file fails with the host's message instead of risking a duplicate. ImageBam's gallery-creating session request is never retried, so it can never create two galleries.
 - Bumped app, build-script, and active plugin metadata to `3.2.0`.
 
 ## [3.1.3] - 2026-11-18
