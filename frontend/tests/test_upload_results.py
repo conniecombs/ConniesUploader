@@ -148,6 +148,60 @@ def test_html_field_follows_the_go_selection_rules():
     assert html_field(page, "") == ""
 
 
+# What Go's extractHTMLField (goquery on an HTML5 parser) gives for each page.
+@pytest.mark.parametrize(
+    ("page", "selector", "want"),
+    [
+        # With scripting on, an HTML5 parser keeps <noscript> content as raw
+        # text: nothing inside it is an element a selector can match.
+        (
+            "<noscript><input name='sess_id' value='NS'></noscript>"
+            "<input name='sess_id' value='REAL'>",
+            "input[name='sess_id']",
+            "REAL",
+        ),
+        (
+            "<head><noscript><meta name='csrf-token' content='NS'></noscript>"
+            "<meta name='csrf-token' content='REAL'></head>",
+            "meta[name='csrf-token']",
+            "REAL",
+        ),
+        (
+            "<div><noscript><p><input name='t' value='deep'></p></noscript></div>"
+            "<input name='t' value='after'>",
+            "input[name='t']",
+            "after",
+        ),
+        ("<noscript><input name='x' value='only'></noscript>", "input[name='x']", ""),
+        (
+            "<body><noscript><form action='/ns'></form></noscript><form action='/real'></form>",
+            "form",
+            "/real",
+        ),
+        # An attribute given twice keeps its first value, whatever the case.
+        ("<input name='sess_id' value='' value='dup'>", "input[name='sess_id']", ""),
+        ("<input name='a' value='first' VALUE='second'>", "input[name='a']", "first"),
+        ("<a id='g' href='/one' href='/two'>x</a>", "a#g", "/one"),
+        ("<input name='sess_id' id='a' name='other' value='v'>", "input[name='sess_id']", "v"),
+        ("<input name='other' name='sess_id' value='v'>", "input[name='sess_id']", ""),
+    ],
+    ids=[
+        "noscript decoy",
+        "noscript decoy in head",
+        "deep noscript decoy",
+        "only inside noscript",
+        "noscript form",
+        "duplicate value",
+        "duplicate in another case",
+        "duplicate href",
+        "duplicate name, first matches",
+        "duplicate name, second would match",
+    ],
+)
+def test_html_field_picks_the_element_goquery_picks(page, selector, want):
+    assert html_field(page, selector) == want
+
+
 def test_host_message_and_redaction():
     assert host_message('{"error":"nope"}') == "nope"
     assert host_message("x" * 300).endswith("…")

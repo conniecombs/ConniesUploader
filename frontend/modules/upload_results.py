@@ -587,6 +587,10 @@ def html_field(body: str, selector: str) -> str:
     match). Otherwise ``selector`` is a CSS selector and the first match gives
     its value, content, action, href, src or data-url attribute (the first
     that is not blank), else its text.
+
+    The element is the one goquery picks on Go's HTML5 parser: nothing inside
+    <noscript> counts (with scripting on, its content is raw text), and an
+    attribute given twice keeps its first value.
     """
     if not selector:
         return ""
@@ -596,7 +600,11 @@ def html_field(body: str, selector: str) -> str:
             return ""
         value = match.group(1) if match.re.groups >= 1 else match.group(0)
         return (value or "").strip()
-    element = BeautifulSoup(str(body or ""), "html.parser").select_one(selector)
+    soup = BeautifulSoup(str(body or ""), "html.parser", on_duplicate_attribute="ignore")
+    element = next(
+        (found for found in soup.select(selector) if found.find_parent("noscript") is None),
+        None,
+    )
     if element is None:
         return ""
     for attribute in _SELECTION_ATTRIBUTES:
