@@ -10,7 +10,7 @@ import io
 import os
 import re
 from pathlib import Path
-from typing import Iterable, List, Optional, Union
+from typing import Iterable, List, Optional, Tuple, Union
 
 from PIL import Image
 from loguru import logger
@@ -92,6 +92,10 @@ def format_file_size(size_bytes: Union[int, float]) -> str:
 
     if units[unit_index] == "B":
         return f"{size} B"
+    # 1048575 bytes is 1023.999 KB, which rounds to "1024.00": show "1 MB" instead.
+    if round(value, 2) >= 1024 and unit_index < len(units) - 1:
+        value /= 1024.0
+        unit_index += 1
     amount = f"{value:.2f}".rstrip("0").rstrip(".")
     return f"{amount} {units[unit_index]}"
 
@@ -115,51 +119,77 @@ def format_file_collection_size(file_paths: Iterable[str]) -> str:
     return format_file_size(total_file_size(file_paths))
 
 
-def _append_valid_file(media_files: List[str], file_path: str, validate_size: bool) -> None:
-    """Validate and append a file path to the media list."""
+def canonical_path(file_path: str) -> str:
+    """Return the single path form used for queued files (symlinks resolved).
+
+    Folder scans and dropped files must agree on it, or the same image reached
+    through a symlinked folder is queued twice.
+    """
+    try:
+        return str(Path(file_path).resolve())
+    except (OSError, RuntimeError):
+        return os.path.abspath(file_path)
+
+
+def _validate_media_file(file_path: str, validate_size: bool) -> None:
+    """Raise InvalidFileException unless the path is a queueable image file."""
     validate_file_extension(file_path)
     validate_regular_file(file_path)
     if validate_size:
         validate_file_size(file_path)
-    media_files.append(os.path.abspath(file_path))
 
 
 def scan_inputs(inputs: Union[str, List[str]], validate_size: bool = True) -> List[str]:
-    """Scan inputs (files or folders) and return valid image paths."""
-    media_files: List[str] = []
+    """Scan inputs (files or folders) and return valid image paths.
 
+    Only unique image files that would be queued count towards MAX_SCAN_FILES.
+    """
     if isinstance(inputs, str):
         inputs = [inputs]
     if not inputs:
         return []
 
-    for item in inputs:
+    media_files: List[str] = []
+    seen = set()
+
+    def add(file_path: str) -> None:
+        file_path = os.path.abspath(file_path)
+        if file_path in seen:
+            return
         if len(media_files) >= MAX_SCAN_FILES:
             raise InvalidFileException(
                 f"Too many files selected. Maximum allowed per batch is {MAX_SCAN_FILES}."
             )
+        seen.add(file_path)
+        media_files.append(file_path)
 
+    for item in inputs:
         if os.path.isfile(item):
             if item.lower().endswith(VALID_EXTENSIONS):
-                _append_valid_file(media_files, item, validate_size)
+                _validate_media_file(item, validate_size)
+                add(item)
         elif os.path.isdir(item):
-            media_files.extend(get_files_from_directory(item, validate_size=validate_size))
+            for file_path in get_files_from_directory(item, validate_size=validate_size):
+                add(file_path)
         else:
             logger.warning(f"Skipping inaccessible path: {item}")
 
-    unique_files = sorted(set(media_files))
-    if len(unique_files) > MAX_SCAN_FILES:
-        raise InvalidFileException(
-            f"Too many files selected. Maximum allowed per batch is {MAX_SCAN_FILES}."
-        )
-    return unique_files
+    return sorted(media_files)
 
 
-def get_files_from_directory(directory: str, validate_size: bool = True) -> List[str]:
+def get_files_from_directory(
+    directory: str,
+    validate_size: bool = True,
+    rejected: Optional[List[Tuple[str, str]]] = None,
+) -> List[str]:
     """Recursively get all valid image files from a directory.
 
     Symlinked directories are not followed to avoid recursive loops and escaping
-    the selected tree. Symlinked files are rejected by validate_regular_file().
+    the selected tree. Symlinked files are resolved and must stay inside it.
+
+    An image file that cannot be used (too large, dangling symlink, unreadable)
+    is skipped, not fatal for the folder; ``(path, reason)`` is appended to
+    ``rejected`` when a list is given.
     """
     files: List[str] = []
     base_dir = Path(directory).resolve()
@@ -173,25 +203,28 @@ def get_files_from_directory(directory: str, validate_size: bool = True) -> List
             dirs[:] = [d for d in dirs if not (Path(root) / d).is_symlink()]
 
             for filename in filenames:
-                if len(files) >= MAX_SCAN_FILES:
-                    raise InvalidFileException(
-                        f"Too many files found. Maximum allowed per batch is {MAX_SCAN_FILES}."
-                    )
-
                 if not filename.lower().endswith(VALID_EXTENSIONS):
                     continue
 
                 file_path = Path(root) / filename
                 try:
-                    resolved = file_path.resolve()
+                    resolved = Path(canonical_path(str(file_path)))
                     if not resolved.is_relative_to(base_dir):
                         logger.warning(f"Skipping path outside selected directory: {file_path}")
                         continue
-                    _append_valid_file(files, str(resolved), validate_size)
-                except InvalidFileException:
-                    raise
-                except OSError as exc:
-                    logger.warning(f"Skipping unreadable file {file_path}: {exc}")
+                    _validate_media_file(str(resolved), validate_size)
+                except (InvalidFileException, OSError, RuntimeError) as exc:
+                    logger.warning(f"Skipping unusable file {file_path}: {exc}")
+                    if rejected is not None:
+                        rejected.append((str(file_path), str(exc)))
+                    continue
+
+                # Only files that would be queued count towards the limit.
+                if len(files) >= MAX_SCAN_FILES:
+                    raise InvalidFileException(
+                        f"Too many files found. Maximum allowed per batch is {MAX_SCAN_FILES}."
+                    )
+                files.append(os.path.abspath(str(resolved)))
     except OSError as exc:
         raise InvalidFileException(f"Error scanning directory '{directory}': {exc}") from exc
 

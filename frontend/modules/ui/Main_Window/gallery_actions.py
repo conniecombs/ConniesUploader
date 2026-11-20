@@ -53,6 +53,16 @@ from .common import (  # noqa: F401
     viper_ui,
 )
 
+# Each host's own gallery field: (per-host settings key, plain schema key).
+# Vipr's gallery comes from its dropdown and is handled separately.
+_GALLERY_FIELD_KEYS = {
+    "imx.to": ("imx_gallery_id", "gallery_id"),
+    config.PIXHOST_SERVICE_ID: ("pix_gallery_hash", "gallery_hash"),
+    "turboimagehost": ("turbo_gallery_id", "gallery_id"),
+    "imagebam.com": ("imagebam_gallery_id", "gallery_id"),
+    "imgur.com": ("imgur_album_id", "album_id"),
+}
+
 
 class GalleryActionsMixin:
     def on_gallery_created(self, service, gid=None, record=None):
@@ -117,7 +127,9 @@ class GalleryActionsMixin:
         vipr_galleries_map[name] = gid
         plugin = self.__dict__.get("service_plugins", {}).get("vipr.im")
         if plugin:
-            plugin.vipr_galleries_map = dict(vipr_galleries_map)
+            # Add to, not replace, the plugin's map: the dropdown's other
+            # galleries must keep resolving to their ids.
+            plugin.vipr_galleries_map = {**plugin.vipr_galleries_map, name: gid}
         if hasattr(self, "cb_vipr_gallery"):
             try:
                 values = list(getattr(self.cb_vipr_gallery, "_values", []) or [])
@@ -158,7 +170,8 @@ class GalleryActionsMixin:
             self.on_gallery_created(record_data["service"], record_data["id"], record)
             return
 
-        self.selected_gallery_by_service[record_data["service"]] = record_data
+        # Only the selected batches get this gallery; the host's Gallery ID
+        # field (and so every other batch) is left as it is.
         self.var_service.set(record_data["service"])
         self._swap_service_frame(record_data["service"])
         for group in groups:
@@ -273,13 +286,14 @@ class GalleryActionsMixin:
     def _selected_gallery_for_service(
         self, service_id: str, cfg: Optional[Dict[str, Any]] = None
     ) -> Optional[Dict[str, str]]:
+        """Return the Gallery Manager pick for a host while its field still shows it."""
         service_id = config.normalize_service_id(service_id)
+        cfg = cfg or {}
         selected = self.selected_gallery_by_service
         record = selected.get(service_id) if isinstance(selected, dict) else None
         if not isinstance(record, dict) and service_id == config.PIXHOST_SERVICE_ID:
             record = selected.get(config.PIXHOST_LEGACY_SERVICE_ID)
         if not isinstance(record, dict):
-            cfg = cfg or {}
             selected_by_service = cfg.get("selected_gallery_by_service", {})
             if isinstance(selected_by_service, dict):
                 record = selected_by_service.get(service_id)
@@ -290,6 +304,8 @@ class GalleryActionsMixin:
 
         gallery_id = str(record.get("id") or "").strip()
         if not gallery_id:
+            return None
+        if not self._gallery_selection_matches_field(service_id, record, cfg):
             return None
         record_service = config.normalize_service_id(record.get("service") or service_id)
         url = str(record.get("url") or gallery_url_for_service(record_service, gallery_id))
@@ -303,10 +319,66 @@ class GalleryActionsMixin:
             "upload_hash": str(record.get("upload_hash") or ""),
         }
 
+    def _gallery_selection_matches_field(
+        self, service_id: str, record: Dict[str, Any], cfg: Dict[str, Any]
+    ) -> bool:
+        """Whether a Gallery Manager pick still agrees with the host's own field.
+
+        The field (or Vipr's dropdown) is the one source of truth: picking a
+        gallery fills it in, and editing, clearing or re-choosing it replaces
+        the pick. When cfg does not carry the field the pick is kept.
+        """
+        service_id = config.normalize_service_id(service_id)
+        gallery_id = str(record.get("id") or "").strip()
+        if service_id == "vipr.im":
+            if "vipr_gallery_name" not in cfg:
+                return True
+            name = str(cfg.get("vipr_gallery_name") or "").strip()
+            if name != str(record.get("name") or gallery_id).strip():
+                return False
+            # Until the galleries are refreshed the name maps to no id ("0").
+            mapped_id = str(cfg.get("vipr_gal_id") or "").strip()
+            return mapped_id in {"", "0"} or mapped_id == gallery_id
+        field_value = self._gallery_field_value(service_id, cfg)
+        return field_value is None or field_value == gallery_id
+
+    def _current_gallery_selections(self, cfg: Dict[str, Any]) -> Dict[str, Any]:
+        """Drop Gallery Manager picks whose host field no longer shows them."""
+        selected = self.selected_gallery_by_service
+        if not isinstance(selected, dict):
+            selected = {}
+        current = {
+            service_id: record
+            for service_id, record in selected.items()
+            if isinstance(record, dict)
+            and self._gallery_selection_matches_field(service_id, record, cfg)
+        }
+        self.selected_gallery_by_service = current
+        return dict(current)
+
+    @staticmethod
+    def _gallery_field_value(service_id: str, cfg: Dict[str, Any]) -> Optional[str]:
+        """Return the host's own gallery field, or None when cfg does not carry it.
+
+        Only the host's per-host key counts, plus the plain schema key when the
+        host is cfg["service"]: a gallery ID typed for one host never applies
+        to another.
+        """
+        service_id = config.normalize_service_id(service_id)
+        keys = _GALLERY_FIELD_KEYS.get(service_id)
+        if not keys:
+            return None
+        host_key, plain_key = keys
+        owner = config.normalize_service_id(cfg.get("service") or service_id)
+        candidates = (plain_key, host_key) if owner == service_id else (host_key,)
+        present = [key for key in candidates if key in cfg]
+        if not present:
+            return None
+        values = (str(cfg.get(key) or "").strip() for key in present)
+        return next((value for value in values if value), "")
+
     def _gallery_id_from_settings(self, service_id: str, cfg: Dict[str, Any]) -> str:
         service_id = config.normalize_service_id(service_id)
-        if service_id == config.PIXHOST_SERVICE_ID:
-            return str(cfg.get("gallery_hash") or cfg.get("pix_gallery_hash") or "").strip()
         if service_id == "vipr.im":
             gallery_name = str(cfg.get("vipr_gallery_name") or "").strip()
             if not gallery_name or gallery_name == "None":
@@ -315,9 +387,7 @@ class GalleryActionsMixin:
                 cfg.get("vipr_gal_id") or self.vipr_galleries_map.get(gallery_name) or ""
             ).strip()
             return "" if mapped_id == "0" else mapped_id
-        if service_id == "imx.to":
-            return str(cfg.get("gallery_id") or cfg.get("imx_gallery_id") or "").strip()
-        return str(cfg.get("gallery_id") or cfg.get("turbo_gallery_id") or "").strip()
+        return self._gallery_field_value(service_id, cfg) or ""
 
     def _gallery_for_group(
         self, group: Any, service_id: str, cfg: Dict[str, Any]
@@ -352,11 +422,15 @@ class GalleryActionsMixin:
         if not gallery_id:
             return None
 
-        gallery_name = str(cfg.get("selected_gallery_name") or "").strip()
+        # selected_gallery_* describe a Gallery Manager pick; ignore them when
+        # they belong to another gallery than the one the field resolves to.
+        selected_id = str(cfg.get("selected_gallery_id") or "").strip()
+        details = cfg if not selected_id or selected_id == gallery_id else {}
+        gallery_name = str(details.get("selected_gallery_name") or "").strip()
         if service_id == "vipr.im":
             gallery_name = str(cfg.get("vipr_gallery_name") or gallery_name).strip()
         selected_gallery_url = str(
-            cfg.get("selected_gallery_url") or gallery_url_for_service(service_id, gallery_id)
+            details.get("selected_gallery_url") or gallery_url_for_service(service_id, gallery_id)
         )
         if service_id == config.PIXHOST_SERVICE_ID:
             selected_gallery_url = config.normalize_pixhost_url(selected_gallery_url)
@@ -365,7 +439,7 @@ class GalleryActionsMixin:
             "id": gallery_id,
             "name": gallery_name,
             "url": selected_gallery_url,
-            "upload_hash": str(cfg.get("selected_gallery_upload_hash") or ""),
+            "upload_hash": str(details.get("selected_gallery_upload_hash") or ""),
         }
 
     @staticmethod

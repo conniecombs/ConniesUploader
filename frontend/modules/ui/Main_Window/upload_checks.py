@@ -376,6 +376,10 @@ class UploadChecksMixin:
             batch_name = self._batch_display_name(group)
             gallery = self._gallery_for_group(group, service_id, cfg)
             if not gallery:
+                # A Vipr gallery name restored without its id resolves to no
+                # gallery; the upload would silently go to none.
+                if service_id == "vipr.im":
+                    self._check_vipr_gallery_matched(cfg, "", issues)
                 continue
 
             gallery_service = config.normalize_service_id(gallery.get("service") or service_id)
@@ -399,12 +403,7 @@ class UploadChecksMixin:
                 )
 
             if service_id == "vipr.im":
-                selected_name = str(cfg.get("vipr_gallery_name") or "").strip()
-                if selected_name and selected_name != "None" and not gallery_id:
-                    issues.append(
-                        f'Vipr gallery "{selected_name}" could not be matched to an upload ID. '
-                        "Refresh galleries or select it again."
-                    )
+                self._check_vipr_gallery_matched(cfg, gallery_id, issues)
 
         self.preflight_detail_lines.extend(gallery_details[:6])
         if len(gallery_details) > 6:
@@ -417,6 +416,19 @@ class UploadChecksMixin:
         if len(gallery_details) > 1:
             return f"{len(gallery_details)} batch gallery assignments are selected."
         return ""
+
+    @staticmethod
+    def _check_vipr_gallery_matched(
+        cfg: Dict[str, Any], gallery_id: str, issues: List[str]
+    ) -> None:
+        selected_name = str(cfg.get("vipr_gallery_name") or "").strip()
+        if selected_name and selected_name != "None" and not gallery_id:
+            issue = (
+                f'Vipr gallery "{selected_name}" could not be matched to an upload ID. '
+                "Refresh galleries or select it again."
+            )
+            if issue not in issues:
+                issues.append(issue)
 
     def _preflight_check_auto_galleries(
         self,

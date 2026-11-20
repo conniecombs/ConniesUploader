@@ -4,20 +4,27 @@
 # modules/settings_manager.py
 import json
 import os
+import re
 import shutil
+import tempfile
 from datetime import datetime
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional, Tuple
 from loguru import logger
 from . import config
 from .exceptions import InvalidConfigException
 
 try:
-    from jsonschema import validate, ValidationError as JsonSchemaValidationError
+    from jsonschema import Draft7Validator, validate, ValidationError as JsonSchemaValidationError
 
     JSONSCHEMA_AVAILABLE = True
 except ImportError:
     JSONSCHEMA_AVAILABLE = False
     logger.warning("jsonschema not installed - configuration validation disabled")
+
+# Secrets live in the keyring, never in the settings file. An older bug wrote
+# the IMX API key here as "api_key".
+_SECRET_KEYS = ("api_key",)
+_UNREPAIRABLE = object()
 
 
 class SettingsManager:
@@ -113,12 +120,18 @@ class SettingsManager:
             "imx_gallery_id": {"type": "string"},
             "pix_gallery_hash": {"type": "string"},
             "turbo_gallery_id": {"type": "string"},
+            "imagebam_gallery_id": {"type": "string"},
         },
         "additionalProperties": True,  # Allow extra fields for forward compatibility
     }
 
     def __init__(self):
         self.filepath = config.SETTINGS_FILE
+        # Set by load(): details of an unreadable settings file that was
+        # backed up and replaced by defaults, for a notice at startup.
+        self.recovery_issue: Optional[Dict[str, Any]] = None
+        # Notes on the values repaired by the last load() or save().
+        self.repairs: List[str] = []
         self._migrate_legacy_repo_settings()
         # UPDATED: Changed booleans (*_cover) to integers (*_cover_count)
         self.defaults = {
@@ -308,6 +321,8 @@ class SettingsManager:
             cover_key = f"{service_prefix}_cover_count"
             if cover_key in data:
                 cover_count = data[cover_key]
+                if isinstance(cover_count, bool) or not isinstance(cover_count, (int, float)):
+                    continue  # wrong type: reported by the JSON schema check
                 if cover_count < 0:
                     errors.append(f"{cover_key} cannot be negative")
                 elif cover_count > 10:
@@ -359,22 +374,159 @@ class SettingsManager:
             )
         return normalized
 
+    @staticmethod
+    def _coerce_value(value: Any, schema: Dict[str, Any]) -> Any:
+        """Convert a wrongly typed value to the schema's type, if unambiguous."""
+        expected = schema.get("type")
+        if isinstance(value, bool):
+            return _UNREPAIRABLE
+        if expected == "integer":
+            if isinstance(value, float) and value.is_integer():
+                number = int(value)
+            elif isinstance(value, str) and re.fullmatch(r"\s*[+-]?[0-9]+\s*", value):
+                number = int(value)
+            elif isinstance(value, int):
+                number = value
+            else:
+                return _UNREPAIRABLE
+            if "minimum" in schema:
+                number = max(schema["minimum"], number)
+            if "maximum" in schema:
+                number = min(schema["maximum"], number)
+            return number
+        if expected == "string" and isinstance(value, (int, float)):
+            return str(value)
+        if expected == "boolean" and isinstance(value, str):
+            lowered = value.strip().lower()
+            if lowered in ("true", "false"):
+                return lowered == "true"
+        return _UNREPAIRABLE
+
+    def _repair_settings(self, data: Dict[str, Any]) -> Tuple[Dict[str, Any], List[str]]:
+        """Fix only the keys that are invalid; keep everything else.
+
+        A wrong value is converted when that is unambiguous ("3" -> 3, 11 -> 10
+        for a 0-10 count, 350 -> "350"), otherwise reset to its default, or
+        dropped when it has none. Secrets are always removed.
+        """
+        repaired = dict(data)
+        notes = []
+        for key in _SECRET_KEYS:
+            if key in repaired:
+                del repaired[key]
+                notes.append(f"{key}: removed (secrets are kept in the keyring)")
+        if not JSONSCHEMA_AVAILABLE:
+            return repaired, notes
+
+        for key, schema in self.SETTINGS_SCHEMA["properties"].items():
+            if key not in repaired:
+                continue
+            value = repaired[key]
+            validator = Draft7Validator(schema)
+            if validator.is_valid(value):
+                continue
+            coerced = self._coerce_value(value, schema)
+            if coerced is not _UNREPAIRABLE and validator.is_valid(coerced):
+                repaired[key] = coerced
+                notes.append(f"{key}: {value!r} -> {coerced!r}")
+            elif key in self.defaults:
+                repaired[key] = self.defaults[key]
+                notes.append(f"{key}: {value!r} reset to default {self.defaults[key]!r}")
+            else:
+                del repaired[key]
+                notes.append(f"{key}: {value!r} removed")
+        return repaired, notes
+
+    def _log_repairs(self, action: str) -> None:
+        if self.repairs:
+            logger.warning(
+                f"Repaired settings while {action} {self.filepath}: " + "; ".join(self.repairs)
+            )
+
+    def get_recovery_issue(self) -> Optional[Dict[str, Any]]:
+        """Details of a settings file that could not be read at load, if any."""
+        if not self.recovery_issue:
+            return None
+        return dict(self.recovery_issue)
+
+    def _backup_unreadable_file(self) -> Optional[str]:
+        try:
+            folder = os.path.dirname(os.path.abspath(self.filepath))
+            base_name = os.path.basename(os.fspath(self.filepath))
+            stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            backup_path = os.path.join(folder, f"{base_name}.broken-{stamp}.bak")
+            counter = 1
+            while os.path.exists(backup_path):
+                backup_path = os.path.join(folder, f"{base_name}.broken-{stamp}-{counter}.bak")
+                counter += 1
+            shutil.copy2(self.filepath, backup_path)
+            return backup_path
+        except OSError as e:
+            logger.error(f"Could not back up unreadable settings file: {e}")
+            return None
+
+    def _recover_unreadable_file(self, error: Exception) -> Dict[str, Any]:
+        """Back up an unreadable settings file and start over from defaults."""
+        logger.error(f"Settings file {self.filepath} could not be read ({error}); using defaults.")
+        backup_path = self._backup_unreadable_file()
+        if backup_path:
+            # Only overwrite once the original is safely copied.
+            try:
+                self._write_atomic(json.dumps(self.defaults, indent=4))
+            except OSError as e:
+                logger.error(f"Could not replace unreadable settings file: {e}")
+        self.recovery_issue = {
+            "filepath": os.path.abspath(self.filepath),
+            "backup_path": backup_path,
+            "error": str(error),
+        }
+        return dict(self.defaults)
+
+    def _write_atomic(self, text: str) -> None:
+        """Write the settings file via a temp file in the same folder + os.replace."""
+        target = os.fspath(self.filepath)
+        folder = os.path.dirname(os.path.abspath(target))
+        os.makedirs(folder, exist_ok=True)
+        fd, tmp_path = tempfile.mkstemp(
+            prefix=f".{os.path.basename(target)}.", suffix=".tmp", dir=folder
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(text)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(tmp_path, target)
+        except BaseException:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
+
     def load(self):
         """Load settings from file with validation.
 
+        Never raises for a bad file: invalid values are repaired key by key
+        (see _repair_settings) and an unreadable file is backed up and replaced
+        by defaults, with the details in get_recovery_issue().
+
         Returns:
             Settings dictionary (defaults merged with loaded settings)
-
-        Raises:
-            InvalidConfigException: If settings file contains invalid configuration
         """
+        self.recovery_issue = None
+        self.repairs = []
         if not os.path.exists(self.filepath):
-            return self.defaults
+            return dict(self.defaults)
 
         try:
             with open(self.filepath, "r") as f:
                 data = json.load(f)
+            if not isinstance(data, dict):
+                raise ValueError(f"expected a JSON object, found {type(data).__name__}")
+        except (OSError, ValueError) as e:  # JSONDecodeError/UnicodeDecodeError are ValueErrors
+            return self._recover_unreadable_file(e)
 
+        try:
             # Merge with defaults. Older settings files did not have a global
             # thread limit, so seed it from the previous representative value.
             merged_input = {**self.defaults, **data}
@@ -384,38 +536,28 @@ class SettingsManager:
                     "imx_threads", self.defaults["global_thread_limit"]
                 )
             merged = self.normalize_numeric_ranges(merged_input)
+            merged, self.repairs = self._repair_settings(merged)
+            self._log_repairs("loading")
 
-            # Validate the loaded settings
             validation_errors = self.validate_settings(merged)
             if validation_errors:
-                error_msg = "\n".join(validation_errors)
-                logger.error(f"Invalid configuration in {self.filepath}:\n{error_msg}")
-
-                # Raise exception if validation fails
-                if JSONSCHEMA_AVAILABLE:
-                    raise InvalidConfigException(
-                        f"Configuration file '{self.filepath}' contains errors:\n{error_msg}"
-                    )
-                else:
-                    # Just warn if jsonschema not available
-                    logger.warning("Configuration validation skipped (jsonschema not installed)")
-
-            return merged
-
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse {self.filepath}: {e}")
-            raise InvalidConfigException(
-                f"Configuration file '{self.filepath}' contains invalid JSON: {e}"
-            )
-        except InvalidConfigException:
-            # Re-raise config exceptions
-            raise
+                raise InvalidConfigException("\n".join(validation_errors))
         except Exception as e:
-            logger.error(f"Failed to load settings: {e}")
-            return self.defaults
+            return self._recover_unreadable_file(e)
+
+        if any(key in data for key in _SECRET_KEYS):
+            # Remove the stored secret from disk now, not at the next save.
+            try:
+                self._write_atomic(json.dumps(merged, indent=4))
+            except (OSError, TypeError, ValueError) as e:
+                logger.error(f"Could not remove stored secret from settings file: {e}")
+        return merged
 
     def save(self, data):
         """Save settings to file with validation.
+
+        Invalid values are repaired first (secrets are never written); the file
+        is replaced atomically, so a failed save leaves the old file intact.
 
         Args:
             data: Settings dictionary to save
@@ -426,6 +568,8 @@ class SettingsManager:
         data = dict(data or {})
         data["service"] = config.normalize_service_id(data.get("service", ""))
         data = self.normalize_numeric_ranges(data)
+        data, self.repairs = self._repair_settings(data)
+        self._log_repairs("saving")
 
         # Validate before saving
         validation_errors = self.validate_settings(data)
@@ -439,12 +583,11 @@ class SettingsManager:
                 logger.warning("Saving without validation (jsonschema not installed)")
 
         try:
-            settings_dir = os.path.dirname(os.fspath(self.filepath))
-            if settings_dir:
-                os.makedirs(settings_dir, exist_ok=True)
-            with open(self.filepath, "w") as f:
-                json.dump(data, f, indent=4)
+            # Serialise before touching the file: an unserialisable value must
+            # not leave a truncated settings file behind.
+            payload = json.dumps(data, indent=4)
+            self._write_atomic(payload)
             logger.info(f"Settings saved to {self.filepath}")
-        except Exception as e:
+        except (OSError, TypeError, ValueError) as e:
             logger.error(f"Failed to save settings: {e}")
-            raise InvalidConfigException(f"Failed to save settings: {e}")
+            raise InvalidConfigException(f"Failed to save settings: {e}") from e

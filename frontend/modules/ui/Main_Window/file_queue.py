@@ -187,7 +187,13 @@ class FileQueueMixin:
         show_previews: bool,
         separate_batches: bool,
     ) -> None:
-        result = self._scan_import_inputs(inputs)
+        try:
+            result = self._scan_import_inputs(inputs)
+        except Exception as e:
+            # Still report back so the import is finished instead of left pending.
+            logger.error(f"✗ Import scan failed: {e}", exc_info=True)
+            result = self._empty_import_result()
+            result["rejected_details"].append(f"Import failed: {e}")
         if not self._is_import_epoch_current(epoch):
             return
         try:
@@ -207,8 +213,9 @@ class FileQueueMixin:
             self._finish_import(import_id, epoch)
             logger.warning("UI queue full, dropping completed import scan.")
 
-    def _scan_import_inputs(self, inputs: List[str]) -> Dict[str, Any]:
-        result = {
+    @staticmethod
+    def _empty_import_result() -> Dict[str, Any]:
+        return {
             "folder_batches": [],
             "misc_files": [],
             "folder_count": 0,
@@ -217,6 +224,9 @@ class FileQueueMixin:
             "empty_folders": [],
         }
 
+    def _scan_import_inputs(self, inputs: List[str]) -> Dict[str, Any]:
+        result = self._empty_import_result()
+
         for path in inputs:
             logger.debug(f"   Processing: {path}")
 
@@ -224,14 +234,21 @@ class FileQueueMixin:
                 folder_name = os.path.basename(path.rstrip(os.sep)) or path
                 logger.info(f"   📂 Scanning folder: {folder_name}")
                 try:
-                    files_in_folder = file_handler.get_files_from_directory(path)
+                    rejected_in_folder = []
+                    files_in_folder = file_handler.get_files_from_directory(
+                        path, rejected=rejected_in_folder
+                    )
+                    for rejected_path, reason in rejected_in_folder:
+                        result["rejected_details"].append(
+                            f"{os.path.basename(rejected_path)}: {reason}"
+                        )
                     if files_in_folder:
                         files_in_folder.sort(key=config.natural_sort_key)
                         logger.info(f"      ✓ Found {len(files_in_folder)} valid image(s)")
                         result["folder_batches"].append((folder_name, files_in_folder))
                         result["folder_count"] += 1
                         result["file_count"] += len(files_in_folder)
-                    else:
+                    elif not rejected_in_folder:
                         logger.warning(f"      ⚠ No valid images in folder: {folder_name}")
                         result["empty_folders"].append(folder_name)
                 except Exception as e:
@@ -243,7 +260,8 @@ class FileQueueMixin:
                     try:
                         file_handler.validate_file_size(path)
                         logger.debug(f"      ✓ Valid image file: {os.path.basename(path)}")
-                        result["misc_files"].append(path)
+                        # Same path form as folder scans, so duplicates are detected.
+                        result["misc_files"].append(file_handler.canonical_path(path))
                         result["file_count"] += 1
                     except Exception as e:
                         logger.warning(f"      ⚠ Rejected file {os.path.basename(path)}: {e}")
@@ -303,7 +321,10 @@ class FileQueueMixin:
         if rejected_count > 0:
             logger.info(f"   ({rejected_count} file(s) rejected)")
             status_msg += f" ({rejected_count} rejected)"
-        self._set_import_checks([])
+            # The good files are queued; list each skipped file and why.
+            self._set_import_checks([f"Rejected files: {rejected_count}", *rejected_details])
+        else:
+            self._set_import_checks([])
         if queued_count > 100:
             status_msg += " - Loading rows and thumbnails..."
             logger.info(f"Loading rows and thumbnails for {queued_count} files...")
@@ -321,13 +342,18 @@ class FileQueueMixin:
     ) -> int:
         queued_count = 0
 
+        # Only files that are not queued yet are considered, so re-dropping a
+        # folder or file never creates an empty batch.
         for folder_name, files_in_folder in result.get("folder_batches", []):
+            files_in_folder = self._unqueued_files(files_in_folder)
+            if not files_in_folder:
+                continue
             group = target_group if target_group else self._create_group(folder_name, refresh=False)
             queued_count += len(
                 self._enqueue_rows_for_group(files_in_folder, group, show_previews, epoch)
             )
 
-        misc_files = list(result.get("misc_files", []))
+        misc_files = self._unqueued_files(result.get("misc_files", []))
         if target_group:
             queued_count += len(
                 self._enqueue_rows_for_group(misc_files, target_group, show_previews, epoch)
@@ -349,6 +375,22 @@ class FileQueueMixin:
         if queued_count:
             self._refresh_queue_state()
         return queued_count
+
+    def _unqueued_files(self, files: List[str]) -> List[str]:
+        """Return files (in order, without repeats) that are not queued yet."""
+        unqueued = []
+        seen = set()
+        with self._import_lock():
+            for filepath in files or []:
+                if (
+                    filepath in seen
+                    or filepath in self.file_widgets
+                    or filepath in self.pending_filepaths
+                ):
+                    continue
+                seen.add(filepath)
+                unqueued.append(filepath)
+        return unqueued
 
     def _enqueue_rows_for_group(
         self, files: List[str], group_widget: Any, show_previews: bool, epoch: int
