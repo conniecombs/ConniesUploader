@@ -253,6 +253,21 @@ def test_request_sync_still_ignores_uncorrelated_events():
     assert "msg" not in reply
 
 
+def test_transport_requests_wait_in_a_way_that_ends_when_the_sidecar_dies():
+    class CrashAwareBridge:
+        def request_sync(self, payload, timeout=0, cancel_event=None):
+            raise AssertionError("a crash-aware wait must be used when the bridge has one")
+
+        def request_with_generation(self, payload, timeout=0, cancel_event=None):
+            return {"status": "error", "msg": PROCESS_RESTARTED_MSG}, 2
+
+    response = execute_transport_request(
+        {"url": "https://h.test/"}, bridge=CrashAwareBridge(), session_id="s-1"
+    )
+    assert response.ok is False
+    assert response.message == PROCESS_RESTARTED_MSG
+
+
 def test_upload_transport_pause_ends_early_when_cancelled():
     cancel = threading.Event()
     transport = UploadTransport("s-1", bridge=RecordingBridge(), cancel_event=cancel)

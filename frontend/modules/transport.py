@@ -129,7 +129,13 @@ def execute_transport_request(
 
     active_bridge = bridge if bridge is not None else SidecarBridge.get()
     wait = float(timeout) + TRANSPORT_WAIT_MARGIN_SECONDS
-    if cancel_event is None:
+    with_generation = (
+        getattr(active_bridge, "request_with_generation", None) if session_id else None
+    )
+    if callable(with_generation):
+        # A session lives in one sidecar process: stop waiting at once if it dies.
+        raw, _ = with_generation(payload, timeout=wait, cancel_event=cancel_event)
+    elif cancel_event is None:
         raw = active_bridge.request_sync(payload, timeout=wait)
     else:
         raw = active_bridge.request_sync(payload, timeout=wait, cancel_event=cancel_event)

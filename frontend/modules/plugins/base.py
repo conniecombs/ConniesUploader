@@ -3,8 +3,25 @@
 
 # modules/plugins/base.py
 import abc
-from typing import Dict, Any, Tuple, Optional, List
+from typing import TYPE_CHECKING, Dict, Any, Tuple, Optional, List
 import customtkinter as ctk
+
+from ..upload_results import UploadResult
+
+if TYPE_CHECKING:  # pragma: no cover - imports for type hints only
+    from ..transport import TransportResponse, UploadTransport
+    from ..upload_sessions import SessionState
+
+
+def uses_python_upload_parsing(plugin: Any) -> bool:
+    """Whether ``plugin`` uploads through the Python path (it parses its own responses).
+
+    True when the plugin's class defines ``parse_upload_response`` itself;
+    the base class default keeps a plugin on its legacy Go specs. The
+    ``legacy_upload_parsing`` setting overrides this for every host.
+    """
+    method = getattr(type(plugin), "parse_upload_response", None)
+    return callable(method) and method is not ImageHostPlugin.parse_upload_response
 
 
 class ImageHostPlugin(abc.ABC):
@@ -291,8 +308,86 @@ class ImageHostPlugin(abc.ABC):
         }
 
         If this method returns None, the upload falls back to legacy upload_file() method.
+
+        Plugins on the Python upload path (they define parse_upload_response)
+        keep this method as the ``legacy_upload_parsing`` fallback.
         """
         return None
+
+    # --- Python upload path (v3.2.0) ---------------------------------------------------
+    #
+    # A plugin that defines parse_upload_response uploads through the Python
+    # path. Per upload job the upload manager:
+    #   1. opens a transport session (an isolated cookie jar in the sidecar);
+    #   2. calls open_upload_session(transport, config, creds) on a worker
+    #      thread: log in, fetch tokens; the returned values are session_values;
+    #   3. calls build_raw_upload_request(file_path, config, session_values,
+    #      creds) for each file and sends one raw upload job on the session;
+    #   4. for each file the host answered, calls parse_upload_response(...) on
+    #      a small worker pool; it may make follow-up requests on the transport;
+    #   5. closes the session when the job and its parsing are done.
+    # Stop cancels the batch, which closes its sessions in the sidecar, so
+    # follow-up requests end at once with status "cancelled".
+    # See docs/plans/V3_2_0_PYTHON_UPLOAD_PARSING_DESIGN.md, "How to migrate a host".
+
+    def upload_job_options(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Options for this host's upload jobs on the Python path.
+
+        ``{"sequential": True}`` uploads and parses a job's files one at a
+        time, in order, on one session: the next file is sent only after the
+        previous one was parsed. Hosts whose result page is matched by upload
+        order (``ResultPageMatcher`` mode ``upload_order``) need it.
+        """
+        return {}
+
+    def open_upload_session(
+        self, transport: "UploadTransport", config: Dict[str, Any], creds: Dict[str, Any]
+    ) -> Dict[str, str]:
+        """Log in and fetch session tokens on ``transport``; return values for the uploads.
+
+        Runs once per upload job, on a worker thread. Raise an exception with
+        a readable message to fail the job's files (for example a refused
+        login); the returned values are redacted from failure messages.
+        """
+        return {}
+
+    def build_raw_upload_request(
+        self,
+        file_path: str,
+        config: Dict[str, Any],
+        session_values: Dict[str, str],
+        creds: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """The fully resolved upload request for one file.
+
+        Return ``{"url", "method", "headers", "multipart_fields"}`` (optional
+        ``form_fields``: extra text fields). ``multipart_fields`` holds
+        exactly one ``{"type": "file", "value": file_path}`` field; every other
+        field is ``{"type": "text", "value": ...}``. Values are sent exactly
+        as given: per-file values (an upload id, the file size) are made here.
+        """
+        raise NotImplementedError(f"{type(self).__name__} does not build raw upload requests")
+
+    def parse_upload_response(
+        self,
+        file_path: str,
+        response: "TransportResponse",
+        transport: "UploadTransport",
+        session_values: Dict[str, str],
+        session_state: "SessionState",
+    ) -> UploadResult:
+        """Interpret the host's answer to one upload.
+
+        ``response`` carries the answer whatever its HTTP status
+        (``status_code``, ``body``, ``final_url``): decide success here. Return
+        ``UploadResult(url, thumb, gallery_url)`` or ``UploadResult.failed(why)``;
+        a result without a link fails the file. ``transport`` runs follow-up
+        requests on the job's session; ``session_state`` is shared by the
+        job's files. Called from several threads at once for one job.
+
+        Defining this method moves the plugin to the Python upload path.
+        """
+        raise NotImplementedError(f"{type(self).__name__} does not parse upload responses")
 
     def finalize_batch(self, context: Dict[str, Any]) -> None:
         """Optional: Runs after all uploads are finished."""

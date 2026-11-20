@@ -104,10 +104,10 @@ def collect_secrets(*mappings: Optional[Mapping[str, Any]], extra: Iterable[str]
         for value in (mapping or {}).values():
             if isinstance(value, str):
                 values.append(value)
-    return _normalized_secrets(values)
+    return normalize_secrets(values)
 
 
-def _normalized_secrets(secrets: Iterable[str]) -> List[str]:
+def normalize_secrets(secrets: Iterable[str]) -> List[str]:
     unique = {
         str(secret)
         for secret in secrets or ()
@@ -118,7 +118,7 @@ def _normalized_secrets(secrets: Iterable[str]) -> List[str]:
 
 
 def redact_secrets(text: str, secrets: Iterable[str]) -> str:
-    for secret in _normalized_secrets(secrets):
+    for secret in normalize_secrets(secrets):
         text = text.replace(secret, "[redacted]")
     return text
 
