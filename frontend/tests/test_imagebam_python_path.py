@@ -547,7 +547,7 @@ def paths(names):
 
 @pytest.mark.parametrize("scenario", SCENARIOS, ids=lambda s: s.name)
 def test_each_file_gets_its_own_upload_like_the_legacy_path(imagebam_site, scenario):
-    site, bridge = imagebam_site(preexisting=scenario.preexisting)
+    site, bridge = imagebam_site(**scenario.site_options)
     files = paths(scenario.files)
 
     outcome = run_batch({Group("Set", files): files}, {"service": "imagebam.com"}, CREDS)

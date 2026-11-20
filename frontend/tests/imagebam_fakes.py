@@ -138,19 +138,25 @@ def json_reply(status: int, payload: Any) -> Reply:
 
 
 class FakeImageBam:
-    """The site. ``handle`` answers one request for one client (cookie jar)."""
+    """The site. ``handle`` answers one request for one client (cookie jar).
+
+    ``page_per_upload`` answers each upload with a page of its own that lists
+    only that image (batch_resolve_test.go's session_per_upload variant).
+    """
 
     def __init__(
         self,
         base_url: str = SITE_URL,
         *,
         preexisting=(),
+        page_per_upload: bool = False,
         csrf_on_home: bool = True,
         session_reply: Optional[Tuple[int, Any]] = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.lock = threading.RLock()
         self.preexisting = list(preexisting)
+        self.page_per_upload = page_per_upload
         self.csrf_on_home = csrf_on_home
         self.session_reply = session_reply
         self.images: Dict[str, str] = {image_id: "" for image_id in self.preexisting}
@@ -224,7 +230,7 @@ class FakeImageBam:
             if method == "POST" and path == "/upload/session":
                 return self._open_session(client, headers, form)
             if method == "GET" and path.startswith("/upload/complete/"):
-                return self._result_page(path.rsplit("/", 1)[-1])
+                return self._result_page(*path[len("/upload/complete/") :].split("/")[:2])
         return Reply(404, "<html><body><h1>404 | Not Found</h1></body></html>")
 
     def _token(self, kind: str) -> str:
@@ -334,13 +340,17 @@ class FakeImageBam:
                 return json_reply(200, {"error": "temporarily unavailable"})
             if behaviour == "late":
                 self.hidden = image_id
-            return json_reply(200, {"success": f"{self.base_url}/upload/complete/{session.token}"})
+            page = f"{self.base_url}/upload/complete/{session.token}"
+            if self.page_per_upload:
+                page += f"/{image_id}"
+            return json_reply(200, {"success": page})
 
-    def _result_page(self, token: str) -> Reply:
+    def _result_page(self, token: str, image_id: str = "") -> Reply:
         session = self.sessions.get(token)
-        if session is None:
+        if session is None or (image_id and image_id not in session.images):
             return Reply(404, "<html><body><h1>404 | Not Found</h1></body></html>")
-        image_ids = [image_id for image_id in session.images if image_id != self.hidden]
+        listed = [image_id] if image_id else session.images
+        image_ids = [listed_id for listed_id in listed if listed_id != self.hidden]
         self.hidden = ""
         return Reply(200, result_page(image_ids, session.gallery))
 
@@ -654,19 +664,37 @@ class Scenario:
     python: Tuple[str, ...] = ()
     why: str = ""
     preexisting: Tuple[str, ...] = field(default=())
+    page_per_upload: bool = False
 
     @property
     def want_python(self) -> Tuple[str, ...]:
         return self.python or self.legacy
 
+    @property
+    def site_options(self) -> Dict[str, Any]:
+        return {"preexisting": self.preexisting, "page_per_upload": self.page_per_upload}
+
 
 NO_ANSWER = "!no response from host after upload"
+BAD_GATEWAY = "!upload rejected (HTTP 502): bad gateway"
+RESENT_AFTER_502 = (
+    "the legacy path sends the file again after a 502 and it gets the second "
+    "copy; the Python path never sends an upload again after a 502, since the "
+    "host may have stored it (design 7.11), so that file fails and the next "
+    "files still get their own entries"
+)
 
 SCENARIOS = (
     Scenario(
         "each file of a shared session gets its own entry",
         ("cover.jpg", "a.jpg", "b.jpg", "c.jpg"),
         ("ME001", "ME002", "ME003", "ME004"),
+    ),
+    Scenario(
+        "each upload with a result page of its own, one answer lost",
+        ("a.jpg", "lost_b.jpg", "c.jpg", "d.jpg"),
+        ("ME001", NO_ANSWER, "ME003", "ME004"),
+        page_per_upload=True,
     ),
     Scenario(
         "a lost answer in the middle; the host stored the image",
@@ -687,13 +715,22 @@ SCENARIOS = (
         "a 502 after the host stored the image",
         ("gw502_a.jpg", "b.jpg", "c.jpg"),
         ("ME002", "ME003", "ME004"),
-        python=("!upload rejected (HTTP 502): bad gateway", "ME002", "ME003"),
-        why=(
-            "the legacy path sends the file again after a 502 and it gets the second "
-            "copy; the Python path never sends an upload again after a 502, since the "
-            "host may have stored it (design 7.11), so that file fails and the next "
-            "files still get their own entries"
-        ),
+        python=(BAD_GATEWAY, "ME002", "ME003"),
+        why=RESENT_AFTER_502,
+    ),
+    Scenario(
+        "a 502 after storing, then a page that lists entries late",
+        ("gw502_a.jpg", "late_b.jpg", "late_c.jpg"),
+        ("ME002", "ME003", "ME004"),
+        python=(BAD_GATEWAY, "ME002", "ME003"),
+        why=RESENT_AFTER_502,
+    ),
+    Scenario(
+        "two failures in a row after storing",
+        ("a.jpg", "lost_b.jpg", "gw502_c.jpg", "d.jpg"),
+        ("ME001", NO_ANSWER, "ME004", "ME005"),
+        python=("ME001", NO_ANSWER, BAD_GATEWAY, "ME004"),
+        why=RESENT_AFTER_502,
     ),
     Scenario(
         "a 200 without a link after storing",

@@ -80,7 +80,7 @@ def test_both_paths_give_each_file_its_own_upload(tmp_path, fake, bridge, scenar
     files = make_files(tmp_path, scenario.files)
     got = {}
     for path, options in PATHS.items():
-        server = fake(preexisting=scenario.preexisting)
+        server = fake(**scenario.site_options)
         cfg = {"service": "imagebam.com", **options}
 
         outcome = run_batch({Group("Set", files): files}, cfg, CREDS)
