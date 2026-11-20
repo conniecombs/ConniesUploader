@@ -15,6 +15,7 @@ import (
 	"net/http/cookiejar"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -618,11 +619,11 @@ func parseHttpResponseBody(bodyBytes []byte, parser *ResponseParserSpec, fp stri
 
 		urlStr := GetJSONValue(data, parser.URLPath)
 		if urlStr == "" && parser.URLTemplate != "" {
-			urlStr = applyResponseTemplate(parser.URLTemplate, data, fp)
+			urlStr = applyResponseTemplate(parser.URLTemplate, data, fp, "")
 		}
 		thumbStr := GetJSONValue(data, parser.ThumbPath)
 		if thumbStr == "" && parser.ThumbTemplate != "" {
-			thumbStr = applyResponseTemplate(parser.ThumbTemplate, data, fp)
+			thumbStr = applyResponseTemplate(parser.ThumbTemplate, data, fp, urlStr)
 		}
 		return urlStr, thumbStr, nil
 	case "html":
@@ -635,10 +636,10 @@ func parseHttpResponseBody(bodyBytes []byte, parser *ResponseParserSpec, fp stri
 			return "", "", err
 		}
 		if urlStr == "" && parser.URLTemplate != "" {
-			urlStr = applyResponseTemplate(parser.URLTemplate, nil, fp)
+			urlStr = applyResponseTemplate(parser.URLTemplate, nil, fp, "")
 		}
 		if thumbStr == "" && parser.ThumbTemplate != "" {
-			thumbStr = applyResponseTemplate(parser.ThumbTemplate, nil, fp)
+			thumbStr = applyResponseTemplate(parser.ThumbTemplate, nil, fp, urlStr)
 		}
 		return urlStr, thumbStr, nil
 	default:
@@ -1044,10 +1045,14 @@ func resolveUploadURL(specURL string, values map[string]string) (string, error) 
 
 var templateTokenPattern = regexp.MustCompile(`\{([^{}]+)\}`)
 
-func applyResponseTemplate(template string, data map[string]interface{}, fp string) string {
+// applyResponseTemplate fills a url_template or thumb_template. resultURL is
+// the parsed viewer link ("" while building the link itself); thumb templates
+// can reuse it through {url_no_ext} and {url_dot_ext}.
+func applyResponseTemplate(template string, data map[string]interface{}, fp string, resultURL string) string {
 	base := filepath.Base(fp)
 	ext := strings.TrimPrefix(filepath.Ext(base), ".")
 	stem := strings.TrimSuffix(base, filepath.Ext(base))
+	urlNoExt, urlDotExt := splitURLExtension(resultURL)
 
 	return templateTokenPattern.ReplaceAllStringFunc(template, func(token string) string {
 		key := strings.TrimSpace(strings.Trim(token, "{}"))
@@ -1063,6 +1068,10 @@ func applyResponseTemplate(template string, data map[string]interface{}, fp stri
 				return ""
 			}
 			return "." + ext
+		case "url_no_ext":
+			return urlNoExt
+		case "url_dot_ext":
+			return urlDotExt
 		}
 		if data == nil {
 			return ""
@@ -1072,6 +1081,28 @@ func applyResponseTemplate(template string, data map[string]interface{}, fp stri
 		}
 		return findJSONScalar(data, key)
 	})
+}
+
+// splitURLExtension splits a link into everything before the extension of its
+// path and the extension itself ("https://h/a/x.jpg" -> "https://h/a/x",
+// ".jpg"). The query and fragment are dropped.
+func splitURLExtension(link string) (string, string) {
+	link = strings.TrimSpace(link)
+	if link == "" {
+		return "", ""
+	}
+	parsed, err := url.Parse(link)
+	if err != nil {
+		return link, ""
+	}
+	parsed.RawQuery, parsed.ForceQuery, parsed.Fragment, parsed.RawFragment = "", false, "", ""
+	ext := path.Ext(parsed.Path)
+	if ext == "" {
+		return parsed.String(), ""
+	}
+	parsed.Path = strings.TrimSuffix(parsed.Path, ext)
+	parsed.RawPath = ""
+	return parsed.String(), ext
 }
 
 func findJSONScalar(value interface{}, key string) string {

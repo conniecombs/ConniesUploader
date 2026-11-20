@@ -778,6 +778,35 @@ class TestImgurHttpSpec(unittest.TestCase):
         self.assertEqual(thumbnail_field["value_labels"]["m"], "Medium (320 px)")
         self.assertNotIn("m", thumbnail_field["value_labels"].values())
 
+    def test_thumbnail_is_the_link_with_the_selected_size_suffix(self):
+        from modules.plugins.imgur import ImgurPlugin
+
+        plugin = ImgurPlugin()
+        field = next(f for f in plugin.settings_schema if f.get("key") == "thumbnail_size")
+        creds = {"imgur_client_id": "cid"}
+
+        for code in field["values"]:
+            for value in (code, field["value_labels"][code]):
+                parser = plugin.build_http_request("/tmp/i.jpg", {"thumbnail_size": value}, creds)[
+                    "response_parser"
+                ]
+                # Imgur serves a thumbnail at the image id plus a size letter,
+                # before the extension: https://i.imgur.com/AbCd123m.jpg
+                self.assertEqual(parser["thumb_path"], "", value)
+                self.assertEqual(
+                    parser["thumb_template"], "{url_no_ext}" + code + "{url_dot_ext}", value
+                )
+
+    def test_thumbnail_falls_back_to_medium_for_unknown_or_missing_size(self):
+        from modules.plugins.imgur import ImgurPlugin
+
+        plugin = ImgurPlugin()
+        creds = {"imgur_client_id": "cid"}
+        for config in ({}, {"thumbnail_size": "x"}, {"imgur_thumb": "l"}):
+            parser = plugin.build_http_request("/tmp/i.jpg", config, creds)["response_parser"]
+            expected = "l" if config.get("imgur_thumb") else "m"
+            self.assertEqual(parser["thumb_template"], "{url_no_ext}" + expected + "{url_dot_ext}")
+
     def test_imgur_validation_normalizes_readable_thumbnail_label(self):
         from modules.plugins.imgur import ImgurPlugin
 

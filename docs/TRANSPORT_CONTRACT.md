@@ -167,6 +167,13 @@ tokens separately for each file, in the upload URL, headers, and multipart
 Job credentials, config, context data, and shared session values are also
 available as `{key}`.
 
+A `response_parser`'s `url_template` and `thumb_template` take `{filename}`,
+`{basename}`, `{ext}`, `{dot_ext}` (all from the local file) and JSON response
+values by key or dotted path. A `thumb_template` can also build on the parsed
+link: `{url_no_ext}` is the link up to the extension of its path, without query
+or fragment, and `{url_dot_ext}` is that extension (`.jpg`), so
+`{url_no_ext}m{url_dot_ext}` turns `https://h/AbC.jpg` into `https://h/AbCm.jpg`.
+
 ## Result Resolution (`resolve_spec`)
 
 When an upload job carries a `resolve_spec` and the upload response has a link
