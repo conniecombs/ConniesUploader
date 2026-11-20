@@ -105,32 +105,57 @@ class UploadManager:
         else:
             return False
 
+        ended = []
         with self._jobs_lock:
             if job_id not in self._job_files:
                 return True  # already ended while it was being written
             self._job_generation[job_id] = generation
             if generation is not None and generation <= self._dead_generation:
                 # The process died, and was reported, while the job was written.
-                self._end_job(job_id, f"error: {PROCESS_RESTARTED_MSG}")
+                ended = self._end_job(job_id, f"error: {PROCESS_RESTARTED_MSG}")
+        self._deliver(ended)
         return True
 
-    def _end_job(self, job_id: str, status_text: str) -> None:
+    def _end_job(self, job_id: str, status_text: str) -> List[Tuple[queue.Queue, Any]]:
         """End every unfinished file of a job the sidecar will no longer report on.
 
-        Call with ``_jobs_lock`` held. A file whose result already arrived only
-        lost its closing "Done"; every other unfinished file gets
-        ``status_text`` (a failure or "Cancelled").
+        Call with ``_jobs_lock`` held, then pass the returned queue items to
+        ``_deliver`` after releasing it: the UI queues are bounded and only the
+        Tk thread drains them, and the Tk thread takes ``_jobs_lock`` too.
+        A file whose result already arrived only lost its closing "Done";
+        every other unfinished file gets ``status_text`` (a failure or
+        "Cancelled").
         """
         files = self._job_files.pop(job_id, [])
         self._job_generation.pop(job_id, None)
+        items: List[Tuple[queue.Queue, Any]] = []
         for file_path in files:
             if file_path in self._awaiting_done:
                 self._awaiting_done.discard(file_path)
-                self.progress_queue.put(("status", file_path, "Done"))
+                items.append((self.progress_queue, ("status", file_path, "Done")))
             elif file_path in self.active_files:
                 self.active_files.discard(file_path)
-                self.result_queue.put((file_path, "", ""))
-                self.progress_queue.put(("status", file_path, status_text))
+                items.append((self.result_queue, (file_path, "", "")))
+                items.append((self.progress_queue, ("status", file_path, status_text)))
+        return items
+
+    def _deliver(self, items: List[Tuple[queue.Queue, Any]]) -> None:
+        """Put collected items on the UI queues. Never call with ``_jobs_lock`` held.
+
+        A put waits for the Tk thread to make room, but gives up on a queue a
+        new upload replaced (start_upload swaps in a new result queue), since
+        nobody reads the old one any more.
+        """
+        for target, item in items:
+            while True:
+                if target is not self.result_queue and target is not self.progress_queue:
+                    logger.debug("Dropping an item for a UI queue a new upload replaced")
+                    break
+                try:
+                    target.put(item, timeout=0.5)
+                    break
+                except queue.Full:
+                    continue
 
     def _next_job_id(self) -> str:
         self._job_counter += 1
@@ -161,8 +186,14 @@ class UploadManager:
 
     def _end_all_jobs(self, status_text: str) -> None:
         with self._jobs_lock:
-            for job_id in list(self._job_files):
-                self._end_job(job_id, status_text)
+            ended = self._end_all_jobs_locked(status_text)
+        self._deliver(ended)
+
+    def _end_all_jobs_locked(self, status_text: str) -> List[Tuple[queue.Queue, Any]]:
+        ended: List[Tuple[queue.Queue, Any]] = []
+        for job_id in list(self._job_files):
+            ended += self._end_job(job_id, status_text)
+        return ended
 
     def start_batch(
         self, pending_by_group: Dict[Any, List[str]], cfg: Dict[str, Any], creds: Dict[str, str]
@@ -699,6 +730,7 @@ class UploadManager:
         generation = data.get("generation")
         reason = str(data.get("msg") or PROCESS_RESTARTED_MSG)
         logger.error(f"SIDECAR CRASHED (process {generation}): {reason}")
+        ended: List[Tuple[queue.Queue, Any]] = []
         with self._jobs_lock:
             if isinstance(generation, int):
                 self._dead_generation = max(self._dead_generation, generation)
@@ -711,7 +743,8 @@ class UploadManager:
                     or job_generation is None
                     or job_generation <= generation
                 ):
-                    self._end_job(job_id, f"error: {reason}")
+                    ended += self._end_job(job_id, f"error: {reason}")
+        self._deliver(ended)
 
     def _handle_event(self, data: Dict[str, Any]) -> None:
         """Translate one sidecar event into progress/result queue items."""
@@ -727,8 +760,10 @@ class UploadManager:
             logger.error(f"SIDECAR STOPPED: {data.get('msg')}")
             reason = str(data.get("msg") or "sidecar stopped")
             with self._jobs_lock:
-                self._end_all_jobs(f"error: {reason}")
-                self._fail_active_files(list(self.active_files), reason)
+                ended = self._end_all_jobs_locked(f"error: {reason}")
+                stragglers = list(self.active_files)
+            self._deliver(ended)
+            self._fail_active_files(stragglers, reason)
             return
 
         if job_id and job_id not in self._job_files:
@@ -766,7 +801,8 @@ class UploadManager:
                 # As after a crash: a file whose result arrived only lost its
                 # "Done"; every other unfinished file failed.
                 with self._jobs_lock:
-                    self._end_job(job_id, "error: no result received from sidecar")
+                    ended = self._end_job(job_id, "error: no result received from sidecar")
+                self._deliver(ended)
 
         elif evt == "log":
             logger.debug(f"SIDECAR: {data.get('msg')}")
