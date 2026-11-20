@@ -195,9 +195,9 @@ func main() {
 }
 
 // requestWorkerCount sizes the pool for every action except http_upload
-// (http_request, http_batch_resolve, generate_thumb). It is separate from the
-// upload pool so a login, a forum post or a gallery call never waits behind
-// queued uploads.
+// (http_request, http_batch_resolve, generate_thumb, session_open,
+// session_close). It is separate from the upload pool so a login, a forum
+// post or a gallery call never waits behind queued uploads.
 const requestWorkerCount = 4
 
 // jobQueue is an unbounded FIFO. Pushing never blocks, so the stdin reader
@@ -266,6 +266,7 @@ func startWorkers(wg *sync.WaitGroup, queue *jobQueue, count int) {
 // on uploadWorkers workers; every other action runs on its own pool; cancel
 // is handled inline.
 func runSidecar(input io.Reader, uploadWorkers int, shutdown <-chan struct{}) {
+	core.StartSessionReaper()
 	uploads := newJobQueue()
 	requests := newJobQueue()
 	var wg sync.WaitGroup

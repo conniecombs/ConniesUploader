@@ -141,6 +141,10 @@ func handleJob(job JobRequest) {
 		handleGenerateThumb(job)
 	case "cancel":
 		handleCancel(job)
+	case "session_open":
+		handleSessionOpen(job)
+	case "session_close":
+		handleSessionClose(job)
 	default:
 		sendJobEvent(&job, OutputEvent{Type: "error", Msg: fmt.Sprintf("Unsupported action: %s", job.Action)})
 	}
@@ -159,10 +163,48 @@ func handleHttpUpload(job JobRequest) {
 }
 
 func handleCancel(job JobRequest) {
+	// Mark the batch cancelled before closing its sessions: a session_open
+	// racing with this cancel then either is closed here or sees the mark.
 	live := core.CancelBatch(job.BatchID)
+	closed := core.CloseBatchSessions(job.BatchID)
 	sendJobEvent(&job, OutputEvent{
 		Type: "log",
-		Msg:  fmt.Sprintf("Batch cancelled: %s (live jobs: %t)", job.BatchID, live),
+		Msg:  fmt.Sprintf("Batch cancelled: %s (live jobs: %t, sessions closed: %d)", job.BatchID, live, closed),
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Transport sessions
+// ---------------------------------------------------------------------------
+
+func handleSessionOpen(job JobRequest) {
+	ensureInitialized()
+	session, err := core.OpenSession(client, job.BatchID)
+	if err != nil {
+		sendJobEvent(&job, OutputEvent{Type: "result", Status: "failed", Msg: err.Error()})
+		return
+	}
+	sendJobEvent(&job, OutputEvent{
+		Type:   "result",
+		Status: "success",
+		Data:   map[string]string{"session_id": session.ID},
+	})
+}
+
+// handleSessionClose closes a session. Closing one that is not open is not an
+// error (it may have been closed by a batch cancel or reaped). A reply goes
+// only to a request with an id, so an uncorrelated result never reaches a
+// listener that would take it for an upload result.
+func handleSessionClose(job JobRequest) {
+	closed := core.CloseSession(job.SessionID)
+	if job.ID == "" {
+		sendJobEvent(&job, OutputEvent{Type: "log", Msg: fmt.Sprintf("Session closed: %s (was open: %t)", job.SessionID, closed)})
+		return
+	}
+	sendJobEvent(&job, OutputEvent{
+		Type:   "result",
+		Status: "success",
+		Data:   map[string]string{"session_id": job.SessionID, "closed": strconv.FormatBool(closed)},
 	})
 }
 
@@ -361,15 +403,38 @@ func handleHttpRequest(job JobRequest) {
 		}
 		timeout -= waited
 	}
-	if spec.ResetCookies {
-		core.ResetSiteCookies(client, spec.URL)
+
+	// A request on a transport session uses the session's client and jar,
+	// and is aborted when the session closes (including a batch cancel).
+	requestClient := client
+	baseCtx := context.Background()
+	var session *core.TransportSession
+	if spec.SessionID != "" {
+		var release func()
+		var err error
+		session, release, err = core.AcquireSession(spec.SessionID)
+		if err != nil {
+			sendJobEvent(&job, OutputEvent{Type: "result", Status: "failed", Msg: err.Error()})
+			return
+		}
+		defer release()
+		requestClient = session.Client
+		baseCtx = session.Context()
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+
+	if spec.ResetCookies {
+		core.ResetSiteCookies(requestClient, spec.URL)
+	}
+	ctx, cancel := context.WithTimeout(baseCtx, timeout)
 	defer cancel()
 
-	extracted, err := core.ExecuteGenericRequest(ctx, client, spec, &job)
+	extracted, err := core.ExecuteGenericRequest(ctx, requestClient, spec, &job)
 	if err != nil {
-		sendJobEvent(&job, OutputEvent{Type: "result", Status: "failed", Msg: err.Error()})
+		msg := err.Error()
+		if session != nil && session.Closed() {
+			msg = core.ErrSessionClosed.Error()
+		}
+		sendJobEvent(&job, OutputEvent{Type: "result", Status: "failed", Msg: msg})
 		return
 	}
 
