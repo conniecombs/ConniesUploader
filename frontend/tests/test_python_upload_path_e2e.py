@@ -103,12 +103,20 @@ class FakePixhost:
                     "show_url": f"https://pixhost.example/show/1/{name}",
                     "th_url": f"https://t1.pixhost.example/thumbs/1/{name}",
                 }
+                retry_after = None
+                with host.lock:
+                    tries = sum(1 for upload in host.uploads if upload["file"] == name)
                 if name.startswith("toolarge"):
                     status, body = 400, {"error": "image too large"}
                 elif name.startswith("nolink"):
                     body = {"show_url": "", "th_url": ""}
+                elif name.startswith("busy") and tries == 1:
+                    # Refused without taking it: the sidecar sends it again.
+                    status, body, retry_after = 503, {"error": "busy"}, "0"
                 payload = json.dumps(body).encode()
                 self.send_response(status)
+                if retry_after is not None:
+                    self.send_header("Retry-After", retry_after)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(payload)))
                 self.end_headers()
@@ -193,14 +201,17 @@ def make_files(tmp_path, names):
 
 def test_pixhost_uploads_end_to_end_on_the_python_path(tmp_path, host, bridge, monkeypatch):
     monkeypatch.setattr(config, "PIXHOST_API_BASE_URL", host.url)
-    files = make_files(tmp_path, ["a.jpg", "b.jpg", "toolarge.jpg", "nolink.jpg"])
+    files = make_files(tmp_path, ["a.jpg", "b.jpg", "toolarge.jpg", "nolink.jpg", "busy.jpg"])
 
     um, statuses, terminal, links = run_batch(
         files, {"service": "pixhost.cc", "thumbnail_size": "250", "global_thread_limit": 2}
     )
 
-    a, b, toolarge, nolink = files
+    a, b, toolarge, nolink, busy = files
     assert terminal[a] == "Done" and terminal[b] == "Done", statuses
+    # Refused once with 503: sent again before Python saw an answer.
+    assert terminal[busy] == "Done", statuses[busy]
+    assert links[busy][0] == "https://pixhost.example/show/1/busy.jpg"
     assert links[a] == (
         "https://pixhost.example/show/1/a.jpg",
         "https://t1.pixhost.example/thumbs/1/a.jpg",
@@ -220,7 +231,9 @@ def test_pixhost_uploads_end_to_end_on_the_python_path(tmp_path, host, bridge, m
         "max_th_size": "250",
         "accept": "application/json",
     }
-    assert len(host.uploads) == 4, "no upload is sent twice"
+    uploads_by_file = [upload["file"] for upload in host.uploads]
+    assert uploads_by_file.count("busy.jpg") == 2
+    assert len(uploads_by_file) == 6, "only the refused upload is sent twice"
     # The job's transport session was closed once everything was parsed.
     deadline = time.monotonic() + 5
     while um._open_session_jobs and time.monotonic() < deadline:

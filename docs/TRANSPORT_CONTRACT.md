@@ -172,9 +172,20 @@ for it, and substitutes no `{token}`s:
   `"data": {"body_sent": "true"}` because the host may have stored the file.
   Cancellation still emits `Cancelled` and an `error`.
 - Raw uploads keep the upload protections below (stall watchdog, bounded
-  response wait, no resend once the body was sent), are never retried
-  because of an HTTP status, and count against the per-service Thread Limit
-  like every upload.
+  response wait, no resend once the body was sent) and count against the
+  per-service Thread Limit like every upload.
+- A raw upload answered `429` or `503` is sent again before Python sees an
+  answer, since those statuses mean the host refused the file without taking
+  it: after the host's `Retry-After` (seconds or a date, capped at 60 s) or
+  else the usual backoff, then the host's rate limit, within the job's
+  `max_retries` (the legacy path's attempt count); a Stop ends the wait. Only
+  codes the job's `retryable_http_codes` also lists are retried. Every other
+  status, `502`, `504` and `52x` included, and a lost answer, is never sent
+  again: the host may already have stored the file. After the last attempt
+  the final refusal is the raw result. The legacy path instead retries every
+  code of `retryable_http_codes` (`408`, `429`, `500`, `502`, `503`, `504` by
+  default). A refused attempt does not count as a body the host may have
+  kept (`body_sent`).
 - `"sequential": true` uploads the job's files one at a time, in list order.
   (The Python upload manager goes further for a sequential host: it sends
   one file per job, each after the previous file was parsed.)
@@ -340,7 +351,9 @@ On the Python path a plugin polls the result page itself, with
 `resolve_from_result_page` and the job's `ResultPageMatcher`
 (`frontend/modules/result_matcher.py`), which ports the rules below. There,
 "attempts that reached the host" are the files with a raw result or a
-`Failed` event carrying `body_sent` (raw uploads are never retried), an entry
+`Failed` event carrying `body_sent` (a raw upload is re-sent only after a
+`429`/`503` refusal, which the host did not keep, so those are not counted;
+should a host list one anyway, the file fails as ambiguous), an entry
 is held back only by a file whose upload reached the host and that is still
 being parsed, and the upload manager sends a sequential host's next file only
 after the previous one was resolved.

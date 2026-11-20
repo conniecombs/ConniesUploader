@@ -12,7 +12,11 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
+	"strconv"
+	"strings"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -26,6 +30,10 @@ import (
 // MaxRawResponseBytes caps the response body a raw upload returns. An upload
 // answer larger than this is a host error page, not a result.
 const MaxRawResponseBytes = 2 << 20
+
+// RawRetryAfterCap bounds how long a raw upload waits for a host's
+// Retry-After before sending again. A variable so tests can shrink it.
+var RawRetryAfterCap = 60 * time.Second
 
 var (
 	errMissingUploadRequest = errors.New("missing upload request")
@@ -99,17 +107,50 @@ func validateRawUploadRequest(fp string, request *RawUploadRequest) (rawUploadPa
 	return parts, nil
 }
 
-// rawUploadRetryConfig is the job's retry config without status-code
-// retries: Python decides what every status means.
+// rawRefusalCodes are the statuses with which a host refuses an upload
+// without taking it ("too many requests", "unavailable"), so a raw upload
+// answered with one is sent again. Every other status, 502, 504 and 52x
+// included, may come after the host stored the file and goes to Python as
+// is. Only the codes the job's retry config also lists are retried.
+var rawRefusalCodes = []int{http.StatusTooManyRequests, http.StatusServiceUnavailable}
+
+// rawUploadRetryConfig is the job's retry config with only the refusal codes
+// among its retryable statuses.
 func rawUploadRetryConfig(job *JobRequest) *RetryConfig {
 	config := *retryConfigForJob(job)
-	config.RetryableHTTPCodes = nil
+	var codes []int
+	for _, code := range config.RetryableHTTPCodes {
+		if slices.Contains(rawRefusalCodes, code) {
+			codes = append(codes, code)
+		}
+	}
+	config.RetryableHTTPCodes = codes
 	return &config
 }
 
+// retryAfter reads a Retry-After header (seconds or an HTTP date), capped at
+// RawRetryAfterCap; ok is false when the header is missing or unreadable.
+func retryAfter(header string) (time.Duration, bool) {
+	header = strings.TrimSpace(header)
+	if header == "" {
+		return 0, false
+	}
+	var wait time.Duration
+	if seconds, err := strconv.Atoi(header); err == nil {
+		wait = time.Duration(seconds) * time.Second
+	} else if at, err := http.ParseTime(header); err == nil {
+		wait = time.Until(at)
+	} else {
+		return 0, false
+	}
+	return min(max(wait, 0), RawRetryAfterCap), true
+}
+
 // ExecuteRawUpload sends fp's resolved request with the upload-attempt
-// protections (stall watchdog, bounded response wait, no retry once the body
-// was sent) and returns the host's answer whatever its status.
+// protections (stall watchdog, bounded response wait, no resend once the
+// body was sent) and returns the host's answer whatever its status, except
+// that a 429 or 503 refusal is sent again, after the host's Retry-After
+// (capped) and the host's rate limit, up to the job's retry count.
 func ExecuteRawUpload(ctx context.Context, client *http.Client, fp string, job *JobRequest) (RawUploadResult, error) {
 	request := job.FileRequests[fp]
 	if request == nil {
@@ -133,8 +174,7 @@ func ExecuteRawUpload(ctx context.Context, client *http.Client, fp string, job *
 	}
 	logger := log.WithFields(log.Fields{"action": "raw_upload", "file": filepath.Base(fp), "url": request.URL})
 
-	bodySent := false
-	result, err := RetryWithBackoff(ctx, rawUploadRetryConfig(job), func() (_ RawUploadResult, _ int, attemptErr error) {
+	send := func() (_ RawUploadResult, _ int, retryAfterHeader string, sent bool, attemptErr error) {
 		pr, pw := io.Pipe()
 		defer pr.Close()
 		writer := multipart.NewWriter(pw)
@@ -148,12 +188,12 @@ func ExecuteRawUpload(ctx context.Context, client *http.Client, fp string, job *
 		attempt := newUploadAttempt(ctx)
 		defer func() {
 			attemptErr = attempt.finish(attemptErr)
-			bodySent = bodySent || attempt.bodySent.Load()
+			sent = attempt.bodySent.Load()
 		}()
 
 		req, err := http.NewRequestWithContext(attempt.ctx, method, request.URL, attempt.body(pr))
 		if err != nil {
-			return RawUploadResult{}, 0, NoRetry(invalidUploadRequest("%v", err))
+			return RawUploadResult{}, 0, "", false, NoRetry(invalidUploadRequest("%v", err))
 		}
 		req.Header.Set("Content-Type", writer.FormDataContentType())
 		req.Header.Set("User-Agent", GetUserAgent(job.Config))
@@ -164,27 +204,88 @@ func ExecuteRawUpload(ctx context.Context, client *http.Client, fp string, job *
 		emitUploadStatus(job, fp, "Uploading")
 		resp, err := attempt.do(client, req)
 		if err != nil {
-			return RawUploadResult{}, 0, err
+			return RawUploadResult{}, 0, "", false, err
 		}
 		defer resp.Body.Close()
 
 		body, err := io.ReadAll(io.LimitReader(resp.Body, MaxRawResponseBytes+1))
 		if err != nil {
-			return RawUploadResult{}, resp.StatusCode, err
+			return RawUploadResult{}, resp.StatusCode, "", false, err
 		}
 		if len(body) > MaxRawResponseBytes {
-			return RawUploadResult{}, resp.StatusCode, NoRetry(errRawResponseTooLarge)
+			return RawUploadResult{}, resp.StatusCode, "", false, NoRetry(errRawResponseTooLarge)
 		}
 		result := RawUploadResult{Body: string(body), StatusCode: resp.StatusCode, FinalURL: request.URL}
 		if resp.Request != nil && resp.Request.URL != nil {
 			result.FinalURL = resp.Request.URL.String()
 		}
-		return result, resp.StatusCode, nil
-	}, logger)
-	if err != nil && bodySent {
-		return result, &bodySentError{err: err}
+		return result, resp.StatusCode, resp.Header.Get("Retry-After"), false, nil
 	}
-	return result, err
+
+	// One attempt count for transport failures and refusals, as on the
+	// legacy path (RetryWithBackoff).
+	config := rawUploadRetryConfig(job)
+	bodySent := false
+	var lastErr error
+	var wait time.Duration
+	for attempt := 0; attempt <= config.MaxRetries; attempt++ {
+		if attempt > 0 {
+			if err := waitToResend(ctx, job, fp, wait); err != nil {
+				return RawUploadResult{}, err
+			}
+		}
+		result, status, retryAfterHeader, sent, err := send()
+		if err == nil {
+			if attempt < config.MaxRetries && slices.Contains(config.RetryableHTTPCodes, status) {
+				// The host refused the file without taking it: a refused
+				// body is not one the host may have kept.
+				if delay, ok := retryAfter(retryAfterHeader); ok {
+					wait = delay
+				} else {
+					wait = CalculateBackoff(attempt+1, config)
+				}
+				emitUploadLog(job, fp, fmt.Sprintf("Host answered HTTP %d to %s; sending it again in %s",
+					status, filepath.Base(fp), wait.Round(time.Millisecond)))
+				continue
+			}
+			return result, nil
+		}
+		bodySent = bodySent || sent
+		lastErr = err
+		// Transport failures retry as on the legacy path: an answer cut off
+		// while it was read counts by its status, and a failure after the
+		// body was sent is never retried (attempt.finish).
+		if !IsRetryableError(err, status, config) || ctx.Err() != nil {
+			break
+		}
+		if attempt >= config.MaxRetries {
+			lastErr = fmt.Errorf("max retries (%d) exhausted, last error: %w", config.MaxRetries, err)
+			break
+		}
+		wait = CalculateBackoff(attempt+1, config)
+		logger.WithField("attempt", attempt+1).Info("Raw upload failed, retrying")
+	}
+	if bodySent {
+		return RawUploadResult{}, &bodySentError{err: lastErr}
+	}
+	return RawUploadResult{}, lastErr
+}
+
+// waitToResend waits before sending a raw upload again, then for the host's
+// rate limit; it ends early when ctx does.
+func waitToResend(ctx context.Context, job *JobRequest, fp string, wait time.Duration) error {
+	emitUploadStatus(job, fp, "Waiting")
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	if JobHasExplicitRateLimit(job) {
+		return WaitForRateLimit(ctx, job.Service)
+	}
+	return nil
 }
 
 // bodySentError marks a failed upload whose whole body reached the host, so

@@ -38,10 +38,11 @@ func rawRequest(url, fp string) *RawUploadRequest {
 
 // Python decides what every status means, so a raw upload returns the
 // host's answer as is and never re-sends it because of its status, even a
-// status the retry config lists.
+// status the retry config lists (only 429 and 503 are retried; see
+// raw_upload_retry_test.go).
 func TestRawUploadReturnsTheHostAnswerForEveryStatusWithoutRetrying(t *testing.T) {
 	fp := writeUploadFile(t, 2048)
-	for _, status := range []int{http.StatusOK, http.StatusForbidden, http.StatusServiceUnavailable} {
+	for _, status := range []int{http.StatusOK, http.StatusForbidden, http.StatusBadGateway} {
 		var hits int32
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			atomic.AddInt32(&hits, 1)

@@ -286,9 +286,19 @@ the implementation differs from the text above:
   `sequential` flag (§7.3) is also set.
 - Session open and the plugin's login run on the dispatch thread, one job
   after another; uploads of earlier jobs proceed meanwhile.
-- A raw upload is never retried because of its HTTP status, so a 429 or 5xx
-  answer that the legacy path would retry now fails the file with the host's
-  message (the host may have stored it).
+- A raw upload is re-sent only after a 429 or 503 refusal (statuses that
+  mean the host did not take the file), honouring Retry-After (capped at
+  60 s) and the host's rate limit, within the legacy attempt count. A 408,
+  500, 502, 504 or 52x answer that the legacy path would retry now fails the
+  file with the host's message, since the host may have stored it. Refused
+  attempts are not counted as uploads that reached the host for upload-order
+  matching; a host that listed one anyway makes the file fail as ambiguous,
+  never take another image.
+- A batch's session jobs follow its own cancel token (fix/v3.2.0's per-batch
+  tokens): once Clear List and a new Start supersede the batch, they send,
+  parse and report nothing more. The non-terminal `Uploaded` status may be
+  dropped by the sidecar bridge under load; the raw `result` is the terminal
+  event it always delivers.
 
 ## 8. How to migrate a host
 
