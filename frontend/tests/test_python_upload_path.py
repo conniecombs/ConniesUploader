@@ -494,6 +494,34 @@ def test_sidecar_failures_still_end_files(env):
     assert status_of(env, "/b.jpg") == ["error: no result received from sidecar"]
 
 
+def test_transport_errors_of_raw_uploads_are_redacted(env):
+    # Go quotes the upload URL in a transport error (a url.Error), and a
+    # plugin may have put a session value or a credential in it.
+    env.um._send_job(["/a.jpg", "/b.jpg"], CFG, CREDS)
+    [job] = env.bridge.jobs()
+    url = "https://h/upload?sess=sess-value-123&key=key-secret-99"
+    env.um._handle_event({"id": job["id"], "type": "status", "file": "/a.jpg", "status": "Failed"})
+    env.um._handle_event(
+        {
+            "id": job["id"],
+            "type": "error",
+            "file": "/a.jpg",
+            "msg": f'Post "{url}": dial tcp 127.0.0.1:1: connect: connection refused',
+        }
+    )
+    env.um._handle_event({"id": job["id"], "type": "error", "msg": f"Panic: bad request for {url}"})
+    wait_for(env, lambda: len(env.bridge.closes()) == 1)
+    redacted = "https://h/upload?sess=[redacted]&key=[redacted]"
+    assert status_of(env, "/a.jpg") == [
+        "Failed",
+        f'error: Post "{redacted}": dial tcp 127.0.0.1:1: connect: connection refused',
+    ]
+    assert status_of(env, "/b.jpg") == [f"error: Panic: bad request for {redacted}"]
+    assert not any(
+        "sess-value-123" in str(item) or "key-secret-99" in str(item) for item in env.statuses
+    )
+
+
 def test_a_job_level_error_ends_the_job_without_batch_complete(env):
     # The sidecar rejects a whole job (invalid job, recovered panic) with an
     # error that names no file and sends no batch_complete afterwards.

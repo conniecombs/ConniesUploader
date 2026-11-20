@@ -1390,14 +1390,20 @@ class UploadManager:
             logger.debug(f"SIDECAR: {data.get('msg')}")
 
         elif evt == "error":
-            logger.error(f"SIDECAR ERROR: {data.get('msg')}")
+            msg = data.get("msg")
+            if session_job is not None:
+                # A raw upload's transport error can quote its request (a
+                # url.Error names the upload URL), which the plugin may have
+                # built from credentials or session values.
+                msg = redact_secrets(str(msg or ""), session_job.state.secrets)
+            logger.error(f"SIDECAR ERROR: {msg}")
             if fp:
-                self.progress_queue.put(("status", fp, f"error: {data.get('msg')}"))
+                self.progress_queue.put(("status", fp, f"error: {msg}"))
             elif job_id and session_job is not None:
                 # The sidecar rejected the whole raw job (an invalid job or a
                 # recovered panic) and sends no batch_complete after it.
                 with self._jobs_lock:
-                    ended = self._end_job(job_id, f"error: {data.get('msg') or 'sidecar error'}")
+                    ended = self._end_job(job_id, f"error: {msg or 'sidecar error'}")
                 self._deliver(ended)
             elif job_id:
                 self._fail_active_files(

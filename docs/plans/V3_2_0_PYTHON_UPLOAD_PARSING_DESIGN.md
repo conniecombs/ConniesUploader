@@ -388,7 +388,9 @@ Python `re` replaces RE2; avoid backtracking-only constructs. BeautifulSoup's
   host's answer: …".
 - Every failure reason is redacted with `session_state.secrets` (the
   plugin's declared credentials and every `session_values` value of 4+
-  characters). Add tokens a parser extracts with `session_state.add_secrets`.
+  characters): the parser's, and the transport errors the sidecar reports
+  for the job's uploads, which can quote the upload URL. Add tokens a parser
+  extracts with `session_state.add_secrets`.
   Build reasons with `upload_failure` / `request_failure`, which quote the
   host's JSON message or 200 characters of visible text, never a whole page.
 - A follow-up request that is not 2xx comes back with `ok == False` and

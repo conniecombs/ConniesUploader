@@ -307,7 +307,9 @@ value the `pre_request` login step extracted redacted (whether it ran once for
 the job or for the file alone). Go does not re-send such an upload: the host
 already answered. On the Python path the same rules come from
 `frontend/modules/upload_results.py`, which redacts every session value and
-applies the same snippet rules to failed follow-up requests;
+applies the same snippet rules to failed follow-up requests, and the upload
+manager redacts the same values from every `error` Go reports for a raw
+job (a transport error can quote the upload URL);
 `backend/core/testdata/upload_parity.json` holds the fixtures both
 implementations are tested against.
 
