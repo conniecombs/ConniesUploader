@@ -143,11 +143,17 @@ def test_imagebam_auto_gallery_creates_a_gallery_instead_of_joining_an_imx_one(
     group = foreign_group()
 
     um._dispatch_jobs(
-        {group: list(group.files)}, {"service": "imagebam.com", "auto_gallery": True}, IMAGEBAM_CREDS
+        {group: list(group.files)},
+        {"service": "imagebam.com", "auto_gallery": True},
+        IMAGEBAM_CREDS,
     )
 
     fields = ImageBamPlugin()._upload_session_fields(captured[0])
-    assert (fields["gallery"], fields["gallery_token"], fields["gallery_title"]) == ("true", "", "Set")
+    assert (fields["gallery"], fields["gallery_token"], fields["gallery_title"]) == (
+        "true",
+        "",
+        "Set",
+    )
 
 
 def test_imagebam_auto_gallery_on_the_legacy_path_creates_a_gallery(manager):

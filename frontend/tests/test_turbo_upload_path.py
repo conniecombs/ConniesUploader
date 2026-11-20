@@ -301,7 +301,7 @@ def test_a_refused_login_without_a_message_still_says_what_happened(body, url):
         # A logout form counts as well as a logout link.
         (
             '<form action="https://www.turboimagehost.com/logout.tu" method="post">'
-            '<button>Logout</button></form>'
+            "<button>Logout</button></form>"
             '<form action="login.tu"><input type="password" name="password"></form>',
             LOGIN_URL,
         ),
@@ -332,7 +332,10 @@ def test_a_logged_in_page_with_a_password_field_is_not_a_refusal(body, url):
 
 @pytest.mark.parametrize(
     "creds",
-    [{"turbo_user": "connie", "turbo_pass": ""}, {"turbo_user": "", "turbo_pass": "hunter2-secret"}],
+    [
+        {"turbo_user": "connie", "turbo_pass": ""},
+        {"turbo_user": "", "turbo_pass": "hunter2-secret"},
+    ],
     ids=["username only", "password only"],
 )
 def test_half_saved_credentials_upload_anonymously_with_a_warning(monkeypatch, creds):
@@ -693,7 +696,9 @@ def test_a_full_parse_pool_never_starves_a_file_of_its_entry(monkeypatch):
     files = [os.path.normpath(f"/in/{name}") for name in names]
     page_entries = [(100 + n, f"Scan_{n}.jpg") for n in range(1, 5)]
     page_entries += [(200 + n, f"Scan_{n}.jpg") for n in range(1, 5)]
-    bridge = TurboSidecar({"https://www.turboimagehost.com/done.tu?u=1": lambda: entries(*page_entries)})
+    bridge = TurboSidecar(
+        {"https://www.turboimagehost.com/done.tu?u=1": lambda: entries(*page_entries)}
+    )
     monkeypatch.setattr(upload_manager.SidecarBridge, "get", staticmethod(lambda: bridge))
     monkeypatch.setattr(turbo, "POLL_DELAYS_MS", (5, 5, 5, 5))
     progress, results = queue.Queue(), queue.Queue()
