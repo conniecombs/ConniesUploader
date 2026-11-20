@@ -9,31 +9,37 @@ upload session instead of the image just uploaded (Turbo, ImageBam). A
 shared by all files of one job and safe to use from several threads. Every
 entry goes to at most one file.
 
-This ports backend/core/resolve.go, with three deliberate corrections:
+This ports backend/core/resolve.go as of fix/v3.2.0 (f13d097), whose tests
+are ported in tests/test_result_matcher.py:
 
-- ``upload_order`` gives a file the newest unclaimed entry after the last
-  claimed one, instead of the n-th entry. A host's session page lists every
-  image it stored, including uploads that then failed (a lost answer, a 5xx
-  after the body, an answer without a link), so counting only successful
-  uploads would hand every later file the previous file's image. This needs
-  the job's files uploaded and resolved one at a time: declare
+- ``filename`` (and ``contains``), best first: the same file name ignoring
+  case; then the same name with punctuation ignored (``Scan #1.jpg`` listed
+  as ``Scan__1.jpg``); then, only on the last look at the page (or always in
+  ``contains`` mode), a listed name that contains the file's name as whole
+  words (``4411_beach.jpg`` for ``beach.jpg``). Names are compared in Unicode
+  NFC, so macOS (NFD) file names match. An entry that another file of the job
+  matches more closely is held back only for a file whose upload finished
+  and that is still being resolved, never for one not uploaded yet or
+  already finished. Files with the same name take entries in upload order.
+- ``first`` / ``single``: the first entry no other file holds.
+- ``upload_order``: each file takes the newest entry after the last one the
+  job holds, its own upload. The page also lists images of uploads that
+  failed after the host stored them, so the matcher counts every upload that
+  reached the host since the last claim and waits until the page lists that
+  many new entries; on the last look, fewer means the host kept nothing of
+  some failed uploads and the newest is taken; more cannot be told apart and
+  the file fails ("cannot tell which result-page entry is this upload's"),
+  with later files starting after those entries. This needs the job's files
+  uploaded and resolved one at a time: declare
   ``upload_job_options(config) -> {"sequential": True}`` and the upload
   manager sends the next file only after the previous one is resolved.
-- An entry that matches another file of the job more closely is held back
-  only for a file whose upload has finished and that is still being
-  resolved, never for a file not uploaded yet or already finished.
-- Names are compared in Unicode NFC, so macOS (NFD) file names match.
-
-Name matching, best first: the same file name ignoring case; then the same
-name with punctuation ignored (``Scan #1.jpg`` listed as ``Scan__1.jpg``);
-then, only on the last look at the page (or always in ``contains`` mode), a
-listed name that contains the file's name as whole words (``4411_beach.jpg``
-for ``beach.jpg``). Files with the same name take entries in upload order.
+  Resolve one file at a time (``match``).
 
 The upload manager tells the matcher what happened to each file through the
-job's ``SessionState`` (``record_uploaded`` when the host received the
-file's whole body, ``settle`` when the file is finished); plugin code only
-calls ``match`` (or ``resolve_from_result_page``).
+job's ``SessionState`` (``record_uploaded`` when the upload reached the host:
+the host answered, or got the whole body before the upload failed;
+``settle`` when the file is finished); plugin code only calls ``match`` (or
+``resolve_from_result_page``).
 """
 
 from __future__ import annotations
@@ -250,6 +256,11 @@ class ResultPageMatcher:
         self._resolved: Set[str] = set()
         self._claimed: Dict[str, str] = {}  # entry image URL -> file
         self._claimed_thumbs: Dict[str, str] = {}
+        # upload_order: attempts that reached the host since the last claim,
+        # entries a file that could not be resolved passed over, and why.
+        self._sent_since_claim = 0
+        self._passed_over: Set[str] = set()
+        self._unresolvable: Dict[str, str] = {}
 
     @staticmethod
     def _normalize_mode(mode: str) -> str:
@@ -264,11 +275,17 @@ class ResultPageMatcher:
     # Lifecycle notes (the upload manager calls these through SessionState).
 
     def record_uploaded(self, file_path: str) -> None:
-        """The host received ``file_path``'s whole body (it may have stored it)."""
+        """``file_path``'s upload reached the host (it answered, or got the whole body).
+
+        The host may have stored the image even if the upload then failed.
+        Recording a file again does nothing.
+        """
         with self._lock:
             if file_path not in self._names:
                 self._names[file_path] = _local_name_forms(file_path)
-            self._uploaded.setdefault(file_path, len(self._uploaded))
+            if file_path not in self._uploaded:
+                self._uploaded[file_path] = len(self._uploaded)
+                self._sent_since_claim += 1
 
     def settle(self, file_path: str) -> None:
         """``file_path`` is finished (Done or Failed) and holds back no entry any more."""
@@ -278,6 +295,11 @@ class ResultPageMatcher:
     def claimed_by(self, image_url: str) -> Optional[str]:
         with self._lock:
             return self._claimed.get(image_url)
+
+    def missing_reason(self, file_path: str) -> str:
+        """Why the last look gave ``file_path`` no entry."""
+        with self._lock:
+            return self._unresolvable.get(file_path) or "result page missing 1 link(s)"
 
     # Matching.
 
@@ -305,6 +327,8 @@ class ResultPageMatcher:
                     continue
                 self._claimed[entry.image_url] = fp
                 self._resolved.add(fp)
+                if self.mode == MODE_UPLOAD_ORDER:
+                    self._sent_since_claim = 0
                 assigned[fp] = entry
             return assigned
 
@@ -368,34 +392,34 @@ class ResultPageMatcher:
     def _choose_by_upload_order(
         self, fp: str, entries: List[ResultEntry], final: bool
     ) -> Optional[ResultEntry]:
-        last_claimed = max(
-            (index for index, entry in enumerate(entries) if entry.image_url in self._claimed),
-            default=-1,
-        )
-        candidates = [e for e in entries[last_claimed + 1 :] if e.image_url not in self._claimed]
-        mine = self._position(fp)
-        # Files uploaded after this one and still resolving take the newer entries.
-        later = sum(
-            1 for other in self._uploaded if self._holds(other) and self._position(other) > mine
-        )
-        # Uploads since the last resolved file that failed after sending their
-        # body may each have left an entry; wait until the page lists at least
-        # that many new entries, unless this is the last look.
-        last_resolved = max(
-            (self._position(other) for other in self._resolved if self._position(other) < mine),
-            default=-1,
-        )
-        failed_between = sum(
-            1
-            for other in self._uploaded
-            if last_resolved < self._position(other) < mine
-            and other in self._settled
-            and other not in self._resolved
-        )
-        if not final and len(candidates) < 1 + failed_between + later:
-            return None
-        index = len(candidates) - 1 - later
-        return candidates[index] if index >= 0 else None
+        """The entry of the upload that just finished (resolve.go chooseLatestUpload).
+
+        The page lists the session's images in upload order, including those of
+        attempts that failed after the host stored them, so the entries after
+        the last one the job holds (or passed over) belong to the attempts that
+        reached the host since; this file's own upload is the newest of them.
+        Until the page lists as many new entries as attempts, it may not list
+        this upload yet. On the last look, fewer mean failed attempts the host
+        did not keep, and the newest is taken; more cannot be told apart, so
+        the file fails and later files start after those entries.
+        """
+        start = 0
+        for index, entry in enumerate(entries):
+            if entry.image_url in self._claimed or entry.image_url in self._passed_over:
+                start = index + 1
+        fresh = entries[start:]
+        sent = max(self._sent_since_claim, 1)  # this file's own upload reached the host
+        if fresh and (len(fresh) == sent or (len(fresh) < sent and final)):
+            return fresh[-1]
+        if fresh and len(fresh) > sent and final:
+            self._unresolvable[fp] = (
+                "cannot tell which result-page entry is this upload's: the page lists "
+                f"{len(fresh)} new entries, but only {sent} upload(s) reached the host"
+            )
+            # The job's next file uploads after this look: none of these is its.
+            self._passed_over.update(entry.image_url for entry in fresh)
+            self._sent_since_claim = 0
+        return None
 
     def _choose_by_name(
         self, fp: str, entries: List[ResultEntry], final: bool
@@ -496,7 +520,7 @@ def resolve_from_result_page(
         final = attempt == attempts - 1
         entry = matcher.match(file_path, extract_result_entries(link_extractor, body), final)
         if entry is None:
-            last_error = "result page missing 1 link(s)"
+            last_error = matcher.missing_reason(file_path)
             continue
         url, thumb = entry.image_url, entry.thumb_url
         if not thumb and thumb_extractor is not None:

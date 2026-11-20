@@ -330,11 +330,12 @@ stays `(`), and `{url_dot_ext}` is that extension (`.jpg`), so
 
 On the Python path a plugin polls the result page itself, with
 `resolve_from_result_page` and the job's `ResultPageMatcher`
-(`frontend/modules/result_matcher.py`), which port these rules with three
-corrections: `upload_order` gives a file the newest unclaimed entry after
-the last claimed one (so an upload the host stored but that failed does not
-shift later files), an entry is held back only for a file that finished
-uploading and is still being resolved, and names are compared in Unicode NFC.
+(`frontend/modules/result_matcher.py`), which ports the rules below. There,
+"attempts that reached the host" are the files with a raw result or a
+`Failed` event carrying `body_sent` (raw uploads are never retried), an entry
+is held back only by a file whose upload reached the host and that is still
+being parsed, and the upload manager sends a sequential host's next file only
+after the previous one was resolved.
 
 When an upload job carries a `resolve_spec` and the upload response has a link
 but no thumbnail, Go fetches `result_url` (with `{url}` set to the parsed link)

@@ -85,6 +85,12 @@ def test_json_value_reads_scalars_like_the_go_path(path, want):
         ("https://i.example/AbCd123", ("https://i.example/AbCd123", "")),
         ("https://i.example/a.b/c", ("https://i.example/a.b/c", "")),
         ("  ", ("", "")),
+        # response_template_test.go TestURLNoExtKeepsTheLinksEscaping
+        ("https://i.example/a%2Fb/AbC.jpg", ("https://i.example/a%2Fb/AbC", ".jpg")),
+        ("https://i.example/a%2fb/AbC.jpg?x=1#f", ("https://i.example/a%2fb/AbC", ".jpg")),
+        ("https://i.example/it's(1)!*.png", ("https://i.example/it's(1)!*", ".png")),
+        ("https://i.example/a%20b.gif", ("https://i.example/a%20b", ".gif")),
+        ("https://i.example/AbC", ("https://i.example/AbC", "")),
     ],
 )
 def test_split_url_extension(link, want):

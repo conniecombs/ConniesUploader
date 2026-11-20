@@ -275,10 +275,11 @@ the implementation differs from the text above:
 - A failed raw upload whose whole body reached the host carries
   `data.body_sent` on its `Failed` event, so upload-order matching knows the
   host may list it.
-- `ResultPageMatcher` corrects three resolve.go rules (see 8.4): upload_order
-  takes the newest unclaimed entry after the last claimed one instead of the
-  n-th entry, held-back entries are only those of files that finished
-  uploading and are still resolving, and names are compared in NFC.
+- `ResultPageMatcher` ports resolve.go as fixed on fix/v3.2.0 (f13d097), see
+  8.4: upload_order takes the newest entry after the last one the job holds,
+  counting the uploads that reached the host since and failing a file whose
+  entry is ambiguous; held-back entries are only those of files that finished
+  uploading and are still resolving; names are compared in NFC.
 - For a `sequential` host the upload manager sends one file per raw job, each
   after the previous file was parsed (one session for all of them), so the
   result page changes by one upload between two resolutions. Go's own
@@ -378,7 +379,10 @@ upload manager tells it which files were uploaded (raw result, or a failure
 with `body_sent`) and which are finished. Modes: `filename` (Turbo: exact
 name, then the name without punctuation, then whole-word containment on the
 last poll), `contains`, `first`/`single`, `upload_order` (ImageBam: the
-newest unclaimed entry after the last claimed one; needs `sequential`).
+newest entry after the last one the job holds, once the page lists as many
+new entries as uploads reached the host since; more than that fails the file
+with "cannot tell which result-page entry is this upload's"; needs
+`sequential`, and give it poll delays long enough for the page to catch up).
 `resolve_from_result_page` polls with your delays, extracts entries with your
 regex (named groups `image_url`, `thumb_url`, optional `filename`), matches,
 and returns `UploadResult(url, thumb, gallery_url)` or the reason it gave up.

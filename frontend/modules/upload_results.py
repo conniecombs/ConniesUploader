@@ -326,7 +326,8 @@ def split_url_extension(link: str) -> Tuple[str, str]:
     """Split a link into everything before its path's extension, and the extension.
 
     ``https://h/a/x.jpg?q#f`` -> (``https://h/a/x``, ``.jpg``). The query and
-    fragment are dropped.
+    fragment are dropped; the path keeps the link's own escaping (``%2F``
+    stays ``%2F``, ``(`` stays ``(``).
     """
     link = str(link or "").strip()
     if not link:
