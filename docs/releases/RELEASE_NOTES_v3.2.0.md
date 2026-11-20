@@ -6,7 +6,7 @@
 
 ## Overview
 
-v3.2.0 fixes the 40 bugs a full bug hunt found in v3.1.3, plus the defects two follow-up code reviews found in those fixes. It also moves upload sessions and upload-result parsing from the Go sidecar into the Python host plugins, as planned in [`V3_2_0_PYTHON_UPLOAD_PARSING_DESIGN.md`](../plans/V3_2_0_PYTHON_UPLOAD_PARSING_DESIGN.md). The full list is in the [changelog](../CHANGELOG.md).
+v3.2.0 fixes the 40 bugs a full bug hunt found in v3.1.3, plus the defects four follow-up code reviews found in those fixes and in the new upload parsing. It also moves upload sessions and upload-result parsing from the Go sidecar into the Python host plugins, as planned in [`V3_2_0_PYTHON_UPLOAD_PARSING_DESIGN.md`](../plans/V3_2_0_PYTHON_UPLOAD_PARSING_DESIGN.md). The full list is in the [changelog](../CHANGELOG.md).
 
 ## Highlights
 

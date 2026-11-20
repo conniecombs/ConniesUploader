@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [3.2.0] - 2026-11-20
 
-v3.2.0 fixes the 40 bugs found in a full bug hunt of v3.1.3, plus the defects two follow-up code reviews found in those fixes, and moves upload sessions and upload-result parsing from the Go sidecar into the Python host plugins. The sidecar is now transport only for every host; the legacy Go parsing stays available behind a setting for one release.
+v3.2.0 fixes the 40 bugs found in a full bug hunt of v3.1.3, plus the defects four follow-up code reviews found in those fixes and in the new code, and moves upload sessions and upload-result parsing from the Go sidecar into the Python host plugins. The sidecar is now transport only for every host; the legacy Go parsing stays available behind a setting for one release.
 
 ### Added
 
@@ -17,7 +17,7 @@ v3.2.0 fixes the 40 bugs found in a full bug hunt of v3.1.3, plus the defects tw
 - Every host now reads its upload results in Python, with the same links, thumbnails and galleries as before on recorded host responses (shared parity fixtures run through both the Go and the Python parsers).
   - IMX, Pixhost and Imgur: the same results; failures quote the host's own message.
   - Vipr: logs in, uploads and reads results in Python; a wrong password names Vipr's own message, and refused uploads quote Vipr's reason instead of a parse error.
-  - TurboImageHost: the app finds each upload's link and gallery on Turbo's result page itself, and a refused login fails the batch with Turbo's message instead of silently uploading anonymously.
+  - TurboImageHost: the app finds each upload's link and gallery on Turbo's result page itself, and a refused login fails the batch with Turbo's message instead of silently uploading anonymously. With only a username or only a password saved, files upload anonymously as before and the log says why.
   - ImageBam: each image gets its own link, an auto-gallery with a cover makes exactly one gallery, and a wrong password shows ImageBam's own message.
 - While a host's answer is being read, a row shows "Processing".
 - The `legacy_upload_parsing` setting (default `false`, not shown in the window) sends every host back through the legacy Go specs, as a fallback in case a live host answers differently from the recorded fixtures. It will be removed together with the legacy Go hooks in a later release.
@@ -82,7 +82,7 @@ Release process
 ### Security
 
 - The IMX API key is no longer written to `user_settings.json`, and a key saved there by earlier versions is removed when settings load.
-- Upload error messages hide credentials and login-session values, and values containing braces (such as passwords) are no longer echoed into the log.
+- Upload error messages hide credentials and login-session values, including passwords a host echoes back URL-encoded, JSON-escaped or as HTML entities (on both upload paths), and values containing braces (such as passwords) are no longer echoed into the log.
 
 ### Changed
 

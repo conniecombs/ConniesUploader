@@ -13,7 +13,7 @@ Previous release notes: [RELEASE_NOTES_v3.1.3.md](RELEASE_NOTES_v3.1.3.md)
 
 ### Summary
 
-- Fixes the 40 bugs from a full bug hunt of v3.1.3 and the issues two follow-up reviews found in those fixes: trustworthy upload results and links, uploads that always finish, output that is never overwritten or lost, templates that behave as documented, and per-host galleries and settings.
+- Fixes the 40 bugs from a full bug hunt of v3.1.3 and the issues four follow-up reviews found in those fixes and in the new code: trustworthy upload results and links, uploads that always finish, output that is never overwritten or lost, templates that behave as documented, and per-host galleries and settings.
 - Moves upload sessions and result parsing from the Go sidecar into the Python host plugins, with a hidden `legacy_upload_parsing` fallback.
 - Stops saving the IMX API key in the settings file and hides credentials in error messages; bumps app, build scripts, plugin metadata, and release docs to `3.2.0`.
 

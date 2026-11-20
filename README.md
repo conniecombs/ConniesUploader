@@ -102,7 +102,7 @@ Released November 20, 2026.
 
 **Fixed**
 
-- Fixes the 40 bugs found in a full bug hunt of v3.1.3, plus the issues two follow-up code reviews found in those fixes. Among them: rejected uploads no longer show as "Uploaded", TurboImageHost and ImageBam links always belong to the right file, slow uploads are no longer cut off after 3 minutes, and lost replies no longer create duplicates. Stop, Clear List, Remove Batch and sidecar crashes can no longer leave an upload stuck. Same-named batches no longer overwrite each other's output. The Template Editor saves the template being edited, and gallery IDs no longer leak between hosts.
+- Fixes the 40 bugs found in a full bug hunt of v3.1.3, plus the issues four follow-up code reviews found in those fixes and in the new upload parsing. Among them: rejected uploads no longer show as "Uploaded", TurboImageHost and ImageBam links always belong to the right file, slow uploads are no longer cut off after 3 minutes, and lost replies no longer create duplicates. Stop, Clear List, Remove Batch and sidecar crashes can no longer leave an upload stuck. Same-named batches no longer overwrite each other's output. The Template Editor saves the template being edited, and gallery IDs no longer leak between hosts.
 
 **Security**
 
