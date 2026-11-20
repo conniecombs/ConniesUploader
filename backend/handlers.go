@@ -76,16 +76,31 @@ func getServiceUploadLimiter(service string) *serviceUploadLimiter {
 // Jobs with different limits never override each other: the service total
 // stays within the largest limit among running jobs, and a job with a lower
 // limit starts a file only while the total is below its own limit.
-func (l *serviceUploadLimiter) acquire(limit int) {
+// It returns false, without taking a slot, if ctx ends first (the batch was
+// cancelled while the file waited).
+func (l *serviceUploadLimiter) acquire(ctx context.Context, limit int) bool {
 	if limit < 1 {
 		limit = 1
 	}
+	stop := context.AfterFunc(ctx, func() {
+		l.mu.Lock()
+		l.cond.Broadcast()
+		l.mu.Unlock()
+	})
+	defer stop()
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	for l.active >= limit {
+		if ctx.Err() != nil {
+			return false
+		}
 		l.cond.Wait()
 	}
+	if ctx.Err() != nil {
+		return false
+	}
 	l.active++
+	return true
 }
 
 func (l *serviceUploadLimiter) release() {
@@ -227,7 +242,10 @@ func processUploadFiles(job JobRequest, processor func(context.Context, string, 
 				}
 				// Only surface "Waiting" when the service-wide slot is contested.
 				// Otherwise go straight to Preparing so UI matches concurrent progress.
-				limiter.acquire(threadLimit)
+				if !limiter.acquire(batchCtx, threadLimit) {
+					emitCancelledFiles(&job, []string{fp})
+					continue
+				}
 				func() {
 					defer limiter.release()
 					sendJobEvent(&job, OutputEvent{

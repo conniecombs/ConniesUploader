@@ -4,6 +4,8 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"flag"
@@ -275,19 +277,29 @@ func runSidecar(input io.Reader, uploadWorkers int, shutdown <-chan struct{}) {
 		wg.Wait()
 	}()
 
-	decoder := json.NewDecoder(input)
+	// Requests are JSON lines. Each line is decoded on its own, so a malformed
+	// line is reported once and the next line is still read (a json.Decoder's
+	// error is sticky and would repeat forever).
+	reader := bufio.NewReader(input)
 	for {
 		select {
 		case <-shutdown:
 			return
 		default:
 		}
-		var job JobRequest
-		if err := decoder.Decode(&job); err != nil {
-			if err == io.EOF {
+		line, readErr := reader.ReadBytes('\n')
+		if len(bytes.TrimSpace(line)) == 0 {
+			if readErr != nil {
 				return
 			}
+			continue
+		}
+		var job JobRequest
+		if err := json.Unmarshal(line, &job); err != nil {
 			core.SendJSON(OutputEvent{Type: "error", Msg: fmt.Sprintf("JSON decode error: %v", err)})
+			if readErr != nil {
+				return
+			}
 			continue
 		}
 		job.EnqueuedAt = time.Now()
