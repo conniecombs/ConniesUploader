@@ -150,3 +150,74 @@ def test_scan_inputs_limit_ignores_non_images_and_duplicates(tmp_path, monkeypat
 
     assert len(file_handler.scan_inputs([str(folder), notes])) == 5
     assert len(file_handler.scan_inputs([str(folder)] * 3)) == 5
+
+
+# --- E1: one bad file must not reject a whole folder -----------------------
+
+
+@pytest.mark.unit
+def test_oversized_file_is_skipped_without_rejecting_folder(tmp_path):
+    folder = tmp_path / "Set1"
+    for name in ("1.jpg", "2.jpg", "3.jpg"):
+        _touch(str(folder / name))
+    with open(folder / "huge.png", "wb") as handle:
+        handle.truncate(config.MAX_FILE_SIZE + 1)
+
+    result = _import_app()._scan_import_inputs([str(folder)])
+
+    assert result["file_count"] == 3
+    assert [os.path.basename(f) for f in result["folder_batches"][0][1]] == [
+        "1.jpg",
+        "2.jpg",
+        "3.jpg",
+    ]
+    assert len(result["rejected_details"]) == 1
+    assert result["rejected_details"][0].startswith("huge.png: ")
+    assert "too large" in result["rejected_details"][0]
+
+
+@pytest.mark.unit
+@pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks unavailable")
+def test_dangling_symlink_is_skipped_without_rejecting_folder(tmp_path):
+    folder = tmp_path / "Set1"
+    for name in ("1.jpg", "2.jpg"):
+        _touch(str(folder / name))
+    os.symlink(str(folder / "gone.jpg"), str(folder / "dangling.jpg"))
+
+    result = _import_app()._scan_import_inputs([str(folder)])
+
+    assert result["file_count"] == 2
+    assert result["folder_count"] == 1
+    assert len(result["rejected_details"]) == 1
+    assert result["rejected_details"][0].startswith("dangling.jpg: ")
+
+
+@pytest.mark.unit
+def test_folder_with_only_bad_files_reports_them_not_empty(tmp_path):
+    folder = tmp_path / "Set1"
+    folder.mkdir()
+    with open(folder / "huge.png", "wb") as handle:
+        handle.truncate(config.MAX_FILE_SIZE + 1)
+
+    result = _import_app()._scan_import_inputs([str(folder)])
+
+    assert result["file_count"] == 0
+    assert result["empty_folders"] == []
+    assert result["rejected_details"][0].startswith("huge.png: ")
+
+
+@pytest.mark.unit
+def test_partial_import_lists_each_skipped_file_in_import_checks(tmp_path):
+    folder = tmp_path / "Set1"
+    for name in ("1.jpg", "2.jpg"):
+        _touch(str(folder / name))
+    with open(folder / "huge.png", "wb") as handle:
+        handle.truncate(config.MAX_FILE_SIZE + 1)
+    app = _import_app()
+
+    app._process_files([str(folder)])
+    _drain_rows(app)
+
+    assert [(g.title, len(g.files)) for g in app.groups] == [("Set1", 2)]
+    assert any(issue.startswith("huge.png: ") for issue in app.import_checks[-1])
+    assert "(1 rejected)" in app.lbl_eta.text

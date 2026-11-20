@@ -234,14 +234,21 @@ class FileQueueMixin:
                 folder_name = os.path.basename(path.rstrip(os.sep)) or path
                 logger.info(f"   📂 Scanning folder: {folder_name}")
                 try:
-                    files_in_folder = file_handler.get_files_from_directory(path)
+                    rejected_in_folder = []
+                    files_in_folder = file_handler.get_files_from_directory(
+                        path, rejected=rejected_in_folder
+                    )
+                    for rejected_path, reason in rejected_in_folder:
+                        result["rejected_details"].append(
+                            f"{os.path.basename(rejected_path)}: {reason}"
+                        )
                     if files_in_folder:
                         files_in_folder.sort(key=config.natural_sort_key)
                         logger.info(f"      ✓ Found {len(files_in_folder)} valid image(s)")
                         result["folder_batches"].append((folder_name, files_in_folder))
                         result["folder_count"] += 1
                         result["file_count"] += len(files_in_folder)
-                    else:
+                    elif not rejected_in_folder:
                         logger.warning(f"      ⚠ No valid images in folder: {folder_name}")
                         result["empty_folders"].append(folder_name)
                 except Exception as e:
@@ -313,7 +320,10 @@ class FileQueueMixin:
         if rejected_count > 0:
             logger.info(f"   ({rejected_count} file(s) rejected)")
             status_msg += f" ({rejected_count} rejected)"
-        self._set_import_checks([])
+            # The good files are queued; list each skipped file and why.
+            self._set_import_checks([f"Rejected files: {rejected_count}", *rejected_details])
+        else:
+            self._set_import_checks([])
         if queued_count > 100:
             status_msg += " - Loading rows and thumbnails..."
             logger.info(f"Loading rows and thumbnails for {queued_count} files...")

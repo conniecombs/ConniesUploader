@@ -10,7 +10,7 @@ import io
 import os
 import re
 from pathlib import Path
-from typing import Iterable, List, Optional, Union
+from typing import Iterable, List, Optional, Tuple, Union
 
 from PIL import Image
 from loguru import logger
@@ -165,11 +165,19 @@ def scan_inputs(inputs: Union[str, List[str]], validate_size: bool = True) -> Li
     return sorted(media_files)
 
 
-def get_files_from_directory(directory: str, validate_size: bool = True) -> List[str]:
+def get_files_from_directory(
+    directory: str,
+    validate_size: bool = True,
+    rejected: Optional[List[Tuple[str, str]]] = None,
+) -> List[str]:
     """Recursively get all valid image files from a directory.
 
     Symlinked directories are not followed to avoid recursive loops and escaping
-    the selected tree. Symlinked files are rejected by validate_regular_file().
+    the selected tree. Symlinked files are resolved and must stay inside it.
+
+    An image file that cannot be used (too large, dangling symlink, unreadable)
+    is skipped, not fatal for the folder; ``(path, reason)`` is appended to
+    ``rejected`` when a list is given.
     """
     files: List[str] = []
     base_dir = Path(directory).resolve()
@@ -193,10 +201,10 @@ def get_files_from_directory(directory: str, validate_size: bool = True) -> List
                         logger.warning(f"Skipping path outside selected directory: {file_path}")
                         continue
                     _validate_media_file(str(resolved), validate_size)
-                except InvalidFileException:
-                    raise
-                except OSError as exc:
-                    logger.warning(f"Skipping unreadable file {file_path}: {exc}")
+                except (InvalidFileException, OSError, RuntimeError) as exc:
+                    logger.warning(f"Skipping unusable file {file_path}: {exc}")
+                    if rejected is not None:
+                        rejected.append((str(file_path), str(exc)))
                     continue
 
                 # Only files that would be queued count towards the limit.
