@@ -1703,3 +1703,104 @@ class TestTemplateFileRobustness:
         assert (imported, skipped) == (1, 1)
         assert len(errors) == 1 and "A" in errors[0]
         assert tm.get_template("A") == "first #all_images#"
+
+
+def _make_editor(mgr, name="BBCode", category=None):
+    """A TemplateEditor wired to fake widgets, in the state __init__ leaves it in."""
+    editor = TemplateEditor.__new__(TemplateEditor)
+    editor.mgr = mgr
+    editor.data_callback = None
+    editor.update_callback = None
+    editor.initial_mode = name
+    editor.current_template_name = ""
+    editor.loaded_content = ""
+    editor.last_preview_output = ""
+    editor.fmt = _FakeVar(name)
+    editor.saved_tmpl_var = _FakeVar(name)
+    editor.template_search_var = _FakeVar("")
+    editor.template_category_var = _FakeVar(category or mgr.CATEGORY_ALL)
+    editor.cb_fmt = _FakeCombo()
+    editor.cb_saved = _FakeCombo()
+    editor.cb_category = _FakeCombo()
+    editor.template_empty_label = _FakeCombo()
+    editor.txt = _FakeText()
+    editor._load_template_content(name)
+    return editor
+
+
+@pytest.mark.unit
+class TestBuiltinTemplatesStay:
+    def test_builtin_templates_cannot_be_deleted_or_renamed(self, tmp_path):
+        path = tmp_path / "templates.json"
+        tm = TemplateManager(str(path))
+
+        with pytest.raises(TemplateValidationError) as deleted:
+            tm.delete_template("Reddit Markdown")
+        with pytest.raises(TemplateValidationError) as renamed:
+            tm.rename_template("BBCode", "Mine")
+
+        assert "built-in" in str(deleted.value)
+        assert "Duplicate" in str(renamed.value)
+        assert "Reddit Markdown" in _read_json(path)
+        assert "BBCode" in tm.get_all_templates()
+        assert "Mine" not in tm.get_all_templates()
+        tm.rename_template("BBCode", "BBCode", "edited #all_images#")
+        assert tm.get_template("BBCode") == "edited #all_images#"
+
+    def test_custom_templates_can_still_be_deleted_and_renamed(self, tmp_path):
+        path = tmp_path / "templates.json"
+        tm = TemplateManager(str(path))
+        tm.set_template("Mine", "#all_images#")
+
+        tm.rename_template("Mine", "Yours")
+        tm.delete_template("Yours")
+
+        restarted = TemplateManager(str(path)).get_all_templates()
+        assert "Mine" not in restarted
+        assert "Yours" not in restarted
+
+    def test_editor_delete_offers_to_reset_an_edited_builtin(self, tmp_path, monkeypatch):
+        path = tmp_path / "templates.json"
+        mgr = TemplateManager(str(path))
+        mgr.set_template("BBCode", "edited #all_images#")
+        editor = _make_editor(mgr, "BBCode")
+        questions = []
+        monkeypatch.setattr(
+            template_manager.messagebox,
+            "askyesno",
+            lambda _title, message: questions.append(message) or True,
+        )
+        monkeypatch.setattr(template_manager.messagebox, "showinfo", lambda *_args: None)
+
+        editor.delete_current()
+
+        assert len(questions) == 1 and "built-in" in questions[0]
+        assert mgr.get_template("BBCode") == mgr.defaults["BBCode"]
+        assert _read_json(path)["BBCode"] == mgr.defaults["BBCode"]
+        assert editor.current_template_name == "BBCode"
+        assert editor._editor_content() == mgr.defaults["BBCode"]
+
+    def test_editor_delete_or_rename_of_an_unchanged_builtin_only_explains(
+        self, tmp_path, monkeypatch
+    ):
+        mgr = TemplateManager(str(tmp_path / "templates.json"))
+        editor = _make_editor(mgr, "Reddit Markdown")
+        infos = []
+
+        def unexpected(*_args, **_kwargs):
+            raise AssertionError("should not ask")
+
+        monkeypatch.setattr(template_manager.messagebox, "askyesno", unexpected)
+        monkeypatch.setattr(template_manager.ctk, "CTkInputDialog", unexpected)
+        monkeypatch.setattr(
+            template_manager.messagebox,
+            "showinfo",
+            lambda _title, message: infos.append(message),
+        )
+
+        editor.delete_current()
+        editor.rename_current()
+
+        assert len(infos) == 2
+        assert all("built-in" in message and "Duplicate" in message for message in infos)
+        assert mgr.get_template("Reddit Markdown") == mgr.defaults["Reddit Markdown"]

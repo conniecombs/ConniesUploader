@@ -369,7 +369,19 @@ class TemplateManager:
     def add_template(self, name: str, content: str) -> None:
         self.set_template(name, content)
 
+    def is_builtin_template(self, name: str) -> bool:
+        """Built-in templates always exist: every load restores them, so they can be
+        edited but not deleted or renamed away."""
+        return name in self.defaults
+
     def delete_template(self, name: str) -> None:
+        if self.is_builtin_template(name):
+            raise TemplateValidationError(
+                [
+                    f"'{name}' is a built-in template and can't be deleted. "
+                    "Use Duplicate to make a copy you can rename or delete."
+                ]
+            )
         if name in self.templates:
             del self.templates[name]
             self.save(validate=False)
@@ -385,6 +397,13 @@ class TemplateManager:
         clean_name = str(new_name or "").strip()
         if not clean_name:
             raise TemplateValidationError(["Template name is required."])
+        if clean_name != old_name and self.is_builtin_template(old_name):
+            raise TemplateValidationError(
+                [
+                    f"'{old_name}' is a built-in template and can't be renamed. "
+                    "Use Duplicate to copy it under a new name."
+                ]
+            )
         template_content = self.templates[old_name] if content is None else content
         self.validate_template(template_content, raise_on_error=True, template_name=clean_name)
         updated = dict(self.templates)
@@ -1595,6 +1614,13 @@ class TemplateEditor(ctk.CTkToplevel):
 
     def rename_current(self):
         old_name = self.current_template_name
+        if self.mgr.is_builtin_template(old_name):
+            messagebox.showinfo(
+                "Built-in Template",
+                f"'{old_name}' is a built-in template and can't be renamed.\n\n"
+                "Use Duplicate to copy it under a new name.",
+            )
+            return
         dialog = ctk.CTkInputDialog(text=f"Rename '{old_name}' to:", title="Rename Template")
         new_name = dialog.get_input()
         if not new_name:
@@ -1622,8 +1648,36 @@ class TemplateEditor(ctk.CTkToplevel):
         if self.update_callback:
             self.update_callback(clean_name)
 
+    def _reset_builtin_template(self, name: str) -> None:
+        original = self.mgr.defaults[name]
+        if self.mgr.get_template(name) == original and not self.is_dirty():
+            messagebox.showinfo(
+                "Built-in Template",
+                f"'{name}' is a built-in template and can't be deleted.\n\n"
+                "Use Duplicate to make a copy you can rename or delete.",
+            )
+            return
+        if not messagebox.askyesno(
+            "Built-in Template",
+            f"'{name}' is a built-in template and can't be deleted.\n\n"
+            "Reset it to its original text instead? Your changes to it will be lost.",
+        ):
+            return
+        try:
+            self.mgr.set_template(name, original)
+        except (TemplateValidationError, OSError) as exc:
+            self._show_validation_errors("Reset Failed", exc)
+            return
+        self._load_template_content(name)
+        messagebox.showinfo("Template Reset", f"Reset '{name}' to its original text.")
+        if self.update_callback:
+            self.update_callback(name)
+
     def delete_current(self):
         name = self.current_template_name
+        if self.mgr.is_builtin_template(name):
+            self._reset_builtin_template(name)
+            return
         if not messagebox.askyesno("Delete Template", f"Delete template '{name}'?"):
             return
         try:

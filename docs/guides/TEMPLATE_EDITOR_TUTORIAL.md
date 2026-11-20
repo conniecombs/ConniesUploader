@@ -79,6 +79,7 @@ Access the editor from the menu bar: **Tools > Template Editor**.
   > Make sure you have at least one image in the main window queue before previewing, so the preview has real data to display!
 * **Copy Preview Output**: Compiles the template against the current queue data and copies the raw output text straight to your clipboard for fast testing.
 * **Save Current vs. Save As New...**: `Save Current` overwrites the active template; `Save As New...` prompts for a new name and creates a copy.
+* **Built-in templates** can be edited but not deleted or renamed: the app restores them each time it starts. **Delete** on a built-in you have edited offers to reset it to its original text; use **Duplicate** to make a copy you can rename or delete.
 
 ---
 

@@ -547,8 +547,8 @@ Safe custom starter:
 | `Saved Templates` | Selects an existing template to load into the editor. |
 | `Load` | Loads the chosen saved template. |
 | `Duplicate` | Copies the current template to a new name. |
-| `Rename` | Renames the current template while keeping its content. |
-| `Delete` | Deletes the current template after confirmation. |
+| `Rename` | Renames the current custom template while keeping its content. Built-in templates can't be renamed; use `Duplicate` instead. |
+| `Delete` | Deletes the current custom template after confirmation. Built-in templates can't be deleted, because the app restores them every time it starts; for a built-in you have edited, `Delete` offers to reset it to its original text. |
 | `Import` | Imports templates from a JSON export file. |
 | `Export` | Exports saved templates to JSON. |
 | `B`, `I`, `U` | Inserts or wraps selected text with bold, italic, or underline formatting. |
