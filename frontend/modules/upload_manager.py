@@ -496,7 +496,11 @@ class UploadManager:
                     if gallery_upload_hash:
                         group_cfg["gallery_upload_hash"] = gallery_upload_hash
 
-                if hasattr(group_obj, "gallery_id") and group_obj.gallery_id:
+                if (
+                    hasattr(group_obj, "gallery_id")
+                    and group_obj.gallery_id
+                    and self._gallery_is_for_service(group_obj, group_cfg.get("service", ""))
+                ):
                     gid = group_obj.gallery_id
                     group_cfg["gallery_id"] = gid
                     group_cfg["gallery_hash"] = gid
@@ -592,6 +596,20 @@ class UploadManager:
         except Exception as exc:
             logger.debug(f"Could not ask {cfg.get('service')} about session galleries: {exc}")
             return False
+
+    @staticmethod
+    def _gallery_is_for_service(group_obj: Any, service_id: str) -> bool:
+        """True unless the batch's gallery was chosen for a different host.
+
+        A gallery picked in Gallery Manager records its host. After the user
+        switches hosts, that host's id must not be sent to the new host.
+        """
+        gallery_service = config.normalize_service_id(
+            str(getattr(group_obj, "gallery_service", "") or "")
+        )
+        if not gallery_service:
+            return True
+        return gallery_service == config.normalize_service_id(str(service_id or ""))
 
     @staticmethod
     def _cover_count_for_service(cfg: Dict[str, Any]) -> int:

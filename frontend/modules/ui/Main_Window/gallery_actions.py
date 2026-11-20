@@ -395,10 +395,13 @@ class GalleryActionsMixin:
         service_id = config.normalize_service_id(service_id)
         group_gallery_id = str(getattr(group, "gallery_id", "") or "").strip()
         group_gallery_url = str(getattr(group, "gallery_url", "") or "").strip()
+        group_service = ""
         if group_gallery_id or group_gallery_url:
             group_service = config.normalize_service_id(
                 getattr(group, "gallery_service", "") or service_id
             )
+        # A gallery assigned for another host is not this upload's gallery.
+        if group_service and group_service == service_id:
             if not group_gallery_id:
                 group_gallery_id = self._gallery_id_from_url(group_service, group_gallery_url)
             group_gallery_url = str(
