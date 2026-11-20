@@ -187,7 +187,7 @@ class ServiceSettingsView:
         if not hasattr(self.app, "var_turbo_content"):
             self.app.var_turbo_content = ctk.StringVar(value="Safe")
         if not hasattr(self.app, "var_turbo_thumb"):
-            self.app.var_turbo_thumb = ctk.StringVar(value="180")
+            self.app.var_turbo_thumb = ctk.StringVar(value="200")
         if not hasattr(self.app, "var_turbo_cover_count"):
             self.app.var_turbo_cover_count = ctk.StringVar(value="0")
         if not hasattr(self.app, "var_turbo_links"):

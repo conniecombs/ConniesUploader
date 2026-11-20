@@ -65,7 +65,7 @@ class CoverHelpersMixin:
         if service_id == config.PIXHOST_SERVICE_ID:
             return str(settings.get("pix_thumb", "200"))
         if service_id == "turboimagehost":
-            return str(settings.get("turbo_thumb", "180"))
+            return str(settings.get("turbo_thumb", "200"))
         if service_id == "vipr.im":
             thumb_size = str(settings.get("vipr_thumb", "170x170"))
             return thumb_size.split("x")[0] if "x" in thumb_size else thumb_size

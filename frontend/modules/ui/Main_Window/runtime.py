@@ -1068,7 +1068,7 @@ class RuntimeMixin:
         elif svc == config.PIXHOST_SERVICE_ID:
             thumb_size = self.settings.get("pix_thumb", "200")
         elif svc == "turboimagehost":
-            thumb_size = self.settings.get("turbo_thumb", "180")
+            thumb_size = self.settings.get("turbo_thumb", "200")
         elif svc == "vipr.im":
             thumb_size = self.settings.get("vipr_thumb", "170x170")
             if "x" in str(thumb_size):

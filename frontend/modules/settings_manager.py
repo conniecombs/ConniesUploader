@@ -150,7 +150,7 @@ class SettingsManager:
             "pix_mk_gal": False,
             "pix_threads": 3,
             "turbo_content": "Safe",
-            "turbo_thumb": "180",
+            "turbo_thumb": "200",
             "turbo_cover_count": 0,  # Was turbo_cover
             "turbo_threads": 2,
             "output_format": "BBCode",
