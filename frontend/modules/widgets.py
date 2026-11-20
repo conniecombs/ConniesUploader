@@ -131,6 +131,7 @@ class ServiceSettingsView:
         "imagebam.com": {
             "content_type": "imagebam_content",
             "thumbnail_size": "imagebam_thumb",
+            "gallery_id": "imagebam_gallery_id",
         },
         "imgur.com": {
             "thumbnail_size": "imgur_thumb",
@@ -266,11 +267,14 @@ class ServiceSettingsView:
     def _settings_for_service(self, service_id):
         service_id = config.normalize_service_id(service_id)
         settings = dict(getattr(self.app, "settings", {}) or {})
+        # Plain schema keys (gallery_id, thumbnail_size, ...) were saved for the
+        # host selected at the time; another host must not inherit them.
+        saved_service = config.normalize_service_id(settings.get("service", ""))
         for schema_key, legacy_key in self.SERVICE_ALIASES.get(service_id, {}).items():
             if legacy_key in settings:
                 settings[schema_key] = settings[legacy_key]
-        if service_id == "imx.to" and "imx_gallery_id" not in settings:
-            settings["gallery_id"] = settings.get("gallery_id", "")
+            elif saved_service != service_id:
+                settings.pop(schema_key, None)
         return settings
 
     def _install_legacy_aliases(self, service_id, handle):

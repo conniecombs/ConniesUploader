@@ -113,6 +113,7 @@ class SettingsManager:
             "imx_gallery_id": {"type": "string"},
             "pix_gallery_hash": {"type": "string"},
             "turbo_gallery_id": {"type": "string"},
+            "imagebam_gallery_id": {"type": "string"},
         },
         "additionalProperties": True,  # Allow extra fields for forward compatibility
     }

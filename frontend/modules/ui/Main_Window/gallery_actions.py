@@ -53,6 +53,16 @@ from .common import (  # noqa: F401
     viper_ui,
 )
 
+# Each host's own gallery field: (per-host settings key, plain schema key).
+# Vipr's gallery comes from its dropdown and is handled separately.
+_GALLERY_FIELD_KEYS = {
+    "imx.to": ("imx_gallery_id", "gallery_id"),
+    config.PIXHOST_SERVICE_ID: ("pix_gallery_hash", "gallery_hash"),
+    "turboimagehost": ("turbo_gallery_id", "gallery_id"),
+    "imagebam.com": ("imagebam_gallery_id", "gallery_id"),
+    "imgur.com": ("imgur_album_id", "album_id"),
+}
+
 
 class GalleryActionsMixin:
     def on_gallery_created(self, service, gid=None, record=None):
@@ -303,10 +313,29 @@ class GalleryActionsMixin:
             "upload_hash": str(record.get("upload_hash") or ""),
         }
 
+    @staticmethod
+    def _gallery_field_value(service_id: str, cfg: Dict[str, Any]) -> Optional[str]:
+        """Return the host's own gallery field, or None when cfg does not carry it.
+
+        Only the host's per-host key counts, plus the plain schema key when the
+        host is cfg["service"]: a gallery ID typed for one host never applies
+        to another.
+        """
+        service_id = config.normalize_service_id(service_id)
+        keys = _GALLERY_FIELD_KEYS.get(service_id)
+        if not keys:
+            return None
+        host_key, plain_key = keys
+        owner = config.normalize_service_id(cfg.get("service") or service_id)
+        candidates = (plain_key, host_key) if owner == service_id else (host_key,)
+        present = [key for key in candidates if key in cfg]
+        if not present:
+            return None
+        values = (str(cfg.get(key) or "").strip() for key in present)
+        return next((value for value in values if value), "")
+
     def _gallery_id_from_settings(self, service_id: str, cfg: Dict[str, Any]) -> str:
         service_id = config.normalize_service_id(service_id)
-        if service_id == config.PIXHOST_SERVICE_ID:
-            return str(cfg.get("gallery_hash") or cfg.get("pix_gallery_hash") or "").strip()
         if service_id == "vipr.im":
             gallery_name = str(cfg.get("vipr_gallery_name") or "").strip()
             if not gallery_name or gallery_name == "None":
@@ -315,9 +344,7 @@ class GalleryActionsMixin:
                 cfg.get("vipr_gal_id") or self.vipr_galleries_map.get(gallery_name) or ""
             ).strip()
             return "" if mapped_id == "0" else mapped_id
-        if service_id == "imx.to":
-            return str(cfg.get("gallery_id") or cfg.get("imx_gallery_id") or "").strip()
-        return str(cfg.get("gallery_id") or cfg.get("turbo_gallery_id") or "").strip()
+        return self._gallery_field_value(service_id, cfg) or ""
 
     def _gallery_for_group(
         self, group: Any, service_id: str, cfg: Dict[str, Any]
