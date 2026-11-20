@@ -205,9 +205,15 @@ func processUploadFiles(job JobRequest, processor func(context.Context, string, 
 			Type: "log",
 			Msg:  fmt.Sprintf("Preparing shared upload session for %d files (service %s)", len(job.Files), job.Service),
 		})
-		sessionCtx, sessionCancel := context.WithTimeout(context.Background(), core.PreRequestTimeout*3)
+		// Derived from the batch so Stop ends the login at once.
+		sessionCtx, sessionCancel := context.WithTimeout(batchCtx, core.PreRequestTimeout*3)
 		err := core.PrepareSharedUploadSession(sessionCtx, client, &job)
 		sessionCancel()
+		if err != nil && batchCtx.Err() != nil {
+			emitCancelledFiles(&job, job.Files)
+			sendJobEvent(&job, OutputEvent{Type: "batch_complete", Status: "done"})
+			return
+		}
 		if err != nil {
 			msg := fmt.Sprintf("session setup failed: %v", err)
 			for _, fp := range job.Files {

@@ -141,6 +141,7 @@ func ExecuteHttpUploadWithData(ctx context.Context, client *http.Client, fp stri
 	retryConfig := retryConfigForJob(job)
 
 	var sessionClient *http.Client
+	var loginValues map[string]string // what this file's own pre_request extracted
 	if job.SessionClient != nil {
 		sessionClient = job.SessionClient
 		emitUploadLog(job, fp, fmt.Sprintf("Reusing job session: %s", filepath.Base(fp)))
@@ -156,6 +157,7 @@ func ExecuteHttpUploadWithData(ctx context.Context, client *http.Client, fp stri
 		for k, v := range preValues {
 			extractedValues[k] = v
 		}
+		loginValues = preValues
 		sessionClient = uploadClientWithPreRequestCookies(client, preClient)
 	}
 
@@ -178,7 +180,14 @@ func ExecuteHttpUploadWithData(ctx context.Context, client *http.Client, fp stri
 		// already seen the file, so sending it again cannot help.
 		Failure error
 	}
-	secrets := uploadSecrets(job)
+	secrets := uploadSecrets(job, loginValues)
+	// The job's files share one resolve state: it records the order their
+	// uploads finished, how many attempts reached the host, and which
+	// result-page entries the files already hold.
+	var jobState *resolveState
+	if job != nil && job.ResolveSpec != nil {
+		jobState = jobResolveState(job)
+	}
 
 	res, err := RetryWithBackoff(ctx, retryConfig, func() (_ uploadResult, _ int, attemptErr error) {
 		pr, pw := io.Pipe()
@@ -247,7 +256,14 @@ func ExecuteHttpUploadWithData(ctx context.Context, client *http.Client, fp stri
 		// stalls or the host stops answering, and a failure after the body was
 		// sent is never retried because the host may have stored the file.
 		attempt := newUploadAttempt(ctx)
-		defer func() { attemptErr = attempt.finish(attemptErr) }()
+		defer func() {
+			attemptErr = attempt.finish(attemptErr)
+			// The host may have stored the image of any attempt it received,
+			// failed and retried ones included, and list it on the result page.
+			if jobState != nil && (attempt.bodySent.Load() || attempt.gotResponse.Load()) {
+				jobState.recordSent()
+			}
+		}()
 
 		req, err := http.NewRequestWithContext(attempt.ctx, method, uploadURL, attempt.body(pr))
 		if err != nil {
@@ -297,6 +313,12 @@ func ExecuteHttpUploadWithData(ctx context.Context, client *http.Client, fp stri
 				failure := uploadFailure(problem.reason, resp.StatusCode, problem.body, secrets)
 				return uploadResult{Failure: failure}, resp.StatusCode, nil
 			}
+			// A follow-up request the host refused: quote its message like
+			// any other refusal, never the whole page.
+			var statusErr *HTTPStatusError
+			if errors.As(err, &statusErr) {
+				return uploadResult{Failure: followUpFailure(statusErr, secrets)}, resp.StatusCode, nil
+			}
 			return uploadResult{}, resp.StatusCode, err
 		}
 		if strings.TrimSpace(parsed.URL) == "" {
@@ -312,11 +334,7 @@ func ExecuteHttpUploadWithData(ctx context.Context, client *http.Client, fp stri
 	if res.Failure != nil {
 		return HTTPUploadResult{}, res.Failure
 	}
-	// The job's files share one resolve state: it records the order their
-	// uploads finished and which result-page entries they already hold.
-	var jobState *resolveState
-	if job != nil && job.ResolveSpec != nil {
-		jobState = jobResolveState(job)
+	if jobState != nil {
 		jobState.recordFinished(fp)
 	}
 	if jobState != nil && strings.TrimSpace(res.URL) != "" && strings.TrimSpace(res.Thumb) == "" {
@@ -1099,7 +1117,8 @@ func applyResponseTemplate(template string, data map[string]interface{}, fp stri
 
 // splitURLExtension splits a link into everything before the extension of its
 // path and the extension itself ("https://h/a/x.jpg" -> "https://h/a/x",
-// ".jpg"). The query and fragment are dropped.
+// ".jpg"). The query and fragment are dropped. The path keeps the link's own
+// escaping: "%2F" stays "%2F" and "(" stays "(".
 func splitURLExtension(link string) (string, string) {
 	link = strings.TrimSpace(link)
 	if link == "" {
@@ -1110,13 +1129,13 @@ func splitURLExtension(link string) (string, string) {
 		return link, ""
 	}
 	parsed.RawQuery, parsed.ForceQuery, parsed.Fragment, parsed.RawFragment = "", false, "", ""
-	ext := path.Ext(parsed.Path)
-	if ext == "" {
-		return parsed.String(), ""
+	// Without a query or fragment the link ends with its escaped path.
+	stripped := parsed.String()
+	ext := path.Ext(parsed.EscapedPath())
+	if ext == "" || !strings.HasSuffix(stripped, ext) {
+		return stripped, ""
 	}
-	parsed.Path = strings.TrimSuffix(parsed.Path, ext)
-	parsed.RawPath = ""
-	return parsed.String(), ext
+	return strings.TrimSuffix(stripped, ext), ext
 }
 
 func findJSONScalar(value interface{}, key string) string {
@@ -1510,7 +1529,7 @@ func resolveFromResultPage(
 		}
 
 		if len(pending) > 0 {
-			lastErr = fmt.Errorf("result page missing %d link(s)", len(pending))
+			lastErr = matcher.missingError(len(pending))
 		}
 	}
 

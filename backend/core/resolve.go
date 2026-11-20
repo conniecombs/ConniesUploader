@@ -4,6 +4,8 @@
 package core
 
 import (
+	"errors"
+	"fmt"
 	"net/url"
 	"path"
 	"regexp"
@@ -11,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"unicode"
+
+	"golang.org/x/text/unicode/norm"
 )
 
 // File match modes of a resolve_spec.
@@ -23,9 +27,9 @@ const (
 )
 
 // ResolveNeedsSequentialUploads reports whether a job's files must upload one
-// at a time. upload_order gives the n-th upload of the job to finish the n-th
-// entry of the result page, which is only well defined when uploads in the
-// shared session do not overlap.
+// at a time. upload_order gives each upload the newest entry of the result
+// page, which is only well defined when uploads in the shared session do not
+// overlap.
 func ResolveNeedsSequentialUploads(spec *BatchResolveSpec) bool {
 	return spec != nil && normalizeMatchMode(spec.FileMatchMode) == matchModeUploadOrder
 }
@@ -113,8 +117,10 @@ func pageNameForms(value string) nameForms {
 	return newNameForms(strings.TrimSuffix(strings.ToLower(value), ".html"))
 }
 
+// newNameForms compares names in Unicode NFC: macOS file names are often
+// decomposed ("e" + U+0301) while hosts list the composed "é".
 func newNameForms(name string) nameForms {
-	exact := strings.ToLower(strings.TrimSpace(name))
+	exact := norm.NFC.String(strings.ToLower(strings.TrimSpace(name)))
 	similar := strings.Join(strings.FieldsFunc(exact, func(r rune) bool {
 		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
 	}), " ")
@@ -165,6 +171,12 @@ type resolveState struct {
 	claimedThumbs map[string]string // thumbnail URL -> file
 	resolved      map[string]bool   // files that hold an entry
 	finished      map[string]int    // file -> position among finished uploads
+
+	// For upload_order, when each file is resolved right after its own
+	// upload (an upload job rather than a batch lookup afterwards):
+	afterEachUpload bool
+	sentSinceClaim  int             // upload attempts that reached the host since the last claim
+	settled         map[string]bool // entries passed over by a file that could not be resolved
 }
 
 func newResolveState() *resolveState {
@@ -173,6 +185,7 @@ func newResolveState() *resolveState {
 		claimedThumbs: make(map[string]string),
 		resolved:      make(map[string]bool),
 		finished:      make(map[string]int),
+		settled:       make(map[string]bool),
 	}
 }
 
@@ -185,8 +198,18 @@ func jobResolveState(job *JobRequest) *resolveState {
 	defer resolveStateInit.Unlock()
 	if job.resolveState == nil {
 		job.resolveState = newResolveState()
+		job.resolveState.afterEachUpload = true
 	}
 	return job.resolveState
+}
+
+// recordSent notes an upload attempt of the job that reached the host (its
+// body was sent, or the host answered), so the host may have stored its image
+// whether or not the attempt succeeded.
+func (s *resolveState) recordSent() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sentSinceClaim++
 }
 
 // recordFinished notes that fp's upload has finished, after every upload of
@@ -204,6 +227,9 @@ type resolveMatcher struct {
 	mode  string
 	names map[string]nameForms // every file of the job -> its name
 	state *resolveState
+	// unresolvable explains why the last look could not give a pending file
+	// an entry, when that is more than "not listed yet".
+	unresolvable string
 }
 
 func newResolveMatcher(mode string, fileNames map[string]string, state *resolveState) *resolveMatcher {
@@ -250,14 +276,28 @@ func (m *resolveMatcher) assign(entries []resolveEntry, pending []string, final 
 		}
 		m.state.claimed[entry.ImageURL] = fp
 		m.state.resolved[fp] = true
+		if m.mode == matchModeUploadOrder {
+			m.state.sentSinceClaim = 0
+		}
 		assigned[fp] = entry
 	}
 	return assigned
 }
 
+// missingError explains why files are still without an entry.
+func (m *resolveMatcher) missingError(pending int) error {
+	if m.unresolvable != "" {
+		return errors.New(m.unresolvable)
+	}
+	return fmt.Errorf("result page missing %d link(s)", pending)
+}
+
 func (m *resolveMatcher) choose(fp string, entries []resolveEntry, final bool) (resolveEntry, bool) {
 	switch m.mode {
 	case matchModeUploadOrder:
+		if m.state.afterEachUpload {
+			return m.chooseLatestUpload(entries, final)
+		}
 		return m.chooseByUploadOrder(fp, entries)
 	case matchModeFirst, matchModeSingle:
 		for _, entry := range entries {
@@ -269,6 +309,47 @@ func (m *resolveMatcher) choose(fp string, entries []resolveEntry, final bool) (
 	default:
 		return m.chooseByName(fp, entries, final)
 	}
+}
+
+// chooseLatestUpload picks the entry of the upload that just finished, for a
+// job whose files upload one at a time, each resolved right after its upload.
+//
+// The page lists the session's images in upload order, and that includes the
+// images of attempts that failed after the host stored them (a lost answer, a
+// 5xx that was retried, a 2xx without a link). So the entries after the last
+// one the job holds are those of the attempts that reached the host since,
+// and this file's own last attempt is the newest of them.
+//
+// Until the page lists as many new entries as attempts reached the host, it
+// may not list this upload yet, so the file waits. On the last look, fewer
+// entries mean some failed attempts left nothing, and the newest is still
+// this upload's. More entries than attempts cannot be told apart: the file
+// fails, and the entries it passed over are left behind for later files.
+func (m *resolveMatcher) chooseLatestUpload(entries []resolveEntry, final bool) (resolveEntry, bool) {
+	start := 0
+	for i, entry := range entries {
+		if m.state.claimed[entry.ImageURL] != "" || m.state.settled[entry.ImageURL] {
+			start = i + 1
+		}
+	}
+	fresh := entries[start:]
+	sent := max(m.state.sentSinceClaim, 1) // this file's own upload reached the host
+	switch {
+	case len(fresh) == 0:
+	case len(fresh) == sent, len(fresh) < sent && final:
+		return fresh[len(fresh)-1], true
+	case len(fresh) > sent && final:
+		m.unresolvable = fmt.Sprintf(
+			"cannot tell which result-page entry is this upload's: the page lists %d new entries, but only %d upload(s) reached the host",
+			len(fresh), sent)
+		// The job's next file uploads after this look, so none of these
+		// entries can be its own.
+		for _, entry := range fresh {
+			m.state.settled[entry.ImageURL] = true
+		}
+		m.state.sentSinceClaim = 0
+	}
+	return resolveEntry{}, false
 }
 
 // chooseByUploadOrder gives the n-th finished upload the n-th entry. A page
@@ -326,11 +407,16 @@ func (m *resolveMatcher) chooseByName(fp string, entries []resolveEntry, final b
 	return resolveEntry{}, false
 }
 
-// reservedForAnother reports whether another unresolved file of the job
-// matches entry better than fp does.
+// reservedForAnother reports whether entry is held back for another file of
+// the job that matches it better than fp does. Only a file whose upload has
+// finished and that holds no entry yet can hold one back: a file still
+// queued, or whose upload failed, is not on the page to be matched.
 func (m *resolveMatcher) reservedForAnother(entry resolveEntry, fp string, tier int) bool {
 	for other, forms := range m.names {
 		if other == fp || m.state.resolved[other] {
+			continue
+		}
+		if _, finished := m.state.finished[other]; !finished {
 			continue
 		}
 		if otherTier := entryMatch(entry, forms); otherTier != noMatch && otherTier < tier {

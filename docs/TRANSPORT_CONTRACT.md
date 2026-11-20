@@ -117,7 +117,8 @@ forum post or gallery call never waits behind queued uploads. Go reads stdin
 without blocking on busy workers, however many jobs are queued.
 
 `cancel` is handled as soon as it is read from stdin, even while every worker
-is busy. In-flight uploads of that batch are aborted and report
+is busy. In-flight uploads of that batch, and a multi-file job's shared
+`pre_request` login still running, are aborted at once and report
 `status: "Cancelled"` plus an `error` event; jobs still queued for that batch
 emit `Cancelled` for each file instead of uploading; every job still ends with
 `batch_complete`.
@@ -155,12 +156,14 @@ not finished. After `batch_complete`, any file of that job without a terminal
 event is failed by Python.
 
 An upload is `Done` only when it produced a viewer link. A non-2xx upload
-response, a failed `status_path` check, a body the parser cannot read, or a
-response (after any resolution) without a link ends as `Failed`. The error
+response, a non-2xx answer to the response parser's `follow_up_request`, a
+failed `status_path` check, a body the parser cannot read, or a response
+(after any resolution) without a link ends as `Failed`. The error
 names the HTTP status and the host's own message (a JSON `error`, `message`,
 `msg`, or similar field) or else a short plain-text snippet of the response,
-with job credentials redacted. Go does not re-send such an upload: the host
-already answered.
+with job credentials and every value the `pre_request` login step extracted
+redacted (whether it ran once for the job or for the file alone). Go does not
+re-send such an upload: the host already answered.
 
 ## Deprecated Compatibility Hooks
 
@@ -203,7 +206,8 @@ A `response_parser`'s `url_template` and `thumb_template` take `{filename}`,
 `{basename}`, `{ext}`, `{dot_ext}` (all from the local file) and JSON response
 values by key or dotted path. A `thumb_template` can also build on the parsed
 link: `{url_no_ext}` is the link up to the extension of its path, without query
-or fragment, and `{url_dot_ext}` is that extension (`.jpg`), so
+or fragment and with the link's own escaping kept (`%2F` stays `%2F`, `(`
+stays `(`), and `{url_dot_ext}` is that extension (`.jpg`), so
 `{url_no_ext}m{url_dot_ext}` turns `https://h/AbC.jpg` into `https://h/AbCm.jpg`.
 
 ## Result Resolution (`resolve_spec`)
@@ -220,11 +224,15 @@ when their lookups run at the same time.
 
 - `filename` (default): the entry whose name (the `filename` group, else the
   last segment of `image_url`) equals the file's base name, ignoring case.
+  Both names are compared in Unicode NFC, so a decomposed macOS name
+  (`e` + U+0301) matches the composed `é` a host lists.
   Next, the same name once punctuation is ignored (a host that turned
   `Scan #1.jpg` into `Scan__1.jpg`). Only on the last poll, when neither is
   listed, a host name that contains the file's name as whole words
   (`4411_beach.jpg` for `beach.jpg`). An entry that another file of the job
-  matches more closely is left for that file. Local file names are never
+  matches more closely is left for that file, if that file's upload has
+  finished and it holds no entry yet; a file still queued, or whose upload
+  failed, holds nothing back. Local file names are never
   parsed as URLs; a page value is reduced to its last path segment only when
   it is a link, and its percent-escapes are decoded. Files of the job with
   the same name take the page's entries in the order their uploads finished.
@@ -233,11 +241,23 @@ when their lookups run at the same time.
 - `first` / `single`: the first entry no other file of the job holds.
 - `upload_order`: for hosts whose result page lists every image of the
   job's shared upload session, in upload order, with links that carry no
-  file names. The n-th upload of the job to finish takes the n-th entry; a
-  page with exactly one entry belongs to that one upload (a session per
-  file). Order is only defined when the session's uploads do not overlap, so
-  Go runs such a job's files one at a time whatever `threads` says. The cost
-  is the job's upload parallelism: its files upload, and are resolved, one
+  file names. Order is only defined when the session's uploads do not
+  overlap, so Go runs such a job's files one at a time whatever `threads`
+  says, and each file takes the newest entry after the last one a file of
+  the job holds: its own last upload attempt. The page also lists the images
+  of attempts that failed after the host stored them (a lost answer, a 5xx
+  that was retried, a 2xx without a link), so the n-th successful upload is
+  not the n-th entry; a file never takes an earlier attempt's entry. Go
+  counts the attempts that reached the host since the last resolved file and
+  waits until the page lists that many new entries, since it may not list
+  the upload yet; on the last poll, fewer new entries mean failed attempts
+  the host did not keep, and the newest is taken. If the page lists more new
+  entries than attempts reached the host, the file fails with "cannot tell
+  which result-page entry is this upload's" and later files start after
+  those entries. A page with exactly one entry (a session per file) belongs
+  to that one upload. For `http_batch_resolve`, the files are taken to have
+  uploaded in the order given and the n-th takes the n-th entry. The cost is
+  the job's upload parallelism: its files upload, and are resolved, one
   after another.
 
 ## Guardrails
