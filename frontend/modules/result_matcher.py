@@ -489,7 +489,9 @@ def resolve_from_result_page(
     """Poll ``result_url`` on the job's transport until ``file_path`` is listed.
 
     The page is read once, then again after each delay of ``poll_delays_ms``;
-    the last look also accepts loose matches. ``gallery_extractor`` (a CSS
+    the last look also accepts loose matches. Each look is one request
+    without the sidecar's retries, as in the legacy resolver: a look that
+    fails (a 503, a timeout) waits for the next one of the schedule. ``gallery_extractor`` (a CSS
     selector, ``regex:<pattern>``, or a function of the page) gives the
     result's gallery_url. A file without both an image and a thumbnail link
     by the last look fails with the reason.
@@ -503,7 +505,7 @@ def resolve_from_result_page(
         if attempt:
             if not transport.pause(poll_delays_ms[attempt - 1] / 1000.0):
                 return UploadResult.failed(REQUEST_CANCELLED_MSG)
-        response = transport.get(result_url)
+        response = transport.get(result_url, retry=False)
         if getattr(response, "status", "") == "cancelled":
             return UploadResult.failed(REQUEST_CANCELLED_MSG)
         if not response.ok:

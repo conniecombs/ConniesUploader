@@ -613,11 +613,13 @@ class PageTransport:
     def __init__(self, pages, cancel_after=None):
         self.pages = list(pages)
         self.gets = []
+        self.retries = []
         self.pauses = []
         self.cancel_after = cancel_after
 
-    def get(self, url, **_):
+    def get(self, url, *, retry=True, **_):
         self.gets.append(url)
+        self.retries.append(retry)
         page = self.pages[min(len(self.gets), len(self.pages)) - 1]
         if isinstance(page, int):
             return TransportResponse(
@@ -654,6 +656,9 @@ def test_resolve_from_result_page_polls_until_the_file_is_listed():
     assert result.thumb.endswith("2_a.jpg")
     assert result.gallery_url == "https://h/g/9"
     assert transport.pauses == [0.5, 1.0]
+    # Each look is one request, as in the legacy resolver: a failed look waits
+    # for the next one of the schedule, not for the sidecar's retry backoff.
+    assert transport.retries == [False, False, False]
 
 
 def test_resolve_from_result_page_reports_why_it_gave_up():

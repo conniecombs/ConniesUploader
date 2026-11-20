@@ -410,6 +410,12 @@ with "cannot tell which result-page entry is this upload's"; needs
 `resolve_from_result_page` polls with your delays, extracts entries with your
 regex (named groups `image_url`, `thumb_url`, optional `filename`), matches,
 and returns `UploadResult(url, thumb, gallery_url)` or the reason it gave up.
+Each look is one request without the sidecar's retries (`retry=False`), as in
+the legacy resolver: a look that gets a 408, 429 or 5xx waits for the next
+look of your schedule, not for the retry backoff (about 14 s). Login and
+upload-page requests keep the default retries, as the legacy `pre_request`
+did; so a 503 there is reported as "HTTP 503" without the page, after the
+retries.
 
 ### 8.5 Tests a migration needs
 

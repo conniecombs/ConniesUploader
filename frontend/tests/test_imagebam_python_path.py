@@ -401,6 +401,22 @@ def test_a_session_that_creates_a_gallery_is_never_sent_twice(config, retry):
     assert transport.sent[-1][4] is retry
 
 
+def test_the_login_and_the_home_page_are_retried_like_the_legacy_pre_request():
+    transport = ScriptedTransport(
+        ok("<input name='_token' value='tok-1234'>"),
+        ok("<form action='https://www.imagebam.com/auth/logout'></form>"),
+        ok('<meta name="csrf-token" content="csrf-1234">'),
+        ok('{"data": "780001", "session": "S1"}'),
+    )
+    ImageBamPlugin().open_upload_session(transport, {}, CREDS)
+    assert [(sent[0], sent[1], sent[4]) for sent in transport.sent] == [
+        ("GET", f"{SITE}/auth/login", True),
+        ("POST", f"{SITE}/auth/login", True),
+        ("GET", f"{SITE}/", True),
+        ("POST", f"{SITE}/upload/session", True),
+    ]
+
+
 @pytest.mark.parametrize(
     ("config", "token"),
     [
@@ -448,9 +464,11 @@ class PageTransport:
     def __init__(self, *pages):
         self.pages = list(pages)
         self.gets = []
+        self.retries = []
 
-    def get(self, url, **_):
+    def get(self, url, *, retry=True, **_):
         self.gets.append(url)
+        self.retries.append(retry)
         return ok(self.pages[min(len(self.gets), len(self.pages)) - 1])
 
     def pause(self, seconds):
@@ -476,6 +494,7 @@ def test_an_answer_is_resolved_on_its_result_page_with_the_gallery_link():
         "",
     )
     assert transport.gets == ["https://www.imagebam.com/upload/complete/780001"]
+    assert transport.retries == [False], "a failed look waits for the next poll, as before"
 
 
 @pytest.mark.parametrize(

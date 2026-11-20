@@ -35,32 +35,54 @@ def page(body, status=200, url="https://www.turboimagehost.com/"):
     return TransportResponse(True, "success", body, status, url, {}, {})
 
 
-def refused(status, body, url="https://www.turboimagehost.com/"):
-    """A non-2xx answer as UploadTransport reports it."""
-    return TransportResponse(False, "failed", "", 0, url, {}, {}, f"HTTP {status}: {body}")
+# Statuses the sidecar retries for a request sent with retry=True.
+RETRIED_STATUSES = (408, 429, 500, 502, 503, 504)
+
+
+class refused:  # noqa: N801 (reads like the TransportResponse helpers above)
+    """A non-2xx answer; FakeTransport reports it as the real sidecar does.
+
+    With retry=True the sidecar retries a 408/429/5xx three times and then
+    reports "max retries (3) exhausted, last error: HTTP 503", without the
+    body; any other status, or any status with retry=False, comes back as
+    "HTTP <code>: <body>".
+    """
+
+    def __init__(self, status, body, url="https://www.turboimagehost.com/"):
+        self.status, self.body, self.url = status, body, url
+
+    def response(self, retry):
+        if retry and self.status in RETRIED_STATUSES:
+            message = f"max retries (3) exhausted, last error: HTTP {self.status}"
+        else:
+            message = f"HTTP {self.status}: {self.body.strip()}"
+        return TransportResponse(False, "failed", "", 0, self.url, {}, {}, message)
 
 
 class FakeTransport:
-    """Answers GET/POST by URL from a dict; records every call."""
+    """Answers GET/POST by URL from a dict; records every call and its retry flag."""
 
     def __init__(self, answers=None, cancelled=False):
         self.answers = dict(answers or {})
         self.calls = []
+        self.retries = []
         self.cancelled = cancelled
 
-    def _answer(self, url):
+    def _answer(self, url, retry):
+        self.retries.append(retry)
         if self.cancelled:
             return TransportResponse(False, "cancelled", "", 0, url, {}, {}, "Upload cancelled")
         answer = self.answers[url]
-        return answer.pop(0) if isinstance(answer, list) else answer
+        answer = answer.pop(0) if isinstance(answer, list) else answer
+        return answer.response(retry) if isinstance(answer, refused) else answer
 
-    def get(self, url, **_):
+    def get(self, url, *, retry=True, **_):
         self.calls.append(("GET", url, None))
-        return self._answer(url)
+        return self._answer(url, retry)
 
-    def post(self, url, form_fields=None, **_):
+    def post(self, url, form_fields=None, *, retry=True, **_):
         self.calls.append(("POST", url, dict(form_fields or {})))
-        return self._answer(url)
+        return self._answer(url, retry)
 
     def pause(self, seconds):
         return not self.cancelled
@@ -356,15 +378,38 @@ def test_an_upload_page_without_an_endpoint_fails_the_group():
         TurboPlugin().open_upload_session(transport, {}, {})
 
 
-def test_an_upload_page_error_fails_the_group_with_the_hosts_message():
+def test_an_upload_page_the_host_keeps_refusing_fails_the_group_after_the_retries():
+    # Like the legacy pre_request, the upload page is retried on a 503; the
+    # sidecar then reports the status without the page.
     transport = FakeTransport(
         {"https://www.turboimagehost.com/": refused(503, "<p>Down for maintenance</p>")}
     )
     with pytest.raises(RuntimeError) as excinfo:
         TurboPlugin().open_upload_session(transport, {}, {})
-    assert str(excinfo.value) == (
-        "could not open TurboImageHost's upload page (HTTP 503): Down for maintenance"
+    assert str(excinfo.value) == "could not open TurboImageHost's upload page (HTTP 503)"
+    assert transport.retries == [True]
+
+
+def test_an_upload_page_error_that_is_not_retried_quotes_the_hosts_message():
+    transport = FakeTransport(
+        {"https://www.turboimagehost.com/": refused(403, "<p>Your IP is banned</p>")}
     )
+    with pytest.raises(RuntimeError) as excinfo:
+        TurboPlugin().open_upload_session(transport, {}, {})
+    assert str(excinfo.value) == (
+        "could not open TurboImageHost's upload page (HTTP 403): Your IP is banned"
+    )
+
+
+def test_the_login_and_the_upload_page_are_retried_like_the_legacy_pre_request():
+    transport = FakeTransport(
+        {
+            "https://www.turboimagehost.com/login.tu?": page("<a href='/logout.tu'>Logout</a>"),
+            "https://www.turboimagehost.com/": page(HOME),
+        }
+    )
+    TurboPlugin().open_upload_session(transport, {}, CREDS)
+    assert transport.retries == [True, True]
 
 
 def test_a_stopped_batch_ends_the_session_step():
@@ -449,9 +494,11 @@ class PageTransport(FakeTransport):
         self.pages = list(pages)
         self.pauses = []
 
-    def get(self, url, **_):
+    def get(self, url, *, retry=True, **_):
         self.calls.append(("GET", url, None))
-        return page(self.pages[min(len(self.calls), len(self.pages)) - 1], url=url)
+        self.retries.append(retry)
+        answer = self.pages[min(len(self.calls), len(self.pages)) - 1]
+        return answer.response(retry) if isinstance(answer, refused) else page(answer, url=url)
 
     def pause(self, seconds):
         self.pauses.append(seconds)
@@ -495,6 +542,22 @@ def test_parse_polls_the_result_page_with_the_legacy_schedule_until_the_file_is_
         "https://www.turboimagehost.com/upload_done.tu?id=1"
     }
     assert transport.pauses == [0.5, 1.0]
+
+
+def test_a_result_page_error_waits_for_the_next_scheduled_look_not_the_sidecars_retries():
+    # The legacy resolver read the page once per look: a 503 moved on to the
+    # next look of the schedule, with no retry backoff of its own.
+    down = refused(503, "<p>Busy</p>", url="https://www.turboimagehost.com/upload_done.tu?id=1")
+    transport = PageTransport([down, entries((2, "a.jpg"))])
+    state = SessionState(["/in/a.jpg"])
+
+    result = TurboPlugin().parse_upload_response(
+        "/in/a.jpg", upload_answer(), transport, SESSION, state
+    )
+
+    assert result.ok and result.url == "https://www.turboimagehost.com/p/2/a.jpg.html"
+    assert transport.retries == [False, False]
+    assert transport.pauses == [0.5]
 
 
 def test_parse_gives_up_after_the_legacy_schedule_with_the_reason():
