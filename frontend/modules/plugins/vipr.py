@@ -386,8 +386,16 @@ class ViprPlugin(ImageHostPlugin):
 
     @staticmethod
     def _gallery_id_from_config(config: Dict[str, Any]) -> str:
-        for key in ("gallery_id", "selected_gallery_id", "vipr_gal_id", "vipr_gallery_id"):
+        # A batch's own gallery first, then the gallery chosen in the dropdown.
+        for key in ("gallery_id", "vipr_gal_id", "vipr_gallery_id"):
             value = str(config.get(key) or "").strip()
+            if value and value not in {"0", "None"}:
+                return value
+        # A Gallery Manager pick only fills in a dropdown gallery whose id is
+        # not known yet (before a refresh); "None" in the dropdown means none.
+        gallery_name = str(config.get("vipr_gallery_name") or "").strip()
+        if "vipr_gallery_name" not in config or gallery_name not in {"", "None"}:
+            value = str(config.get("selected_gallery_id") or "").strip()
             if value and value not in {"0", "None"}:
                 return value
         return "0"

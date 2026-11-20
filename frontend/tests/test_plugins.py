@@ -859,7 +859,9 @@ class TestViprPlugin(unittest.TestCase):
         request = plugin.build_http_request(
             "/tmp/image.jpg",
             {
-                "vipr_gal_id": "old",
+                # The dropdown's id is unknown until a refresh; the Gallery
+                # Manager pick fills it in. A known dropdown id would win.
+                "vipr_gal_id": "0",
                 "selected_gallery_id": "104999",
                 "thumbnail_size": "250x250",
             },

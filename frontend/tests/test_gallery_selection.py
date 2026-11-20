@@ -146,3 +146,157 @@ def test_legacy_plain_gallery_id_only_restores_into_the_saved_host(plugin_manage
     assert view._settings_for_service("imagebam.com")["gallery_id"] == "IBOLD"
     assert view._settings_for_service("imx.to")["gallery_id"] == ""
     assert view._settings_for_service("turboimagehost").get("gallery_id", "") == ""
+
+
+# --- E2: the gallery field is the single source of truth per host -----------
+
+
+def _pick(app, service, gallery_id, name):
+    app.on_gallery_created(
+        GalleryRecord(service=service, id=gallery_id, name=name, url=f"https://x/{gallery_id}")
+    )
+
+
+@pytest.mark.unit
+def test_gallery_manager_pick_is_used_while_field_still_holds_it(plugin_manager):
+    app, view = _gallery_app(plugin_manager, "imx.to")
+    _pick(app, "imx.to", "AAA111", "Old shoot")
+
+    cfg = app._gather_settings()
+
+    assert view.get_raw_config("imx.to")["gallery_id"] == "AAA111"
+    assert plugin_manager.get_plugin("imx.to")._gallery_id_from_config(cfg) == "AAA111"
+    gallery = app._gallery_for_group(FakeGroup("New shoot"), "imx.to", cfg)
+    assert (gallery["id"], gallery["name"]) == ("AAA111", "Old shoot")
+
+
+@pytest.mark.unit
+def test_typing_another_gallery_id_replaces_gallery_manager_pick(plugin_manager):
+    app, view = _gallery_app(plugin_manager, "imx.to")
+    imx = plugin_manager.get_plugin("imx.to")
+    group = FakeGroup("New shoot")
+    _pick(app, "imx.to", "AAA111", "Old shoot")
+
+    view.set_value("imx.to", "gallery_id", "BBB222")
+    cfg = app._gather_settings()
+
+    assert imx._gallery_id_from_config(cfg) == "BBB222"
+    assert app._gallery_for_group(group, "imx.to", cfg)["id"] == "BBB222"
+    issues, summary = _preflight(app, imx, group, cfg)
+    assert issues == []
+    assert "BBB222" in summary and "AAA111" not in summary
+    assert "selected_gallery_id" not in cfg
+    assert cfg["selected_gallery_by_service"] == {}
+    assert app.selected_gallery_by_service == {}
+
+
+@pytest.mark.unit
+def test_clearing_gallery_field_clears_gallery_manager_pick(plugin_manager):
+    app, view = _gallery_app(plugin_manager, "imx.to")
+    imx = plugin_manager.get_plugin("imx.to")
+    group = FakeGroup("New shoot")
+    _pick(app, "imx.to", "AAA111", "Old shoot")
+
+    view.set_value("imx.to", "gallery_id", "")
+    cfg = app._gather_settings()
+
+    assert imx._gallery_id_from_config(cfg) == ""
+    assert app._gallery_for_group(group, "imx.to", cfg) is None
+    assert _preflight(app, imx, group, cfg) == ([], "")
+    assert app.selected_gallery_by_service == {}
+
+
+@pytest.mark.unit
+def test_stale_saved_pick_is_ignored_for_output(plugin_manager):
+    app, _view = _gallery_app(plugin_manager, "imx.to")
+    app.selected_gallery_by_service = {}
+    saved = {
+        "service": "imx.to",
+        "gallery_id": "BBB222",
+        "imx_gallery_id": "BBB222",
+        "selected_gallery_by_service": {
+            "imx.to": {"service": "imx.to", "id": "AAA111", "name": "Old shoot"}
+        },
+    }
+
+    gallery = app._gallery_for_group(FakeGroup("New shoot"), "imx.to", saved)
+
+    assert gallery["id"] == "BBB222"
+    assert gallery["name"] != "Old shoot"
+
+
+@pytest.mark.unit
+def test_assigning_gallery_to_selected_batches_leaves_other_batches_alone(
+    plugin_manager, tmp_path
+):
+    app, _view = _gallery_app(plugin_manager, "imx.to")
+    selected_path = str(tmp_path / "a.jpg")
+    selected, other = FakeGroup("Selected", [selected_path]), FakeGroup("Other")
+    app.file_widgets = {selected_path: {"group": selected}}
+    app.selected_files = {selected_path}
+
+    app.on_gallery_assign_to_selected_batches(
+        "imx.to", "IMX_123", GalleryRecord(service="imx.to", id="IMX_123", name="Thread")
+    )
+    cfg = app._gather_settings()
+
+    assert app._gallery_for_group(selected, "imx.to", cfg)["id"] == "IMX_123"
+    assert app._gallery_for_group(other, "imx.to", cfg) is None
+    assert plugin_manager.get_plugin("imx.to")._gallery_id_from_config(cfg) == ""
+
+
+@pytest.mark.unit
+def test_vipr_dropdown_choice_replaces_gallery_manager_pick(plugin_manager):
+    app, view = _gallery_app(plugin_manager, "vipr.im")
+    vipr = plugin_manager.get_plugin("vipr.im")
+    vipr.vipr_galleries_map = {"Picked": "111", "Other": "222"}
+    group = FakeGroup("Batch")
+    _pick(app, "vipr.im", "111", "Picked")
+
+    cfg = app._gather_settings()
+    assert vipr._gallery_id_from_config(cfg) == "111"
+    assert app._gallery_for_group(group, "vipr.im", cfg)["id"] == "111"
+
+    view.set_value("vipr.im", "vipr_gallery_name", "Other")
+    cfg = app._gather_settings()
+    assert vipr._gallery_id_from_config(cfg) == "222"
+    assert app._gallery_for_group(group, "vipr.im", cfg)["id"] == "222"
+
+    view.set_value("vipr.im", "vipr_gallery_name", "None")
+    cfg = app._gather_settings()
+    assert vipr._gallery_id_from_config(cfg) == "0"
+    assert app._gallery_for_group(group, "vipr.im", cfg) is None
+    assert app.selected_gallery_by_service == {}
+
+
+@pytest.mark.unit
+def test_vipr_gallery_manager_pick_survives_restart_without_refresh(plugin_manager):
+    app, view = _gallery_app(plugin_manager, "vipr.im")
+    vipr = plugin_manager.get_plugin("vipr.im")
+    app.selected_gallery_by_service = {
+        "vipr.im": {"service": "vipr.im", "id": "111", "name": "Summer 2026", "url": ""}
+    }
+    view.set_value("vipr.im", "vipr_gallery_name", "Summer 2026")
+
+    cfg = app._gather_settings()
+
+    assert cfg["vipr_gal_id"] == "0"  # name -> id map is empty until a refresh
+    assert vipr._gallery_id_from_config(cfg) == "111"
+    assert app._gallery_for_group(FakeGroup("Batch"), "vipr.im", cfg)["id"] == "111"
+    assert _preflight(app, vipr, FakeGroup("Batch"), cfg)[0] == []
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("cfg", "expected"),
+    [
+        ({"selected_gallery_id": "111", "vipr_gallery_name": "Other", "vipr_gal_id": "222"}, "222"),
+        ({"selected_gallery_id": "111", "vipr_gallery_name": "None", "vipr_gal_id": "0"}, "0"),
+        ({"selected_gallery_id": "111", "vipr_gallery_name": "", "vipr_gal_id": "0"}, "0"),
+        ({"gallery_id": "group1", "vipr_gallery_name": "Other", "vipr_gal_id": "222"}, "group1"),
+    ],
+)
+def test_vipr_upload_gallery_follows_the_dropdown(cfg, expected):
+    spec = ViprPlugin().build_http_request("/x/a.jpg", cfg, _VIPR_CREDS)
+
+    assert spec["multipart_fields"]["fld_id"]["value"] == expected

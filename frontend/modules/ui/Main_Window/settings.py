@@ -278,7 +278,7 @@ class SettingsMixin:
 
         settings_view = self.__dict__.get("settings_view")
         if settings_view is None:
-            cfg["selected_gallery_by_service"] = dict(self.selected_gallery_by_service)
+            cfg["selected_gallery_by_service"] = self._current_gallery_selections(cfg)
             selected_gallery = self._selected_gallery_for_service(selected_service, cfg)
             if selected_gallery:
                 cfg.update(
@@ -297,7 +297,9 @@ class SettingsMixin:
         selected_config = settings_view.get_validated_config(selected_service)
         cfg.update(selected_config)
         cfg.update(settings_view.alias_config(selected_service, selected_config))
-        cfg["selected_gallery_by_service"] = dict(self.selected_gallery_by_service)
+        # A Gallery Manager pick only stands while the host's gallery field
+        # still shows it; editing, clearing or re-choosing the field drops it.
+        cfg["selected_gallery_by_service"] = self._current_gallery_selections(cfg)
         selected_gallery = self._selected_gallery_for_service(selected_service, cfg)
         if selected_gallery:
             cfg.update(
