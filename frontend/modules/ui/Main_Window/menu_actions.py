@@ -207,10 +207,13 @@ class MenuActionsMixin:
             return
 
         self._template_recovery_notice_shown = True
-        self.add_activity(
-            "Template file could not be read. Defaults were restored and a backup was kept.",
-            "warning",
+        # The template manager says what happened: either the whole file was unreadable
+        # and defaults were restored, or only some entries were skipped.
+        summary = issue.get("message") or (
+            "Saved templates could not be loaded. Defaults were restored "
+            "and the broken file was preserved."
         )
+        self.add_activity(summary, "warning")
 
         dlg = ctk.CTkToplevel(self)
         dlg.title("Template Recovery")
@@ -220,15 +223,12 @@ class MenuActionsMixin:
 
         ctk.CTkLabel(
             dlg,
-            text="Templates Restored",
+            text="Template File Problem",
             font=("Segoe UI", 18, "bold"),
         ).pack(anchor="w", padx=18, pady=(18, 4))
         ctk.CTkLabel(
             dlg,
-            text=(
-                "Your saved templates file could not be read. The app restored "
-                "the built-in templates so you can keep working."
-            ),
+            text=summary,
             text_color="gray",
             wraplength=510,
             justify="left",
