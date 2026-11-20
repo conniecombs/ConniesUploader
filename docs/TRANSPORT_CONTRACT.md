@@ -180,7 +180,9 @@ moves into Python.
   metadata flags.
 - Backend tests cover that raw public `http_request` responses expose
   `response_body`, `status_code`, and `final_url` without leaking internal keys.
-- Backend tests cover per-file validation, `cancel`, `literal_values`,
-  `timeout_seconds` clamping, and `reset_cookies`; Python tests cover event
-  scoping by batch, stragglers after `batch_complete`, and the single-count
-  rule for terminal events.
+- Backend tests cover per-file validation, `cancel`, `literal_values`, braces
+  in user values, `timeout_seconds` clamping, site-scoped `reset_cookies`,
+  retry classification, lost upload responses, upload stall and response
+  limits, per-job Thread Limits, and the separate request pool; Python tests
+  cover event scoping by batch, stragglers after `batch_complete`, and the
+  single-count rule for terminal events.
