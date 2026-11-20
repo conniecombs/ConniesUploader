@@ -45,7 +45,7 @@ class ImgurPlugin(ImageHostPlugin):
             "author": "Connie's Uploader Team",
             "description": "Upload images to Imgur with anonymous or authenticated uploads, album support, and automatic thumbnail generation",
             "website": "https://imgur.com",
-            "implementation": "go",
+            "implementation": "python",  # Python upload path; the sidecar is its transport
             "features": {
                 "galleries": True,  # Imgur calls them "albums"
                 "covers": False,  # Imgur doesn't have cover images

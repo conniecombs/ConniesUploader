@@ -47,7 +47,7 @@ class PixhostPlugin(ImageHostPlugin):
                 "Upload images to Pixhost.cc with gallery support and cover image handling"
             ),
             "website": app_config.PIXHOST_BASE_URL,
-            "implementation": "go",
+            "implementation": "python",  # Python upload path; the sidecar is its transport
             "features": {
                 "galleries": True,
                 "covers": True,

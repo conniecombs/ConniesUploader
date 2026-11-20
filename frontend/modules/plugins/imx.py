@@ -67,7 +67,7 @@ class ImxPlugin(ImageHostPlugin):
             "author": "Connie's Uploader Team",
             "description": "Upload images to IMX.to with gallery support, multiple thumbnail formats, and API-based uploads",
             "website": "https://imx.to",
-            "implementation": "go",
+            "implementation": "python",  # Python upload path; the sidecar is its transport
             "features": {
                 "galleries": True,
                 "covers": True,

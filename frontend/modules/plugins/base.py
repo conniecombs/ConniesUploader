@@ -52,7 +52,7 @@ class ImageHostPlugin(abc.ABC):
                 "author": "Plugin Developer",
                 "description": "Upload images to ServiceName with gallery support",
                 "website": "https://servicenam.com",
-                "implementation": "python",  # "python" or "go"
+                "implementation": "python",  # "python" or "go" (see below)
                 "features": {
                     "galleries": True,
                     "covers": True,
@@ -87,7 +87,10 @@ class ImageHostPlugin(abc.ABC):
             - version: Plugin version (semver recommended)
             - author: Plugin maintainer
             - description: One-line description
-            - implementation: "python" or "go"
+            - implementation: "python" when Python owns the host's requests and
+              response parsing (the Python upload path, which still uploads
+              through the sidecar's transport), or "go" when the sidecar runs
+              the plugin's legacy parser specs
             - features: Dictionary of supported features
             - credentials: List of required/optional credentials
             - limits: Service limitations

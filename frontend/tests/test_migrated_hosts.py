@@ -27,6 +27,42 @@ IMX_CREDS = {"imx_api": "api-key-1", "imx_user": "user", "imx_pass": "secret-pas
 CREDS = {**IMX_CREDS, "imgur_client_id": "client-1"}
 
 
+def test_plugin_metadata_says_who_implements_the_upload():
+    for plugin in (ImxPlugin(), PixhostPlugin(), ImgurPlugin()):
+        assert plugin.metadata["implementation"] == "python", plugin.id
+    for plugin in (TurboPlugin(), ViprPlugin(), ImageBamPlugin()):
+        assert plugin.metadata["implementation"] == "go", plugin.id
+
+
+def test_preflight_still_checks_the_sidecar_for_python_path_hosts():
+    from types import SimpleNamespace
+
+    from modules.ui.main_window import UploaderApp
+    from tests.app_factory import make_app
+
+    class DeadBridge:
+        def is_process_alive(self):
+            return False
+
+        def _start_process(self):
+            return False
+
+    app = make_app()
+    app.upload_manager = SimpleNamespace(bridge=DeadBridge())
+    issues = []
+    UploaderApp._preflight_check_sidecar(app, PixhostPlugin(), issues)
+    assert issues == [
+        "Upload engine is not running. Run build_uploader.bat to rebuild the bundled sidecar."
+    ]
+
+    class Standalone:
+        metadata = {"implementation": "python"}
+
+    issues = []
+    UploaderApp._preflight_check_sidecar(app, Standalone(), issues)
+    assert issues == [], "a plugin that uploads without the sidecar needs no engine"
+
+
 def test_imx_pixhost_and_imgur_parse_their_own_responses():
     for plugin in (ImxPlugin(), PixhostPlugin(), ImgurPlugin()):
         assert uses_python_upload_parsing(plugin), plugin.id
