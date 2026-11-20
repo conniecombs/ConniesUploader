@@ -1854,6 +1854,7 @@ def test_generate_group_output_populates_supported_template_context(tmp_path):
     history_dir.mkdir()
 
     app = make_app()
+    app.is_uploading = True  # posts are queued only while the upload runs
     app.results = [(file_path, "https://img.test/view", "https://img.test/thumb")]
     app.settings = {"service": "pixhost.cc", "pix_thumb": "200"}
     app.template_mgr = FakeTemplateManager()
@@ -1884,8 +1885,10 @@ def test_generate_group_output_populates_supported_template_context(tmp_path):
 
     context = captured["context"]
     assert captured["template_name"] == "BBCode"
+    # No known full-size URL for this host: #direct_url# is the thumbnail image,
+    # never the viewer page.
     assert captured["group_results"] == [
-        ("https://img.test/view", "https://img.test/thumb", "https://img.test/view")
+        ("https://img.test/view", "https://img.test/thumb", "https://img.test/thumb")
     ]
     assert context["gallery_link"] == "https://pixhost.cc/gallery/G123"
     assert context["gallery_name"] == "Batch Alpha"
@@ -2436,7 +2439,7 @@ def test_generate_group_output_uses_selected_covers_before_standard_images(tmp_p
     assert captured["group_results"][0] == (
         "https://img.test/third",
         "https://img.test/t-third",
-        "https://img.test/third",
+        "https://img.test/t-third",
     )
     assert captured["context"]["cover_url"] == "https://img.test/t-third"
 

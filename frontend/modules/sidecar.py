@@ -27,6 +27,11 @@ from . import config
 
 JsonDict = Dict[str, Any]
 
+# Event sent to listeners when a sidecar process exits without a shutdown
+# request. Jobs written to that process (its "generation") are lost.
+SIDECAR_CRASHED_EVENT = "sidecar_crashed"
+PROCESS_RESTARTED_MSG = "Uploader process restarted; upload interrupted"
+
 
 class SidecarBridge:
     """Singleton process bridge for the Go sidecar."""
@@ -36,6 +41,9 @@ class SidecarBridge:
     _worker_count: int = 8
     _min_workers: int = 1
     _max_workers: int = 16
+    # Number of sidecar processes started so far; each process is identified
+    # by the generation it was started with.
+    generation: int = 0
 
     @classmethod
     def set_worker_count(cls, count: int) -> None:
@@ -152,8 +160,10 @@ class SidecarBridge:
                 self.proc = None
                 return False
 
+            self.generation += 1
             self._listener_thread = threading.Thread(
                 target=self._listen,
+                args=(self.proc, self.generation),
                 name="SidecarListener",
                 daemon=True,
             )
@@ -183,9 +193,12 @@ class SidecarBridge:
         """Backward-compatible alias for older callers."""
         return self.is_process_alive()
 
-    def _listen(self) -> None:
-        """Read stdout from the sidecar and dispatch JSON events."""
-        proc = self.proc
+    def _listen(self, proc: Any = None, generation: Optional[int] = None) -> None:
+        """Read stdout from one sidecar process and dispatch JSON events."""
+        if proc is None:
+            proc = self.proc
+        if generation is None:
+            generation = self.generation
         if proc is None or proc.stdout is None:
             return
 
@@ -194,13 +207,13 @@ class SidecarBridge:
                 line = proc.stdout.readline()
             except OSError as exc:
                 logger.error(f"Sidecar stdout read failed: {exc}")
-                self._handle_crash()
+                self._process_exited(generation)
                 return
 
             if line == "":
                 if not self._shutdown_requested.is_set():
                     logger.warning("Sidecar stdout closed unexpectedly")
-                    self._handle_crash()
+                    self._process_exited(generation)
                 return
 
             line = line.strip()
@@ -218,6 +231,23 @@ class SidecarBridge:
                 continue
 
             self._dispatch_event(data)
+
+    def _process_exited(self, generation: int) -> None:
+        """Tell listeners a process died, then restart it.
+
+        Every job written to that process is lost, whether or not a restart
+        follows, so listeners hear about it first and can end those jobs.
+        """
+        if self._shutdown_requested.is_set():
+            return
+        self._dispatch_event(
+            {
+                "type": SIDECAR_CRASHED_EVENT,
+                "generation": generation,
+                "msg": PROCESS_RESTARTED_MSG,
+            }
+        )
+        self._handle_crash()
 
     def _handle_crash(self) -> None:
         """Handle sidecar crashes with bounded exponential-backoff restarts."""
@@ -276,7 +306,13 @@ class SidecarBridge:
         stale_listeners: List[queue.Queue[JsonDict]] = []
         for listener in listeners:
             try:
-                if event_type in {"result", "error", "batch_complete"}:
+                if event_type in {
+                    "result",
+                    "error",
+                    "batch_complete",
+                    SIDECAR_CRASHED_EVENT,
+                    "sidecar_stopped",
+                }:
                     listener.put(data, timeout=1.0)
                 else:
                     listener.put_nowait(data)
@@ -296,24 +332,36 @@ class SidecarBridge:
 
     def send_cmd(self, payload: JsonDict) -> bool:
         """Send a JSON command to the sidecar."""
+        return self.send_job(payload) is not None
+
+    def send_job(self, payload: JsonDict) -> Optional[int]:
+        """Send a JSON command; return the generation of the process it reached.
+
+        Returns None when the command could not be written. A caller that
+        tracks long-running jobs compares the generation with the one in a
+        ``sidecar_crashed`` event to know whether its job was lost.
+        """
         if not self.is_process_alive():
             logger.warning("Sidecar is not running; attempting restart")
             self._start_process()
 
-        if not self.is_process_alive() or self.proc is None or self.proc.stdin is None:
+        with self.restart_lock:
+            proc = self.proc
+            generation = self.generation
+        if proc is None or proc.poll() is not None or proc.stdin is None:
             logger.error("Cannot send command; sidecar is unavailable")
-            return False
+            return None
 
         with self.cmd_lock:
             try:
-                json.dump(payload, self.proc.stdin)
-                self.proc.stdin.write("\n")
-                self.proc.stdin.flush()
-                return True
+                json.dump(payload, proc.stdin)
+                proc.stdin.write("\n")
+                proc.stdin.flush()
+                return generation
             except (BrokenPipeError, OSError, ValueError) as exc:
                 logger.error(f"Send error: {exc}")
                 self._handle_crash()
-                return False
+                return None
 
     def request_sync(self, payload: JsonDict, timeout: float = 5.0) -> JsonDict:
         """Send a command and wait for a correlated terminal response."""

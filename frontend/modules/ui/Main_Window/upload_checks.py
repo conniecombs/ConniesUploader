@@ -77,8 +77,10 @@ class UploadChecksMixin:
 
         self._set_completion_summary(None)
         try:
+            # Credentials never go into cfg: it is saved to user_settings.json
+            # and sent to the sidecar as job config. Plugins read keys from
+            # self.creds, which start_batch passes separately.
             cfg = self._gather_settings()
-            cfg["api_key"] = self.creds.get("imx_api", "")
 
             # Apply worker count setting (will restart sidecar if changed)
             from modules.sidecar import SidecarBridge
@@ -119,7 +121,12 @@ class UploadChecksMixin:
             self.upload_manager.result_queue = self.result_queue
 
             self.pix_galleries_to_finalize = []
+            # Copy, Open Output, Schedule Post and the summary describe this
+            # run only, not outputs of earlier runs in the session.
             self.clipboard_buffer = []
+            self.current_output_files = []
+            self.copyable_output_files = []
+            self.upload_run_files = {fp for files in pending_by_group.values() for fp in files}
             self._register_selected_pixhost_galleries_for_finalization(pending_by_group, upload_cfg)
 
             self._configure_start_button("Uploading...", "disabled")

@@ -758,17 +758,22 @@ class DragDropMixin:
         )
         self.context_menu.tk_popup(event.x_root, event.y_root)
 
+    def _removal_blocked_by_upload(self):
+        if vars(self).get("is_uploading", False):
+            if hasattr(self, "add_activity"):
+                self.add_activity(
+                    "Wait for the current upload to finish before removing images.",
+                    "warning",
+                )
+            return True
+        return False
+
     def _delete_group(self, group):
+        if self._removal_blocked_by_upload():
+            return
         if messagebox.askyesno("Confirm", f"Remove batch '{group.title}' from the queue?"):
             deleted_files = list(group.files)
-            for fp in list(group.files):
-                with self.lock:
-                    if fp in self.file_widgets:
-                        # Clean up image reference to prevent memory leak
-                        img_ref = self.file_widgets[fp].get("image_ref")
-                        if img_ref and img_ref in self.image_refs:
-                            self.image_refs.remove(img_ref)
-                        del self.file_widgets[fp]
+            self._forget_rows(deleted_files)
             if group in self.groups:
                 self.groups.remove(group)
             group.destroy()
@@ -779,12 +784,7 @@ class DragDropMixin:
                 self._refresh_queue_state()
 
     def _delete_files(self, filepaths):
-        if vars(self).get("is_uploading", False):
-            if hasattr(self, "add_activity"):
-                self.add_activity(
-                    "Wait for the current upload to finish before removing images.",
-                    "warning",
-                )
+        if self._removal_blocked_by_upload():
             return False
 
         requested = list(dict.fromkeys(filepaths or []))
@@ -797,20 +797,13 @@ class DragDropMixin:
         touched_groups = []
 
         for filepath in ordered:
-            with self.lock:
-                if filepath not in self.file_widgets:
-                    continue
-                group = self.file_widgets[filepath]["group"]
-                row = self.file_widgets[filepath]["row"]
-                # Clean up image reference to prevent memory leak
-                img_ref = self.file_widgets[filepath].get("image_ref")
-                if img_ref and img_ref in self.image_refs:
-                    self.image_refs.remove(img_ref)
+            forgotten = self._forget_rows([filepath])
+            if not forgotten:
+                continue
+            group = forgotten[0]["group"]
             if group.winfo_exists():
                 group.remove_file(filepath)
-            row.destroy()
-            with self.lock:
-                self.file_widgets.pop(filepath, None)
+            forgotten[0]["row"].destroy()
             removed.append(filepath)
             if group not in touched_groups:
                 touched_groups.append(group)
@@ -827,7 +820,10 @@ class DragDropMixin:
             else:
                 self.add_activity(f"Removed {len(removed)} images.", "warning")
         for group in touched_groups:
-            self._remove_empty_group_if_needed(group)
+            if not self._remove_empty_group_if_needed(group) and hasattr(
+                self, "_recheck_group_output"
+            ):
+                self._recheck_group_output(group)
         if hasattr(self, "_refresh_queue_state"):
             self._refresh_queue_state()
         if hasattr(self, "_refresh_selection_actions"):

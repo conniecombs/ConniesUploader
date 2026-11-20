@@ -148,7 +148,7 @@ class PostingMixin:
         content = ""
         if group_results:
             content = self.template_mgr.apply(
-                getattr(group, "selected_template", "BBCode"),
+                self._output_template_for_group(group),
                 ctx,
                 group_results,
             )

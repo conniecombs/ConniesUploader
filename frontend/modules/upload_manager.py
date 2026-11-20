@@ -18,7 +18,10 @@ from . import config
 from .gallery_cache import GalleryCache
 from .gallery_service import GalleryRecord, gallery_url_for_service
 from .plugin_manager import PluginManager
-from .sidecar import SidecarBridge
+from .sidecar import PROCESS_RESTARTED_MSG, SIDECAR_CRASHED_EVENT, SidecarBridge
+
+# Statuses after which the sidecar reports nothing more for a file.
+TERMINAL_FILE_STATUSES = frozenset({"Done", "Failed", "Cancelled"})
 
 SERVICE_THREAD_KEYS = {
     "imx.to": "imx_threads",
@@ -75,10 +78,59 @@ class UploadManager:
         self.current_batch_id: str | None = None
         self._job_files: Dict[str, List[str]] = {}
         self._job_counter = 0
+        # Which sidecar process (generation) each sent job was written to, so a
+        # crash ends exactly the jobs that died with that process. A job that
+        # is registered but missing here is still being written.
+        self._jobs_lock = threading.RLock()
+        self._job_generation: Dict[str, int | None] = {}
+        self._dead_generation = 0
+        # Files whose result arrived but whose closing "Done" has not.
+        self._awaiting_done: set[str] = set()
 
     def _register_job(self, job_id: str, files: List[str]) -> None:
         """Remember which files a sidecar job owns so its events can be scoped."""
         self._job_files[job_id] = list(files)
+
+    def _submit_job(self, job_id: str, job_data: Dict[str, Any]) -> bool:
+        """Write a registered job to the sidecar and remember which process got it."""
+        send_job = getattr(self.bridge, "send_job", None)
+        if callable(send_job):
+            generation = send_job(job_data)
+            if generation is None:
+                return False
+            if not isinstance(generation, int):
+                generation = None
+        elif self.bridge.send_cmd(job_data):
+            generation = None  # unknown: any crash report ends this job
+        else:
+            return False
+
+        with self._jobs_lock:
+            if job_id not in self._job_files:
+                return True  # already ended while it was being written
+            self._job_generation[job_id] = generation
+            if generation is not None and generation <= self._dead_generation:
+                # The process died, and was reported, while the job was written.
+                self._end_job(job_id, f"error: {PROCESS_RESTARTED_MSG}")
+        return True
+
+    def _end_job(self, job_id: str, status_text: str) -> None:
+        """End every unfinished file of a job the sidecar will no longer report on.
+
+        Call with ``_jobs_lock`` held. A file whose result already arrived only
+        lost its closing "Done"; every other unfinished file gets
+        ``status_text`` (a failure or "Cancelled").
+        """
+        files = self._job_files.pop(job_id, [])
+        self._job_generation.pop(job_id, None)
+        for file_path in files:
+            if file_path in self._awaiting_done:
+                self._awaiting_done.discard(file_path)
+                self.progress_queue.put(("status", file_path, "Done"))
+            elif file_path in self.active_files:
+                self.active_files.discard(file_path)
+                self.result_queue.put((file_path, "", ""))
+                self.progress_queue.put(("status", file_path, status_text))
 
     def _next_job_id(self) -> str:
         self._job_counter += 1
@@ -94,7 +146,23 @@ class UploadManager:
         if not batch_id:
             return
         logger.info(f"Cancelling sidecar batch {batch_id}")
-        self.bridge.send_cmd({"action": "cancel", "batch_id": batch_id})
+        if self.bridge.send_cmd({"action": "cancel", "batch_id": batch_id}):
+            return
+        # Nothing will report these files any more: end them here so Stop
+        # always finishes the batch. Off the Tk thread, which drains the
+        # bounded queues these statuses go to.
+        logger.warning(f"Sidecar unreachable; cancelling batch {batch_id} locally")
+        threading.Thread(
+            target=self._end_all_jobs,
+            args=("Cancelled",),
+            name="UploadManagerCancel",
+            daemon=True,
+        ).start()
+
+    def _end_all_jobs(self, status_text: str) -> None:
+        with self._jobs_lock:
+            for job_id in list(self._job_files):
+                self._end_job(job_id, status_text)
 
     def start_batch(
         self, pending_by_group: Dict[Any, List[str]], cfg: Dict[str, Any], creds: Dict[str, str]
@@ -106,7 +174,10 @@ class UploadManager:
         with self._lifecycle_lock:
             self._stop_events.clear()
             self.current_batch_id = uuid.uuid4().hex
-            self._job_files = {}
+            with self._jobs_lock:
+                self._job_files = {}
+                self._job_generation = {}
+                self._awaiting_done = set()
             self._job_counter = 0
             batch_id = self.current_batch_id
 
@@ -454,7 +525,7 @@ class UploadManager:
 
                     self.active_files.update(file_list)
                     self._register_job(job_id, file_list)
-                    if not self.bridge.send_cmd(job_data):
+                    if not self._submit_job(job_id, job_data):
                         self._job_files.pop(job_id, None)
                         for file_path in file_list:
                             self.active_files.discard(file_path)
@@ -592,18 +663,46 @@ class UploadManager:
             self.result_queue.put((file_path, "", ""))
             self.progress_queue.put(("status", file_path, f"error: {reason}"))
 
+    def _handle_process_crash(self, data: Dict[str, Any]) -> None:
+        """End the jobs that died with a sidecar process.
+
+        The bridge restarts the process, but whatever that process was doing
+        is gone: without this its files would never get a terminal status and
+        the batch would never finish.
+        """
+        generation = data.get("generation")
+        reason = str(data.get("msg") or PROCESS_RESTARTED_MSG)
+        logger.error(f"SIDECAR CRASHED (process {generation}): {reason}")
+        with self._jobs_lock:
+            if isinstance(generation, int):
+                self._dead_generation = max(self._dead_generation, generation)
+            for job_id in list(self._job_files):
+                if job_id not in self._job_generation:
+                    continue  # still being written; _submit_job checks the generation
+                job_generation = self._job_generation[job_id]
+                if (
+                    not isinstance(generation, int)
+                    or job_generation is None
+                    or job_generation <= generation
+                ):
+                    self._end_job(job_id, f"error: {reason}")
+
     def _handle_event(self, data: Dict[str, Any]) -> None:
         """Translate one sidecar event into progress/result queue items."""
         evt = data.get("type")
         fp = data.get("file") or data.get("file_path")
         job_id = data.get("id")
 
+        if evt == SIDECAR_CRASHED_EVENT:
+            self._handle_process_crash(data)
+            return
+
         if evt == "sidecar_stopped":
             logger.error(f"SIDECAR STOPPED: {data.get('msg')}")
-            self._fail_active_files(
-                list(self.active_files), str(data.get("msg") or "sidecar stopped")
-            )
-            self._job_files.clear()
+            reason = str(data.get("msg") or "sidecar stopped")
+            with self._jobs_lock:
+                self._end_all_jobs(f"error: {reason}")
+                self._fail_active_files(list(self.active_files), reason)
             return
 
         if job_id and job_id not in self._job_files:
@@ -613,6 +712,11 @@ class UploadManager:
 
         if evt in ("result", "error") and fp:
             self.active_files.discard(fp)
+        if evt == "result" and fp:
+            self._awaiting_done.add(fp)
+        elif evt == "status" and fp and data.get("status") in TERMINAL_FILE_STATUSES:
+            self.active_files.discard(fp)
+            self._awaiting_done.discard(fp)
 
         if evt == "status":
             self.progress_queue.put(("status", fp, data.get("status")))

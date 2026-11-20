@@ -258,3 +258,70 @@ def test_post_waiting_on_session_lock_is_dropped_after_stop():
     assert wait_until(lambda: not poster.is_running)
     assert FakeViperGirlsAPI.posted == []
     assert ("Batch 1", "failure", "cancelled before posting") in poster.history
+
+
+class FailingLoginAPI(FakeViperGirlsAPI):
+    delay = 0.0
+
+    def login(self, username, password):
+        time.sleep(FailingLoginAPI.delay)
+        FakeViperGirlsAPI.logins.append((username, password))
+        return False
+
+
+def test_posts_queued_after_a_failed_login_are_recorded_and_reported(monkeypatch):
+    monkeypatch.setattr(viper_client, "ViperGirlsAPI", FailingLoginAPI)
+    FailingLoginAPI.delay = 0.0
+    poster = make_poster()
+    poster.begin_session([0, 1])
+    poster.start_processing(lambda: True, threading.Event())
+    assert wait_until(lambda: not poster.is_running)
+
+    first = poster.queue_post(0, "post 0", "Thread", batch_name="Batch A")
+    second = poster.queue_post(1, "post 1", "Thread", batch_name="Batch B")
+
+    # The caller reports the returned reason; the history records the failure.
+    assert first == second == "login failed"
+    assert poster.post_queue == {}
+    assert poster.history == [
+        ("Batch A", "failure", "login failed"),
+        ("Batch B", "failure", "login failed"),
+    ]
+    assert FakeViperGirlsAPI.posted == []
+
+
+def test_post_queued_while_login_is_failing_is_recorded_and_reported(monkeypatch):
+    monkeypatch.setattr(viper_client, "ViperGirlsAPI", FailingLoginAPI)
+    FailingLoginAPI.delay = 0.3
+    poster = make_poster()
+    notices = []
+    poster.notify = lambda message, level: notices.append((message, level))
+    poster.begin_session([0])
+    poster.start_processing(lambda: True, threading.Event())
+
+    assert poster.queue_post(0, "post 0", "Thread", batch_name="Batch A") == ""
+    assert wait_until(lambda: not poster.is_running)
+
+    assert poster.post_queue == {}
+    assert poster.history == [("Batch A", "failure", "login failed")]
+    assert notices == [('ViperGirls post for "Batch A" was not sent: login failed.', "warning")]
+
+
+def test_a_new_session_after_a_failed_login_queues_posts_again(monkeypatch):
+    monkeypatch.setattr(viper_client, "ViperGirlsAPI", FailingLoginAPI)
+    FailingLoginAPI.delay = 0.0
+    poster = make_poster()
+    poster.begin_session([0])
+    poster.start_processing(lambda: True, threading.Event())
+    assert wait_until(lambda: not poster.is_running)
+    assert poster.queue_post(0, "body", "Thread") == "login failed"
+
+    monkeypatch.setattr(viper_client, "ViperGirlsAPI", FakeViperGirlsAPI)
+    uploading = [True]
+    poster.begin_session([0])
+    poster.start_processing(lambda: uploading[0], threading.Event())
+    assert poster.queue_post(0, "body", "Thread") == ""
+    uploading[0] = False
+
+    assert wait_until(lambda: not poster.is_running)
+    assert FakeViperGirlsAPI.posted == [("123", "body")]

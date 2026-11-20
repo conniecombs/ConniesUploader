@@ -470,3 +470,100 @@ def test_dispatch_event_blocks_at_most_one_second_per_terminal_event():
     bridge._dispatch_event({"type": "result", "file": "/a.jpg"})
 
     assert time.monotonic() - started < 2.5
+
+
+def _listening_bridge(lines):
+    from types import SimpleNamespace
+
+    from modules import sidecar
+
+    bridge = sidecar.SidecarBridge.__new__(sidecar.SidecarBridge)
+    bridge.listeners = []
+    bridge.listeners_lock = threading.RLock()
+    bridge._shutdown_requested = threading.Event()
+    bridge.crashes = []
+    bridge._handle_crash = lambda: bridge.crashes.append(True)
+    remaining = list(lines)
+    proc = SimpleNamespace(
+        stdout=SimpleNamespace(readline=lambda: remaining.pop(0) if remaining else ""),
+        poll=lambda: 1,
+    )
+    events = queue.Queue()
+    bridge.add_listener(events)
+    return bridge, proc, events
+
+
+def _drain(q):
+    items = []
+    while not q.empty():
+        items.append(q.get_nowait())
+    return items
+
+
+@pytest.mark.unit
+def test_listener_reports_a_dead_process_to_listeners_before_restarting():
+    bridge, proc, events = _listening_bridge(['{"type": "status", "status": "Uploading"}\n'])
+
+    bridge._listen(proc, 3)
+
+    received = _drain(events)
+    assert received[0]["type"] == "status"
+    assert received[1]["type"] == "sidecar_crashed"
+    assert received[1]["generation"] == 3
+    assert "restarted" in received[1]["msg"]
+    assert bridge.crashes == [True]
+
+
+@pytest.mark.unit
+def test_listener_does_not_report_a_requested_shutdown():
+    bridge, proc, events = _listening_bridge([])
+    bridge._shutdown_requested.set()
+
+    bridge._listen(proc, 1)
+
+    assert _drain(events) == []
+    assert bridge.crashes == []
+
+
+@pytest.mark.unit
+@patch("modules.sidecar.threading.Thread")
+@patch("modules.sidecar.subprocess.Popen")
+def test_each_started_process_gets_a_new_generation(mock_popen, mock_thread):
+    mock_popen.return_value = Mock(stdout=Mock(), poll=Mock(return_value=None))
+    bridge = SidecarBridge.__new__(SidecarBridge)
+    bridge.proc = None
+    bridge.restart_lock = threading.RLock()
+    bridge._shutdown_requested = threading.Event()
+    bridge._resolve_executable = Mock(return_value=Path("uploader"))
+
+    assert bridge._start_process() is True
+    first = bridge.generation
+    bridge.proc = None
+    assert bridge._start_process() is True
+
+    assert bridge.generation == first + 1
+    assert mock_thread.call_args.kwargs["args"] == (bridge.proc, bridge.generation)
+
+
+@pytest.mark.unit
+def test_send_job_returns_the_generation_it_was_written_to():
+    from types import SimpleNamespace
+
+    bridge = SidecarBridge.__new__(SidecarBridge)
+    written = []
+    bridge.proc = SimpleNamespace(
+        poll=lambda: None,
+        stdin=SimpleNamespace(write=written.append, flush=lambda: None),
+    )
+    bridge.generation = 7
+    bridge.cmd_lock = threading.RLock()
+    bridge.restart_lock = threading.RLock()
+
+    assert bridge.send_job({"action": "noop"}) == 7
+    assert bridge.send_cmd({"action": "noop"}) is True
+    assert written[-1] == "\n"
+
+    bridge.proc = None
+    bridge._start_process = lambda: False
+    assert bridge.send_job({"action": "noop"}) is None
+    assert bridge.send_cmd({"action": "noop"}) is False

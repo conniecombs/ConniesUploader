@@ -156,16 +156,36 @@ class MenuActionsMixin:
         self._last_global_thread_limit_value = n
 
     def open_template_editor(self):
-        def on_update(new_key):
-            pass
-
         TemplateEditor(
             self,
             self.template_mgr,
             current_mode="BBCode",
             data_callback=self.get_preview_data,
-            update_callback=on_update,
+            update_callback=self._on_templates_changed,
         )
+
+    def _default_template_name(self, names: List[str]) -> str:
+        """The template a batch falls back to when its own template is gone."""
+        for candidate in (str(self.settings.get("output_format") or ""), "BBCode"):
+            if candidate in names:
+                return candidate
+        return names[0] if names else "BBCode"
+
+    def _on_templates_changed(self, _changed_name: Optional[str] = None) -> None:
+        """Refresh batch template dropdowns after a save, rename, delete or import."""
+        names = self.template_mgr.get_all_keys()
+        fallback = self._default_template_name(names)
+        for group in self.groups:
+            update = getattr(group, "update_template_names", None)
+            if not callable(update):
+                continue
+            previous = group.selected_template
+            if update(names, fallback):
+                self.add_activity(
+                    f"{self._batch_display_name(group)} now uses template "
+                    f'"{group.selected_template}" because "{previous}" was renamed or deleted.',
+                    "warning",
+                )
 
     def reset_templates_to_defaults(self):
         if not messagebox.askyesno(

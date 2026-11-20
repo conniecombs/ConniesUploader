@@ -510,6 +510,9 @@ class CollapsibleGroupFrame(ctk.CTkFrame):
         self.title = title
         self.is_collapsed = False
         self.is_completed = False
+        # True when the batch completed with failed or cancelled rows and
+        # only a FAILED report was written for it.
+        self.completed_with_failures = False
         self.files = []
         self.cover_files = []
         self.cover_selection_manual = False
@@ -559,6 +562,8 @@ class CollapsibleGroupFrame(ctk.CTkFrame):
             )
             self.btn_post_preview.pack(side="right", padx=5)
 
+        self.template_var = None
+        self.template_combo = None
         if template_names:
             val = (
                 default_template
@@ -596,6 +601,23 @@ class CollapsibleGroupFrame(ctk.CTkFrame):
     def _on_template_change(self, choice):
         self.selected_template = choice
 
+    def update_template_names(self, template_names, fallback="BBCode"):
+        """Refresh the template dropdown after templates were edited.
+
+        A selection that was renamed or deleted switches to ``fallback`` (or
+        the first template). Returns True when the selection changed.
+        """
+        names = list(template_names or [])
+        if self.template_combo is not None:
+            self.template_combo.configure(values=names)
+        if self.selected_template in names:
+            return False
+        replacement = fallback if fallback in names or not names else names[0]
+        self.selected_template = replacement
+        if self.template_var is not None:
+            self.template_var.set(replacement)
+        return True
+
     def toggle(self):
         if self.is_collapsed:
             self.content_frame.pack(fill="x", expand=True, padx=10, pady=5)
@@ -608,13 +630,16 @@ class CollapsibleGroupFrame(ctk.CTkFrame):
     def add_file(self, filepath):
         if filepath not in self.files:
             self.files.append(filepath)
-            self.lbl_counts.configure(text=f"({len(self.files)} files)")
+        # New content means the batch's earlier output no longer covers it.
+        self.reset_completion()
+        self.lbl_counts.configure(text=f"({len(self.files)} files)")
 
     def remove_file(self, filepath):
         if filepath in self.files:
             self.files.remove(filepath)
         if filepath in self.cover_files:
             self.cover_files.remove(filepath)
+        if not self.is_completed:
             self.lbl_counts.configure(text=f"({len(self.files)} files)")
 
     def is_cover_file(self, filepath):
@@ -655,3 +680,14 @@ class CollapsibleGroupFrame(ctk.CTkFrame):
         self.lbl_title.configure(text_color="#34C759")
         self.lbl_counts.configure(text="(Completed)", text_color="#34C759")
         self.prog.configure(progress_color="#34C759")
+
+    def reset_completion(self):
+        """Forget a finished upload so the batch produces output again."""
+        self.completed_with_failures = False
+        if not self.is_completed:
+            return
+        self.is_completed = False
+        theme = ctk.ThemeManager.theme
+        self.lbl_title.configure(text_color=theme["CTkLabel"]["text_color"])
+        self.lbl_counts.configure(text=f"({len(self.files)} files)", text_color="gray")
+        self.prog.configure(progress_color=theme["CTkProgressBar"]["progress_color"])

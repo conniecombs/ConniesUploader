@@ -143,8 +143,14 @@ class UploaderApp(
         self.upload_count = 0
         self.is_uploading = False
         self._finalizing = False
+        # Bumped by Clear List so a finalization still running for the cleared
+        # upload does not complete it afterwards.
+        self._upload_generation = 0
         self.current_output_files = []
         self.copyable_output_files = []
+        # Files queued by the most recent Start; the completion summary counts
+        # only these.
+        self.upload_run_files = set()
         self.current_completion_summary = None
         self.pix_galleries_to_finalize = []
         self.output_dir = "Output"
@@ -204,7 +210,12 @@ class UploaderApp(
 
         # Initialize AutoPoster
         # The provider keeps the poster current after credentials are changed.
-        self.auto_poster = AutoPoster(lambda: self.creds, self.saved_threads_data)
+        # Posts that will not be sent are reported in the activity panel.
+        self.auto_poster = AutoPoster(
+            lambda: self.creds,
+            self.saved_threads_data,
+            notify=self._queue_activity_from_worker,
+        )
 
         # System Tray Integration
         from modules.ui.system_tray import SystemTrayManager

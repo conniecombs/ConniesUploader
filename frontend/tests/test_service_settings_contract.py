@@ -232,6 +232,7 @@ def test_upload_manager_result_event_preserves_durable_imx_thumbnail_url():
     manager.cancel_event = threading.Event()
     manager._stop_events = threading.Event()
     manager.active_files = {"image.jpg"}
+    manager._awaiting_done = set()
     manager.event_queue = queue.Queue()
     manager.progress_queue = queue.Queue()
     manager.result_queue = queue.Queue()

@@ -3,6 +3,9 @@
 
 """Runtime behavior for the main window."""
 
+import re
+import urllib.parse
+
 from .common import (  # noqa: F401
     Any,
     AutoPoster,
@@ -56,8 +59,62 @@ from .common import (  # noqa: F401
 # Row states that end a file's part in the current upload. A row only counts
 # toward completion the first time it enters one of these states.
 TERMINAL_ROW_STATES = frozenset({"success", "failed", "cancelled"})
+# Row states of files that belong to the running upload but have not finished.
+IN_FLIGHT_ROW_STATES = frozenset({"queued", "uploading"})
 GENERIC_FAILURE_REASON = "Upload failed without more detail."
 CANCELLED_REASON = "Upload cancelled."
+NO_LINK_REASON = "Host returned no link"
+
+
+_PIXHOST_HOST = re.compile(r"^(?:t(?P<shard>\d+)|img\d*)\.pixhost\.(?:to|cc)$")
+
+
+def direct_image_url(service_id: str, viewer_url: str, thumb_url: str) -> str:
+    """Return a URL that is an image, for ``#direct_url#`` and ``#all_full_images#``.
+
+    The full-size image is derived where the host's URL scheme is known:
+    IMX ``.../u/t/...`` becomes ``.../u/i/...`` and Pixhost
+    ``tN.pixhost.to/thumbs/...`` becomes ``imgN.pixhost.to/images/...``.
+    Imgur's link is already the image. Otherwise the thumbnail image is used:
+    the viewer URL is a web page, which an ``[img]`` tag cannot show.
+    """
+    thumb_url = str(thumb_url or "").strip()
+    parts = urllib.parse.urlsplit(thumb_url)
+    host = (parts.hostname or "").lower()
+
+    if config.normalize_service_id(service_id) == "imx.to" and "/t/" in parts.path:
+        path = parts.path.replace("/t/", "/i/", 1)
+        return urllib.parse.urlunsplit(parts._replace(path=path))
+
+    pixhost = _PIXHOST_HOST.match(host)
+    if pixhost and parts.path.startswith("/thumbs/"):
+        shard = pixhost.group("shard")
+        image_host = f"img{shard}.{host.split('.', 1)[1]}" if shard is not None else host
+        netloc = parts.netloc.lower().replace(host, image_host, 1)
+        path = "/images/" + parts.path[len("/thumbs/") :]
+        return urllib.parse.urlunsplit(parts._replace(netloc=netloc, path=path))
+
+    return thumb_url
+
+
+def write_new_text_file(directory: str, stem: str, tail: str, text: str) -> str:
+    """Write ``text`` to a new file ``directory/stem + tail`` and return its path.
+
+    An existing file is never replaced: on a name collision the stem gets a
+    numeric suffix (``_2``, ``_3``, ...). The file is created exclusively, so
+    two batches finishing in the same minute cannot race for one name.
+    """
+    os.makedirs(directory, exist_ok=True)
+    for attempt in range(1, 10000):
+        suffix = "" if attempt == 1 else f"_{attempt}"
+        path = os.path.join(directory, f"{stem}{suffix}{tail}")
+        try:
+            with open(path, "x", encoding="utf-8") as handle:
+                handle.write(text)
+        except FileExistsError:
+            continue
+        return path
+    raise FileExistsError(f"No free file name for {stem}{tail} in {directory}")
 
 
 class RuntimeMixin:
@@ -69,6 +126,8 @@ class RuntimeMixin:
             self._process_progress_queue()
 
             if self.is_uploading:
+                # Completion must see every result already delivered.
+                self._process_result_queue()
                 with self.lock:
                     if self.upload_count >= self.upload_total:
                         self.finish_upload()
@@ -225,7 +284,10 @@ class RuntimeMixin:
             while prog_limit > 0:
                 item = self.progress_queue.get_nowait()
                 k = item[0]
-                if k == "register_pix_gal":
+                if k == "activity":
+                    message, level = item[2]
+                    self.add_activity(message, level)
+                elif k == "register_pix_gal":
                     new_data = item[2]
                     if self._register_pixhost_gallery_for_finalization(new_data):
                         gallery_hash = str(new_data.get("gallery_hash") or "")
@@ -241,6 +303,11 @@ class RuntimeMixin:
                             self._apply_result_gallery_url(f, v)
                         elif k == "status":
                             status_text = str(v or "")
+                            if self._terminal_state_for_status(status_text):
+                                # The upload thread queues a file's result before
+                                # its terminal status, so a result that arrived
+                                # after this tick's result drain is waiting now.
+                                self._process_result_queue()
                             if self._apply_terminal_status(f, w, status_text):
                                 pass
                             elif w.get("state") not in TERMINAL_ROW_STATES:
@@ -256,6 +323,17 @@ class RuntimeMixin:
         except queue.Empty:
             pass
 
+    def _queue_activity_from_worker(self, message: str, level: str = "info") -> None:
+        """Thread-safe add_activity: the UI loop shows it on the Tk thread."""
+        if threading.current_thread() is threading.main_thread():
+            # Already on the Tk thread, which must never block on its own queue.
+            self.add_activity(message, level)
+            return
+        try:
+            self.progress_queue.put(("activity", None, (str(message), str(level))), timeout=1.0)
+        except queue.Full:
+            logger.warning(f"Progress queue full; activity not shown: {message}")
+
     @staticmethod
     def _terminal_state_for_status(status_text: str) -> Optional[str]:
         if status_text == "Done":
@@ -265,6 +343,14 @@ class RuntimeMixin:
         if status_text == "Failed" or status_text.lower().startswith("error"):
             return "failed"
         return None
+
+    @staticmethod
+    def _row_has_link(row: Dict[str, Any]) -> bool:
+        result = row.get("upload_result")
+        try:
+            return bool(str(result[0] or "").strip())
+        except (TypeError, IndexError):
+            return False
 
     @staticmethod
     def _failure_reason(status_text: str) -> str:
@@ -285,6 +371,13 @@ class RuntimeMixin:
             return False
 
         name = os.path.basename(fp)
+        if row.get("state") not in TERMINAL_ROW_STATES and (
+            new_state == "success" and not self._row_has_link(row)
+        ):
+            # Never trust a "Done" without a link: the batch output needs one.
+            new_state = "failed"
+            status_text = f"error: {NO_LINK_REASON}"
+
         if row.get("state") in TERMINAL_ROW_STATES:
             if row.get("state") == "failed" and new_state == "failed":
                 reason = self._failure_reason(status_text)
@@ -539,6 +632,27 @@ class RuntimeMixin:
     def _upload_in_progress(self) -> bool:
         return bool(self.is_uploading or self._finalizing)
 
+    def _forget_rows(self, filepaths) -> List[Dict[str, Any]]:
+        """Drop rows from the queue model and return them.
+
+        Terminal statuses of removed rows are ignored, so a row removed while
+        it still belongs to the running upload no longer counts toward the
+        upload total; otherwise the upload would never finish.
+        """
+        removed = []
+        with self.lock:
+            for fp in filepaths:
+                row = self.file_widgets.pop(fp, None)
+                if row is None:
+                    continue
+                removed.append(row)
+                if self.is_uploading and row.get("state") in IN_FLIGHT_ROW_STATES:
+                    self.upload_total = max(self.upload_count, self.upload_total - 1)
+                img_ref = row.get("image_ref")
+                if img_ref:
+                    self.image_refs.discard(img_ref)
+        return removed
+
     def _retry_file(self, filepath: str) -> None:
         if self._upload_in_progress():
             self.add_activity(
@@ -652,6 +766,7 @@ class RuntimeMixin:
             if done == total and not group.is_completed:
                 if failed:
                     group.mark_complete()
+                    group.completed_with_failures = True
                     self.log(
                         f"Warning: Output skipped for '{group.title}' because "
                         f"{failed} upload(s) failed."
@@ -663,6 +778,7 @@ class RuntimeMixin:
                     self.generate_failed_group_output(group, failed)
                 elif self._group_has_complete_results(group):
                     group.mark_complete()
+                    group.completed_with_failures = False
                     self.generate_group_output(group)
                 else:
                     logger.debug(
@@ -671,6 +787,30 @@ class RuntimeMixin:
         except Exception as e:
             logger.error(f"Group Update Error: {e}", exc_info=True)
 
+    def _recheck_group_output(self, group) -> None:
+        """Give a batch its output once removing rows left only successful uploads.
+
+        A batch that finished with failures got only a FAILED report. When the
+        failed or cancelled rows are removed, the rest of the batch is complete
+        and successful, so it now produces its normal output. A batch that
+        already has its normal output keeps it.
+        """
+        if not (group.files and group.is_completed):
+            return
+        if not getattr(group, "completed_with_failures", False):
+            return
+        with self.lock:
+            states = [self.file_widgets.get(fp, {}).get("state") for fp in group.files]
+        if any(state != "success" for state in states):
+            return
+        reset_completion = getattr(group, "reset_completion", None)
+        if callable(reset_completion):
+            reset_completion()
+        else:
+            group.is_completed = False
+            group.completed_with_failures = False
+        self._update_group_progress(group.files[0])
+
     def finish_upload(self) -> None:
         if not self.is_uploading or self._finalizing:
             return
@@ -678,43 +818,71 @@ class RuntimeMixin:
         # re-enter while galleries are finalized on the worker thread.
         self._finalizing = True
         self.lbl_eta.configure(text="Finalizing...")
+        galleries = list(self.pix_galleries_to_finalize)
+        generation = self._upload_generation
 
         def _fin():
-            finalization_events = []
-            if self.pix_galleries_to_finalize:
-                for gal in self.pix_galleries_to_finalize:
-                    gallery_hash = str(gal.get("gallery_hash", "") or "")
-                    gallery_name = str(gal.get("gallery_name", "") or gallery_hash)
-                    try:
-                        ok = api.finalize_pixhost_gallery(
-                            gal.get("gallery_upload_hash", ""),
-                            gal.get("gallery_hash", ""),
-                        )
-                        if ok:
-                            finalization_events.append(
-                                (
-                                    f"Pixhost gallery finalized: {gallery_name} ({gallery_hash}).",
-                                    "success",
-                                )
-                            )
-                        else:
-                            finalization_events.append(
-                                (
-                                    f"Pixhost gallery finalization failed: {gallery_name} ({gallery_hash}).",
-                                    "error",
-                                )
-                            )
-                    except Exception as e:
-                        logger.error(f"Pixhost finalize error: {e}")
-                        finalization_events.append(
-                            (
-                                f"Pixhost gallery finalization error for {gallery_name} ({gallery_hash}): {e}",
-                                "error",
-                            )
-                        )
-            self.after(0, lambda: self._finish_pixhost_finalization(finalization_events))
+            events = self._finalize_pixhost_galleries(galleries)
+            self.after(0, lambda: self._after_upload_finalization(events, generation))
 
         threading.Thread(target=_fin, daemon=True).start()
+
+    def _after_upload_finalization(self, events: List[Tuple[str, str]], generation: int) -> None:
+        if generation == self._upload_generation:
+            self._finish_pixhost_finalization(events)
+        else:
+            # The list was cleared meanwhile: report the galleries, complete nothing.
+            self._report_activity_events(events)
+
+    def _report_activity_events(self, events: List[Tuple[str, str]]) -> None:
+        for message, level in events:
+            self.add_activity(message, level)
+
+    def _finalize_pixhost_galleries_in_background(self, galleries: List[Dict[str, Any]]) -> None:
+        if not galleries:
+            return
+
+        def _fin():
+            events = self._finalize_pixhost_galleries(galleries)
+            self.after(0, lambda: self._report_activity_events(events))
+
+        threading.Thread(target=_fin, daemon=True).start()
+
+    @staticmethod
+    def _finalize_pixhost_galleries(galleries: List[Dict[str, Any]]) -> List[Tuple[str, str]]:
+        """Finalize registered Pixhost galleries (worker thread); returns activity lines."""
+        finalization_events = []
+        for gal in galleries:
+            gallery_hash = str(gal.get("gallery_hash", "") or "")
+            gallery_name = str(gal.get("gallery_name", "") or gallery_hash)
+            try:
+                ok = api.finalize_pixhost_gallery(
+                    gal.get("gallery_upload_hash", ""),
+                    gal.get("gallery_hash", ""),
+                )
+                if ok:
+                    finalization_events.append(
+                        (
+                            f"Pixhost gallery finalized: {gallery_name} ({gallery_hash}).",
+                            "success",
+                        )
+                    )
+                else:
+                    finalization_events.append(
+                        (
+                            f"Pixhost gallery finalization failed: {gallery_name} ({gallery_hash}).",
+                            "error",
+                        )
+                    )
+            except Exception as e:
+                logger.error(f"Pixhost finalize error: {e}")
+                finalization_events.append(
+                    (
+                        f"Pixhost gallery finalization error for {gallery_name} ({gallery_hash}): {e}",
+                        "error",
+                    )
+                )
+        return finalization_events
 
     def _on_upload_complete(self):
         self.is_uploading = False
@@ -741,8 +909,13 @@ class RuntimeMixin:
         self._set_completion_summary(summary)
 
     def _build_completion_summary(self) -> Dict[str, Any]:
+        run_files = self.upload_run_files
         with self.lock:
-            states = [data.get("state") for data in self.file_widgets.values()]
+            states = [
+                data.get("state")
+                for fp, data in self.file_widgets.items()
+                if not run_files or fp in run_files
+            ]
 
         uploaded_count = sum(1 for state in states if state == "success")
         failed_count = sum(1 for state in states if state == "failed")
@@ -870,10 +1043,7 @@ class RuntimeMixin:
                 val = res_map[fp]
                 viewer_url = val[0]
                 thumb_url = val[1]
-                direct_url = viewer_url
-                if svc == "imx.to":
-                    if "/t/" in thumb_url:
-                        direct_url = thumb_url.replace("/t/", "/i/")
+                direct_url = direct_image_url(svc, viewer_url, thumb_url)
                 group_results.append((viewer_url, thumb_url, direct_url))
 
         if len(group_results) != len(group_files):
@@ -935,18 +1105,28 @@ class RuntimeMixin:
             "thread_id": thread_id,
             "upload_date": datetime.now().strftime("%Y-%m-%d"),
         }
-        text = self.template_mgr.apply(group.selected_template, ctx, group_results)
+        template_name = self._output_template_for_group(group)
+        text = self.template_mgr.apply(template_name, ctx, group_results)
+        if not str(text or "").strip():
+            self.log(
+                f"Warning: Output skipped for '{group.title}' because template "
+                f"'{template_name}' produced no text."
+            )
+            self.add_activity(
+                f'Skipped output for {group.title}: template "{template_name}" produced no text.',
+                "warning",
+            )
+            self._skip_poster_for_group(group, "empty output")
+            return
 
         try:
             from modules.file_handler import sanitize_filename
 
-            safe_title = sanitize_filename(group.title)
+            safe_title = sanitize_filename(group.title) or "Batch"
             ts = datetime.now().strftime("%Y%m%d_%H%M")
             out_dir = getattr(self, "output_dir", "Output")
-            os.makedirs(out_dir, exist_ok=True)
-            out_name = os.path.join(out_dir, f"{safe_title}_{ts}.txt")
-            with open(out_name, "w", encoding="utf-8") as f:
-                f.write(text)
+            out_name = write_new_text_file(out_dir, f"{safe_title}_{ts}", ".txt", text)
+            out_stem = os.path.splitext(os.path.basename(out_name))[0]
             self.current_output_files.append(out_name)
             self.copyable_output_files.append(out_name)
             self.log(f"Saved: {out_name}")
@@ -955,20 +1135,35 @@ class RuntimeMixin:
             # Queue for auto-posting if needed
             tgt_thread = group.selected_thread
             if tgt_thread and tgt_thread != "Do Not Post":
-                self.auto_poster.queue_post(
-                    group.batch_index,
-                    text,
-                    tgt_thread,
-                    batch_name=self._batch_display_name(group),
-                )
-                message, level = self._vipergirls_queue_activity(group, tgt_thread)
-                self.add_activity(message, level)
+                if self._upload_in_progress():
+                    not_queued = self.auto_poster.queue_post(
+                        group.batch_index,
+                        text,
+                        tgt_thread,
+                        batch_name=self._batch_display_name(group),
+                    )
+                    if not_queued:
+                        self.add_activity(
+                            f'ViperGirls post for "{self._batch_display_name(group)}" '
+                            f"was not queued: {not_queued}.",
+                            "warning",
+                        )
+                    else:
+                        message, level = self._vipergirls_queue_activity(group, tgt_thread)
+                        self.add_activity(message, level)
+                else:
+                    # The poster runs only for an upload session; a post queued
+                    # now would wait unseen for the next one.
+                    self.add_activity(
+                        f'Output for "{self._batch_display_name(group)}" was not posted to '
+                        f'"{tgt_thread}": the upload had already finished. '
+                        "Use Schedule Post or post it manually.",
+                        "warning",
+                    )
 
-            central_name = os.path.join(self.central_history_path, f"{safe_title}_{ts}.txt")
-            with open(central_name, "w", encoding="utf-8") as f:
-                f.write(text)
+            write_new_text_file(self.central_history_path, out_stem, ".txt", text)
 
-            self.lbl_eta.configure(text=f"Saved: {safe_title}_{ts}.txt")
+            self.lbl_eta.configure(text=f"Saved: {os.path.basename(out_name)}")
             self.btn_open.configure(state="normal")
             if self.var_auto_copy.get():
                 self.clipboard_buffer.append(text)
@@ -990,10 +1185,8 @@ class RuntimeMixin:
                 need_links_txt = True
 
             if need_links_txt:
-                links_name = os.path.join(out_dir, f"{safe_title}_{ts}_links.txt")
                 raw_links = "\n".join([r[0] for r in group_results])
-                with open(links_name, "w", encoding="utf-8") as f:
-                    f.write(raw_links)
+                links_name = write_new_text_file(out_dir, f"{out_stem}_links", ".txt", raw_links)
                 self.log(f"Saved Links: {links_name}")
                 self.add_activity(f"Saved links file: {os.path.basename(links_name)}.", "success")
 
@@ -1001,7 +1194,30 @@ class RuntimeMixin:
             self.log(f"Error writing output: {e}")
             self.add_activity(f"Error writing output: {e}", "error")
 
-    def _skip_poster_for_group(self, group) -> None:
+    def _output_template_for_group(self, group) -> str:
+        """The group's template, or the default when it was renamed or deleted."""
+        selected = str(getattr(group, "selected_template", "") or "")
+        get_all_keys = getattr(self.template_mgr, "get_all_keys", None)
+        if not callable(get_all_keys):
+            return selected
+        names = list(get_all_keys())
+        if selected in names:
+            return selected
+
+        fallback = self._default_template_name(names)
+        update = getattr(group, "update_template_names", None)
+        if callable(update):
+            update(names, fallback)
+        else:
+            group.selected_template = fallback
+        self.add_activity(
+            f'Template "{selected}" for {self._batch_display_name(group)} no longer exists; '
+            f'used "{fallback}" instead.',
+            "warning",
+        )
+        return fallback
+
+    def _skip_poster_for_group(self, group, reason: Optional[str] = None) -> None:
         """Tell the AutoPoster this group will never post so later batches proceed."""
         target = group.selected_thread
         if not target or target == "Do Not Post":
@@ -1010,9 +1226,10 @@ class RuntimeMixin:
         batch_index = group.batch_index
         if poster is None or not isinstance(batch_index, int):
             return
-        with self.lock:
-            states = [self.file_widgets.get(fp, {}).get("state") for fp in group.files]
-        reason = "upload cancelled" if "cancelled" in states else "upload failed"
+        if reason is None:
+            with self.lock:
+                states = [self.file_widgets.get(fp, {}).get("state") for fp in group.files]
+            reason = "upload cancelled" if "cancelled" in states else "upload failed"
         poster.skip(batch_index, reason)
 
     def generate_failed_group_output(self, group, failed_count: Optional[int] = None):
@@ -1029,7 +1246,6 @@ class RuntimeMixin:
             now = datetime.now()
             ts = now.strftime("%Y%m%d_%H%M")
             out_dir = getattr(self, "output_dir", "Output")
-            os.makedirs(out_dir, exist_ok=True)
 
             lines = [
                 f"Batch: {batch_name}",
@@ -1064,17 +1280,13 @@ class RuntimeMixin:
                 lines.append(f"  Path: {fp}")
 
             text = "\n".join(lines) + "\n"
-            out_name = os.path.join(out_dir, f"{safe_title}_{ts}_FAILED.txt")
-            with open(out_name, "w", encoding="utf-8") as f:
-                f.write(text)
+            out_name = write_new_text_file(out_dir, f"{safe_title}_{ts}", "_FAILED.txt", text)
             self.current_output_files.append(out_name)
 
             history_dir = getattr(self, "central_history_path", "")
             if history_dir:
-                os.makedirs(history_dir, exist_ok=True)
-                central_name = os.path.join(history_dir, f"{safe_title}_{ts}_FAILED.txt")
-                with open(central_name, "w", encoding="utf-8") as f:
-                    f.write(text)
+                report_stem = os.path.basename(out_name)[: -len("_FAILED.txt")]
+                write_new_text_file(history_dir, report_stem, "_FAILED.txt", text)
 
             self.btn_open.configure(state="normal")
             self.log(f"Saved failed batch report: {out_name}")
@@ -1125,6 +1337,14 @@ class RuntimeMixin:
             self.add_activity("No failed files to retry.", "warning")
 
     def clear_list(self) -> None:
+        if self.is_uploading and not self._finalizing:
+            # Cancel exactly as Stop does: the sidecar aborts the batch and the
+            # auto-poster stops. finish_upload will never run for the cleared
+            # rows, so finalize the registered Pixhost galleries here.
+            self.stop_upload()
+            self._finalize_pixhost_galleries_in_background(list(self.pix_galleries_to_finalize))
+        self._upload_generation += 1
+        self.pix_galleries_to_finalize = []
         self.cancel_event.set()
         self._clear_import_work()
         self.is_uploading = False
@@ -1135,6 +1355,7 @@ class RuntimeMixin:
         self.current_output_files = []
         self.copyable_output_files = []
         self.clipboard_buffer = []
+        self.upload_run_files = set()
         for grp in self.groups:
             grp.destroy()
         self.groups.clear()
