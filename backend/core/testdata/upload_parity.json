@@ -262,6 +262,13 @@
       "status": 400,
       "body": "<frameset><frame src='a'></frameset>after",
       "want": "upload rejected (HTTP 400): <frameset><frame src='a'></frameset>after"
+    },
+    {
+      "name": "a body with NaN is not JSON, so its message field does not count",
+      "reason": "upload rejected",
+      "status": 400,
+      "body": "{\"error\": NaN, \"message\": \"quota\"}",
+      "want": "upload rejected (HTTP 400): {\"error\": NaN, \"message\": \"quota\"}"
     }
   ],
   "redactions": [
@@ -532,6 +539,66 @@
       "status": 200,
       "body": "{\"code\":200,\"files\":[{\"sourceUrl\":\"https://cdn.example/source.jpg\"},{\"thumb\":12.5}]}",
       "want": {"url": "https://cdn.example/source.jpg", "thumb": "12.5", "error": ""}
+    },
+    {
+      "name": "a big integer id rounds through a float, as in Go",
+      "host": "",
+      "config": {},
+      "parser": {"type": "json", "url_path": "newUrl", "thumb_path": "", "status_path": "success", "success_value": "true", "url_template": "https://example.com/p/{id}/{filename}.html"},
+      "file": "/in/a.jpg",
+      "status": 200,
+      "body": "{\"success\":true,\"id\":12345678901234567890}",
+      "want": {"url": "https://example.com/p/12345678901234567000/a.jpg.html", "thumb": "", "error": ""}
+    },
+    {
+      "name": "integers past 2^53 round to the nearest float",
+      "host": "",
+      "config": {},
+      "parser": {"type": "json", "url_path": "u", "thumb_path": "n"},
+      "file": "/in/a.jpg",
+      "status": 200,
+      "body": "{\"u\":\"https://cdn.example/a.jpg\",\"n\":9007199254740993}",
+      "want": {"url": "https://cdn.example/a.jpg", "thumb": "9007199254740992", "error": ""}
+    },
+    {
+      "name": "negative zero keeps its sign",
+      "host": "",
+      "config": {},
+      "parser": {"type": "json", "url_path": "u", "thumb_path": "n"},
+      "file": "/in/a.jpg",
+      "status": 200,
+      "body": "{\"u\":\"https://cdn.example/a.jpg\",\"n\":-0.0}",
+      "want": {"url": "https://cdn.example/a.jpg", "thumb": "-0", "error": ""}
+    },
+    {
+      "name": "NaN is not JSON",
+      "host": "",
+      "config": {},
+      "parser": {"type": "json", "url_path": "u", "thumb_path": "n"},
+      "file": "/in/a.jpg",
+      "status": 200,
+      "body": "{\"u\":\"https://cdn.example/a.jpg\",\"n\":NaN}",
+      "want": {"url": "", "thumb": "", "error": "upload response was not valid JSON (HTTP 200): {\"u\":\"https://cdn.example/a.jpg\",\"n\":NaN}"}
+    },
+    {
+      "name": "Infinity is not JSON",
+      "host": "",
+      "config": {},
+      "parser": {"type": "json", "url_path": "u", "thumb_path": "n"},
+      "file": "/in/a.jpg",
+      "status": 200,
+      "body": "{\"u\":\"https://cdn.example/a.jpg\",\"n\":-Infinity}",
+      "want": {"url": "", "thumb": "", "error": "upload response was not valid JSON (HTTP 200): {\"u\":\"https://cdn.example/a.jpg\",\"n\":-Infinity}"}
+    },
+    {
+      "name": "a number too large for a float is not JSON",
+      "host": "",
+      "config": {},
+      "parser": {"type": "json", "url_path": "u", "thumb_path": "n"},
+      "file": "/in/a.jpg",
+      "status": 200,
+      "body": "{\"u\":\"https://cdn.example/a.jpg\",\"n\":1e400}",
+      "want": {"url": "", "thumb": "", "error": "upload response was not valid JSON (HTTP 200): {\"u\":\"https://cdn.example/a.jpg\",\"n\":1e400}"}
     }
   ]
 }

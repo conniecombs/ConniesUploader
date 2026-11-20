@@ -31,6 +31,7 @@ import bisect
 import functools
 import html
 import json
+import math
 import os
 import re
 import unicodedata
@@ -326,9 +327,31 @@ def host_message_text(body: str) -> str:
     return collapse_text(trimmed)
 
 
+def _json_number(text: str) -> float:
+    number = float(text)
+    if not math.isfinite(number):
+        raise ValueError(f"number out of range: {text}")
+    return number
+
+
+def _no_json_constant(name: str) -> Any:
+    raise ValueError(f"not JSON: {name}")
+
+
+def parse_json(text: str) -> Any:
+    """Decode JSON as the legacy Go parser did; raises ValueError for what Go rejects.
+
+    Every number is a float, so integers past 2**53 round as in Go, and
+    NaN, Infinity and numbers too large for a float are not JSON.
+    """
+    return json.loads(
+        text, parse_int=_json_number, parse_float=_json_number, parse_constant=_no_json_constant
+    )
+
+
 def _loads(text: str) -> Any:
     try:
-        return json.loads(text)
+        return parse_json(text)
     except ValueError:
         return _INVALID
 
@@ -465,11 +488,13 @@ def _scalar_to_string(value: Any) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
     if isinstance(value, int):
-        return str(value)
+        return str(value)  # not from a host's answer: parse_json gives floats
     if isinstance(value, float):
-        if value.is_integer():
-            return str(int(value))
-        return format(Decimal(repr(value)), "f")
+        if not math.isfinite(value):
+            return ""
+        # Go's strconv.FormatFloat(v, 'f', -1, 64): the shortest digits that
+        # read back as the same float, without an exponent ("1", "-0", "12.5").
+        return format(Decimal(repr(value)).normalize(), "f")
     return ""
 
 
