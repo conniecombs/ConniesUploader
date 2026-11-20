@@ -203,7 +203,8 @@ A `response_parser`'s `url_template` and `thumb_template` take `{filename}`,
 `{basename}`, `{ext}`, `{dot_ext}` (all from the local file) and JSON response
 values by key or dotted path. A `thumb_template` can also build on the parsed
 link: `{url_no_ext}` is the link up to the extension of its path, without query
-or fragment, and `{url_dot_ext}` is that extension (`.jpg`), so
+or fragment and with the link's own escaping kept (`%2F` stays `%2F`, `(`
+stays `(`), and `{url_dot_ext}` is that extension (`.jpg`), so
 `{url_no_ext}m{url_dot_ext}` turns `https://h/AbC.jpg` into `https://h/AbCm.jpg`.
 
 ## Result Resolution (`resolve_spec`)

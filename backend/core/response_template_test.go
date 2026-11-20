@@ -45,3 +45,21 @@ func TestThumbTemplateURLPartsInHTMLParser(t *testing.T) {
 		t.Fatalf("thumb = %q", thumbStr)
 	}
 }
+
+func TestURLNoExtKeepsTheLinksEscaping(t *testing.T) {
+	cases := []struct {
+		link, wantNoExt, wantExt string
+	}{
+		{"https://i.example/a%2Fb/AbC.jpg", "https://i.example/a%2Fb/AbC", ".jpg"},
+		{"https://i.example/a%2fb/AbC.jpg?x=1#f", "https://i.example/a%2fb/AbC", ".jpg"},
+		{"https://i.example/it's(1)!*.png", "https://i.example/it's(1)!*", ".png"},
+		{"https://i.example/a%20b.gif", "https://i.example/a%20b", ".gif"},
+		{"https://i.example/AbC", "https://i.example/AbC", ""},
+	}
+	for _, tc := range cases {
+		noExt, ext := splitURLExtension(tc.link)
+		if noExt != tc.wantNoExt || ext != tc.wantExt {
+			t.Errorf("%s: got (%q, %q), want (%q, %q)", tc.link, noExt, ext, tc.wantNoExt, tc.wantExt)
+		}
+	}
+}

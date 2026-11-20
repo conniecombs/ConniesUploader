@@ -1099,7 +1099,8 @@ func applyResponseTemplate(template string, data map[string]interface{}, fp stri
 
 // splitURLExtension splits a link into everything before the extension of its
 // path and the extension itself ("https://h/a/x.jpg" -> "https://h/a/x",
-// ".jpg"). The query and fragment are dropped.
+// ".jpg"). The query and fragment are dropped. The path keeps the link's own
+// escaping: "%2F" stays "%2F" and "(" stays "(".
 func splitURLExtension(link string) (string, string) {
 	link = strings.TrimSpace(link)
 	if link == "" {
@@ -1110,13 +1111,13 @@ func splitURLExtension(link string) (string, string) {
 		return link, ""
 	}
 	parsed.RawQuery, parsed.ForceQuery, parsed.Fragment, parsed.RawFragment = "", false, "", ""
-	ext := path.Ext(parsed.Path)
-	if ext == "" {
-		return parsed.String(), ""
+	// Without a query or fragment the link ends with its escaped path.
+	stripped := parsed.String()
+	ext := path.Ext(parsed.EscapedPath())
+	if ext == "" || !strings.HasSuffix(stripped, ext) {
+		return stripped, ""
 	}
-	parsed.Path = strings.TrimSuffix(parsed.Path, ext)
-	parsed.RawPath = ""
-	return parsed.String(), ext
+	return strings.TrimSuffix(stripped, ext), ext
 }
 
 func findJSONScalar(value interface{}, key string) string {
