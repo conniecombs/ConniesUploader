@@ -252,6 +252,7 @@ class UploaderApp(
         self.bind_all("<c>", self._toggle_selected_cover_from_key)
         self.bind_all("<C>", self._toggle_selected_cover_from_key)
         self.after(250, self._show_template_recovery_notice)
+        self.after(300, self._show_settings_recovery_notice)
 
         # Register drag-and-drop on main window
         self.drop_target_register(DND_FILES)

@@ -191,6 +191,26 @@ class SettingsMixin:
         self.var_service.set(saved_service)
         self._swap_service_frame(saved_service)
 
+    def _show_settings_recovery_notice(self):
+        """Tell the user when an unreadable settings file was reset at startup."""
+        issue = self.settings_mgr.get_recovery_issue()
+        if not issue:
+            return
+
+        backup_path = issue.get("backup_path")
+        self.add_activity(
+            "Settings file could not be read. Default settings are in use.", "warning"
+        )
+        if backup_path:
+            detail = f"The old file was kept as:\n{backup_path}"
+        else:
+            detail = "The old file could not be backed up and was left unchanged."
+        messagebox.showwarning(
+            "Settings Reset",
+            "Your settings file could not be read, so default settings are in use.\n\n"
+            f"{detail}\n\nError: {issue.get('error', 'unknown')}",
+        )
+
     def _safe_int(self, value, default=2):
         try:
             return int(value)
