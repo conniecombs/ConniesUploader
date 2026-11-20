@@ -31,6 +31,11 @@ JsonDict = Dict[str, Any]
 # request. Jobs written to that process (its "generation") are lost.
 SIDECAR_CRASHED_EVENT = "sidecar_crashed"
 PROCESS_RESTARTED_MSG = "Uploader process restarted; upload interrupted"
+# Events a listener must receive (see SidecarBridge._dispatch_event).
+TERMINAL_STATUSES = frozenset({"Done", "Failed", "Cancelled"})
+TERMINAL_EVENT_TYPES = frozenset(
+    {"result", "error", "batch_complete", SIDECAR_CRASHED_EVENT, "sidecar_stopped"}
+)
 
 
 class SidecarBridge:
@@ -288,8 +293,44 @@ class SidecarBridge:
                 logger.info("Sidecar restarted successfully")
                 self.restart_count = 0
 
+    @staticmethod
+    def _is_terminal_event(data: JsonDict) -> bool:
+        """Whether a listener must receive this event: it ends a file, job or process."""
+        event_type = data.get("type")
+        if event_type == "status":
+            return data.get("status") in TERMINAL_STATUSES
+        return event_type in TERMINAL_EVENT_TYPES
+
+    def _put_until_delivered(self, listener: queue.Queue[JsonDict], data: JsonDict) -> None:
+        """Wait for room in a full listener queue instead of dropping the event.
+
+        Gives up only when the listener is removed or the bridge shuts down,
+        since nobody would read the event then.
+        """
+        waited = False
+        while True:
+            try:
+                listener.put(data, timeout=1.0)
+                return
+            except queue.Full:
+                pass
+            with self.listeners_lock:
+                registered = listener in self.listeners
+            if not registered or self._shutdown_requested.is_set():
+                logger.warning("Dropping a sidecar event for a listener that is gone")
+                return
+            if not waited:
+                waited = True
+                logger.warning("A sidecar listener queue is full; waiting to deliver an event")
+
     def _dispatch_event(self, data: JsonDict) -> None:
-        """Broadcast an event to listeners without blocking the stdout reader."""
+        """Broadcast an event to listeners.
+
+        Progress events are dropped when a listener's queue is full. Terminal
+        events (a file's result, error, Done/Failed/Cancelled status, a job's
+        batch_complete, and process crash/stop notices) are never dropped:
+        the stdout reader waits for room instead.
+        """
         event_type = data.get("type")
         if event_type == "log":
             logger.info(f"[GO] {data.get('msg', '')}")
@@ -303,17 +344,12 @@ class SidecarBridge:
         with self.listeners_lock:
             listeners = list(self.listeners)
 
+        must_deliver = self._is_terminal_event(data)
         stale_listeners: List[queue.Queue[JsonDict]] = []
         for listener in listeners:
             try:
-                if event_type in {
-                    "result",
-                    "error",
-                    "batch_complete",
-                    SIDECAR_CRASHED_EVENT,
-                    "sidecar_stopped",
-                }:
-                    listener.put(data, timeout=1.0)
+                if must_deliver:
+                    self._put_until_delivered(listener, data)
                 else:
                     listener.put_nowait(data)
             except queue.Full:

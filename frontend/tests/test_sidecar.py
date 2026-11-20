@@ -453,18 +453,61 @@ def test_restart_backoff_sleeps_without_holding_restart_lock(monkeypatch):
     assert bridge.restart_count == 0  # reset after a successful restart
 
 
-@pytest.mark.unit
-def test_dispatch_event_blocks_at_most_one_second_per_terminal_event():
-    import queue
-    import time
-
+def _bridge_with_full_listener():
     from modules import sidecar
 
     bridge = sidecar.SidecarBridge.__new__(sidecar.SidecarBridge)
     bridge.listeners_lock = threading.RLock()
+    bridge._shutdown_requested = threading.Event()
     full_queue = queue.Queue(maxsize=1)
-    full_queue.put_nowait({"type": "status"})
+    full_queue.put_nowait({"type": "status", "status": "Uploading"})
     bridge.listeners = [full_queue]
+    return bridge, full_queue
+
+
+@pytest.mark.unit
+def test_dispatch_event_never_drops_a_terminal_event_for_a_full_listener():
+    bridge, full_queue = _bridge_with_full_listener()
+    events = [
+        {"type": "status", "file": "/a.jpg", "status": "Done"},
+        {"type": "status", "file": "/b.jpg", "status": "Failed"},
+        {"type": "status", "file": "/c.jpg", "status": "Cancelled"},
+        {"type": "result", "file": "/d.jpg", "url": "u"},
+        {"type": "batch_complete", "id": "b:1"},
+    ]
+    received = []
+
+    def slow_consumer():
+        time.sleep(1.3)  # longer than one put timeout
+        for _ in range(len(events) + 1):
+            received.append(full_queue.get(timeout=3))
+
+    consumer = threading.Thread(target=slow_consumer, daemon=True)
+    consumer.start()
+    for event in events:
+        bridge._dispatch_event(event)
+    consumer.join(5)
+
+    assert received[1:] == events
+
+
+@pytest.mark.unit
+def test_dispatch_event_drops_progress_for_a_full_listener():
+    bridge, full_queue = _bridge_with_full_listener()
+
+    started = time.monotonic()
+    bridge._dispatch_event({"type": "status", "file": "/a.jpg", "status": "Uploading"})
+    bridge._dispatch_event({"type": "progress", "file": "/a.jpg", "data": {}})
+
+    assert time.monotonic() - started < 0.5
+    assert full_queue.qsize() == 1
+
+
+@pytest.mark.unit
+def test_dispatch_event_stops_waiting_for_a_listener_that_was_removed():
+    bridge, full_queue = _bridge_with_full_listener()
+    remover = threading.Timer(0.3, bridge.remove_listener, args=(full_queue,))
+    remover.start()
 
     started = time.monotonic()
     bridge._dispatch_event({"type": "result", "file": "/a.jpg"})

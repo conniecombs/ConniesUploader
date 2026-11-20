@@ -151,8 +151,13 @@ Terminal events per file are exactly one of: `result` (then `status: "Done"`),
 `status: "Cancelled"` followed by `error`. Python counts a file once and treats
 the trailing `error` as the reason for the preceding status. An `error` event
 that carries a job `id` but no file applies to every file of that job that has
-not finished. After `batch_complete`, any file of that job without a terminal
-event is failed by Python.
+not finished. After `batch_complete`, Python ends every file of that job that
+has not finished: a file whose `result` arrived without its `status: "Done"`
+is completed as Done, and any other file is failed ("no result received from
+sidecar"). Python's sidecar bridge never drops a terminal event (`result`,
+`error`, `status` `Done`/`Failed`/`Cancelled`, `batch_complete`): when a
+listener's queue is full it waits for room. Only progress events and other
+statuses are dropped under load.
 
 An upload is `Done` only when it produced a viewer link. A non-2xx upload
 response, a failed `status_path` check, a body the parser cannot read, or a

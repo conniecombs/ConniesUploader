@@ -763,8 +763,10 @@ class UploadManager:
         elif evt == "batch_complete":
             logger.debug("SIDECAR: batch complete")
             if job_id:
-                stragglers = self._job_files.pop(job_id, [])
-                self._fail_active_files(stragglers, "no result received from sidecar")
+                # As after a crash: a file whose result arrived only lost its
+                # "Done"; every other unfinished file failed.
+                with self._jobs_lock:
+                    self._end_job(job_id, "error: no result received from sidecar")
 
         elif evt == "log":
             logger.debug(f"SIDECAR: {data.get('msg')}")
