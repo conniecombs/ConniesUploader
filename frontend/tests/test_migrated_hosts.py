@@ -28,9 +28,9 @@ CREDS = {**IMX_CREDS, "imgur_client_id": "client-1"}
 
 
 def test_plugin_metadata_says_who_implements_the_upload():
-    for plugin in (ImxPlugin(), PixhostPlugin(), ImgurPlugin()):
+    for plugin in (ImxPlugin(), PixhostPlugin(), ImgurPlugin(), ImageBamPlugin()):
         assert plugin.metadata["implementation"] == "python", plugin.id
-    for plugin in (TurboPlugin(), ViprPlugin(), ImageBamPlugin()):
+    for plugin in (TurboPlugin(), ViprPlugin()):
         assert plugin.metadata["implementation"] == "go", plugin.id
 
 
@@ -64,9 +64,9 @@ def test_preflight_still_checks_the_sidecar_for_python_path_hosts():
 
 
 def test_imx_pixhost_and_imgur_parse_their_own_responses():
-    for plugin in (ImxPlugin(), PixhostPlugin(), ImgurPlugin()):
+    for plugin in (ImxPlugin(), PixhostPlugin(), ImgurPlugin(), ImageBamPlugin()):
         assert uses_python_upload_parsing(plugin), plugin.id
-    for plugin in (TurboPlugin(), ViprPlugin(), ImageBamPlugin()):
+    for plugin in (TurboPlugin(), ViprPlugin()):
         assert not uses_python_upload_parsing(plugin), f"{plugin.id} is migrated later"
 
 
