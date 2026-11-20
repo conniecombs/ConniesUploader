@@ -119,6 +119,18 @@ def format_file_collection_size(file_paths: Iterable[str]) -> str:
     return format_file_size(total_file_size(file_paths))
 
 
+def canonical_path(file_path: str) -> str:
+    """Return the single path form used for queued files (symlinks resolved).
+
+    Folder scans and dropped files must agree on it, or the same image reached
+    through a symlinked folder is queued twice.
+    """
+    try:
+        return str(Path(file_path).resolve())
+    except (OSError, RuntimeError):
+        return os.path.abspath(file_path)
+
+
 def _validate_media_file(file_path: str, validate_size: bool) -> None:
     """Raise InvalidFileException unless the path is a queueable image file."""
     validate_file_extension(file_path)
@@ -196,7 +208,7 @@ def get_files_from_directory(
 
                 file_path = Path(root) / filename
                 try:
-                    resolved = file_path.resolve()
+                    resolved = Path(canonical_path(str(file_path)))
                     if not resolved.is_relative_to(base_dir):
                         logger.warning(f"Skipping path outside selected directory: {file_path}")
                         continue

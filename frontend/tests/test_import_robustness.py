@@ -221,3 +221,35 @@ def test_partial_import_lists_each_skipped_file_in_import_checks(tmp_path):
     assert [(g.title, len(g.files)) for g in app.groups] == [("Set1", 2)]
     assert any(issue.startswith("huge.png: ") for issue in app.import_checks[-1])
     assert "(1 rejected)" in app.lbl_eta.text
+
+
+# --- E9: one canonical path form for duplicate detection --------------------
+
+
+@pytest.mark.unit
+@pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks unavailable")
+def test_same_image_via_symlinked_folder_and_as_file_is_queued_once(tmp_path):
+    root = tmp_path.resolve()
+    real = root / "real" / "Set1"
+    _touch(str(real / "1.jpg"))
+    os.symlink(str(root / "real"), str(root / "link"))
+    via_link_dir = os.path.join(str(root), "link", "Set1")
+    via_link_file = os.path.join(via_link_dir, "1.jpg")
+    app = _import_app()
+
+    app._process_files([via_link_dir])
+    _drain_rows(app)
+    app._process_files([via_link_file])
+    _drain_rows(app)
+
+    assert len(app.file_widgets) == 1
+    assert [(g.title, len(g.files)) for g in app.groups if g.files] == [("Set1", 1)]
+
+
+@pytest.mark.unit
+def test_dropped_file_is_queued_under_its_canonical_path(tmp_path):
+    image = _touch(str(tmp_path / "a" / ".." / "a" / "1.jpg"))
+
+    result = _import_app()._scan_import_inputs([image])
+
+    assert result["misc_files"] == [str((tmp_path / "a" / "1.jpg").resolve())]

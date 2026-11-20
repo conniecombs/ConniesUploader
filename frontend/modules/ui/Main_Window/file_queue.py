@@ -260,7 +260,8 @@ class FileQueueMixin:
                     try:
                         file_handler.validate_file_size(path)
                         logger.debug(f"      ✓ Valid image file: {os.path.basename(path)}")
-                        result["misc_files"].append(path)
+                        # Same path form as folder scans, so duplicates are detected.
+                        result["misc_files"].append(file_handler.canonical_path(path))
                         result["file_count"] += 1
                     except Exception as e:
                         logger.warning(f"      ⚠ Rejected file {os.path.basename(path)}: {e}")
