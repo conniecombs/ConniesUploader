@@ -171,7 +171,11 @@ class ImageBamPlugin(ImageHostPlugin):
                     r"\[/IMG\]\[/URL\]"
                 ),
                 "gallery_extractor": "a#gallery-name",
-                "file_match_mode": "single",
+                # Every file of a job shares one upload session, whose result
+                # page lists all of the session's images, and view links carry
+                # no file names. The n-th upload to finish takes the n-th
+                # entry; the sidecar runs such a job's uploads one at a time.
+                "file_match_mode": "upload_order",
             },
         }
 

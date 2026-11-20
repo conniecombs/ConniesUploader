@@ -179,6 +179,11 @@ func processUploadFiles(job JobRequest, processor func(context.Context, string, 
 	if n := len(job.Files); n > 0 && maxWorkers > n {
 		maxWorkers = n
 	}
+	// upload_order matches results by the order uploads finish, which is
+	// only defined when the job's uploads do not overlap.
+	if core.ResolveNeedsSequentialUploads(job.ResolveSpec) {
+		maxWorkers = 1
+	}
 
 	// Once-per-job session/login for hosts that declare pre_request (Vipr, Turbo, ImageBam).
 	// Concurrent files then share cookies/tokens instead of re-authenticating per file.

@@ -151,6 +151,40 @@ host-defined in Python and Go remains host-name agnostic, but the execution of
 those parser specs is a legacy bridge to be retired when upload result parsing
 moves into Python.
 
+## Result Resolution (`resolve_spec`)
+
+When an upload job carries a `resolve_spec` and the upload response has a link
+but no thumbnail, Go fetches `result_url` (with `{url}` set to the parsed link)
+and matches the page's entries (`link_extractor` with named groups
+`image_url`, `thumb_url`, and optionally `filename`) to the file. Each file is
+resolved right after its own upload, but the files of one job share a claim
+set: an entry given to one file of the job is never given to another, even
+when their lookups run at the same time.
+
+`file_match_mode` decides which entry a file takes:
+
+- `filename` (default): the entry whose name (the `filename` group, else the
+  last segment of `image_url`) equals the file's base name, ignoring case.
+  Next, the same name once punctuation is ignored (a host that turned
+  `Scan #1.jpg` into `Scan__1.jpg`). Only on the last poll, when neither is
+  listed, a host name that contains the file's name as whole words
+  (`4411_beach.jpg` for `beach.jpg`). An entry that another file of the job
+  matches more closely is left for that file. Local file names are never
+  parsed as URLs; a page value is reduced to its last path segment only when
+  it is a link, and its percent-escapes are decoded. Files of the job with
+  the same name take the page's entries in the order their uploads finished.
+- `contains`: as `filename`, but the whole-word containment rule applies on
+  every poll.
+- `first` / `single`: the first entry no other file of the job holds.
+- `upload_order`: for hosts whose result page lists every image of the
+  job's shared upload session, in upload order, with links that carry no
+  file names. The n-th upload of the job to finish takes the n-th entry; a
+  page with exactly one entry belongs to that one upload (a session per
+  file). Order is only defined when the session's uploads do not overlap, so
+  Go runs such a job's files one at a time whatever `threads` says. The cost
+  is the job's upload parallelism: its files upload, and are resolved, one
+  after another.
+
 ## Guardrails
 
 - Production Go files are tested to reject host-name strings.

@@ -955,7 +955,9 @@ class TestImageBamPlugin(unittest.TestCase):
         self.assertEqual(request["response_parser"]["thumb_path"], "")
         self.assertEqual(request["resolve_spec"]["result_url"], "{url}")
         self.assertEqual(request["resolve_spec"]["gallery_extractor"], "a#gallery-name")
-        self.assertEqual(request["resolve_spec"]["file_match_mode"], "single")
+        # One upload session serves every file of the job and its page lists
+        # all of the session's images; view links carry no file names.
+        self.assertEqual(request["resolve_spec"]["file_match_mode"], "upload_order")
         self.assertIn("thumb_url", request["resolve_spec"]["link_extractor"])
 
     def test_build_http_request_can_create_gallery_during_session(self):
