@@ -28,6 +28,12 @@ type parityFixture struct {
 		Secrets []string `json:"secrets"`
 		Want    string   `json:"want"`
 	} `json:"failure_messages"`
+	Redactions []struct {
+		Name    string   `json:"name"`
+		Text    string   `json:"text"`
+		Secrets []string `json:"secrets"`
+		Want    string   `json:"want"`
+	} `json:"redactions"`
 	JSONUploads []struct {
 		Name    string             `json:"name"`
 		Parser  ResponseParserSpec `json:"parser"`
@@ -67,6 +73,19 @@ func secretsJob(secrets []string) *JobRequest {
 func TestParityFailureMessages(t *testing.T) {
 	for _, tc := range loadParityFixture(t).FailureMessages {
 		got := uploadFailure(tc.Reason, tc.Status, []byte(tc.Body), uploadSecrets(secretsJob(tc.Secrets), nil)).Error()
+		if got != tc.Want {
+			t.Errorf("%s:\n got %q\nwant %q", tc.Name, got, tc.Want)
+		}
+	}
+}
+
+func TestParityRedactions(t *testing.T) {
+	cases := loadParityFixture(t).Redactions
+	if len(cases) == 0 {
+		t.Fatal("the fixture has no redaction cases")
+	}
+	for _, tc := range cases {
+		got := redactSecrets(tc.Text, uploadSecrets(secretsJob(tc.Secrets), nil))
 		if got != tc.Want {
 			t.Errorf("%s:\n got %q\nwant %q", tc.Name, got, tc.Want)
 		}

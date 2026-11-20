@@ -19,7 +19,7 @@ from modules.plugins.imgur import ImgurPlugin
 from modules.plugins.imx import ImxPlugin
 from modules.plugins.pixhost import PixhostPlugin
 from modules.transport import TransportResponse
-from modules.upload_results import parse_json_upload, upload_failure
+from modules.upload_results import parse_json_upload, redact_secrets, upload_failure
 from modules.upload_sessions import SessionState
 
 FIXTURE = (
@@ -44,6 +44,11 @@ def response(status, body, url="https://host.test/upload"):
 def test_failure_messages_match_the_go_path(case):
     got = upload_failure(case["reason"], case["status"], case["body"], case.get("secrets", ()))
     assert got == case["want"]
+
+
+@pytest.mark.parametrize("case", CASES["redactions"], ids=lambda case: case["name"])
+def test_redactions_match_the_go_path(case):
+    assert redact_secrets(case["text"], case["secrets"]) == case["want"]
 
 
 HOST_PLUGINS = {"imx.to": ImxPlugin, "pixhost.cc": PixhostPlugin, "imgur.com": ImgurPlugin}

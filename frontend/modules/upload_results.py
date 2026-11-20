@@ -25,6 +25,8 @@ Python ``re`` instead of RE2 (avoid backtracking-only constructs).
 
 from __future__ import annotations
 
+import bisect
+import html
 import json
 import os
 import re
@@ -114,13 +116,156 @@ def normalize_secrets(secrets: Iterable[str]) -> List[str]:
         if len(str(secret or "").strip()) >= MIN_SECRET_LENGTH
     }
     # Longest first, so a secret that contains another is redacted whole.
-    return sorted(unique, key=len, reverse=True)
+    return sorted(unique, key=lambda secret: (-len(secret), secret))
+
+
+REDACTED = "[redacted]"
 
 
 def redact_secrets(text: str, secrets: Iterable[str]) -> str:
-    for secret in normalize_secrets(secrets):
-        text = text.replace(secret, "[redacted]")
+    """``text`` with every secret replaced by "[redacted]", as given or escaped.
+
+    A host may echo a credential back URL-encoded (``P%40ss`` or ``my+pass``),
+    JSON-escaped (``P@ss\\/w0rd``, ``\\u00e9``) or with HTML character
+    references (``&eacute;``, ``&#233;``) in text no parser decoded; those
+    forms are redacted too. backend/core/response_errors.go does the same.
+    """
+    secrets = normalize_secrets(secrets)
+    for secret in secrets:
+        text = text.replace(secret, REDACTED)
+    for pattern, decode in _ESCAPE_FORMS:
+        text = _redact_escaped(text, secrets, pattern, decode)
     return text
+
+
+def _decode_percent(token: str) -> Optional[bytes]:
+    return b" " if token == "+" else bytes([int(token[1:], 16)])
+
+
+_JSON_SHORT_ESCAPES = {
+    '"': '"',
+    "\\": "\\",
+    "/": "/",
+    "b": "\b",
+    "f": "\f",
+    "n": "\n",
+    "r": "\r",
+    "t": "\t",
+}
+
+
+def _decode_json(token: str) -> Optional[bytes]:
+    if not token.startswith("\\u"):
+        return _JSON_SHORT_ESCAPES[token[1]].encode("utf-8")
+    unit = int(token[2:6], 16)
+    if len(token) == 12:  # a surrogate pair
+        unit = 0x10000 + ((unit - 0xD800) << 10) + (int(token[8:12], 16) - 0xDC00)
+    elif 0xD800 <= unit <= 0xDFFF:
+        return None  # a lone surrogate stands for no character
+    return chr(unit).encode("utf-8")
+
+
+def _decode_html(token: str) -> Optional[bytes]:
+    if token.startswith("&#"):
+        digits = token[2:-1]
+        code = int(digits[1:], 16) if digits[:1] in ("x", "X") else int(digits)
+        if not 0 < code <= 0x10FFFF or 0xD800 <= code <= 0xDFFF:
+            return None
+        return chr(code).encode("utf-8")
+    value = html.unescape(token)
+    # A name that is no entity, or only starts with one, keeps its ";".
+    return None if value.endswith(";") else value.encode("utf-8")
+
+
+# The escaped forms a credential may take, each a token pattern and its
+# decoder (None: the token stands for nothing, and stays as written). Keep in
+# step with escapeForms in backend/core/response_errors.go.
+_ESCAPE_FORMS = (
+    (re.compile(r"%[0-9A-Fa-f]{2}|\+"), _decode_percent),
+    (
+        re.compile(
+            r"\\u[dD][89abAB][0-9a-fA-F]{2}\\u[dD][c-fC-F][0-9a-fA-F]{2}"
+            r'|\\u[0-9a-fA-F]{4}|\\["\\/bfnrt]'
+        ),
+        _decode_json,
+    ),
+    (
+        re.compile(r"&#[0-9]{1,8};|&#[xX][0-9a-fA-F]{1,8};|&[A-Za-z][A-Za-z0-9]{0,31};"),
+        _decode_html,
+    ),
+)
+
+
+def _redact_escaped(text: str, secrets: List[str], pattern: "re.Pattern[str]", decode) -> str:
+    """Redact each secret where ``text`` spells it with ``pattern``'s escapes.
+
+    The text is decoded into bytes, escape by escape; a secret matches where
+    the decoded bytes equal it and it starts and ends on whole escapes (or
+    characters). Longest secrets first, left to right, never overlapping.
+    """
+    segments: List[Tuple[int, int, int, int, bool]] = []  # decoded and text spans
+    decoded = bytearray()
+
+    def add(text_start: int, text_end: int, value: bytes, escape: bool) -> None:
+        segments.append((len(decoded), len(decoded) + len(value), text_start, text_end, escape))
+        decoded.extend(value)
+
+    cursor = 0
+    for match in pattern.finditer(text):
+        value = decode(match.group(0))
+        if value is None:
+            continue
+        if match.start() > cursor:
+            add(cursor, match.start(), text[cursor : match.start()].encode("utf-8", "surrogatepass"), False)
+        add(match.start(), match.end(), value, True)
+        cursor = match.end()
+    if not segments:
+        return text
+    if cursor < len(text):
+        add(cursor, len(text), text[cursor:].encode("utf-8", "surrogatepass"), False)
+    starts = [segment[0] for segment in segments]
+
+    def text_offset(offset: int) -> Optional[int]:
+        """Where a decoded offset is in ``text``; None inside an escape or a character."""
+        start, end, text_start, text_end, escape = segments[bisect.bisect_right(starts, offset) - 1]
+        if offset == start:
+            return text_start
+        if offset == end:
+            return text_end
+        if escape:
+            return None
+        try:
+            return text_start + len(bytes(decoded[start:offset]).decode("utf-8", "surrogatepass"))
+        except UnicodeDecodeError:
+            return None
+
+    spans: List[Tuple[int, int]] = []
+    for secret in secrets:
+        needle = secret.encode("utf-8", "surrogatepass")
+        position = 0
+        while True:
+            found = decoded.find(needle, position)
+            if found < 0:
+                break
+            start, end = text_offset(found), text_offset(found + len(needle))
+            if (
+                start is not None
+                and end is not None
+                and not any(start < taken_end and taken_start < end for taken_start, taken_end in spans)
+            ):
+                spans.append((start, end))
+                position = found + len(needle)
+            else:
+                position = found + 1
+    if not spans:
+        return text
+    parts, last = [], 0
+    for start, end in sorted(spans):
+        parts.append(text[last:start])
+        parts.append(REDACTED)
+        last = end
+    parts.append(text[last:])
+    return "".join(parts)
 
 
 def collapse_text(text: str) -> str:

@@ -135,6 +135,114 @@
       "status": 400,
       "body": "line one\u0000line\ttwo\u0007end",
       "want": "upload rejected (HTTP 400): line one line two end"
+    },
+    {
+      "name": "a credential echoed url-encoded is redacted",
+      "reason": "login failed",
+      "status": 403,
+      "body": "<html><body><h1>Request blocked</h1><pre>op=login&login=connie&password=P%40ss%2Fw0rd%7B%C3%A9%7D</pre></body></html>",
+      "secrets": ["P@ss/w0rd{é}", "connie"],
+      "want": "login failed (HTTP 403): Request blocked op=login&login=[redacted]&password=[redacted]"
+    },
+    {
+      "name": "url-encoded with lowercase escapes and plus for space",
+      "reason": "login failed",
+      "status": 400,
+      "body": "rejected: pw=my+pass%20word&next=P%40ss%2fw0rd%7b%c3%a9%7d",
+      "secrets": ["P@ss/w0rd{é}", "my pass word"],
+      "want": "login failed (HTTP 400): rejected: pw=[redacted]&next=[redacted]"
+    },
+    {
+      "name": "a credential echoed json-escaped is redacted",
+      "reason": "login failed",
+      "status": 400,
+      "body": "{\"ok\":false,\"echo\":{\"password\":\"P@ss\\/w0rd{\\u00e9}\",\"user\":\"P@ss\\/w0rd{é}\",\"emoji\":\"pass\\ud83d\\ude00word\"}}",
+      "secrets": ["P@ss/w0rd{é}", "pass😀word"],
+      "want": "login failed (HTTP 400): {\"ok\":false,\"echo\":{\"password\":\"[redacted]\",\"user\":\"[redacted]\",\"emoji\":\"[redacted]\"}}"
+    },
+    {
+      "name": "a credential echoed with html entities is redacted",
+      "reason": "login failed",
+      "status": 401,
+      "body": "Invalid password P@ss/w0rd{&eacute;} or P&#64;ss&#x2F;w0rd&#123;&#233;&#X7d;",
+      "secrets": ["P@ss/w0rd{é}"],
+      "want": "login failed (HTTP 401): Invalid password [redacted] or [redacted]"
+    },
+    {
+      "name": "escapes inside a longer secret are redacted whole",
+      "reason": "upload rejected",
+      "status": 400,
+      "body": "session tok%2D1234%2Dextra expired",
+      "secrets": ["tok-1234", "tok-1234-extra"],
+      "want": "upload rejected (HTTP 400): session [redacted] expired"
+    },
+    {
+      "name": "half of an entity that stands for two characters is not redacted",
+      "reason": "upload rejected",
+      "status": 400,
+      "body": "code abc&NotEqualTilde; here",
+      "secrets": ["abc≂"],
+      "want": "upload rejected (HTTP 400): code abc&NotEqualTilde; here"
+    },
+    {
+      "name": "a secret under four characters is never redacted, escaped or not",
+      "reason": "login failed",
+      "status": 401,
+      "body": "Wrong PIN abc, a%62c or &#97;bc",
+      "secrets": ["abc"],
+      "want": "login failed (HTTP 401): Wrong PIN abc, a%62c or &#97;bc"
+    },
+    {
+      "name": "the minimum length counts characters, not bytes",
+      "reason": "login failed",
+      "status": 401,
+      "body": "Wrong PIN éé",
+      "secrets": ["éé"],
+      "want": "login failed (HTTP 401): Wrong PIN éé"
+    }
+  ],
+  "redactions": [
+    {
+      "name": "upper-case unicode escapes",
+      "text": "{\"pw\":\"P@ss\\/w0rd{\\u00E9}\"}",
+      "secrets": ["P@ss/w0rd{é}"],
+      "want": "{\"pw\":\"[redacted]\"}"
+    },
+    {
+      "name": "an escaped backslash is no unicode escape",
+      "text": "name \\\\u00e9tienne",
+      "secrets": ["étienne"],
+      "want": "name \\\\u00e9tienne"
+    },
+    {
+      "name": "a lone surrogate escape stands for no character",
+      "text": "x\\ud83dword",
+      "secrets": ["�word"],
+      "want": "x\\ud83dword"
+    },
+    {
+      "name": "a percent sign without two hex digits stays",
+      "text": "100%zz off for P%40ss%2Fw0rd%7B%C3%A9%7D",
+      "secrets": ["P@ss/w0rd{é}"],
+      "want": "100%zz off for [redacted]"
+    },
+    {
+      "name": "html special characters in a secret",
+      "text": "user a&amp;b&lt;c&gt;d&quot; refused",
+      "secrets": ["a&b<c>d\""],
+      "want": "user [redacted] refused"
+    },
+    {
+      "name": "references to no character stay",
+      "text": "a&#0;bcd &#xD800;wxyz &#x110000;",
+      "secrets": ["abcd", "�wxyz"],
+      "want": "a&#0;bcd &#xD800;wxyz &#x110000;"
+    },
+    {
+      "name": "secrets of the same length go in a fixed order",
+      "text": "abc%64efghi",
+      "secrets": ["defghi", "abcdef"],
+      "want": "[redacted]ghi"
     }
   ],
   "json_uploads": [
