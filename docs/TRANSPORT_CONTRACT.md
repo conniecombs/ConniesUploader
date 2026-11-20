@@ -64,8 +64,13 @@ Python then parses the body and decides what the result means.
 Optional request flags (all off by default):
 
 - `literal_values`: send `url`, `headers`, and `form_fields` exactly as given.
-  Without it Go substitutes `{token}` placeholders from job values and fails
-  when any remain, which is wrong for final text such as a forum post.
+  Without it Go replaces each `{name}` whose name is a job value (creds,
+  config, values extracted by earlier steps) with that value, in one pass, so
+  inserted text is never scanned again. Brace text that names no job value is
+  sent unchanged, so a password or title such as `Holiday {2024}` is safe
+  either way; set the flag for final text such as a forum post so that a
+  `{name}` matching a job value is not replaced. Upload specs follow the same
+  substitution rule.
 - `timeout_seconds`: the deadline for this request. Values above the client
   ceiling (180 s) clamp to it. Python waits this long plus a small margin so
   Go always gives up first.

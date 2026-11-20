@@ -926,21 +926,25 @@ func formFieldNames(form *goquery.Selection, limit int) []string {
 	return names
 }
 
+// substituteValues replaces each {name} token of input with values[name] in a
+// single pass, so text inserted from values is never scanned again.
+//
+// Brace text that names no known value is kept as written: Python puts
+// user-entered text (passwords, titles, gallery and file names) straight into
+// spec fields, and "{2024}" in a title is text, not a missing token. Because
+// nothing is ever rejected, no substituted value can end up in an error
+// message. The error result is kept for the callers' signatures and is always
+// nil.
 func substituteValues(input string, values map[string]string) (string, error) {
-	if input == "" || len(values) == 0 {
-		if templateTokenPattern.MatchString(input) {
-			return input, fmt.Errorf("unresolved template tokens remaining in: %s", input)
-		}
+	if len(values) == 0 || !strings.Contains(input, "{") {
 		return input, nil
 	}
-	result := input
-	for key, val := range values {
-		result = strings.ReplaceAll(result, "{"+key+"}", val)
-	}
-	if templateTokenPattern.MatchString(result) {
-		return result, fmt.Errorf("unresolved template tokens remaining in: %s", result)
-	}
-	return result, nil
+	return templateTokenPattern.ReplaceAllStringFunc(input, func(token string) string {
+		if val, ok := values[token[1:len(token)-1]]; ok {
+			return val
+		}
+		return token
+	}), nil
 }
 
 func resolveUploadURL(specURL string, values map[string]string) (string, error) {

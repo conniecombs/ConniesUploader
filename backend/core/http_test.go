@@ -397,7 +397,10 @@ func TestExecuteGenericRequestLiteralValuesKeepsBraces(t *testing.T) {
 }
 
 func TestExecuteGenericRequestSubstitutesWhenNotLiteral(t *testing.T) {
+	var received string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		received = r.PostFormValue("message")
 		_, _ = w.Write([]byte("ok"))
 	}))
 	defer server.Close()
@@ -405,11 +408,14 @@ func TestExecuteGenericRequestSubstitutesWhenNotLiteral(t *testing.T) {
 	spec := &GenericHttpRequestSpec{
 		URL:        server.URL + "/post",
 		Method:     http.MethodPost,
-		FormFields: map[string]string{"message": "{missing}"},
+		FormFields: map[string]string{"message": "{user} {missing}"},
 	}
-	_, err := ExecuteGenericRequest(context.Background(), server.Client(), spec, nil)
-	if err == nil || !strings.Contains(err.Error(), "unresolved template tokens") {
-		t.Fatalf("expected unresolved template error, got %v", err)
+	job := &JobRequest{Creds: map[string]string{"user": "alice"}}
+	if _, err := ExecuteGenericRequest(context.Background(), server.Client(), spec, job); err != nil {
+		t.Fatalf("ExecuteGenericRequest returned error: %v", err)
+	}
+	if received != "alice {missing}" {
+		t.Fatalf("server received %q, want the known token filled and the rest unchanged", received)
 	}
 }
 
