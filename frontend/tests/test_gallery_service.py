@@ -213,6 +213,25 @@ def test_parse_imx_gallery_html_supports_account_gallery_table():
     ]
 
 
+def test_parse_imx_gallery_html_keeps_the_name_when_a_thumbnail_link_comes_first():
+    html = """
+    <table>
+    <tr><td><a href="/g/abc1"><img src="https://imx.to/t/1.jpg"></a></td>
+        <td><a href="/g/abc1">Summer Trip</a></td></tr>
+    <tr><td><a href="/g/def2"><img src="https://imx.to/t/2.jpg"></a></td>
+        <td><a href="/g/def2">Winter</a></td></tr>
+    </table>
+    """
+
+    records, candidates = parse_imx_gallery_html(html)
+
+    assert candidates == 4
+    assert [(record["id"], record["name"]) for record in records] == [
+        ("abc1", "Summer Trip"),
+        ("def2", "Winter"),
+    ]
+
+
 def test_parse_imx_gallery_html_counts_unparseable_gallery_candidates():
     html = """
     <a href="/g/bad-id">Broken Gallery ID</a>

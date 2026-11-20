@@ -155,7 +155,7 @@ def parse_imx_gallery_html(html: str) -> Tuple[List[Dict[str, Any]], int]:
     """
     soup = BeautifulSoup(html or "", "html.parser")
     records: List[Dict[str, Any]] = []
-    seen = set()
+    by_id: Dict[str, Dict[str, Any]] = {}
     candidates = 0
 
     for link in soup.find_all("a", href=True):
@@ -168,18 +168,22 @@ def parse_imx_gallery_html(html: str) -> Tuple[List[Dict[str, Any]], int]:
         if not gallery_id:
             continue
 
-        if gallery_id in seen:
+        name = link.get_text(" ", strip=True)
+        record = by_id.get(gallery_id)
+        if record is not None:
+            # A gallery can have several links (a thumbnail, then its title);
+            # the first one with text names it.
+            if name and record["name"] == gallery_id:
+                record["name"] = name
             continue
 
-        name = link.get_text(" ", strip=True)
-        records.append(
-            {
-                "id": gallery_id,
-                "name": name or gallery_id,
-                "url": gallery_url_for_service("imx.to", gallery_id),
-            }
-        )
-        seen.add(gallery_id)
+        record = {
+            "id": gallery_id,
+            "name": name or gallery_id,
+            "url": gallery_url_for_service("imx.to", gallery_id),
+        }
+        records.append(record)
+        by_id[gallery_id] = record
 
     return records, candidates
 
