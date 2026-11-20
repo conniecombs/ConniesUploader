@@ -437,12 +437,12 @@ func processRawFileCtx(parent context.Context, fp string, job *JobRequest) {
 			// The host got the whole file and may have stored it.
 			failed.Data = map[string]string{"body_sent": "true"}
 		}
+		// parent is the batch context, which has no deadline (an upload has
+		// no wall-clock limit): it ends only when the batch is cancelled.
 		switch {
 		case errors.Is(parent.Err(), context.Canceled):
 			emitCancelledFiles(job, []string{fp})
 			return
-		case parent.Err() != nil:
-			res.err = fmt.Errorf("upload deadline passed: %w", res.err)
 		case job.Session != nil && job.Session.Closed():
 			res.err = core.ErrSessionClosed
 		}
