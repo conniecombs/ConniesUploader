@@ -198,7 +198,7 @@ const redacted = "[redacted]"
 
 // redactSecrets replaces each secret in text with "[redacted]", as given or
 // escaped: a host may echo a credential back URL-encoded ("P%40ss",
-// "my+pass"), JSON-escaped ("P@ss\/w0rd", "é") or with HTML character
+// "my+pass"), JSON-escaped ("P@ss\/w0rd", "\u00e9") or with HTML character
 // references ("&eacute;", "&#233;") in text no parser decoded. secrets are
 // longest first (uploadSecrets). frontend/modules/upload_results.py's
 // redact_secrets does the same.

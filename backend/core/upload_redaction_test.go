@@ -162,7 +162,7 @@ func TestUploadFailureRedactsEscapedCredentials(t *testing.T) {
 	const password = "P@ss/w0rd{é}"
 	for name, body := range map[string]string{
 		"url-encoded":  `<html><body><pre>login=connie&password=P%40ss%2Fw0rd%7B%C3%A9%7D</pre></body></html>`,
-		"json-escaped": `{"ok":false,"echo":"P@ss\/w0rd{é}"}`,
+		"json-escaped": `{"ok":false,"echo":"P@ss\/w0rd{\u00e9}"}`,
 		"html entity":  `Invalid password P@ss/w0rd{&eacute;}`,
 	} {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -178,7 +178,7 @@ func TestUploadFailureRedactsEscapedCredentials(t *testing.T) {
 		if err == nil {
 			t.Fatalf("%s: expected the rejected upload to fail", name)
 		}
-		for _, leak := range []string{"P%40ss", `P@ss\/`, `é`, "&eacute;", "connie"} {
+		for _, leak := range []string{"P%40ss", `P@ss\/`, `\u00e9`, "&eacute;", "connie"} {
 			if strings.Contains(err.Error(), leak) {
 				t.Errorf("%s: error quotes the credential (%s): %v", name, leak, err)
 			}
