@@ -341,6 +341,27 @@ def test_session_opens_on_the_dispatch_thread_during_a_batch(env):
     env.um.shutdown()
 
 
+def test_a_plugin_without_the_optional_hooks_gets_the_base_defaults(env, monkeypatch):
+    class Minimal:
+        metadata = {}
+
+        def build_raw_upload_request(self, file_path, config, session_values, creds):
+            return {
+                "url": "https://h/u",
+                "multipart_fields": {"f": {"type": "file", "value": file_path}},
+            }
+
+        def parse_upload_response(self, file_path, response, transport, session_values, state):
+            return UploadResult("https://h/v", "https://h/t")
+
+    monkeypatch.setattr(env.um.plugin_manager, "get_plugin", lambda service_id: Minimal())
+    env.um._send_job(["/a.jpg"], CFG, CREDS)
+    [job] = env.bridge.jobs()
+    assert job["sequential"] is False
+    finish_raw(env, job, ["/a.jpg"])
+    wait_for(env, lambda: "Done" in status_of(env, "/a.jpg"))
+
+
 # --- Failures ---------------------------------------------------------------------------
 
 

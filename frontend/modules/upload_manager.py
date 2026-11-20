@@ -717,7 +717,9 @@ class UploadManager:
             cancel_event=self.cancel_event,
         )
         try:
-            opened = plugin.open_upload_session(transport, cfg, creds) or {}
+            # Plugins that do not subclass ImageHostPlugin get its defaults.
+            open_session = getattr(plugin, "open_upload_session", None)
+            opened = (open_session(transport, cfg, creds) if callable(open_session) else {}) or {}
             session_values = {str(key): str(value) for key, value in dict(opened).items()}
         except Exception as exc:
             logger.error(f"{service_id}: upload session setup failed: {exc}")
@@ -744,7 +746,8 @@ class UploadManager:
             return
 
         try:
-            options = dict(plugin.upload_job_options(cfg) or {})
+            job_options = getattr(plugin, "upload_job_options", None)
+            options = dict((job_options(cfg) if callable(job_options) else {}) or {})
         except Exception as exc:
             logger.debug(f"{service_id}: upload_job_options failed: {exc}")
             options = {}
