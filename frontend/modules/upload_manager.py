@@ -858,6 +858,11 @@ class UploadManager:
     def _send_session_job(
         self, plugin: Any, file_list: List[str], cfg: Dict[str, Any], creds: Dict[str, str]
     ) -> None:
+        # The sidecar reports every file under its normalized path (as the
+        # legacy path sends them), so the session job tracks files the same
+        # way. Otherwise, on Windows, "/set/a.jpg" and the reported
+        # "\\set\\a.jpg" would be two files and the first would never finish.
+        file_list = [os.path.normpath(fp) for fp in file_list]
         service_id = cfg["service"]
         job_cfg = self._normalize_job_config(cfg)
         declared = self._credentials_for_plugin(plugin, creds)
@@ -1370,6 +1375,9 @@ class UploadManager:
 
         session_job = self._session_jobs.get(job_id) if job_id else None
         if session_job is not None and fp:
+            # A session job tracks its files under their normalized paths (see
+            # _send_session_job); key the event the same way on every platform.
+            fp = os.path.normpath(fp)
             if evt == "result":
                 # A raw result: the host's answer, for the plugin to parse.
                 self._accept_raw_result(session_job, fp, data)
@@ -1379,8 +1387,8 @@ class UploadManager:
                 if _config_flag(details.get("body_sent")):
                     # Failed after the host received the whole file: the host
                     # may list it on its result page.
-                    session_job.state.record_uploaded(os.path.normpath(fp))
-                session_job.state.settle(os.path.normpath(fp))
+                    session_job.state.record_uploaded(fp)
+                session_job.state.settle(fp)
 
         if evt in ("result", "error") and fp:
             self.active_files.discard(fp)
