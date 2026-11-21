@@ -243,19 +243,39 @@ var jsonShortEscapes = map[byte]string{
 	'"': `"`, '\\': `\`, '/': "/", 'b': "\b", 'f': "\f", 'n': "\n", 'r': "\r", 't': "\t",
 }
 
+// hexUnit reads the four hex digits of a JSON \uXXXX escape as one UTF-16
+// code unit. It builds the rune digit by digit, so no wider integer is ever
+// narrowed into it.
+func hexUnit(digits string) rune {
+	var unit rune
+	for i := 0; i < len(digits); i++ {
+		c := digits[i]
+		var value rune
+		switch {
+		case c >= '0' && c <= '9':
+			value = rune(c - '0')
+		case c >= 'a' && c <= 'f':
+			value = rune(c-'a') + 10
+		case c >= 'A' && c <= 'F':
+			value = rune(c-'A') + 10
+		}
+		unit = unit<<4 | value
+	}
+	return unit
+}
+
 func decodeJSONEscape(token string) (string, bool) {
 	if !strings.HasPrefix(token, `\u`) {
 		return jsonShortEscapes[token[1]], true
 	}
-	unit, _ := strconv.ParseUint(token[2:6], 16, 32)
+	unit := hexUnit(token[2:6])
 	if len(token) == 12 { // a surrogate pair
-		low, _ := strconv.ParseUint(token[8:12], 16, 32)
-		return string(utf16.DecodeRune(rune(unit), rune(low))), true
+		return string(utf16.DecodeRune(unit, hexUnit(token[8:12]))), true
 	}
-	if utf16.IsSurrogate(rune(unit)) {
+	if utf16.IsSurrogate(unit) {
 		return "", false // a lone surrogate stands for no character
 	}
-	return string(rune(unit)), true
+	return string(unit), true
 }
 
 func decodeHTMLEscape(token string) (string, bool) {

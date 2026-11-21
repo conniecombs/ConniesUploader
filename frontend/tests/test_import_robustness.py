@@ -30,6 +30,9 @@ def _import_app(separate_batches=False):
     app.lbl_eta = FakeLabel()
     app.var_show_previews = FakeVar(False)
     app.var_separate_batches = FakeVar(separate_batches)
+    # make_app() builds the window without a Tk interpreter; real tkinter's
+    # update_idletasks() would recurse looking for one.
+    app.update_idletasks = lambda: None
     app.activity = []
     app.import_checks = []
     app.add_activity = lambda message, level="info": app.activity.append((level, message))
