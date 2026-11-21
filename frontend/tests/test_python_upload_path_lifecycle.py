@@ -10,6 +10,7 @@ files). Its UI puts go through _deliver, and Uploaded is a status the
 sidecar bridge may drop, never one that ends or counts a row.
 """
 
+import os
 import queue
 import threading
 import time
@@ -20,7 +21,14 @@ from modules import upload_manager
 from modules.sidecar import SidecarBridge
 from modules.ui.main_window import UploaderApp
 from tests.test_main_window_contract import FakeGroup
-from tests.test_python_upload_path import CFG, CREDS, FakeSidecar, ParsingPlugin, raw_result
+from tests.test_python_upload_path import (
+    CFG,
+    CREDS,
+    FakeSidecar,
+    ParsingPlugin,
+    file_statuses,
+    raw_result,
+)
 from tests.test_upload_session import _row, _ui_app
 
 
@@ -51,7 +59,7 @@ def clear_list_and_start(um, cancel, new_groups):
 
 
 def statuses(q, fp):
-    return [item[2] for item in list(q.queue) if item[0] == "status" and item[1] == fp]
+    return file_statuses(list(q.queue), fp)
 
 
 def wait_until(condition, timeout=5.0):
@@ -146,7 +154,7 @@ def test_a_sequential_job_cleared_between_files_sends_nothing_more(env):
     time.sleep(0.1)
 
     sent = [fp for job in bridge.jobs() if job["session_id"] == "s-1" for fp in job["files"]]
-    assert sent == ["/s/1.jpg"]
+    assert sent == [os.path.normpath("/s/1.jpg")]
     for fp in ("/s/1.jpg", "/s/2.jpg", "/s/3.jpg"):
         assert statuses(progress, fp) == [], fp
 

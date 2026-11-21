@@ -199,8 +199,31 @@ def wait_for(env, condition, timeout=5.0):
     raise AssertionError(f"condition not met; statuses={env.statuses} results={env.result_items}")
 
 
+def file_statuses(items, fp):
+    """The statuses reported for ``fp`` among progress queue ``items``.
+
+    The upload manager reports files under their normalized paths: on
+    Windows, "/a.jpg" is reported as "\\a.jpg". A file must be reported under
+    one path only; under two it would be two files, and one would never end.
+    """
+    reported = [
+        item
+        for item in items
+        if item[0] == "status"
+        and item[1] is not None
+        and os.path.normpath(item[1]) == os.path.normpath(fp)
+    ]
+    assert len({item[1] for item in reported}) <= 1, f"{fp} reported under two paths: {reported}"
+    return [item[2] for item in reported]
+
+
 def status_of(env, fp):
-    return [item[2] for item in env.statuses if item[0] == "status" and item[1] == fp]
+    return file_statuses(env.statuses, fp)
+
+
+def no_result(*files):
+    """The empty result items of failed files, under their normalized paths."""
+    return [(os.path.normpath(fp), "", "") for fp in files]
 
 
 def raw_result(job_id, fp, body='{"ok":1}', status_code="200"):
@@ -297,7 +320,7 @@ def test_a_parsing_plugin_uploads_through_a_transport_session(env):
     }
     assert request["multipart_fields"]["sess"] == {"type": "text", "value": "sess-value-123"}
     assert request["headers"] == {"X-Key": "key-secret-99"}
-    assert env.um.active_files == set(files)
+    assert env.um.active_files == {os.path.normpath(f) for f in files}
 
     finish_raw(env, job, files)
     wait_for(env, lambda: all("Done" in status_of(env, os.path.normpath(f)) for f in files))
@@ -399,7 +422,7 @@ def test_a_parser_failure_fails_the_file_with_its_reason(env, parse, want):
     finish_raw(env, env.bridge.jobs()[0], ["/a.jpg"])
     wait_for(env, lambda: any(s.startswith("error") for s in status_of(env, "/a.jpg")))
     assert status_of(env, "/a.jpg")[-1] == want
-    assert env.result_items == [("/a.jpg", "", "")]
+    assert env.result_items == no_result("/a.jpg")
 
 
 def test_a_parser_exception_fails_the_file(env):
@@ -422,7 +445,7 @@ def test_a_result_with_none_fields_still_ends_the_file(env):
     finish_raw(env, env.bridge.jobs()[0], ["/n/a.jpg"])
     wait_for(env, lambda: len(env.bridge.closes()) == 1)
     assert status_of(env, "/n/a.jpg")[-1] == "error: Host returned no link"
-    assert env.result_items == [("/n/a.jpg", "", "")]
+    assert env.result_items == no_result("/n/a.jpg")
     assert env.um._open_session_jobs == []
 
 
@@ -437,7 +460,7 @@ def test_a_thumbnail_link_that_cannot_be_read_fails_the_file_instead_of_leaving_
         assert status_of(env, fp)[-1] == (
             "error: could not read the host's answer: Invalid IPv6 URL"
         ), status_of(env, fp)
-    assert sorted(env.result_items) == [("/n/a.jpg", "", ""), ("/n/b.jpg", "", "")]
+    assert sorted(env.result_items) == no_result("/n/a.jpg", "/n/b.jpg")
     assert env.um._open_session_jobs == []
 
 
@@ -452,7 +475,7 @@ def test_a_failure_while_reporting_a_parsed_file_still_ends_it(env, monkeypatch)
     assert status_of(env, "/n/a.jpg")[-1] == (
         "error: could not read the host's answer: cannot report https://h/t for [redacted]"
     )
-    assert env.result_items == [("/n/a.jpg", "", "")]
+    assert env.result_items == no_result("/n/a.jpg")
 
 
 def test_session_open_failure_fails_the_group_with_the_reason(env):
@@ -462,7 +485,7 @@ def test_session_open_failure_fails_the_group_with_the_reason(env):
     assert env.bridge.jobs() == []
     for fp in ("/a.jpg", "/b.jpg"):
         assert status_of(env, fp) == ["error: could not open an upload session: batch cancelled"]
-    assert sorted(env.result_items) == [("/a.jpg", "", ""), ("/b.jpg", "", "")]
+    assert sorted(env.result_items) == no_result("/a.jpg", "/b.jpg")
 
 
 def test_stop_before_the_session_opens_cancels_the_group(env):
@@ -486,12 +509,14 @@ def test_login_failure_fails_the_group_and_closes_the_session(env):
 
 
 def test_a_file_whose_request_cannot_be_built_fails_alone(env):
-    env.plugin.build_error_for = {"/b.jpg"}
+    # The plugin is given each file under its normalized path.
+    failing = os.path.normpath("/b.jpg")
+    env.plugin.build_error_for = {failing}
     env.um._send_job(["/a.jpg", "/b.jpg"], CFG, CREDS)
     drain(env)
     [job] = env.bridge.jobs()
     assert job["files"] == [os.path.normpath("/a.jpg")]
-    assert status_of(env, "/b.jpg") == ["error: cannot upload /b.jpg with key [redacted]"]
+    assert status_of(env, "/b.jpg") == [f"error: cannot upload {failing} with key [redacted]"]
 
 
 def test_sidecar_failures_still_end_files(env):
@@ -663,10 +688,12 @@ def test_a_failed_upload_whose_body_reached_the_host_is_recorded(env):
             "data": {"body_sent": "true"},
         }
     )
-    assert state.uploaded_files == ("/a.jpg",)
-    assert state.is_settled("/a.jpg")
+    # Recorded under the normalized path, as the session job tracks its files.
+    a = os.path.normpath("/a.jpg")
+    assert state.uploaded_files == (a,)
+    assert state.is_settled(a)
     env.um._handle_event({"id": job["id"], "type": "status", "file": "/b.jpg", "status": "Failed"})
-    assert state.uploaded_files == ("/a.jpg",)
+    assert state.uploaded_files == (a,)
 
 
 @pytest.mark.parametrize("status_code", ["429", "503"])
@@ -694,7 +721,7 @@ def test_a_final_refusal_is_not_counted_as_an_upload_that_reached_the_host(env, 
 
     second = env.bridge.jobs()[1]
     env.um._handle_event(raw_result(second["id"], "/r/b.jpg", status_code="200"))
-    assert job.state.uploaded_files == ("/r/b.jpg",)
+    assert job.state.uploaded_files == (os.path.normpath("/r/b.jpg"),)
 
 
 def test_a_parser_holding_the_session_state_lock_never_blocks_the_listener(env):
@@ -743,7 +770,7 @@ def test_a_parser_holding_the_session_state_lock_never_blocks_the_listener(env):
     release.set()
     thread.join(5)
     assert not blocked, "the listener waited for a lock the plugin held"
-    assert set(state.uploaded_files) == {"/l/a.jpg", "/l/b.jpg", "/l/c.jpg"}
+    assert set(state.uploaded_files) == {os.path.normpath(f) for f in files}
     wait_for(env, lambda: len(env.bridge.closes()) == 1)
     assert status_of(env, "/l/a.jpg")[-1] == "Done"
 
