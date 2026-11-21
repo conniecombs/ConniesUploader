@@ -232,7 +232,7 @@ def test_imx_without_credentials_fails_each_file_with_the_reason(manager):
     assert statuses == [
         (
             "status",
-            "/in/a.jpg",
+            os.path.normpath("/in/a.jpg"),
             "error: IMX uploads require username and password and API key. "
             "Set these in Credentials before uploading.",
         )

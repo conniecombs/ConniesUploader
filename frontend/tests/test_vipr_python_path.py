@@ -545,7 +545,7 @@ def test_a_wrong_password_fails_every_file_with_vipr_s_message(vipr_manager):
         "error: upload session setup failed: Vipr.im login failed: Incorrect Login or "
         "Password. Check the saved username and password."
     )
-    assert statuses == [("status", fp, message) for fp in files]
+    assert statuses == [("status", os.path.normpath(fp), message) for fp in files]
     assert [close["session_id"] for close in bridge.closes()] == ["s-1"]
 
 

@@ -3,6 +3,7 @@
 
 """A batch's gallery is only sent to the host that gallery belongs to."""
 
+import os
 import queue
 import threading
 
@@ -212,7 +213,10 @@ def test_turbo_auto_gallery_sends_no_imx_gallery_on_either_path(monkeypatch, leg
         um._dispatch_jobs({group: list(group.files)}, cfg, {})
         [job] = bridge.jobs()
         assert "IMXGAL1" not in repr(job), job
-        request = job["http_spec"] if legacy else job["file_requests"]["/set/a.jpg"]
+        if legacy:
+            request = job["http_spec"]
+        else:
+            request = job["file_requests"][os.path.normpath("/set/a.jpg")]
         assert request["multipart_fields"]["galleryN"]["value"] == "Set"
     finally:
         um.shutdown()
