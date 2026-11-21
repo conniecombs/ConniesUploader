@@ -3,6 +3,7 @@
 
 """Upload manager behaviour across Stop / Clear List and the next Start."""
 
+import os
 import queue
 import threading
 import time
@@ -108,7 +109,7 @@ def test_start_after_clear_list_dispatches_the_new_batch_and_never_the_cleared_o
     )
 
     sent_files = [fp for job in uploads for fp in job["files"]]
-    assert sent_files == ["/new/n1.jpg"], f"sent={sent_files}"
+    assert sent_files == [os.path.normpath("/new/n1.jpg")], f"sent={sent_files}"
     assert [job["batch_id"] for job in uploads] == [new_batch]
     assert um.current_batch_id == new_batch
     # The cleared batch made no gallery for its second folder.
@@ -120,7 +121,9 @@ def test_cleared_batch_does_not_cancel_the_same_files_added_again(monkeypatch):
         monkeypatch, ["/s/a.jpg", "/s/b.jpg"], ["/s/a.jpg", "/s/b.jpg"]
     )
 
-    assert [fp for job in uploads for fp in job["files"]] == ["/s/a.jpg", "/s/b.jpg"]
+    assert [fp for job in uploads for fp in job["files"]] == [
+        os.path.normpath(fp) for fp in ("/s/a.jpg", "/s/b.jpg")
+    ]
     assert [job["batch_id"] for job in uploads] == [new_batch]
     statuses = [item for item in _drain(progress) if item[0] == "status"]
     assert not any(status == "Cancelled" for _kind, _fp, status in statuses), statuses
