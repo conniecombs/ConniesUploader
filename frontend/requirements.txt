@@ -17,7 +17,7 @@ beautifulsoup4==4.15.0
 requests==2.33.1
 
 # Logging
-loguru==0.7.3
+loguru==0.8.0
 
 # Secure Credential Storage
 keyring==25.7.0
